@@ -219,7 +219,7 @@ jobs:
           uv run --locked python -m pytest -m product_smoke
           --cov --cov-append --cov-report= --cov-fail-under=0
       - name: Check Python coverage
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.plan.outputs.has_backend_changes == 'true' }}
         run: |
           uv run --locked coverage report
           uv run --locked coverage xml

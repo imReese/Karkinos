@@ -35,17 +35,103 @@ export type StrategyChampionSpotlightProps = {
   status?: ShadowResearchAutomationStatus | null;
 };
 
-export function StrategyChampionSpotlight({
-  status,
-}: StrategyChampionSpotlightProps = {}) {
-  const { locale } = usePreferences();
-  const [activeView, setActiveView] = useState<
-    'dsl' | 'gates' | 'matrix' | null
-  >('matrix');
+type GateRecord = {
+  id: string;
+  nameZh: string;
+  nameEn: string;
+  desc: string;
+};
 
-  const isZh = locale === 'zh';
+const BASE_GENERATIONS: GenerationRecord[] = [
+  {
+    gen: 'Gen 5',
+    nameZh: '趋势超卖低吸与波动率防御',
+    nameEn: 'Trend RSI Pullback & Volatility Defense',
+    model: 'Gemini 3.8 Flash',
+    prompt: 'v18 / AST DSL',
+    mechanismZh: 'MA20 趋势确立 + RSI(14) 强势超卖低吸 + 波动率突增离场',
+    mechanismEn: 'MA20 trend + RSI(14) pullback + volatility spike exit',
+    totalReturn: '-0.06%',
+    maxDrawdown: '12.47%',
+    sharpe: '-0.1472',
+    status: 'active',
+    statusZh: '服役中 (Paper Shadow)',
+    statusEn: 'Active (Paper Shadow)',
+    resultId: 181,
+    date: '2026-10-13',
+  },
+  {
+    gen: 'Gen 4',
+    nameZh: '短期价格反转与均线系统',
+    nameEn: 'Short-term Reversal & Moving Average',
+    model: 'DeepSeek-V4-Pro',
+    prompt: 'v14 ~ v17',
+    mechanismZh: '价格均线突破，缺少波动率过滤，急跌行情易被假突破洗盘',
+    mechanismEn: 'MA breakout without volatility guard, prone to false breaks',
+    totalReturn: '-6.42%',
+    maxDrawdown: '17.68%',
+    sharpe: '-0.5709',
+    status: 'retired',
+    statusZh: '已退役 (更迭)',
+    statusEn: 'Retired (Superseded)',
+    resultId: 126,
+    date: '2026-09-22',
+  },
+  {
+    gen: 'Gen 3',
+    nameZh: '多因子日频选股探索',
+    nameEn: 'Multi-factor Daily Selection',
+    model: 'DeepSeek-V4-Pro',
+    prompt: 'v14',
+    mechanismZh: '引入 Shadow Research 自动化日频筛选，换手率偏高',
+    mechanismEn: 'Automated daily screening with higher turnover',
+    totalReturn: '-37.98%',
+    maxDrawdown: '47.67%',
+    sharpe: '-0.3885',
+    status: 'retired',
+    statusZh: '已退役 (淘汰)',
+    statusEn: 'Retired (Disqualified)',
+    resultId: 77,
+    date: '2026-09-04',
+  },
+  {
+    gen: 'Gen 2',
+    nameZh: '双均线趋势跟踪与初级风控',
+    nameEn: 'Dual MA Trend & Basic Risk Control',
+    model: 'DeepSeek-V4-Pro',
+    prompt: 'v12 ~ v13',
+    mechanismZh: '双均线金叉死叉，初步引入防过拟合与基础费率模型',
+    mechanismEn: 'Dual MA crossover with initial cost model',
+    totalReturn: '+3.10%',
+    maxDrawdown: '14.58%',
+    sharpe: '+0.0580',
+    status: 'retired',
+    statusZh: '已退役 (归档)',
+    statusEn: 'Retired (Archived)',
+    resultId: 26,
+    date: '2026-08-21',
+  },
+  {
+    gen: 'Gen 1',
+    nameZh: '动量单指标原型验证',
+    nameEn: 'Single Momentum Prototype',
+    model: 'DeepSeek-V4-Pro',
+    prompt: 'v5 ~ v7',
+    mechanismZh: '早期动量原型，验证 Generator 与 Critique 双模型架构',
+    mechanismEn: 'Early momentum prototype for dual-agent research',
+    totalReturn: '-2.50%',
+    maxDrawdown: '3.86%',
+    sharpe: '-2.6425',
+    status: 'retired',
+    statusZh: '已退役 (归档)',
+    statusEn: 'Retired (Archived)',
+    resultId: 10,
+    date: '2026-08-11',
+  },
+];
 
-  const gates = [
+function buildGateRecords(isZh: boolean): GateRecord[] {
+  return [
     {
       id: 'frozen_dataset_identity',
       nameZh: '冻结数据集一致性',
@@ -151,95 +237,20 @@ export function StrategyChampionSpotlight({
         : 'Passed independent adversarial critique',
     },
   ];
+}
 
-  const baseGenerations: GenerationRecord[] = [
-    {
-      gen: 'Gen 5',
-      nameZh: '趋势超卖低吸与波动率防御',
-      nameEn: 'Trend RSI Pullback & Volatility Defense',
-      model: 'Gemini 3.8 Flash',
-      prompt: 'v18 / AST DSL',
-      mechanismZh: 'MA20 趋势确立 + RSI(14) 强势超卖低吸 + 波动率突增离场',
-      mechanismEn: 'MA20 trend + RSI(14) pullback + volatility spike exit',
-      totalReturn: '-0.06%',
-      maxDrawdown: '12.47%',
-      sharpe: '-0.1472',
-      status: 'active',
-      statusZh: '服役中 (Paper Shadow)',
-      statusEn: 'Active (Paper Shadow)',
-      resultId: 181,
-      date: '2026-10-13',
-    },
-    {
-      gen: 'Gen 4',
-      nameZh: '短期价格反转与均线系统',
-      nameEn: 'Short-term Reversal & Moving Average',
-      model: 'DeepSeek-V4-Pro',
-      prompt: 'v14 ~ v17',
-      mechanismZh: '价格均线突破，缺少波动率过滤，急跌行情易被假突破洗盘',
-      mechanismEn:
-        'MA breakout without volatility guard, prone to false breaks',
-      totalReturn: '-6.42%',
-      maxDrawdown: '17.68%',
-      sharpe: '-0.5709',
-      status: 'retired',
-      statusZh: '已退役 (更迭)',
-      statusEn: 'Retired (Superseded)',
-      resultId: 126,
-      date: '2026-09-22',
-    },
-    {
-      gen: 'Gen 3',
-      nameZh: '多因子日频选股探索',
-      nameEn: 'Multi-factor Daily Selection',
-      model: 'DeepSeek-V4-Pro',
-      prompt: 'v14',
-      mechanismZh: '引入 Shadow Research 自动化日频筛选，换手率偏高',
-      mechanismEn: 'Automated daily screening with higher turnover',
-      totalReturn: '-37.98%',
-      maxDrawdown: '47.67%',
-      sharpe: '-0.3885',
-      status: 'retired',
-      statusZh: '已退役 (淘汰)',
-      statusEn: 'Retired (Disqualified)',
-      resultId: 77,
-      date: '2026-09-04',
-    },
-    {
-      gen: 'Gen 2',
-      nameZh: '双均线趋势跟踪与初级风控',
-      nameEn: 'Dual MA Trend & Basic Risk Control',
-      model: 'DeepSeek-V4-Pro',
-      prompt: 'v12 ~ v13',
-      mechanismZh: '双均线金叉死叉，初步引入防过拟合与基础费率模型',
-      mechanismEn: 'Dual MA crossover with initial cost model',
-      totalReturn: '+3.10%',
-      maxDrawdown: '14.58%',
-      sharpe: '+0.0580',
-      status: 'retired',
-      statusZh: '已退役 (归档)',
-      statusEn: 'Retired (Archived)',
-      resultId: 26,
-      date: '2026-08-21',
-    },
-    {
-      gen: 'Gen 1',
-      nameZh: '动量单指标原型验证',
-      nameEn: 'Single Momentum Prototype',
-      model: 'DeepSeek-V4-Pro',
-      prompt: 'v5 ~ v7',
-      mechanismZh: '早期动量原型，验证 Generator 与 Critique 双模型架构',
-      mechanismEn: 'Early momentum prototype for dual-agent research',
-      totalReturn: '-2.50%',
-      maxDrawdown: '3.86%',
-      sharpe: '-2.6425',
-      status: 'retired',
-      statusZh: '已退役 (归档)',
-      statusEn: 'Retired (Archived)',
-      resultId: 10,
-      date: '2026-08-11',
-    },
-  ];
+export function StrategyChampionSpotlight({
+  status,
+}: StrategyChampionSpotlightProps = {}) {
+  const { locale } = usePreferences();
+  const [activeView, setActiveView] = useState<
+    'dsl' | 'gates' | 'matrix' | null
+  >('matrix');
+
+  const isZh = locale === 'zh';
+
+  const gates = buildGateRecords(isZh);
+  const baseGenerations = BASE_GENERATIONS;
 
   // 动态解析是否已生成或晋级更高代际候选（如 Gen 6）
   const promotedCandidate = status?.candidates?.find(
@@ -475,7 +486,32 @@ export function StrategyChampionSpotlight({
         </div>
       </div>
 
-      {/* 视图抽屉切换条（集成交易逻辑、13 门禁凭据与代际演进矩阵） */}
+      <StrategyChampionDetails
+        activeView={activeView}
+        generations={generations}
+        gates={gates}
+        isZh={isZh}
+        toggleView={toggleView}
+      />
+    </div>
+  );
+}
+
+function StrategyChampionDetails({
+  activeView,
+  generations,
+  gates,
+  isZh,
+  toggleView,
+}: {
+  activeView: 'dsl' | 'gates' | 'matrix' | null;
+  generations: GenerationRecord[];
+  gates: GateRecord[];
+  isZh: boolean;
+  toggleView: (view: 'dsl' | 'gates' | 'matrix') => void;
+}) {
+  return (
+    <>
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t border-[var(--app-divider)] pt-2 text-xs">
         <button
           type="button"
@@ -534,7 +570,6 @@ export function StrategyChampionSpotlight({
         </button>
       </div>
 
-      {/* 动态抽屉内容区域 */}
       {activeView === 'matrix' && (
         <div
           className="mt-2 rounded-lg border border-[var(--app-divider)] bg-[var(--app-surface)]/70 p-2.5 overflow-x-auto min-w-0"
@@ -633,9 +668,9 @@ export function StrategyChampionSpotlight({
                       {item.resultId ? (
                         <a
                           href={`/backtest?result_id=${item.resultId}`}
-                          onClick={(e) =>
+                          onClick={(event) =>
                             handleClientNavigation(
-                              e,
+                              event,
                               `/backtest?result_id=${item.resultId}`,
                             )
                           }
@@ -691,13 +726,13 @@ export function StrategyChampionSpotlight({
       {activeView === 'gates' && (
         <div className="mt-2 rounded-lg border border-[var(--app-divider)] bg-[var(--app-surface)]/70 p-2.5">
           <div className="grid gap-1.5 sm:grid-cols-2">
-            {gates.map((g, idx) => (
+            {gates.map((gate, index) => (
               <div
-                key={g.id}
+                key={gate.id}
                 className="rounded border border-[var(--app-divider)] bg-[var(--app-surface)]/90 px-2 py-1 flex items-center justify-between gap-2"
               >
                 <span className="font-semibold text-xs text-[var(--app-text)] truncate">
-                  {idx + 1}. {isZh ? g.nameZh : g.nameEn}
+                  {index + 1}. {isZh ? gate.nameZh : gate.nameEn}
                 </span>
                 <span className="rounded bg-[color-mix(in_srgb,var(--app-success)_15%,transparent)] px-1.5 py-0.2 font-mono text-xs font-bold text-[var(--app-success-text)] shrink-0">
                   PASS
@@ -711,6 +746,6 @@ export function StrategyChampionSpotlight({
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
