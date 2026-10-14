@@ -129,8 +129,58 @@ Specialized tooling is grouped under `broker/`, `ci/`, `data/`, `release/`, and 
 # 同步核心宇宙（基准指数 + 主流ETF + 持仓基金 + 自选股）从 2020 至今的所有历史与今日收盘
 uv run --locked python scripts/data/sync_market_history.py --universe core --start 2020-01-01
 
+# 全市场 A 股 5,000+ 标的按交易日批量高速回补（断点续传、日历查验、自动记账）
+uv run --locked python scripts/data/sync_market_history.py --universe full-market --start 2021-01-01 --end 2024-12-31
+
 # 指定任意股票代码高速拉取完整历史并沉淀至本地
 uv run --locked python scripts/data/sync_market_history.py --symbols 600519,300750 --start 2015-01-01
+```
+
+## 数据源安全配置
+
+[`data/configure_data_source.py`](data/configure_data_source.py) 交互式配置本地数据源（AkShare / TuShare）凭据，安全写入本地未被 Git 跟踪的 `config.json` 与 `.env`，避免凭据泄漏至命令行参数或版本库：
+
+```bash
+uv run --locked python scripts/data/configure_data_source.py
+```
+
+## 本地行情数据核验
+
+[`data/verify_market_bars.py`](data/verify_market_bars.py) 将本地 `meta.db` 中的日线数据与远程数据源独立对比，核验行情价格与成交量的一致性（只读检查，不修改本地缓存）：
+
+```bash
+uv run --locked python scripts/data/verify_market_bars.py \
+  --symbol 600519 --start 2024-01-01 --end 2024-12-31 --provider akshare
+```
+
+## 离线数字签名工具
+
+[`broker/operator_signer.py`](broker/operator_signer.py) 为高敏感度人工复核操作（如撤销会话、结算冲正、对账放行等）生成离线分离式数字签名。私钥由操作员在离线受控环境保存，签名载荷通过界面提交，私钥永不进入 Karkinos 运行时或浏览器：
+
+```bash
+# 生成操作员 Ed25519 签名密钥对
+uv run --locked python scripts/broker/operator_signer.py generate-keypair
+
+# 离线签署操作载荷
+uv run --locked python scripts/broker/operator_signer.py sign \
+  --key-path operator.key --payload-file payload.json \
+  --expected-action revoke_controlled_session \
+  --expected-artifact-type controlled_session_revocation
+```
+
+## macOS 后台服务受管守护
+
+[`service/manage_launch_agent.sh`](service/manage_launch_agent.sh) 管理 macOS 原生 `launchd` 用户级守护进程（自动随系统自启、日志轮转与保活）：
+
+```bash
+# 查询当前 LaunchAgent 运行状态
+./scripts/service/manage_launch_agent.sh status
+
+# 安装并启动受管服务
+./scripts/service/manage_launch_agent.sh install
+
+# 停止并卸载受管服务
+./scripts/service/manage_launch_agent.sh uninstall
 ```
 
 ## TDX 日线手动检查
