@@ -25,6 +25,7 @@ jobs:
     outputs:
       base_sha: ${{ steps.plan.outputs.base_sha }}
       commit_sha: ${{ steps.plan.outputs.commit_sha }}
+      has_backend_changes: ${{ steps.plan.outputs.has_backend_changes }}
     steps:
       - name: Checkout exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,9 +50,16 @@ jobs:
           fi
           base_sha="$(git rev-parse --verify --end-of-options "${base_ref}^{commit}")"
           git merge-base --is-ancestor "${base_sha}" "${commit_sha}"
+          changed_files="$(git diff --name-only "${base_sha}" "${commit_sha}")"
+          non_backend_pattern='^(docs/|web/|scripts/|tests/scripts/|[A-Za-z0-9_.-]+\.md$|\.gitignore$)'
+          has_backend_changes="false"
+          if [[ -n "${changed_files}" ]] && echo "${changed_files}" | grep -qE -v "${non_backend_pattern}"; then
+            has_backend_changes="true"
+          fi
           {
             echo "base_sha=${base_sha}"
             echo "commit_sha=${commit_sha}"
+            echo "has_backend_changes=${has_backend_changes}"
           } >> "${GITHUB_OUTPUT}"
 
   python-quality:
@@ -180,12 +188,21 @@ jobs:
       - run: uv sync --locked --extra server --extra dev
       - name: Backend tests
         shell: bash
+        env:
+          HAS_BACKEND_CHANGES: ${{ needs.plan.outputs.has_backend_changes }}
         run: |
           set -euo pipefail
           mkdir -p reports/ci
-          uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 \
-            -m "not trading_safety and not product_smoke and not database_format" \
-            --cov --cov-report= --cov-fail-under=0
+          if [[ "${HAS_BACKEND_CHANGES}" == "true" ]]; then
+            echo "Core backend changes detected; running full test suite."
+            uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 \
+              -m "not trading_safety and not product_smoke and not database_format" \
+              --cov --cov-report= --cov-fail-under=0
+          else
+            echo "No core backend changes detected; running targeted script tests."
+            uv run --locked python -m pytest tests/scripts/ \
+              --cov --cov-report= --cov-fail-under=0
+          fi
       - name: Database format conformance
         if: ${{ !cancelled() }}
         run: >-
