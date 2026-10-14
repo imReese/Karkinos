@@ -10,6 +10,8 @@ export type ToolbarStatusIndicator = 'dot' | 'syncing';
 type AccountOverviewStatusSource = {
   valuation_timestamp?: string | null;
   quote_status?: string | null;
+  valuation_status?: string | null;
+  valuation_blockers?: string[] | null;
   daily_operations?: {
     default_execution_mode?: string | null;
   } | null;
@@ -38,6 +40,7 @@ export type ToolbarStatusProjection = {
 export type ToolbarStatusModel = {
   executionMode: string;
   marketOpenText: string;
+  marketSourceStatus?: string;
   marketStatus: ToolbarStatusProjection;
   marketTimestamp: string | null;
   quoteStatus: string;
@@ -71,6 +74,15 @@ export function deriveToolbarStatusModel({
     now,
   );
   const isQuoteStale = overview?.quote_status === 'stale';
+  const isValuationDegraded =
+    overview?.valuation_status === 'degraded' ||
+    Boolean(
+      overview?.valuation_blockers && overview.valuation_blockers.length > 0,
+    );
+  const isValuationMissing =
+    overview?.valuation_status === 'missing' ||
+    overview?.valuation_status === 'error';
+
   const quoteStatus = overview?.quote_status
     ? formatPublicStatus(overview.quote_status, locale)
     : copy.shell.statusUnknown;
@@ -92,9 +104,10 @@ export function deriveToolbarStatusModel({
 
   const valuationStatus = accountOverview.isLoading
     ? status(copy.shell.checking, 'warning', 'syncing')
-    : accountOverview.isError
+    : accountOverview.isError || isValuationMissing
       ? status(copy.shell.valuationError, 'danger')
-      : isQuoteStale
+      : isValuationDegraded ||
+          (overview?.valuation_status === undefined && isQuoteStale)
         ? status(copy.shell.valuationStale, 'warning')
         : overview
           ? status(copy.shell.valuationMode, 'success')
@@ -106,7 +119,7 @@ export function deriveToolbarStatusModel({
       ? status(copy.shell.checking, 'warning', 'syncing')
       : marketHealth.isError
         ? status(copy.shell.marketError, 'danger')
-        : isQuoteStale || marketQuotesUnconfirmed
+        : marketQuotesUnconfirmed
           ? status(copy.shell.cachedQuotes, 'warning')
           : marketHealth.data?.refresh_policy === 'cache_only'
             ? status(
@@ -145,9 +158,14 @@ export function deriveToolbarStatusModel({
     now,
   );
 
+  const marketSourceStatus = marketHealth.data?.source_health
+    ? formatPublicStatus(marketHealth.data.source_health, locale)
+    : undefined;
+
   return {
     executionMode,
     marketOpenText,
+    marketSourceStatus,
     marketStatus,
     marketTimestamp,
     quoteStatus,

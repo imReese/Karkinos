@@ -161,4 +161,88 @@ describe('deriveToolbarStatusModel', () => {
     expect(model.marketStatus.tone).toBe('warning');
     expect(model.marketStatus.value).toBe('刷新中');
   });
+
+  it('keeps market status live and valuation available when fund NAV has publication lag but valuation is complete', () => {
+    const model = deriveToolbarStatusModel({
+      accountOverview: {
+        data: {
+          valuation_timestamp: '2026-09-22T11:55:00+08:00',
+          quote_status: 'stale',
+          valuation_status: 'complete',
+          valuation_blockers: [],
+        },
+        isError: false,
+        isLoading: false,
+      },
+      marketHealth: {
+        data: {
+          market_open: true,
+          refresh_policy: 'live',
+          source_health: 'healthy',
+          latest_quote_timestamp: '2026-09-22T11:55:00+08:00',
+        },
+        isError: false,
+        isLoading: false,
+      },
+      locale: 'zh',
+      copy: copy.zh,
+      now: referenceDate,
+    });
+
+    expect(model.marketStatus.tone).toBe('success');
+    expect(model.marketStatus.value).toBe('行情可用');
+    expect(model.valuationStatus.tone).toBe('success');
+    expect(model.valuationStatus.value).toBe('估值可用');
+  });
+
+  it('reflects warning when valuation status is degraded and danger when missing', () => {
+    const degradedModel = deriveToolbarStatusModel({
+      accountOverview: {
+        data: {
+          valuation_status: 'degraded',
+          valuation_blockers: ['degraded'],
+        },
+        isError: false,
+        isLoading: false,
+      },
+      marketHealth: {
+        data: {
+          market_open: true,
+          refresh_policy: 'live',
+          source_health: 'healthy',
+        },
+        isError: false,
+        isLoading: false,
+      },
+      locale: 'zh',
+      copy: copy.zh,
+      now: referenceDate,
+    });
+    expect(degradedModel.valuationStatus.tone).toBe('warning');
+    expect(degradedModel.valuationStatus.value).toBe('缓存行情');
+
+    const missingModel = deriveToolbarStatusModel({
+      accountOverview: {
+        data: {
+          valuation_status: 'missing',
+        },
+        isError: false,
+        isLoading: false,
+      },
+      marketHealth: {
+        data: {
+          market_open: true,
+          refresh_policy: 'live',
+          source_health: 'healthy',
+        },
+        isError: false,
+        isLoading: false,
+      },
+      locale: 'zh',
+      copy: copy.zh,
+      now: referenceDate,
+    });
+    expect(missingModel.valuationStatus.tone).toBe('danger');
+    expect(missingModel.valuationStatus.value).toBe('估值异常');
+  });
 });

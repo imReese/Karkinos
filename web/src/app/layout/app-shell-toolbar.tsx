@@ -322,7 +322,7 @@ function ToolbarStatusRail({
                 },
                 {
                   label: copy.shell.quoteStatus,
-                  value: status.quoteStatus,
+                  value: status.marketSourceStatus ?? status.quoteStatus,
                 },
               ]}
               action={
