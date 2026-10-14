@@ -158,26 +158,26 @@ export function ShadowResearchQualificationReview({
   return (
     <section
       aria-labelledby="shadow-research-qualification-title"
-      className="mt-6 rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] p-4"
+      className="mt-3 rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] p-3"
       data-testid="shadow-research-qualification"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <h3
-            className="text-base font-semibold text-[var(--app-text)]"
+            className="text-sm font-semibold text-[var(--app-text)]"
             id="shadow-research-qualification-title"
           >
             {copy.qualificationTitle}
           </h3>
           <p className="sr-only">{copy.qualificationDetail}</p>
         </div>
-        <span className="rounded-full border border-[var(--app-divider)] px-2.5 py-1 text-xs font-semibold">
+        <span className="rounded-full border border-[var(--app-divider)] px-2 py-0.5 text-xs font-semibold">
           {displayStatus}
         </span>
       </div>
 
-      <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-2">
-        <div className="min-w-0 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] p-3">
+      <dl className="mt-2.5 grid gap-2 text-xs sm:grid-cols-2">
+        <div className="min-w-0 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] p-2">
           <dt className="font-semibold text-[var(--app-muted)]">
             {view.run
               ? copy.qualificationRun
@@ -185,10 +185,10 @@ export function ShadowResearchQualificationReview({
                 ? copy.qualificationAttempt
                 : copy.qualificationRun}
           </dt>
-          <dd className="mt-1 break-all font-semibold text-[var(--app-text)]">
+          <dd className="mt-0.5 break-all font-semibold text-[var(--app-text)]">
             {view.run?.qualification_run_id ?? view.attempt?.attempt_id ?? '—'}
           </dd>
-          <dd className="app-muted mt-1">
+          <dd className="app-muted mt-0.5">
             {view.run
               ? `${view.run.market_date} · ${view.run.source_run_id}`
               : view.attempt
@@ -196,16 +196,16 @@ export function ShadowResearchQualificationReview({
                 : copy.qualificationNotEvaluated}
           </dd>
         </div>
-        <div className="min-w-0 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] p-3">
+        <div className="min-w-0 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] p-2">
           <dt className="font-semibold text-[var(--app-muted)]">
             {copy.qualificationWinnerBinding}
           </dt>
-          <dd className="mt-1 break-all font-semibold text-[var(--app-text)]">
+          <dd className="mt-0.5 break-all font-semibold text-[var(--app-text)]">
             {view.winner
               ? `${view.winner.qualification_candidate_id} → ${view.winner.source_candidate_id}`
               : copy.qualificationNoWinner}
           </dd>
-          <dd className="app-muted mt-1">
+          <dd className="app-muted mt-0.5">
             {view.winner && view.sourceCandidateBound
               ? copy.qualificationSourceBound
               : copy.qualificationSourceUnbound}

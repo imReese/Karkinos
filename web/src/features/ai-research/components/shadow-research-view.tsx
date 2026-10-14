@@ -59,15 +59,15 @@ export function CandidateCard({
   const evidenceGate = comparison.research_gate ?? comparison.promotion_gate;
   return (
     <article
-      className="border-y border-[var(--app-divider)] py-4"
+      className="border-y border-[var(--app-divider)] py-2.5"
       data-testid="shadow-research-candidate"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="app-type-overline text-[var(--app-muted)]">
             {candidate.recommendation.replace(/_/g, ' ')}
           </div>
-          <h3 className="mt-2 text-base font-semibold text-[var(--app-text)]">
+          <h3 className="mt-1 text-sm font-semibold text-[var(--app-text)]">
             {comparison.economic_hypothesis || candidate.draft_id}
           </h3>
         </div>
@@ -108,7 +108,7 @@ export function CandidateCard({
       </div>
 
       {comparison.baseline && comparison.candidate ? (
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <div className="mt-2.5 grid gap-2 lg:grid-cols-2">
           <MetricComparison
             label={copy.baseline}
             metrics={comparison.baseline}
@@ -120,7 +120,7 @@ export function CandidateCard({
         </div>
       ) : null}
 
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
+      <div className="mt-2.5 grid gap-2 md:grid-cols-2">
         <EvidenceList
           items={
             evidenceGate.blockers.length
@@ -162,16 +162,16 @@ export function CandidateCard({
       ) : null}
 
       {eligible ? (
-        <div className="mt-5 border-t border-[var(--app-divider)] pt-4">
+        <div className="mt-3 border-t border-[var(--app-divider)] pt-2.5">
           <label className="text-xs font-semibold text-[var(--app-text)]">
             {copy.approvalNote}
             <textarea
-              className="app-input mt-2 min-h-20 w-full resize-y"
+              className="app-input mt-1.5 min-h-12 w-full resize-y py-1 text-xs"
               onChange={(event) => onNoteChange(event.target.value)}
               value={notes[candidate.candidate_id] ?? ''}
             />
           </label>
-          <label className="mt-3 flex items-start gap-2 text-xs leading-5 text-[var(--app-muted)]">
+          <label className="mt-2 flex items-start gap-2 text-xs leading-5 text-[var(--app-muted)]">
             <input
               checked={approvals[candidate.candidate_id] ?? false}
               className="mt-1"
@@ -181,7 +181,7 @@ export function CandidateCard({
             <span>{copy.approvalConfirm}</span>
           </label>
           <button
-            className="app-button-primary mt-3 min-h-11 px-4 py-2 text-sm font-semibold"
+            className="app-button-primary mt-2 min-h-9 px-3 py-1.5 text-xs font-semibold"
             disabled={
               pending ||
               !approvals[candidate.candidate_id] ||
@@ -199,16 +199,16 @@ export function CandidateCard({
         </div>
       ) : null}
       {revocable ? (
-        <div className="mt-5 border-t border-[var(--app-divider)] pt-4">
+        <div className="mt-3 border-t border-[var(--app-divider)] pt-2.5">
           <label className="text-xs font-semibold text-[var(--app-text)]">
             {copy.pauseNote}
             <textarea
-              className="app-input mt-2 min-h-20 w-full resize-y"
+              className="app-input mt-1.5 min-h-12 w-full resize-y py-1 text-xs"
               onChange={(event) => onPauseNoteChange(event.target.value)}
               value={pauseNotes[candidate.candidate_id] ?? ''}
             />
           </label>
-          <label className="mt-3 flex items-start gap-2 text-xs leading-5 text-[var(--app-muted)]">
+          <label className="mt-2 flex items-start gap-2 text-xs leading-5 text-[var(--app-muted)]">
             <input
               checked={pauseConfirmations[candidate.candidate_id] ?? false}
               className="mt-1"

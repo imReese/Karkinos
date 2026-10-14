@@ -128,7 +128,7 @@ export function ShadowResearchCandidateWorkspace({
         ? copy.approved
         : candidate.status.replace(/_/g, ' ');
     const rowClassName = [
-      'grid w-full min-w-0 gap-2 px-3 py-3 text-left transition-all rounded-[var(--app-radius-control)] sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center',
+      'grid w-full min-w-0 gap-1.5 px-2.5 py-1.5 text-left transition-all rounded-[var(--app-radius-control)] sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center',
       selected
         ? 'bg-[color-mix(in_srgb,var(--app-accent)_12%,transparent)] border border-[var(--app-accent)] shadow-xs'
         : 'hover:bg-[color-mix(in_srgb,var(--app-surface-overlay)_45%,transparent)] border border-transparent',
@@ -145,10 +145,10 @@ export function ShadowResearchCandidateWorkspace({
         type="button"
       >
         <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold text-[var(--app-text)]">
+          <span className="block truncate text-xs font-semibold text-[var(--app-text)]">
             {candidate.comparison.economic_hypothesis || candidate.draft_id}
           </span>
-          <span className="app-type-micro mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[var(--app-text-tertiary)]">
+          <span className="app-type-micro mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[var(--app-text-tertiary)]">
             <span>{statusLabel}</span>
             {lineage ? (
               <span>
@@ -165,14 +165,14 @@ export function ShadowResearchCandidateWorkspace({
             <span>{formatTimestamp(candidate.updated_at)}</span>
           </span>
         </span>
-        <span className="flex shrink-0 flex-wrap items-center gap-1.5 sm:justify-end">
+        <span className="flex shrink-0 flex-wrap items-center gap-1 sm:justify-end">
           {verifiedWinnerCandidateIds.has(candidate.candidate_id) ? (
-            <span className="rounded-full border border-[var(--app-success-border)] bg-[var(--app-success-bg)] px-2 py-0.5 text-[length:var(--app-font-size-micro)] font-semibold text-[var(--app-success-text)]">
+            <span className="rounded-full border border-[var(--app-success-border)] bg-[var(--app-success-bg)] px-1.5 py-0.2 text-[length:var(--app-font-size-micro)] font-semibold text-[var(--app-success-text)]">
               {copy.winnerBadge}
             </span>
           ) : null}
           {verifiedResearchWinnerCandidateIds.has(candidate.candidate_id) ? (
-            <span className="rounded-full border border-[var(--app-divider)] px-2 py-0.5 text-[length:var(--app-font-size-micro)] font-semibold text-[var(--app-text-secondary)]">
+            <span className="rounded-full border border-[var(--app-divider)] px-1.5 py-0.2 text-[length:var(--app-font-size-micro)] font-semibold text-[var(--app-text-secondary)]">
               {copy.researchWinnerBadge}
             </span>
           ) : null}
@@ -232,20 +232,20 @@ export function ShadowResearchCandidateWorkspace({
 
   return (
     <section
-      className="mt-6 min-w-0"
+      className="mt-3 min-w-0"
       data-testid="shadow-research-candidate-workspace"
     >
-      <div className="border-b border-[var(--app-divider)] pb-2">
+      <div className="border-b border-[var(--app-divider)] pb-1.5">
         <h3 className="app-type-section-title text-[var(--app-text)]">
           {copy.candidateRegistry}
         </h3>
         <p className="sr-only">{copy.candidateRegistryDetail}</p>
       </div>
 
-      <div className="mt-3 grid min-w-0 gap-5 2xl:grid-cols-[minmax(300px,0.42fr)_minmax(0,1fr)] 2xl:items-start">
+      <div className="mt-2.5 grid min-w-0 gap-3 xl:grid-cols-[minmax(240px,0.38fr)_minmax(0,1fr)] xl:items-start">
         <div className="min-w-0">
-          <div className="flex items-baseline justify-between gap-3 pb-2">
-            <h4 className="text-sm font-semibold text-[var(--app-text)]">
+          <div className="flex items-baseline justify-between gap-2 pb-1.5">
+            <h4 className="text-xs font-semibold text-[var(--app-text)]">
               {copy.currentCandidates}
             </h4>
             <span className="app-type-micro tabular-nums text-[var(--app-text-tertiary)]">
@@ -261,16 +261,16 @@ export function ShadowResearchCandidateWorkspace({
 
           {historical.length ? (
             <details
-              className="mt-4 border-y border-[var(--app-divider)]"
+              className="mt-2.5 border-y border-[var(--app-divider)]"
               onToggle={(event) => setHistoryOpen(event.currentTarget.open)}
               open={historyOpen}
             >
-              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-3">
+              <summary className="flex min-h-8 cursor-pointer list-none items-center justify-between gap-3 py-1.5">
                 <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-[var(--app-text)]">
+                  <span className="block text-xs font-semibold text-[var(--app-text)]">
                     {copy.candidateHistory}
                   </span>
-                  <span className="app-type-micro mt-0.5 block text-[var(--app-text-secondary)]">
+                  <span className="app-type-micro block text-[var(--app-text-secondary)]">
                     {copy.candidateHistoryDetail(historical.length)}
                   </span>
                 </span>

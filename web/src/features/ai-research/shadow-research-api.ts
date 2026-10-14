@@ -75,7 +75,15 @@ export type ShadowResearchCandidate = {
     research_capital_mode?: 'normalized_notional' | 'account_bound';
     account_qualification_status?: 'not_evaluated' | 'passed' | 'blocked';
     research_gate?: { status: string; blockers: string[] };
-    promotion_gate: { status: string; blockers: string[] };
+    promotion_gate: {
+      status: string;
+      blockers: string[];
+      checks?: Array<{
+        name: string;
+        status: string;
+        evidence?: Record<string, unknown> | null;
+      }>;
+    };
   };
   automatic_strategy_replacement_enabled: false;
   production_strategy_mutation_enabled: false;

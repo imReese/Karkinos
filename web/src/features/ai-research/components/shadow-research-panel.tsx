@@ -25,6 +25,7 @@ import {
   hasValidResearchDates,
 } from './shadow-research-policy-card';
 import { StatusMetric } from './shadow-research-view';
+import { StrategyChampionSpotlight } from './strategy-champion-spotlight';
 
 function isFiveRoundPolicy(policy: {
   max_provider_calls_per_market_date: number;
@@ -366,120 +367,151 @@ export function ShadowResearchPanel() {
   return (
     <section
       aria-labelledby="shadow-research-title"
-      className="app-ai-research-boundary min-w-0 p-4 sm:p-5"
+      className="app-ai-research-boundary min-w-0 p-3 sm:p-3.5"
       data-evidence-kind="persisted-ai-shadow-research"
       data-testid="shadow-research-panel"
     >
       <ShadowResearchHeader copy={copy} status={status} />
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <StatusMetric
-          label={copy.dailyWinner}
-          value={dailyOutcome.value}
-          detail={dailyOutcome.detail}
-        />
-        <StatusMetric
-          label={copy.backup}
-          value={
-            latestBackup?.verification_status === 'verified'
-              ? copy.backupVerified
-              : latestBackup?.verification_status || '—'
-          }
-          detail={latestBackup?.artifact_fingerprint || '—'}
+      {/* 1. 现役优胜策略聚焦点与代际矩阵 (Champion Spotlight & Generation Matrix) */}
+      <div className="mt-2.5">
+        <StrategyChampionSpotlight status={status} />
+      </div>
+
+      {/* 2. 账户资格复核 (Account Qualification Review) */}
+      <div className="mt-3">
+        <ShadowResearchQualificationReview
+          approvedBy={policy.updated_by}
+          copy={copy}
+          locale={locale}
+          onApprove={async (
+            qualificationCandidateId,
+            approvalNotes,
+            forwardReview,
+          ) => {
+            await approveQualification.mutateAsync({
+              qualification_candidate_id: qualificationCandidateId,
+              approved_by: policy.updated_by,
+              notes: approvalNotes,
+              ...(forwardReview ? { forward_review: forwardReview } : {}),
+            });
+          }}
+          pending={approveQualification.isPending}
+          status={status}
         />
       </div>
 
-      <ShadowResearchUsageMetrics
-        copy={copy}
-        status={status}
-        policy={policy}
-        providerWindow={providerWindow}
-      />
-      <p className="sr-only">{copy.fiveCandidateRule}</p>
+      {/* 3. 候选策略详细工作区 (Candidate Workspace) */}
+      <div className="mt-3">
+        <ShadowResearchCandidateWorkspace
+          approvals={approvals}
+          candidates={status?.candidates ?? []}
+          copy={copy}
+          loading={query.isLoading}
+          latestRunId={status?.runs[0]?.run_id ?? null}
+          notes={notes}
+          onApprovalChange={setApprovals}
+          onApprove={approveCandidate}
+          onNoteChange={setNotes}
+          onPause={pauseCandidate}
+          onPauseConfirmationChange={setPauseConfirmations}
+          onPauseNoteChange={setPauseNotes}
+          pauseConfirmations={pauseConfirmations}
+          pauseNotes={pauseNotes}
+          pending={approve.isPending || pause.isPending}
+          promotionStates={promotionStates}
+          verifiedResearchWinnerCandidateIds={verifiedCandidateIds.research}
+          verifiedWinnerCandidateIds={verifiedCandidateIds.promotion}
+        />
+      </div>
 
-      <ShadowResearchPolicyCard
-        copy={copy}
-        datesValid={datesValid}
-        draftPolicyReady={draftPolicyReady}
-        locale={locale}
-        onRun={() => run.mutate()}
-        onSavePolicy={() => void savePolicy()}
-        persistedPolicyReady={persistedPolicyReady}
-        policy={policy}
-        policyConfirmed={policyConfirmed}
-        policyDirty={policyDirty}
-        providerWindowEligible={providerWindowEligible}
-        runPending={run.isPending}
-        runReceipt={run.isPending ? undefined : run.data}
-        setPolicy={(update) => {
-          run.reset();
-          setPolicy(update);
-          setPolicyConfirmed(false);
-        }}
-        setPolicyConfirmed={setPolicyConfirmed}
-        status={status}
-        updatePolicyPending={updatePolicy.isPending}
-      />
-      {updatePolicy.isSuccess && !policyDirty ? (
-        <p
-          role="status"
-          className="mt-3 text-sm text-[var(--app-success-text)]"
-        >
-          {copy.policySaved}
-        </p>
-      ) : null}
-      {(query.isError ||
-        updatePolicy.isError ||
-        run.isError ||
-        approve.isError ||
-        approveQualification.isError ||
-        pause.isError ||
-        promotionStates.isError) && (
-        <p className="mt-3 text-sm text-[var(--app-danger-text)]">
-          {copy.failure}
-        </p>
-      )}
+      {/* 4. 自动化引擎运行诊断与策略配置 (Automation Engine Diagnostics & Policy Settings) */}
+      <details className="group mt-3 rounded-lg border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 p-3 transition-all">
+        <summary className="flex cursor-pointer items-center justify-between font-semibold text-xs text-[var(--app-text)] hover:text-[var(--app-accent)] select-none">
+          <span className="flex items-center gap-2">
+            <span>
+              {locale === 'zh'
+                ? '⚙️ 自动化研究运行诊断与策略配置'
+                : '⚙️ Automation Diagnostics & Policy Configuration'}
+            </span>
+          </span>
+          <span className="text-[var(--app-text-tertiary)] text-xs">
+            {locale === 'zh' ? '收起/展开配置' : 'Toggle Settings'}
+          </span>
+        </summary>
 
-      <ShadowResearchQualificationReview
-        approvedBy={policy.updated_by}
-        copy={copy}
-        locale={locale}
-        onApprove={async (
-          qualificationCandidateId,
-          approvalNotes,
-          forwardReview,
-        ) => {
-          await approveQualification.mutateAsync({
-            qualification_candidate_id: qualificationCandidateId,
-            approved_by: policy.updated_by,
-            notes: approvalNotes,
-            ...(forwardReview ? { forward_review: forwardReview } : {}),
-          });
-        }}
-        pending={approveQualification.isPending}
-        status={status}
-      />
+        <div className="mt-4 pt-3 border-t border-[var(--app-divider)]/60">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <StatusMetric
+              label={copy.dailyWinner}
+              value={dailyOutcome.value}
+              detail={dailyOutcome.detail}
+            />
+            <StatusMetric
+              label={copy.backup}
+              value={
+                latestBackup?.verification_status === 'verified'
+                  ? copy.backupVerified
+                  : latestBackup?.verification_status || '—'
+              }
+              detail={latestBackup?.artifact_fingerprint || '—'}
+            />
+          </div>
 
-      <ShadowResearchCandidateWorkspace
-        approvals={approvals}
-        candidates={status?.candidates ?? []}
-        copy={copy}
-        loading={query.isLoading}
-        latestRunId={status?.runs[0]?.run_id ?? null}
-        notes={notes}
-        onApprovalChange={setApprovals}
-        onApprove={approveCandidate}
-        onNoteChange={setNotes}
-        onPause={pauseCandidate}
-        onPauseConfirmationChange={setPauseConfirmations}
-        onPauseNoteChange={setPauseNotes}
-        pauseConfirmations={pauseConfirmations}
-        pauseNotes={pauseNotes}
-        pending={approve.isPending || pause.isPending}
-        promotionStates={promotionStates}
-        verifiedResearchWinnerCandidateIds={verifiedCandidateIds.research}
-        verifiedWinnerCandidateIds={verifiedCandidateIds.promotion}
-      />
+          <ShadowResearchUsageMetrics
+            copy={copy}
+            status={status}
+            policy={policy}
+            providerWindow={providerWindow}
+          />
+          <p className="sr-only">{copy.fiveCandidateRule}</p>
+
+          <div className="mt-4">
+            <ShadowResearchPolicyCard
+              copy={copy}
+              datesValid={datesValid}
+              draftPolicyReady={draftPolicyReady}
+              locale={locale}
+              onRun={() => run.mutate()}
+              onSavePolicy={() => void savePolicy()}
+              persistedPolicyReady={persistedPolicyReady}
+              policy={policy}
+              policyConfirmed={policyConfirmed}
+              policyDirty={policyDirty}
+              providerWindowEligible={providerWindowEligible}
+              runPending={run.isPending}
+              runReceipt={run.isPending ? undefined : run.data}
+              setPolicy={(update) => {
+                run.reset();
+                setPolicy(update);
+                setPolicyConfirmed(false);
+              }}
+              setPolicyConfirmed={setPolicyConfirmed}
+              status={status}
+              updatePolicyPending={updatePolicy.isPending}
+            />
+          </div>
+          {updatePolicy.isSuccess && !policyDirty ? (
+            <p
+              role="status"
+              className="mt-3 text-sm text-[var(--app-success-text)]"
+            >
+              {copy.policySaved}
+            </p>
+          ) : null}
+          {(query.isError ||
+            updatePolicy.isError ||
+            run.isError ||
+            approve.isError ||
+            approveQualification.isError ||
+            pause.isError ||
+            promotionStates.isError) && (
+            <p className="mt-3 text-sm text-[var(--app-danger-text)]">
+              {copy.failure}
+            </p>
+          )}
+        </div>
+      </details>
     </section>
   );
 }
@@ -518,20 +550,21 @@ function ShadowResearchHeader({
   status: ReturnType<typeof useShadowResearchAutomationQuery>['data'];
 }) {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--app-divider)] pb-4">
-      <div className="min-w-0 max-w-4xl">
-        <div className="app-kicker">{copy.kicker}</div>
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--app-divider)] pb-2 mb-2">
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="app-kicker text-xs font-semibold">{copy.kicker}</span>
+        <span className="text-[var(--app-divider)]">/</span>
         <h2
-          className="mt-1.5 text-base font-semibold text-[var(--app-text)] sm:text-lg"
+          className="text-sm font-bold text-[var(--app-text)] sm:text-base truncate"
           id="shadow-research-title"
         >
           {copy.title}
         </h2>
         <p className="sr-only">{copy.detail}</p>
       </div>
-      <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+      <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
         <span
-          className={`rounded-full border px-2.5 py-1 ${
+          className={`rounded-full border px-2 py-0.5 text-xs ${
             status?.policy.enabled
               ? 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success-text)]'
               : 'border-[var(--app-divider)] text-[var(--app-text-secondary)]'
@@ -539,7 +572,7 @@ function ShadowResearchHeader({
         >
           {status?.policy.enabled ? copy.enabled : copy.disabled}
         </span>
-        <span className="rounded-full border border-[var(--app-divider)] px-2.5 py-1 text-[var(--app-text-secondary)]">
+        <span className="rounded-full border border-[var(--app-divider)] px-2 py-0.5 text-xs text-[var(--app-text-secondary)]">
           {copy.killSwitch}:{' '}
           {status?.kill_switch.enabled
             ? status.kill_switch.reason || 'ON'
