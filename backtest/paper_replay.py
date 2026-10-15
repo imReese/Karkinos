@@ -61,9 +61,10 @@ def _decimal_text(value: Decimal) -> str:
 class _PublishedTargetReplay(BacktestEngine):
     """Adapt published targets and collect facts around canonical execution."""
 
-    def __init__(self, *, book_id, schedule, **kwargs):
+    def __init__(self, *, book_id, schedule, session_instruments=None, **kwargs):
         self.book_id = book_id
         self.schedule = schedule
+        self._session_instruments = session_instruments
         self.sessions: list[dict[str, Any]] = []
         self.paper_fills: list[dict[str, Any]] = []
         self.attempts: list[dict[str, Any]] = []
@@ -76,15 +77,23 @@ class _PublishedTargetReplay(BacktestEngine):
             db=None,
             strict_event_errors=True,
             session_completed=self._capture_session,
+            session_decision=self._stage_next_targets
+            if session_instruments is not None
+            else None,
             **kwargs,
         )
 
     def _on_market_event(self, event: MarketEvent) -> None:
         session = event.timestamp.astimezone(_SHANGHAI).date()
         publication = self.schedule.get(session) if not self._warming_up else None
+        if (
+            publication is not None
+            and str(event.symbol) not in publication.target_weights
+        ):
+            publication = None
         self._publication = publication
         self._requested_order = None
-        if publication is not None:
+        if publication is not None and self._session_instruments is None:
             self._pending_signals[event.symbol] = SignalEvent(
                 timestamp=publication.published_at,
                 strategy_id=publication.id,
@@ -156,6 +165,22 @@ class _PublishedTargetReplay(BacktestEngine):
             )
         self._publication = None
 
+    def _stage_next_targets(self, session: date) -> None:
+        """Stage one actually published future-session target before sorting fills."""
+        following = [day for day in self._session_instruments if day > session]
+        if not following:
+            return
+        publication = self.schedule.get(min(following))
+        if publication is None:
+            return
+        for symbol, weight in publication.target_weights.items():
+            self._pending_signals[Symbol(symbol)] = SignalEvent(
+                timestamp=publication.published_at,
+                strategy_id=publication.id,
+                symbol=Symbol(symbol),
+                target_weight=weight,
+            )
+
     def _on_order_event(self, event: OrderEvent) -> None:
         publication = self._publication
         if publication is None:
@@ -219,6 +244,18 @@ class _PublishedTargetReplay(BacktestEngine):
         )
 
     def _capture_session(self, session: date) -> None:
+        if self._session_instruments is not None:
+            expected = set(self._session_instruments.get(session, ()))
+            missing = [
+                str(symbol)
+                for symbol, position in self.portfolio.positions.items()
+                if position.quantity > ZERO and symbol not in expected
+            ]
+            if missing:
+                raise ValueError(
+                    "paper_replay_holding_valuation_missing:"
+                    + ",".join(sorted(missing))
+                )
         positions = {
             str(symbol): {
                 field: _decimal_text(getattr(position, field))
@@ -295,6 +332,9 @@ def replay_paper_book(
     cost_config: BacktestExecutionConfig | None = None,
     distributions: Sequence[StockDistribution] = (),
     include_share_distributions: bool = True,
+    session_instruments: Mapping[date, Sequence[Symbol]] | None = None,
+    max_dataset_rows: int = 200_000,
+    max_instruments: int = 50,
 ) -> dict[str, Any]:
     """Replay a complete bounded paper prefix; never access a DB or providers.
 
@@ -311,8 +351,8 @@ def replay_paper_book(
         or type(evaluation_start) is not date
         or type(through_session) is not date
         or evaluation_start > through_session
-        or not 1 <= len(instruments) <= 50
-        or not 1 <= len(bars) <= 200_000
+        or not 1 <= len(instruments) <= max_instruments
+        or not 1 <= len(bars) <= max_dataset_rows
         or len(publications) > 10_000
         or len(distributions) > 10_000
     ):
@@ -358,8 +398,20 @@ def replay_paper_book(
         or active_days[0] != evaluation_start
         or active_days[-1] != through_session
         or not warmup_days
-        or sessions[max(warmup_days)] != universe
-        or any(sessions[day] != universe for day in active_days)
+        or (
+            session_instruments is None
+            and (
+                sessions[max(warmup_days)] != universe
+                or any(sessions[day] != universe for day in active_days)
+            )
+        )
+        or (
+            session_instruments is not None
+            and any(
+                sessions[day] != set(session_instruments.get(day, ()))
+                for day in [max(warmup_days), *active_days]
+            )
+        )
     ):
         raise ValueError("paper_replay_session_bars_missing")
     schedule = {}
@@ -382,7 +434,11 @@ def replay_paper_book(
         ):
             raise ValueError("paper_replay_publication_too_late")
         if (
-            set(publication.target_weights) != universe
+            (
+                set(publication.target_weights) != universe
+                if session_instruments is None
+                else not set(publication.target_weights) <= universe
+            )
             or any(
                 not isinstance(weight, Decimal)
                 or not weight.is_finite()
@@ -397,6 +453,17 @@ def replay_paper_book(
             and publication.reference_session not in sessions
         ):
             raise ValueError("paper_replay_target_close_missing")
+        if (
+            session_instruments is not None
+            and publication.reference_session <= through_session
+            and not {
+                symbol
+                for symbol, weight in publication.target_weights.items()
+                if weight > ZERO
+            }
+            <= sessions[publication.reference_session]
+        ):
+            raise ValueError("paper_replay_target_close_missing")
         identities.add(publication.id)
         schedule[publication.reference_session] = publication
     config = cost_config or BacktestExecutionConfig()
@@ -405,6 +472,7 @@ def replay_paper_book(
     engine = _PublishedTargetReplay(
         book_id=book_id,
         schedule=schedule,
+        session_instruments=session_instruments,
         instruments=dict(instruments),
         data_handlers=grouped,
         initial_cash=initial_cash,

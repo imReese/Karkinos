@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from server.projections.valuation_snapshot import (
@@ -49,9 +51,37 @@ def build_current_valuation_snapshot(
     return payload
 
 
+def portfolio_equity_from_valuation(db: Any, valuation: Mapping[str, Any]) -> Decimal:
+    """Replay the exact current ledger against one complete valuation's marks."""
+    from server.ledger.models import LedgerEntry
+    from server.projections.service import build_portfolio_projection
+
+    if valuation.get("status") != "complete":
+        raise ValueError("portfolio_equity_valuation_incomplete")
+    identity = ledger_identity_from_rows(
+        [dict(row) for row in db.get_all_ledger_entries_sync()]
+    )
+    if any(
+        identity[key] != valuation.get(key)
+        for key in ("ledger_cutoff_id", "ledger_fingerprint")
+    ):
+        raise ValueError("portfolio_equity_ledger_identity_changed")
+    projection = build_portfolio_projection(
+        [LedgerEntry.from_row(row) for row in identity["rows"]],
+        latest_quotes={
+            str(row["symbol"]): dict(row) for row in valuation.get("quotes", [])
+        },
+    )
+    equity = projection.total_equity
+    if equity is None or not equity.is_finite() or equity <= 0:
+        raise ValueError("portfolio_equity_not_positive_or_valued")
+    return equity
+
+
 __all__ = [
     "VALUATION_POLICY_VERSION",
     "build_current_valuation_snapshot",
+    "portfolio_equity_from_valuation",
     "is_asset_class_valuation_healthy",
     "ledger_identity_from_rows",
     "load_persisted_quote_rows",

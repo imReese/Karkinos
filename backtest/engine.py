@@ -111,11 +111,13 @@ class BacktestEngine:
         warmup_final_bar_targets: bool = False,
         strict_event_errors: bool = False,
         session_completed: Callable[[date], None] | None = None,
+        session_decision: Callable[[date], None] | None = None,
     ) -> None:
         if evaluation_start is not None and type(evaluation_start) is not date:
             raise ValueError("backtest_evaluation_start_invalid")
         self.event_bus = EventBus(raise_handler_errors=strict_event_errors)
         self._session_completed = session_completed
+        self._session_decision = session_decision
         self.clock = SimulatedClock()
         self.strategy = strategy
         self.instruments = instruments
@@ -271,6 +273,9 @@ class BacktestEngine:
                     self.clock.advance_to(market_event.timestamp)
                     self.event_bus.publish_and_process(market_event)
                     self.event_bus.drain()
+                if self._session_decision is not None:
+                    self._session_decision(current_date)
+                    self.event_bus.drain()
                 continue
             if self.portfolio.equity_curve:
                 self.portfolio.advance_settlement_day()
@@ -289,6 +294,24 @@ class BacktestEngine:
                 )
                 for symbol, position in self.portfolio.positions.items():
                     self.strategy.on_position_update(symbol, position.quantity)
+            if self._session_decision is not None:
+                # One simultaneous daily close values the complete book before
+                # any next-session target is executed. Exits execute first but
+                # only actual proceeds can finance subsequent buys.
+                if len({event.timestamp for event in session_events}) != 1:
+                    raise ValueError(
+                        "session_portfolio_requires_simultaneous_daily_bars"
+                    )
+                self.portfolio.mark_to_market(
+                    {event.symbol: event.close for event in session_events}
+                )
+                session_events.sort(
+                    key=lambda event: (
+                        self._pending_signals.get(event.symbol) is None
+                        or self._pending_signals[event.symbol].target_weight != 0,
+                        str(event.symbol),
+                    )
+                )
             for market_event in session_events:
                 self.clock.advance_to(market_event.timestamp)
                 prices = {market_event.symbol: market_event.close}
@@ -303,6 +326,9 @@ class BacktestEngine:
                 self.portfolio.record_equity(market_event.timestamp, prices)
             if self._dividend_replay is not None:
                 self._dividend_replay.after_session(current_date, self.portfolio)
+            if self._session_decision is not None:
+                self._session_decision(current_date)
+                self.event_bus.drain()
             if self._session_completed is not None:
                 self._session_completed(current_date)
 

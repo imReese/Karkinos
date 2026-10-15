@@ -43,8 +43,8 @@ class Strategy(ABC):
     def emit_signal(
         self,
         symbol: Symbol,
-        target_weight: float,
-        price: float | None = None,
+        target_weight: float | Decimal,
+        price: float | Decimal | None = None,
     ) -> None:
         """发射目标权重信号。"""
         ts = self._last_timestamp or datetime.now()

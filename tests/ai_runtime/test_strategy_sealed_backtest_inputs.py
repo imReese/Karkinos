@@ -424,6 +424,48 @@ def test_formula_adapter_consumes_immutable_dataset_regardless_of_mutated_cache_
     assert validated["snapshot_id"] == snapshot["snapshot_id"]
 
 
+def test_explicit_application_research_root_is_independent_of_market_cache(tmp_path):
+    import shutil
+
+    from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
+    from tests.server.test_research_datasets import _backtest_request, _publish
+
+    market = DataStore(tmp_path / "external-market-data")
+    research_root = tmp_path / "application" / "research"
+    ref = _publish(research_root)
+    request = _backtest_request(ref)
+    _, handlers, binding = load_dataset_backtest_inputs(research_root, request)
+    snapshot = build_backtest_dataset_snapshot(
+        start_date=request.start_date,
+        end_date=request.end_date,
+        configured_source="tdx",
+        source_names=["tdx"],
+        data_handlers=handlers,
+        store=market,
+        research_dataset_binding=binding,
+    )
+    selection = StrategyResearchSelection(
+        saved_backtest_result_id=1,
+        universe=(str(_SYMBOL),),
+        asset_classes=("stock",),
+        dataset_snapshot_id=snapshot["snapshot_id"],
+        start_date=request.start_date,
+        end_date=request.end_date,
+        frequency="1d",
+        initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
+    )
+    actual = RestrictedFormulaBacktestAdapter(
+        data_store=market, research_root=research_root
+    ).validate_selection(selection, expected_dataset_snapshot=snapshot)
+    assert actual == snapshot
+    # A valid cache-side duplicate cannot override an explicitly selected CAS.
+    shutil.copytree(research_root, market._root / "research")
+    with pytest.raises(StrategyResearchRejected, match="immutable_dataset_unreadable"):
+        RestrictedFormulaBacktestAdapter(
+            data_store=market, research_root=tmp_path / "missing-research"
+        ).validate_selection(selection, expected_dataset_snapshot=snapshot)
+
+
 def test_formula_adapter_rejects_missing_or_corrupted_immutable_dataset(tmp_path):
     from server.ai_runtime.strategy_research_backtest import _load_bound_inputs
     from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs

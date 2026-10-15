@@ -104,6 +104,7 @@ def build_backtest_fee_tax_evidence(
             "fee_notional_envelope_enforced",
             "fee_notional_envelope_fingerprint",
             "fee_notional_covered_asset_classes",
+            "fee_schedule_reviewed_asset_classes",
         }
     }
     core = {

@@ -2,20 +2,55 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from decimal import Decimal
 from typing import Any
 
-from backtest.costs import research_friction_assumptions
+from backtest.costs import RESEARCH_SLIPPAGE_BPS, research_friction_assumptions
 from backtest.engine import BacktestExecutionConfig
-from core.types import GOLD_SPOT_COMMISSION_RATE, CommissionType
+from core.types import GOLD_SPOT_COMMISSION_RATE, CommissionType, OrderSide
+from domain.instrument import Instrument
 from execution.commission import (
     BondExchangeCommission,
+    CommissionCalculator,
     ETFCommission,
     MultiAssetCommission,
     StockACommission,
 )
 from execution.slippage import PercentSlippage
 from server.contracts.http.strategy_models import BacktestCostAssumptions
+from server.contracts.reviewed_fee_schedule import ReviewedFeeScheduleRejected
+from server.services.reviewed_fee_schedule import resolve_frozen_deployment_fee_schedule
+
+
+def quote_formula_purchase(
+    calculator: CommissionCalculator | None,
+    instrument: Instrument,
+    symbol: str,
+    price: Decimal,
+    quantity: Decimal,
+    *,
+    slippage_bps: Decimal = RESEARCH_SLIPPAGE_BPS,
+) -> Decimal | None:
+    """Quote complete purchase costs only inside the reviewed size envelope."""
+    calculator = calculator or MultiAssetCommission()
+    slipped = price * (Decimal(1) + slippage_bps / Decimal(10000))
+    try:
+        if isinstance(calculator, MultiAssetCommission):
+            fee = calculator.breakdown_for(
+                instrument.commission_type,
+                OrderSide.BUY,
+                slipped,
+                quantity,
+                symbol=symbol,
+            ).total_fee
+        else:
+            fee = calculator.calculate(OrderSide.BUY, slipped, quantity)
+    except ReviewedFeeScheduleRejected as exc:
+        if str(exc).startswith("reviewed_fee_schedule_notional_envelope_exceeded:"):
+            return None
+        raise
+    return slipped * quantity + fee
 
 
 def resolve_backtest_costs(
@@ -74,6 +109,31 @@ def resolve_backtest_costs(
         ),
         effective,
     )
+
+
+def resolve_paper_book_costs(db, policy, universe):
+    """Use the exact reviewed schedule when a deployment reservation bound one."""
+    costs, effective = resolve_backtest_costs(
+        BacktestCostAssumptions.model_validate(policy["cost_inputs"])
+    )
+    if binding := policy.get("fee_schedule_binding"):
+        reviewed = resolve_frozen_deployment_fee_schedule(db, binding, tuple(universe))
+        costs = replace(costs, commission_calc=reviewed.commission_calc)
+        effective = {
+            **{
+                key: value
+                for key, value in effective.items()
+                if key not in {"stock", "etf", "bond", "gold", "limitations"}
+            },
+            "source": "reviewed_account_fee_schedule",
+            "commission_model_reference": reviewed.cost_model_reference,
+            "reviewed_fee_evidence": reviewed.fee_evidence,
+            "limitations": [
+                "Slippage and participation remain research assumptions, not calibrated execution evidence.",
+                "Daily-bar participation caps model partial fills but not intraday order-book liquidity.",
+            ],
+        }
+    return costs, effective
 
 
 def _fee_parameters(model: StockACommission | ETFCommission) -> dict[str, str]:

@@ -133,7 +133,8 @@ class StrategyResearchCritiqueMixin:
             )
         await asyncio.to_thread(
             RestrictedFormulaBacktestAdapter(
-                data_store=self._data_store
+                data_store=self._data_store,
+                research_root=self._db_path.parent / "research",
             ).validate_selection,
             selection,
             expected_dataset_snapshot=dataset_snapshot,

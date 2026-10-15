@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -12,19 +13,23 @@ from server.contracts.http.settings_models import BoardBuyPermissionsUpdate
 from server.routes.settings import create_router
 from server.services.account_board_permissions import (
     BOARD_PERMISSION_SOURCE,
+    entry_board_policy_blocker,
+    entry_board_policy_symbols,
+    freeze_entry_board_policy,
     resolve_board_buy_permissions,
+    validate_entry_board_policy,
 )
 from server.services.market_hours import get_shanghai_now
 
 
 def _review(
-    reviewed_at: str, *, chinext: str = "enabled"
+    reviewed_at: str, *, chinext: str = "enabled", star: str = "disabled"
 ) -> AccountBoardPermissionsConfig:
     return AccountBoardPermissionsConfig(
         reviewed_at=reviewed_at,
         reviewed_by="local_user",
         source=BOARD_PERMISSION_SOURCE,
-        boards={"chinext": chinext, "star": "disabled"},
+        boards={"chinext": chinext, "star": star},
     )
 
 
@@ -52,6 +57,48 @@ def test_board_permission_review_is_dated_and_unknown_fails_closed() -> None:
         "star": "unknown",
         "beijing": "unknown",
     }
+
+
+def test_frozen_entry_mask_is_explicit_and_star_never_silently_enabled():
+    unknown = freeze_entry_board_policy(ServerConfig(), "2026-09-24")
+    assert unknown["allowed_boards"] == ["main"]
+    assert entry_board_policy_blocker(unknown, {}, decision_date="2026-09-24") is None
+    config = ServerConfig(
+        account_board_permissions=_review("2026-09-24T01:00:00+00:00", star="enabled")
+    )
+    frozen = freeze_entry_board_policy(config, "2026-09-24")
+    assert frozen["allowed_boards"] == ["chinext", "main"]
+    assert entry_board_policy_symbols(
+        frozen, ["600000", "000001", "300001", "688001", "920001"]
+    ) == {"600000", "000001", "300001"}
+    assert frozen["excluded_boards"]["star"] == "unsupported_trade_unit"
+    current = resolve_board_buy_permissions(config, "2026-09-24")
+    assert (
+        entry_board_policy_blocker(frozen, current, decision_date="2026-09-24") is None
+    )
+    for changed in (
+        {**current, "resolved_for_date": "2026-09-23"},
+        {**current, "evidence_fingerprint": None},
+        {**current, "boards": {"chinext": "disabled"}},
+    ):
+        assert entry_board_policy_blocker(frozen, changed, decision_date="2026-09-24")
+    renewed = ServerConfig(
+        account_board_permissions=_review("2026-10-23T01:00:00+00:00")
+    )
+    assert (
+        entry_board_policy_blocker(
+            frozen,
+            resolve_board_buy_permissions(renewed, "2026-10-24"),
+            decision_date="2026-10-24",
+        )
+        is None
+    )
+    modified = deepcopy(frozen)
+    modified["allowed_boards"].append("star")
+    import pytest
+
+    with pytest.raises(ValueError, match="entry_board_policy_invalid"):
+        validate_entry_board_policy(modified)
 
 
 def test_board_permission_review_persists_and_reloads_locally(

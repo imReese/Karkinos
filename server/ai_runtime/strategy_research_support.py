@@ -301,6 +301,8 @@ def selection_from_session(session: Mapping[str, Any]) -> StrategyResearchSelect
             if selection.get("sealed_end_date") is not None
             else None
         ),
+        deployment_scope=selection.get("deployment_scope"),
+        portfolio_policy_id=selection.get("portfolio_policy_id"),
     )
 
 

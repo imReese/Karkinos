@@ -202,6 +202,209 @@ def test_reviewed_schedule_preview_binds_exact_reconciled_trade_components(
 
 @pytest.mark.unit
 @pytest.mark.trading_safety
+def test_final_fee_binding_reopens_review_and_rejects_revocation(tmp_path, monkeypatch):
+    from functools import partial
+
+    from server.services.recommendation_publication import (
+        freeze_deployment_fee_schedule,
+        resolve_frozen_deployment_fee_schedule,
+    )
+
+    state, imported = _state(tmp_path)
+    _patch_ready_account_truth(monkeypatch, imported)
+    preview = build_reviewed_fee_schedule_preview(
+        state,
+        effective_start_date="2026-01-01",
+        effective_end_date="2026-12-31",
+        reviewed_asset_classes=["stock"],
+    )
+    repository = ReviewedFeeScheduleReviewRepository(state.db._path)
+    review = repository.record_review(
+        preview=preview,
+        expected_preview_fingerprint=preview["preview_fingerprint"],
+        reviewer="synthetic_owner",
+        confirmation=REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION,
+    )
+    selection = SimpleNamespace(
+        start_date="2026-01-01",
+        end_date="2026-06-30",
+        universe=("600000.SH",),
+        asset_classes=("stock",),
+    )
+    grant = {"account_scope_fingerprint": review.account_truth_scope_fingerprint}
+    frozen = freeze_deployment_fee_schedule(
+        partial(resolve_reviewed_fee_schedule, state),
+        selection,
+        "2026-12-31",
+        grant,
+    )
+    assert set(frozen) == {
+        "review_id",
+        "review_fingerprint",
+        "cost_model_reference",
+        "fee_evidence",
+    }
+    resolved = resolve_frozen_deployment_fee_schedule(
+        state.db, frozen, selection.universe
+    )
+    assert resolved.review == review
+    assert resolved.commission_calc.fee_rule_version == frozen["cost_model_reference"]
+    with pytest.raises(ValueError, match="scope_invalid"):
+        freeze_deployment_fee_schedule(
+            partial(resolve_reviewed_fee_schedule, state),
+            selection,
+            "2026-12-31",
+            {"account_scope_fingerprint": "sha256:" + "0" * 64},
+        )
+    repository.revoke_latest(
+        expected_review_id=review.review_id,
+        expected_review_fingerprint=review.review_fingerprint,
+        reviewer="synthetic_owner",
+        confirmation=REVIEWED_FEE_SCHEDULE_REVOCATION_CONFIRMATION,
+    )
+    with pytest.raises(ValueError, match="frozen_fee_review_changed"):
+        resolve_frozen_deployment_fee_schedule(state.db, frozen, selection.universe)
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.parametrize(
+    ("decision_date", "buys_allowed"),
+    [
+        ("2025-12-31", False),
+        ("2026-01-01", True),
+        ("2026-12-31", True),
+        ("2027-01-01", False),
+    ],
+)
+def test_current_account_buys_require_reviewed_action_date_and_keep_exits(
+    tmp_path, monkeypatch, decision_date, buys_allowed
+):
+    from functools import partial
+
+    from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
+    from server.persistence.strategy_research import StrategyResearchAuditStore
+    from server.services.account_board_permissions import freeze_entry_board_policy
+    from server.services.market_universe_truth import MarketUniversePolicy
+    from server.services.promoted_strategy_universe_scan_support import (
+        account_eligible_signals,
+    )
+    from server.services.reviewed_fee_schedule import (
+        freeze_deployment_fee_schedule,
+        resolve_frozen_deployment_fee_schedule,
+    )
+
+    state, imported = _state(tmp_path)
+    _patch_ready_account_truth(monkeypatch, imported)
+    preview = build_reviewed_fee_schedule_preview(
+        state,
+        effective_start_date="2026-01-01",
+        effective_end_date="2026-12-31",
+        reviewed_asset_classes=["stock"],
+    )
+    review = ReviewedFeeScheduleReviewRepository(state.db._path).record_review(
+        preview=preview,
+        expected_preview_fingerprint=preview["preview_fingerprint"],
+        reviewer="synthetic_owner",
+        confirmation=REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION,
+    )
+    frozen = freeze_deployment_fee_schedule(
+        partial(resolve_reviewed_fee_schedule, state),
+        SimpleNamespace(
+            start_date="2026-01-01",
+            universe=("600000", "600001", "600002"),
+            asset_classes=("stock", "stock", "stock"),
+        ),
+        "2026-12-31",
+        {"account_scope_fingerprint": review.account_truth_scope_fingerprint},
+    )
+    strategy_id = "ai_formula_shadow:reviewed-account"
+    state.db.upsert_strategy_promotion_state_sync(
+        strategy_id=strategy_id,
+        stage="paper_shadow",
+        gate_status="paper_shadow_enabled",
+        live_like_enabled=False,
+        missing_requirements=[],
+        backtest_result_id=1,
+        payload={
+            "readiness": {
+                "deployment_validation": {
+                    "final_evaluation_id": "sealed-fixture",
+                    "initial_cash": "32000",
+                    "entry_board_policy": freeze_entry_board_policy(
+                        None, decision_date
+                    ),
+                }
+            }
+        },
+    )
+    monkeypatch.setattr(
+        StrategyResearchAuditStore,
+        "get_sealed_test",
+        lambda self, identity: {
+            "evidence": {
+                "reservation": {
+                    "fee_schedule": frozen,
+                    "publication_grant": {
+                        "risk_limits": {
+                            "max_positions": 4,
+                            "max_gross_weight": "0.97",
+                            "max_symbol_weight": "0.30",
+                        }
+                    },
+                }
+            }
+        },
+    )
+    signals = [
+        {
+            "strategy_id": strategy_id,
+            "symbol": symbol,
+            "direction": direction,
+            "ranking_liquidity": 1_000_000,
+            "frozen_close": 10,
+            "portfolio_policy_id": FORMULA_PORTFOLIO_POLICY_ID,
+        }
+        for symbol, direction in (
+            ("600001", "sell"),
+            ("600000", "buy"),
+            ("600002", "buy"),
+        )
+    ]
+    selected, blocked = account_eligible_signals(
+        signals,
+        config=state.config,
+        decision_date=decision_date,
+        portfolio={
+            "cash": 31000,
+            "total_equity": 32000,
+            "fact_authority": "persisted_valuation_snapshot",
+            "stock_position_market_values": {"600001": "1000"},
+            "stock_symbols": ["600001"],
+        },
+        policy=MarketUniversePolicy(),
+        cash_buffer_ratio=Decimal("0.03"),
+        db=state.db,
+    )
+    assert selected[0] == signals[0]
+    if buys_allowed:
+        assert {row["symbol"] for row in selected[1:]} == {"600000", "600002"}
+        assert blocked == []
+    else:
+        assert selected == [signals[0]]
+        assert {row["symbol"] for row in blocked} == {"600000", "600002"}
+        assert {row["reason"] for row in blocked} == {
+            "reviewed_fee_schedule_action_date_not_covered"
+        }
+    # Current action expiry does not change the original reviewed replay binding.
+    assert (
+        resolve_frozen_deployment_fee_schedule(state.db, frozen, ("600000",)).review
+        == review
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
 def test_stock_only_review_excludes_etf_mismatches_and_rejects_etf_resolution(
     tmp_path, monkeypatch
 ) -> None:
@@ -395,6 +598,12 @@ def test_reviewed_schedule_requires_buy_and_sell_coverage_per_asset(
 def test_review_resolution_uses_same_rounding_and_revocation_fails_closed(
     tmp_path, monkeypatch
 ) -> None:
+    from analytics.backtest_fee_tax_evidence import build_backtest_fee_tax_evidence
+    from server.ai_runtime.strategy_research_backtest import (
+        validate_persisted_fee_schedule_binding,
+    )
+    from server.contracts.strategy_research import StrategyResearchRejected
+
     state, imported = _state(tmp_path, rounded=True)
     _patch_ready_account_truth(monkeypatch, imported)
     preview = build_reviewed_fee_schedule_preview(
@@ -449,6 +658,82 @@ def test_review_resolution_uses_same_rounding_and_revocation_fails_closed(
             as_of_date="2026-08-12",
         )
         == []
+    )
+    projected = build_backtest_fee_tax_evidence(
+        fills=[
+            SimpleNamespace(
+                commission=breakdown.total_fee,
+                slippage=Decimal("0"),
+                fee_rule_id=breakdown.fee_rule_id,
+                fee_rule_version=reference,
+                fee_breakdown=breakdown.to_json_dict(),
+            )
+        ],
+        cost_model_reference=reference,
+        account_specific=True,
+        fee_schedule_source=resolution.fee_evidence["fee_schedule_source"],
+        fee_schedule_fingerprint=review.schedule_fingerprint,
+        broker_statement_reconciled=True,
+        fee_schedule_binding=resolution.fee_evidence,
+    )
+    assert projected["status"] == "complete"
+    assert projected["fee_schedule_binding"]["fee_schedule_reviewed_asset_classes"] == [
+        "etf",
+        "stock",
+    ]
+    projected_binding = {
+        "fee_schedule_fingerprint": projected["fee_schedule_fingerprint"],
+        **projected["fee_schedule_binding"],
+    }
+    assert (
+        active_review_matches_fee_evidence(
+            state.db, projected_binding, as_of_date="2026-08-12"
+        )
+        == []
+    )
+    selection = SimpleNamespace(cost_model_reference=reference)
+    validate_persisted_fee_schedule_binding(
+        selection, {"fee_component_evidence": projected}, resolution
+    )
+    legacy_binding = dict(projected["fee_schedule_binding"])
+    legacy_binding.pop("fee_schedule_reviewed_asset_classes")
+    legacy = {**projected, "fee_schedule_binding": legacy_binding}
+    legacy["evidence_fingerprint"] = _fingerprint(
+        {key: value for key, value in legacy.items() if key != "evidence_fingerprint"}
+    ).removeprefix("sha256:")
+    validate_persisted_fee_schedule_binding(
+        selection, {"fee_component_evidence": legacy}, resolution
+    )
+    assert (
+        "reviewed_fee_schedule_binding_mismatch:fee_schedule_reviewed_asset_classes"
+        in active_review_matches_fee_evidence(
+            state.db,
+            {"fee_schedule_fingerprint": review.schedule_fingerprint, **legacy_binding},
+        )
+    )
+    with pytest.raises(
+        StrategyResearchRejected, match="persisted_fee_schedule_binding_drift"
+    ):
+        validate_persisted_fee_schedule_binding(
+            selection,
+            {
+                "fee_component_evidence": {
+                    **projected,
+                    "fee_schedule_binding": {
+                        **projected["fee_schedule_binding"],
+                        "fee_schedule_reviewed_asset_classes": ["stock"],
+                    },
+                }
+            },
+            resolution,
+        )
+    assert (
+        "reviewed_fee_schedule_binding_mismatch:fee_schedule_reviewed_asset_classes"
+        in active_review_matches_fee_evidence(
+            state.db,
+            {**projected_binding, "fee_schedule_reviewed_asset_classes": ["etf"]},
+            as_of_date="2026-08-12",
+        )
     )
     EvidenceScopeReviewRepository(state.db._path).revoke_latest(
         import_run_id=imported.import_run_id,

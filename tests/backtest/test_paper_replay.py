@@ -241,6 +241,51 @@ def test_missing_target_session_or_warmup_price_fails_instead_of_later_fill():
         _replay([_bar(DAYS[0]), _bar(DAYS[1]), _bar(DAYS[3])], [_target(2)])
 
 
+def test_dynamic_membership_executes_only_reference_session_and_sells_before_buy():
+    other = Symbol("600001")
+    instruments = {s: make_stock(str(s), str(s)) for s in (SYMBOL, other)}
+    bars = [
+        _bar(DAYS[0]),
+        *[_bar(day, symbol=s) for day in DAYS[1:3] for s in instruments],
+    ]
+    mapping = {
+        DAYS[0]: [SYMBOL],
+        DAYS[1]: list(instruments),
+        DAYS[2]: list(instruments),
+    }
+    targets = [
+        _target(1),
+        PublishedPaperTarget(
+            "switch",
+            _at(DAYS[0], 16),
+            DAYS[2],
+            {str(SYMBOL): Decimal(0), str(other): Decimal(1)},
+        ),
+    ]
+    result = _replay(
+        bars, targets, instruments=instruments, session_instruments=mapping
+    )
+    assert [(f["session"], f["symbol"], f["side"]) for f in result["fills"]] == [
+        (DAYS[1].isoformat(), str(SYMBOL), "buy"),
+        (DAYS[2].isoformat(), str(SYMBOL), "sell"),
+        (DAYS[2].isoformat(), str(other), "buy"),
+    ]
+    assert result["sessions"][-1]["cash"] == "0"
+
+
+def test_dynamic_missing_held_bar_blocks_but_unowned_future_member_can_be_absent():
+    other = Symbol("600001")
+    instruments = {s: make_stock(str(s), str(s)) for s in (SYMBOL, other)}
+    bars = [_bar(DAYS[0]), _bar(DAYS[1]), _bar(DAYS[2], symbol=other)]
+    mapping = {DAYS[0]: [SYMBOL], DAYS[1]: [SYMBOL], DAYS[2]: [other]}
+    empty = _replay(bars, [], instruments=instruments, session_instruments=mapping)
+    assert empty["fills"] == []
+    with pytest.raises(ValueError, match="paper_replay_holding_valuation_missing"):
+        _replay(
+            bars, [_target(1)], instruments=instruments, session_instruments=mapping
+        )
+
+
 def test_empty_ca_tuple_still_marks_all_symbols_before_target_sizing():
     other = Symbol("600001")
     instruments = {

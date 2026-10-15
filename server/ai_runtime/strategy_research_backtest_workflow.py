@@ -51,7 +51,10 @@ class StrategyResearchBacktestWorkflowMixin:
             return await self._backtest_response(backtest, reused=True)
         try:
             bt_result, bt_request = await asyncio.to_thread(
-                RestrictedFormulaBacktestAdapter(data_store=self._data_store).run,
+                RestrictedFormulaBacktestAdapter(
+                    data_store=self._data_store,
+                    research_root=self._db_path.parent / "research",
+                ).run,
                 selection=selection,
                 draft=draft,
                 expected_dataset_snapshot=expected_dataset_snapshot,

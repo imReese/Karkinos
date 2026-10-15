@@ -6,7 +6,7 @@ import hashlib
 import itertools
 import json
 from collections.abc import Mapping, Sequence
-from datetime import datetime, time, timezone
+from datetime import date, datetime, time, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -673,7 +673,10 @@ def _quotes_for_current_positions(
 
 
 def _snapshot_as_of(
-    quotes: list[dict[str, Any]], ledger_rows: list[dict[str, Any]]
+    quotes: list[dict[str, Any]],
+    ledger_rows: list[dict[str, Any]],
+    *,
+    cash_valuation_date: str | None = None,
 ) -> str:
     candidates = [
         *(_quote_timestamp(row) for row in quotes),
@@ -684,11 +687,26 @@ def _snapshot_as_of(
         for value in candidates
         if value and (parsed := _parse_timestamp(value)) != _MIN_TIMESTAMP
     ]
+    if cash_valuation_date is not None:
+        # Cash is stable within its session; reads must not create a new content
+        # identity on every clock tick or predate a real cashflow.
+        parsed_candidates.append(
+            datetime.combine(
+                date.fromisoformat(cash_valuation_date), time.min, _SHANGHAI_TZ
+            )
+        )
     effective = max(parsed_candidates, default=_parse_timestamp("1970-01-01T00:00:00Z"))
     return effective.astimezone(_SHANGHAI_TZ).isoformat()
 
 
-def _snapshot_trade_date(quotes: list[dict[str, Any]], as_of: str) -> str:
+def _snapshot_trade_date(
+    quotes: list[dict[str, Any]],
+    as_of: str,
+    *,
+    cash_valuation_date: str | None = None,
+) -> str:
+    if cash_valuation_date is not None:
+        return cash_valuation_date
     quote_timestamps = [
         parsed
         for row in quotes
@@ -746,8 +764,20 @@ def build_current_valuation_snapshot(
     quote_set_fingerprint = _fingerprint(quotes)
     ledger_fingerprint = ledger_identity["ledger_fingerprint"]
     ledger_cutoff_id = ledger_identity["ledger_cutoff_id"]
-    as_of = _snapshot_as_of(quotes, ledger_rows)
-    trade_date = _snapshot_trade_date(quotes, as_of)
+    cash_valuation_date = (
+        market_session["expected_quote_date"]
+        if not position_scope
+        and not quotes
+        and market_session["calendar_verified"]
+        and not market_session["blockers"]
+        else None
+    )
+    as_of = _snapshot_as_of(
+        quotes, ledger_rows, cash_valuation_date=cash_valuation_date
+    )
+    trade_date = _snapshot_trade_date(
+        quotes, as_of, cash_valuation_date=cash_valuation_date
+    )
     metadata = {
         "quote_count": len(quotes),
         "current_position_count": len(position_scope),
@@ -768,6 +798,8 @@ def build_current_valuation_snapshot(
             "calendar_evidence_refs"
         ]
         metadata["valuation_calendar_blockers"] = market_session["blockers"]
+    if cash_valuation_date is not None:
+        metadata["cash_valuation_basis"] = "verified_expected_session.v1"
     payload = {
         "as_of": as_of,
         "trade_date": trade_date,

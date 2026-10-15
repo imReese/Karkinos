@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -134,10 +134,28 @@ def validate_valuation_snapshot(payload: dict[str, Any]) -> None:
             quotes, valuation_policy=str(payload.get("valuation_policy") or "")
         ):
             raise ValueError("valuation snapshot status drifted")
-        if payload.get("trade_date") != _snapshot_trade_date(
-            quotes,
-            str(payload.get("as_of") or ""),
-        ):
+        trade_date = _snapshot_trade_date(quotes, str(payload.get("as_of") or ""))
+        if metadata.get("cash_valuation_basis") is not None:
+            if (
+                metadata["cash_valuation_basis"] != "verified_expected_session.v1"
+                or quotes
+                or metadata.get("current_position_count") != 0
+                or not metadata.get("valuation_calendar_evidence_refs")
+                or metadata.get("valuation_calendar_blockers") != []
+            ):
+                raise ValueError("valuation snapshot cash basis drifted")
+            trade_date = date.fromisoformat(
+                str(metadata.get("valuation_expected_date") or "")
+            ).isoformat()
+            if (
+                trade_date
+                > quote_timestamp_instant(payload.get("as_of"))
+                .astimezone(_SHANGHAI_TZ)
+                .date()
+                .isoformat()
+            ):
+                raise ValueError("valuation snapshot cash date is in the future")
+        if payload.get("trade_date") != trade_date:
             raise ValueError("valuation snapshot trade date drifted")
         identity_payload = {
             "valuation_policy": payload["valuation_policy"],

@@ -12,7 +12,10 @@ import pandas as pd
 
 from analytics.backtest_capacity_evidence import build_backtest_capacity_evidence
 from analytics.backtest_drawdown_evidence import build_backtest_drawdown_evidence
-from analytics.backtest_fee_tax_evidence import build_backtest_fee_tax_evidence
+from analytics.backtest_fee_tax_evidence import (
+    BACKTEST_FEE_TAX_EVIDENCE_SCHEMA_VERSION,
+    build_backtest_fee_tax_evidence,
+)
 from analytics.backtest_market_regime_evidence import (
     build_backtest_market_regime_evidence,
 )
@@ -38,6 +41,7 @@ from data.handler import DataHandler
 from data.manager import DataManager
 from data.research_market_data import load_research_market_frames
 from data.store import DataStore
+from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
 from server.ai_runtime.contracts import JsonObject, content_fingerprint
 from server.ai_runtime.formula_dsl import (
     CANONICAL_COST_MODEL_REFERENCE,
@@ -73,11 +77,16 @@ class _FormulaSignalStrategy(Strategy):
         *,
         allocation_slots: int = 4,
         strategy_id: str = "ai_formula_research",
+        portfolio_policy_id: str | None = None,
     ) -> None:
         super().__init__(strategy_id, _NullEventBus())
         self._formula_ast = formula_ast
         self._universe_size = universe_size
-        self._allocation_slots = min(max(allocation_slots, 1), universe_size)
+        self._allocation_slots = (
+            max(allocation_slots, 1)
+            if portfolio_policy_id
+            else min(max(allocation_slots, 1), universe_size)
+        )
         self._canonical_target_weight = 1.0 / self._allocation_slots
         self._frames: dict[Symbol, list[dict[str, Any]]] = {}
         self._active: dict[Symbol, bool] = {}
@@ -85,6 +94,10 @@ class _FormulaSignalStrategy(Strategy):
         self._entry_signal_count = 0
         self._exit_signal_count = 0
         self._entry_target_count = 0
+        self._portfolio_policy_id = portfolio_policy_id
+        self._prepared_sessions = None
+        self.session_decisions: list[dict[str, Any]] = []
+        self.session_books: list[dict[str, Any]] = []
 
     def on_init(self, symbols: list[Symbol]) -> None:
         self._frames = {symbol: [] for symbol in symbols}
@@ -93,6 +106,8 @@ class _FormulaSignalStrategy(Strategy):
 
     def on_data(self, event: MarketEvent) -> None:
         self._last_timestamp = event.timestamp
+        if self._portfolio_policy_id is not None:
+            return
         rows = self._frames[event.symbol]
         rows.append(
             {
@@ -127,6 +142,89 @@ class _FormulaSignalStrategy(Strategy):
         self._position_quantity[symbol] = quantity
         self._active[symbol] = quantity > 0
 
+    def bind_portfolio_engine(
+        self,
+        engine: BacktestEngine,
+        handlers,
+        *,
+        slippage_bps=Decimal("5"),
+        session_memberships=None,
+        minimum_history_rows=60,
+        entry_board_policy=None,
+    ) -> None:
+        """Opt into the new version without changing saved legacy strategy runs."""
+        if self._portfolio_policy_id is None:
+            return
+        if self._portfolio_policy_id != FORMULA_PORTFOLIO_POLICY_ID:
+            raise StrategyResearchRejected("formula_portfolio_policy_unsupported")
+        from server.ai_runtime.formula_portfolio import (
+            formula_session_targets,
+            prepare_formula_sessions,
+        )
+
+        self._prepared_sessions = prepare_formula_sessions(
+            self._formula_ast,
+            {str(symbol): handler._df for symbol, handler in handlers.items()},
+            universe_size=self._universe_size,
+        )
+
+        def decide(day):
+            # The selected set is resolved before any next-session execution;
+            # fills, not yesterday's desired weights, supply the active book.
+            eligible = [
+                symbol
+                for symbol, frame in self._prepared_sessions.items()
+                if day in frame.index
+            ]
+            decision = formula_session_targets(
+                prepared=self._prepared_sessions,
+                decision_session=day,
+                quantities={
+                    str(s): p.quantity for s, p in engine.portfolio.positions.items()
+                },
+                cash=engine.portfolio.cash,
+                equity=engine.portfolio.total_equity,
+                instruments=engine.instruments,
+                commission_calc=engine.execution.commission_calc,
+                eligible_symbols=(
+                    session_memberships(day) if session_memberships else eligible
+                ),
+                slippage_bps=slippage_bps,
+                minimum_history_rows=minimum_history_rows,
+                max_positions=self._allocation_slots,
+                max_symbol_weight=Decimal(str(self._canonical_target_weight)),
+                entry_board_policy=entry_board_policy,
+            )
+            if not engine._warming_up:
+                self.session_books.append(
+                    {
+                        "session": day.isoformat(),
+                        "equity": str(engine.portfolio.total_equity),
+                        "cash": str(engine.portfolio.cash),
+                        "position_values": {
+                            str(s): str(p.market_value)
+                            for s, p in engine.portfolio.positions.items()
+                            if p.quantity > 0
+                        },
+                    }
+                )
+            self.session_decisions.append(decision)
+            self._entry_signal_count += len(decision["selected_entries"])
+            self._entry_target_count += len(decision["selected_entries"])
+            self._exit_signal_count += len(decision["exit_symbols"])
+            # A held weight describes the actual book, not a maintenance trade.
+            # Reapplying it at the next close would rebalance on price drift.
+            for symbol in [*decision["exit_symbols"], *decision["selected_entries"]]:
+                weight = decision["target_weights"][symbol]
+                frame = self._prepared_sessions[symbol]
+                self.emit_signal(
+                    Symbol(symbol),
+                    weight,
+                    Decimal(str(frame.loc[:day, "close"].iloc[-1])),
+                )
+
+        engine._session_decision = decide
+
     def execution_evidence(
         self, *, fill_count: int, execution_timing: Mapping[str, Any] | None = None
     ) -> JsonObject:
@@ -151,6 +249,9 @@ class _FormulaSignalStrategy(Strategy):
             "contains_holding_quantity": False,
             "authority_effect": "none",
         }
+        if self._portfolio_policy_id is not None:
+            core["portfolio_policy_id"] = self._portfolio_policy_id
+            core["execution_policy"] = self._portfolio_policy_id
         return {**core, "evidence_fingerprint": content_fingerprint(core)}
 
 
@@ -165,8 +266,18 @@ class _NullEventBus:
 class RestrictedFormulaBacktestAdapter:
     """Feed validated signals to the canonical engine from persisted bars only."""
 
-    def __init__(self, *, data_store: DataStore) -> None:
+    def __init__(
+        self, *, data_store: DataStore, research_root: Path | None = None
+    ) -> None:
         self._data_store = data_store
+        root = Path(data_store._root)
+        self._research_root = (
+            Path(research_root)
+            if research_root is not None
+            else root
+            if (root / "objects").is_dir()
+            else root / "research"
+        )
 
     def run(
         self,
@@ -176,7 +287,14 @@ class RestrictedFormulaBacktestAdapter:
         expected_dataset_snapshot: Mapping[str, Any] | None = None,
         reviewed_fee_schedule_resolution: Any | None = None,
         account_capital_evidence: Mapping[str, Any] | None = None,
+        entry_board_policy: Mapping[str, Any] | None = None,
     ) -> tuple[dict[str, Any], BacktestRequest]:
+        if entry_board_policy is not None:
+            from server.contracts.recommendation_publication import (
+                validate_entry_board_policy,
+            )
+
+            entry_board_policy = validate_entry_board_policy(entry_board_policy)
         formula_ast = draft.get("formula_ast")
         if not isinstance(formula_ast, dict):
             raise StrategyResearchRejected("validated_formula_missing")
@@ -217,6 +335,7 @@ class RestrictedFormulaBacktestAdapter:
             self._data_store,
             selection,
             expected_dataset_snapshot=expected_dataset_snapshot,
+            research_root=self._research_root,
         )
         commission_calc, fee_schedule_evidence = validated_fee_schedule_resolution(
             selection,
@@ -244,12 +363,25 @@ class RestrictedFormulaBacktestAdapter:
                 "research_account_capital_evidence_not_passing"
             )
 
-        allocation_slots = min(4, len(selection.universe))
+        allocation_slots = (
+            (selection.deployment_scope or {})
+            .get("universe_policy", {})
+            .get("allocation_slots", 4)
+            if selection.portfolio_policy_id
+            else min(4, len(selection.universe))
+        )
         target_weight = Decimal("1") / Decimal(allocation_slots)
+        if selection.portfolio_policy_id:
+            from domain.instrument import make_research_stock
+
+            instruments = {
+                s: make_research_stock(str(s), i.name) for s, i in instruments.items()
+            }
         formula_strategy = _FormulaSignalStrategy(
             formula_ast,
             len(selection.universe),
             allocation_slots=allocation_slots,
+            portfolio_policy_id=selection.portfolio_policy_id,
         )
         engine = BacktestEngine(
             strategy=formula_strategy,
@@ -260,6 +392,14 @@ class RestrictedFormulaBacktestAdapter:
             execution_config=research_execution_config(commission_calc),
             db=None,
         )
+        formula_strategy.bind_portfolio_engine(
+            engine,
+            handlers,
+            entry_board_policy=entry_board_policy,
+            minimum_history_rows=(selection.deployment_scope or {})
+            .get("universe_policy", {})
+            .get("minimum_history_rows", 60),
+        )
         result = engine.run()
         metrics = result.metrics
         evidence_json = (
@@ -268,6 +408,8 @@ class RestrictedFormulaBacktestAdapter:
             else {}
         )
         metrics_json = metrics.to_json_dict()
+        if entry_board_policy is not None:
+            metrics_json["entry_board_policy"] = dict(entry_board_policy)
         metrics_json["execution_timing"] = result.execution_timing
         metrics_json["cost_assumptions"] = {
             **research_friction_assumptions(),
@@ -275,17 +417,31 @@ class RestrictedFormulaBacktestAdapter:
         }
         metrics_json["cost_sensitivity"] = []
         for bps in RESEARCH_COST_STRESS_BPS:
-            stressed = BacktestEngine(
-                strategy=_FormulaSignalStrategy(
-                    formula_ast, len(instruments), allocation_slots=allocation_slots
-                ),
+            stress_strategy = _FormulaSignalStrategy(
+                formula_ast,
+                len(instruments),
+                allocation_slots=allocation_slots,
+                portfolio_policy_id=selection.portfolio_policy_id,
+            )
+            stressed_engine = BacktestEngine(
+                strategy=stress_strategy,
                 instruments=instruments,
                 data_handlers=handlers,
                 initial_cash=Decimal(str(selection.initial_cash)),
                 execution_config=research_execution_config(
                     commission_calc, slippage_bps=bps
                 ),
-            ).run()
+            )
+            stress_strategy.bind_portfolio_engine(
+                stressed_engine,
+                handlers,
+                entry_board_policy=entry_board_policy,
+                slippage_bps=Decimal(str(bps)),
+                minimum_history_rows=(selection.deployment_scope or {})
+                .get("universe_policy", {})
+                .get("minimum_history_rows", 60),
+            )
+            stressed = stressed_engine.run()
             metrics_json["cost_sensitivity"].append(
                 {
                     **research_friction_assumptions(bps),
@@ -315,6 +471,11 @@ class RestrictedFormulaBacktestAdapter:
                 instruments=instruments,
                 initial_cash=Decimal(str(selection.initial_cash)),
                 commission_calc=commission_calc,
+                portfolio_policy_id=selection.portfolio_policy_id,
+                entry_board_policy=entry_board_policy,
+                minimum_history_rows=(selection.deployment_scope or {})
+                .get("universe_policy", {})
+                .get("minimum_history_rows", 60),
             )
         )
         metrics_json.update(
@@ -323,7 +484,25 @@ class RestrictedFormulaBacktestAdapter:
                 "dataset_snapshot": snapshot,
                 "oos_validation": oos_validation,
                 "formula_binding": binding.to_dict(),
+                **(
+                    {"source_selection": selection.to_dict()}
+                    if selection.portfolio_policy_id
+                    else {}
+                ),
                 "formula_fingerprint": binding.fingerprint,
+                **(
+                    {"entry_board_policy": dict(entry_board_policy)}
+                    if entry_board_policy is not None
+                    else {}
+                ),
+                **(
+                    {
+                        "deployment_scope": selection.deployment_scope,
+                        "portfolio_policy_id": selection.portfolio_policy_id,
+                    }
+                    if selection.deployment_scope
+                    else {}
+                ),
                 "parameter_robustness": parameter_robustness,
                 "parameter_sweep_failure_code": parameter_sweep_failure_code,
                 "fee_component_evidence": build_backtest_fee_tax_evidence(
@@ -414,6 +593,19 @@ class RestrictedFormulaBacktestAdapter:
             params={
                 "draft_id": draft["draft_id"],
                 "formula_fingerprint": binding.fingerprint,
+                **(
+                    {"entry_board_policy": dict(entry_board_policy)}
+                    if entry_board_policy is not None
+                    else {}
+                ),
+                **(
+                    {
+                        "deployment_scope": selection.deployment_scope,
+                        "portfolio_policy_id": selection.portfolio_policy_id,
+                    }
+                    if selection.deployment_scope
+                    else {}
+                ),
                 "research_only": True,
             },
             assets=[
@@ -449,6 +641,7 @@ class RestrictedFormulaBacktestAdapter:
             self._data_store,
             selection,
             expected_dataset_snapshot=expected_dataset_snapshot,
+            research_root=self._research_root,
         )
         return snapshot
 
@@ -461,6 +654,10 @@ class RestrictedFormulaBacktestAdapter:
         reviewed_fee_schedule_resolution: Any | None = None,
         expected_dataset_snapshot: Mapping[str, Any] | None = None,
         expected_trading_dates: list[str] | None = None,
+        initial_cash_override: Decimal | None = None,
+        evaluation_dataset_snapshot: Mapping[str, Any] | None = None,
+        commission_calc_override: Any = None,
+        entry_board_policy: Mapping[str, Any] | None = None,
     ) -> BacktestResult:
         """Run the frozen champion on [start, sealed_end] for one-time holdout.
 
@@ -473,8 +670,12 @@ class RestrictedFormulaBacktestAdapter:
         if not isinstance(formula_ast, dict):
             raise StrategyResearchRejected("validated_formula_missing")
         extended_snapshot = expected_dataset_snapshot
-        if expected_dataset_snapshot is not None and expected_dataset_snapshot.get(
-            "immutable_dataset_id"
+        if evaluation_dataset_snapshot is not None:
+            extended_snapshot = evaluation_dataset_snapshot
+        if (
+            expected_dataset_snapshot is not None
+            and expected_dataset_snapshot.get("immutable_dataset_id")
+            and evaluation_dataset_snapshot is None
         ):
             raise StrategyResearchRejected(
                 "sealed_immutable_dataset_extension_unsupported"
@@ -485,9 +686,10 @@ class RestrictedFormulaBacktestAdapter:
                 self._data_store,
                 selection,
                 expected_dataset_snapshot=expected_dataset_snapshot,
+                research_root=self._research_root,
             )
             old_binding = expected_dataset_snapshot.get("market_data_binding")
-            if old_binding is not None:
+            if old_binding is not None and evaluation_dataset_snapshot is None:
                 from data.research_market_data import research_market_binding
 
                 providers = {ref["provider_name"] for ref in old_binding["receipts"]}
@@ -515,26 +717,35 @@ class RestrictedFormulaBacktestAdapter:
             self._data_store,
             selection,
             expected_dataset_snapshot=extended_snapshot,
+            research_root=self._research_root,
             end_date=sealed_end_date,
             verify_snapshot=False,
             allow_extended_binding=True,
         )
-        if expected_dataset_snapshot is not None and any(
-            handler._df["timestamp"].iloc[-1].date().isoformat()
-            != (
-                expected_trading_dates[-1]
-                if expected_trading_dates
-                else sealed_end_date
+        if (
+            evaluation_dataset_snapshot is None
+            and expected_dataset_snapshot is not None
+            and any(
+                handler._df["timestamp"].iloc[-1].date().isoformat()
+                != (
+                    expected_trading_dates[-1]
+                    if expected_trading_dates
+                    else sealed_end_date
+                )
+                for handler in handlers.values()
             )
-            for handler in handlers.values()
         ):
             raise StrategyResearchRejected("sealed_window_not_complete")
-        if expected_trading_dates is not None and any(
-            handler._df["timestamp"]
-            .dt.date.map(lambda value: value.isoformat())
-            .tolist()
-            != expected_trading_dates
-            for handler in handlers.values()
+        if (
+            evaluation_dataset_snapshot is None
+            and expected_trading_dates is not None
+            and any(
+                handler._df["timestamp"]
+                .dt.date.map(lambda value: value.isoformat())
+                .tolist()
+                != expected_trading_dates
+                for handler in handlers.values()
+            )
         ):
             raise StrategyResearchRejected(
                 "sealed_trading_calendar_coverage_incomplete"
@@ -542,9 +753,38 @@ class RestrictedFormulaBacktestAdapter:
         if expected_dataset_snapshot is not None:
             for symbol, prefix_handler in prefix_handlers.items():
                 expected_frame = prefix_handler._df
+                if symbol not in handlers:
+                    if evaluation_dataset_snapshot is not None:
+                        continue
+                    raise StrategyResearchRejected("sealed_research_prefix_drift")
                 actual_frame = _slice_frame(
                     handlers[symbol]._df, selection.start_date, selection.end_date
                 )
+                if evaluation_dataset_snapshot is not None:
+                    if actual_frame.empty:
+                        continue
+                    # Bounded warmup is permitted only under the new scope;
+                    # every overlapping original observation remains identical.
+                    expected_frame = expected_frame.loc[
+                        expected_frame["timestamp"].dt.date.isin(
+                            actual_frame["timestamp"].dt.date
+                        )
+                    ].copy()
+                    actual_frame = actual_frame.copy()
+                    for frame in (expected_frame, actual_frame):
+                        frame["timestamp"] = frame["timestamp"].dt.date
+                        for name in (
+                            "open",
+                            "high",
+                            "low",
+                            "close",
+                            "volume",
+                            "amount",
+                        ):
+                            if name in frame:
+                                frame[name] = frame[name].map(
+                                    lambda value: Decimal(str(value))
+                                )
                 columns = [
                     name
                     for name in (
@@ -568,25 +808,81 @@ class RestrictedFormulaBacktestAdapter:
             selection,
             reviewed_fee_schedule_resolution,
         )
-        allocation_slots = min(4, len(selection.universe))
+        if commission_calc_override is not None:
+            if not selection.deployment_scope or evaluation_dataset_snapshot is None:
+                raise StrategyResearchRejected(
+                    "sealed_commission_override_not_admitted"
+                )
+            commission_calc = commission_calc_override
+        allocation_slots = (
+            (selection.deployment_scope or {})
+            .get("universe_policy", {})
+            .get("allocation_slots", 4)
+            if selection.portfolio_policy_id
+            else min(4, len(instruments))
+        )
+        session_memberships = None
+        distributions = None
+        if evaluation_dataset_snapshot is not None:
+            from backtest.distributions import distributions_from_evidence
+            from data.dataset.model import DatasetRef
+            from data.dataset.reader import read_daily_bar_dataset
+            from data.storage.objects import ContentAddressedObjectStore
+
+            root = self._research_root
+            objects = ContentAddressedObjectStore(root / "objects")
+            restored = read_daily_bar_dataset(
+                objects,
+                DatasetRef(
+                    objects.resolve_ref(
+                        evaluation_dataset_snapshot["immutable_dataset_id"]
+                    )
+                ),
+            )
+            session_memberships = lambda day: [
+                key.symbol for key in restored.snapshot.instruments_for_session(day)
+            ]
+            distributions = distributions_from_evidence(
+                restored.corporate_action_evidence, include_shares=True
+            )
+        if selection.portfolio_policy_id:
+            from domain.instrument import make_research_stock
+
+            instruments = {
+                s: make_research_stock(str(s), i.name) for s, i in instruments.items()
+            }
         formula_strategy = _FormulaSignalStrategy(
             formula_ast,
             len(selection.universe),
             allocation_slots=allocation_slots,
+            portfolio_policy_id=selection.portfolio_policy_id,
         )
         engine = BacktestEngine(
             strategy=formula_strategy,
             instruments=instruments,
             data_handlers=handlers,
-            initial_cash=Decimal(str(selection.initial_cash)),
+            initial_cash=initial_cash_override or Decimal(str(selection.initial_cash)),
             commission_calc=commission_calc,
             execution_config=research_execution_config(commission_calc),
             db=None,
             evaluation_start=date.fromisoformat(selection.end_date) + timedelta(days=1),
             warmup_final_bar_targets=True,
+            cash_dividends=distributions,
+            include_share_distributions=distributions is not None,
+            strict_event_errors=bool(selection.deployment_scope),
+        )
+        formula_strategy.bind_portfolio_engine(
+            engine,
+            handlers,
+            entry_board_policy=entry_board_policy,
+            session_memberships=session_memberships,
+            minimum_history_rows=(selection.deployment_scope or {})
+            .get("universe_policy", {})
+            .get("minimum_history_rows", 60),
         )
         result = engine.run()
         result.dataset_snapshot = snapshot
+        result.portfolio_observations = formula_strategy.session_books
         return result
 
 
@@ -600,6 +896,9 @@ def _formula_parameter_robustness(
     instruments: dict[Symbol, Any],
     initial_cash: Decimal,
     commission_calc: Any | None,
+    portfolio_policy_id: str | None = None,
+    minimum_history_rows: int = 60,
+    entry_board_policy: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], str | None]:
     try:
         variants = build_formula_parameter_variants(
@@ -623,19 +922,28 @@ def _formula_parameter_robustness(
         if dict(variant.params) == dict(parameter_values):
             variant_result = selected_result
         else:
-            variant_result = BacktestEngine(
-                strategy=_FormulaSignalStrategy(
-                    variant.formula_ast,
-                    len(instruments),
-                    allocation_slots=4,
-                ),
+            variant_strategy = _FormulaSignalStrategy(
+                variant.formula_ast,
+                len(instruments),
+                allocation_slots=4,
+                portfolio_policy_id=portfolio_policy_id,
+            )
+            variant_engine = BacktestEngine(
+                strategy=variant_strategy,
                 instruments=instruments,
                 data_handlers=handlers,
                 initial_cash=initial_cash,
                 commission_calc=commission_calc,
                 execution_config=research_execution_config(commission_calc),
                 db=None,
-            ).run()
+            )
+            variant_strategy.bind_portfolio_engine(
+                variant_engine,
+                handlers,
+                minimum_history_rows=minimum_history_rows,
+                entry_board_policy=entry_board_policy,
+            )
+            variant_result = variant_engine.run()
         results.append(
             {
                 "params": dict(variant.params),
@@ -756,10 +1064,18 @@ def validate_persisted_fee_schedule_binding(
         "fee_notional_envelope_enforced",
         "fee_notional_envelope_fingerprint",
         "fee_notional_covered_asset_classes",
+        "fee_schedule_reviewed_asset_classes",
     }
     expected_binding = {
         key: expected.get(key) for key in binding_keys if expected.get(key) is not None
     }
+    # Older v1 reports omitted this provenance field. They remain readable for
+    # critique; publication separately requires the full current review binding.
+    if (
+        persisted.get("schema_version") == BACKTEST_FEE_TAX_EVIDENCE_SCHEMA_VERSION
+        and "fee_schedule_reviewed_asset_classes" not in persisted_binding
+    ):
+        expected_binding.pop("fee_schedule_reviewed_asset_classes", None)
     if (
         persisted.get("cost_model_reference") != selection.cost_model_reference
         or persisted.get("account_specific") is not True
@@ -772,7 +1088,10 @@ def validate_persisted_fee_schedule_binding(
 
 
 def build_dual_ma_research_strategy(
-    params: Mapping[str, Any], universe_size: int
+    params: Mapping[str, Any],
+    universe_size: int,
+    *,
+    portfolio_policy_id: str | None = None,
 ) -> _FormulaSignalStrategy:
     """Run the fixed MA hypothesis under the candidate's exact execution policy."""
 
@@ -795,6 +1114,7 @@ def build_dual_ma_research_strategy(
         },
         universe_size,
         strategy_id="dual_ma",
+        portfolio_policy_id=portfolio_policy_id,
     )
 
 
@@ -814,8 +1134,13 @@ def _slice_frame(frame: pd.DataFrame, start_date: str, end_date: str) -> pd.Data
     if "timestamp" not in result.columns:
         raise StrategyResearchRejected("persisted_bars_timestamp_missing")
     result["timestamp"] = pd.to_datetime(result["timestamp"])
-    start = pd.Timestamp(start_date)
-    end = pd.Timestamp(end_date) + pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
+    timezone = result["timestamp"].dt.tz
+    start = pd.Timestamp(start_date, tz=timezone)
+    end = (
+        pd.Timestamp(end_date, tz=timezone)
+        + pd.Timedelta(days=1)
+        - pd.Timedelta(microseconds=1)
+    )
     return (
         result.loc[(result["timestamp"] >= start) & (result["timestamp"] <= end)]
         .sort_values("timestamp")
@@ -831,6 +1156,7 @@ def _load_bound_inputs(
     end_date: str | None = None,
     verify_snapshot: bool = True,
     allow_extended_binding: bool = False,
+    research_root: Path | None = None,
 ) -> tuple[dict[Symbol, DataHandler], dict[Symbol, Any], JsonObject]:
     effective_end = end_date or selection.end_date
     immutable_dataset_id = (expected_dataset_snapshot or {}).get("immutable_dataset_id")
@@ -841,7 +1167,11 @@ def _load_bound_inputs(
             )
         store_root = Path(getattr(data_store, "root", getattr(data_store, "_root", "")))
         research_root = (
-            store_root if (store_root / "objects").is_dir() else store_root / "research"
+            Path(research_root)
+            if research_root is not None
+            else store_root
+            if (store_root / "objects").is_dir()
+            else store_root / "research"
         )
         from analytics.dataset_snapshot import load_immutable_dataset_inputs
 
@@ -874,8 +1204,8 @@ def _load_bound_inputs(
                     sliced_df,
                     sym,
                     BarFrequency.DAILY,
-                    handler.asset_class,
-                    handler.instrument_type,
+                    handler._asset_class,
+                    handler._instrument_type,
                 )
             handlers = sliced_handlers
 
@@ -888,8 +1218,16 @@ def _load_bound_inputs(
             else None
         )
         snapshot = build_backtest_dataset_snapshot(
-            start_date=selection.start_date,
-            end_date=effective_end,
+            start_date=(
+                expected_dataset_snapshot["date_range"]["start"]
+                if allow_extended_binding
+                else selection.start_date
+            ),
+            end_date=(
+                expected_dataset_snapshot["date_range"]["end"]
+                if allow_extended_binding
+                else effective_end
+            ),
             configured_source=sources[0] if len(sources) == 1 else None,
             data_handlers=handlers,
             store=store_flag,
