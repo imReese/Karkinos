@@ -49,12 +49,110 @@ logger = logging.getLogger(__name__)
 
 
 class AiShadowResearchWorkflowMixin:
+    async def _forward_validation_preflight(self, grant) -> dict[str, Any] | None:
+        if grant:
+            pending = self._open_deployment_reservation(grant)
+            if pending:
+                from data.storage.objects import ContentAddressedObjectStore
+                from server.services.research_observation_automation import (
+                    start_reserved_champion_observation,
+                )
+
+                objects = ContentAddressedObjectStore(
+                    self._db.path.parent / "research" / "objects"
+                )
+                forward = await start_reserved_champion_observation(
+                    self._db,
+                    objects,
+                    source_result_id=pending["evidence"]["reservation"][
+                        "candidate_result_id"
+                    ],
+                    grant=grant,
+                    now=self._now(),
+                    config=self._state.require_config(),
+                    reservation_id=pending["sealed_test_id"],
+                )
+                return {
+                    **self.status(),
+                    "run_status": "awaiting_independent_validation",
+                    "provider_call_performed": False,
+                    "forward_validation": forward,
+                    "sealed_test_id": pending["sealed_test_id"],
+                }
+        return None
+
+    async def _verified_seed_preflight(self, prepared, grant) -> dict[str, Any] | None:
+        scope = (
+            prepared.result.get("metrics_json", {})
+            .get("market_universe_truth", {})
+            .get("deployment_scope")
+        )
+        if grant and scope:
+            from data.storage.objects import ContentAddressedObjectStore
+            from server.services.research.datasets import ensure_forward_seed_for_source
+            from server.services.research_observation_inputs import (
+                load_research_observation_source,
+            )
+
+            objects = ContentAddressedObjectStore(
+                self._db.path.parent / "research" / "objects"
+            )
+            seed_row = {
+                "id": prepared.seed_result_id,
+                "config_json": prepared.request.model_dump(mode="json"),
+                "metrics_json": prepared.result["metrics_json"],
+            }
+            seed_source = load_research_observation_source(
+                seed_row, objects, allow_unbound_dataset=True
+            )
+            seed_source["source_selection"] = {
+                "deployment_scope": scope,
+                "portfolio_policy_id": scope["portfolio_policy_id"],
+            }
+            seed_source["forward_minimum_observations"] = grant["statistical_policy"][
+                "minimum_observations"
+            ]
+            seed_source["minimum_bars"] = max(
+                seed_source.get("minimum_bars", 1),
+                prepared.result["metrics_json"]["market_universe_truth"][
+                    "required_trading_date_count"
+                ],
+            )
+            seed = await asyncio.to_thread(
+                ensure_forward_seed_for_source,
+                self._db,
+                self._state.require_config(),
+                source=seed_source,
+                now=self._now(),
+                data_store=self._data_store,
+            )
+            if seed.get("status") != "ready":
+                return {
+                    **self.status(),
+                    "run_status": "awaiting_verified_research_inputs",
+                    "forward_validation": seed,
+                    "provider_call_performed": False,
+                }
+        return None
+
     async def run_once(self) -> dict[str, Any]:
         policy = self.get_policy()
         preflight = self._policy_preflight(policy)
         if preflight is not None:
             return preflight
 
+        # Preserve a real future holdout: unrelated market capture continues,
+        # but no overlapping model research may inspect its reserved interval.
+        try:
+            from server.contracts.recommendation_publication import (
+                read_publication_grant,
+            )
+
+            grant = read_publication_grant(self._db, now=self._now())
+        except ValueError:
+            grant = None
+        if forward_preflight := await self._forward_validation_preflight(grant):
+            return forward_preflight
         if policy.research_end_date is not None and (
             self._now().astimezone(SHADOW_RESEARCH_TIMEZONE).date().isoformat()
             > policy.research_end_date
@@ -88,6 +186,8 @@ class AiShadowResearchWorkflowMixin:
             )
         if deadline_preflight := self._batch_deadline_preflight(batch_deadline_at):
             return deadline_preflight
+        if seed_preflight := await self._verified_seed_preflight(prepared, grant):
+            return seed_preflight
         if research_preflight := self._normalized_baseline_research_preflight(
             policy=policy,
             prepared=prepared,
@@ -114,6 +214,9 @@ class AiShadowResearchWorkflowMixin:
                 **self._provider_window_input_evidence(batch_deadline_at),
                 "baseline_fingerprint": prepared.fingerprint,
                 "research_context": research_context,
+                "publication_entry_board_policy": grant.get("entry_board_policy")
+                if grant
+                else None,
             }
         )
         selection_components = self._selection_components(
@@ -405,7 +508,7 @@ class AiShadowResearchWorkflowMixin:
                     reserve_final_research_evaluation,
                 )
 
-                await reserve_final_research_evaluation(
+                reservation = await reserve_final_research_evaluation(
                     db=self._db,
                     research_store=local_research._research_store,
                     run=run,
@@ -413,7 +516,33 @@ class AiShadowResearchWorkflowMixin:
                     candidates=candidates,
                     daily_selection=daily_artifacts["selection"],
                     now=self._utc_now(),
+                    reviewed_fee_schedule_resolver=self._reviewed_fee_schedule_resolver,
+                    account_config=self._state.require_config(),
                 )
+                if reservation and reservation.get("evidence", {}).get(
+                    "reservation", {}
+                ).get("publication_grant"):
+                    from data.storage.objects import ContentAddressedObjectStore
+                    from server.services.research_observation_automation import (
+                        start_reserved_champion_observation,
+                    )
+
+                    objects = ContentAddressedObjectStore(
+                        self._db.path.parent / "research" / "objects"
+                    )
+                    await start_reserved_champion_observation(
+                        self._db,
+                        objects,
+                        source_result_id=reservation["evidence"]["reservation"][
+                            "candidate_result_id"
+                        ],
+                        grant=reservation["evidence"]["reservation"][
+                            "publication_grant"
+                        ],
+                        now=self._now(),
+                        config=self._state.require_config(),
+                        reservation_id=reservation["sealed_test_id"],
+                    )
         except DailyStrategyArtifactRejected as exc:
             daily_artifact_failure = shadow_research_failure_code(exc)
             terminal_status = "partial"
@@ -481,15 +610,49 @@ class AiShadowResearchWorkflowMixin:
             evidence={"blockers": blockers},
         )
 
-    @staticmethod
     def _selection_components(
+        self,
         *,
         policy: Any,
         prepared: Any,
         research_context: Mapping[str, Any],
         account_bound: bool,
     ) -> dict[str, Any]:
+        truth = prepared.result.get("metrics_json", {}).get("market_universe_truth", {})
+        scope = truth.get("deployment_scope")
+        sealed_end = policy.sealed_end_date
+        if scope and not sealed_end:
+            from datetime import date, timedelta
+
+            from server.contracts.recommendation_publication import (
+                read_publication_grant,
+            )
+
+            try:
+                grant = read_publication_grant(self._db, now=self._now())
+            except ValueError:
+                grant = None
+            if grant:
+                profile = grant["statistical_policy"]
+                checkpoint = date.fromisoformat(profile["decision_checkpoint"])
+                interval = int(profile.get("checkpoint_interval_days", 0))
+                cutoff = max(
+                    date.fromisoformat(prepared.request.end_date), self._now().date()
+                )
+                if checkpoint <= cutoff and interval <= 0:
+                    raise ShadowResearchRejected("deployment_checkpoint_expired")
+                while checkpoint <= cutoff:
+                    checkpoint += timedelta(days=interval)
+                sealed_end = checkpoint.isoformat()
         return {
+            **(
+                {
+                    "deployment_scope": scope,
+                    "portfolio_policy_id": scope["portfolio_policy_id"],
+                }
+                if scope
+                else {}
+            ),
             "universe": tuple(
                 asset["symbol"] for asset in prepared.request.assets or []
             ),
@@ -500,11 +663,7 @@ class AiShadowResearchWorkflowMixin:
             "start_date": prepared.request.start_date,
             "end_date": prepared.request.end_date,
             "frequency": BarFrequency.DAILY.value,
-            **(
-                {"sealed_end_date": policy.sealed_end_date}
-                if policy.sealed_end_date
-                else {}
-            ),
+            **({"sealed_end_date": sealed_end} if sealed_end else {}),
             "initial_cash": prepared.request.initial_cash,
             "cost_model_reference": prepared.cost_model_reference,
             "account_truth_freshness_as_of": (

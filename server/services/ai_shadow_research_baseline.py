@@ -80,6 +80,7 @@ class AiShadowResearchBaselineMixin:
         expected_dataset_snapshot_id: str | None = None,
         reviewed_fee_schedule_resolution: Any | None = None,
         research_start_date: str | None = None,
+        entry_board_policy: Mapping[str, Any] | None = None,
     ) -> PreparedBaseline:
         """Build one deterministic baseline, optionally replaying frozen inputs.
 
@@ -126,6 +127,16 @@ class AiShadowResearchBaselineMixin:
             market_date=market_date,
             initial_cash=initial_cash,
             market_universe_snapshot=market_universe_snapshot,
+            replay_policy=(
+                (
+                    shadow_research_json_object(seed.get("metrics_json"))
+                    .get("market_universe_truth", {})
+                    .get("universe_policy")
+                    or MarketUniversePolicy.legacy().to_dict()
+                )
+                if expected_dataset_snapshot_id
+                else None
+            ),
         )
         research_panel = market_universe_truth["research_panel"]
         market_date = str(research_panel["trade_date"])
@@ -237,8 +248,19 @@ class AiShadowResearchBaselineMixin:
             raise ShadowResearchRejected(
                 "research_baseline_execution_policy_unsupported"
             )
-        strategy = build_dual_ma_research_strategy(request.params, len(instruments))
-        result = BacktestEngine(
+        portfolio_policy_id = (market_universe_truth.get("deployment_scope") or {}).get(
+            "portfolio_policy_id"
+        )
+        if portfolio_policy_id:
+            from domain.instrument import make_research_stock
+
+            instruments = {
+                s: make_research_stock(str(s), i.name) for s, i in instruments.items()
+            }
+        strategy = build_dual_ma_research_strategy(
+            request.params, len(instruments), portfolio_policy_id=portfolio_policy_id
+        )
+        engine = BacktestEngine(
             strategy=strategy,
             instruments=instruments,
             data_handlers=handlers,
@@ -246,7 +268,11 @@ class AiShadowResearchBaselineMixin:
             commission_calc=commission_calc,
             execution_config=research_execution_config(commission_calc),
             db=None,
-        ).run()
+        )
+        strategy.bind_portfolio_engine(
+            engine, handlers, entry_board_policy=entry_board_policy
+        )
+        result = engine.run()
         min_train, test_window, step = rolling_oos_parameters(len(result.equity_curve))
         request.oos_min_train_points = min_train
         request.oos_test_window_points = test_window
@@ -256,6 +282,18 @@ class AiShadowResearchBaselineMixin:
         )
         metrics = result.metrics
         metrics_json = metrics.to_json_dict()
+        if entry_board_policy is not None:
+            from server.services.account_board_permissions import (
+                validate_entry_board_policy,
+            )
+
+            metrics_json["entry_board_policy"] = validate_entry_board_policy(
+                entry_board_policy
+            )
+            request.params = {
+                **(request.params or {}),
+                "entry_board_policy": dict(entry_board_policy),
+            }
         metrics_json["execution_timing"] = result.execution_timing
         metrics_json["cost_assumptions"] = {
             **research_friction_assumptions(),
@@ -267,6 +305,8 @@ class AiShadowResearchBaselineMixin:
             instruments=instruments,
             initial_cash=result.initial_cash,
             commission_calc=commission_calc,
+            portfolio_policy_id=portfolio_policy_id,
+            entry_board_policy=entry_board_policy,
         )
         metrics_json.update(
             {
@@ -329,6 +369,8 @@ class AiShadowResearchBaselineMixin:
                 handlers=handlers,
                 instruments=instruments,
                 commission_calc=commission_calc,
+                portfolio_policy_id=portfolio_policy_id,
+                entry_board_policy=entry_board_policy,
             )
         payload = _baseline_result_payload(result, metrics_json, evidence)
         payload["metrics_json"] = build_backtest_report_metrics_json(
@@ -339,7 +381,7 @@ class AiShadowResearchBaselineMixin:
         if seed_result_id is None:
             seed_result_id = _persist_seed_result(
                 self._db,
-                config=config,
+                config=request.model_dump(mode="json"),
                 initial_cash=float(initial_cash),
                 payload=payload,
             )
@@ -362,19 +404,31 @@ def _baseline_cost_sensitivity(
     instruments: dict[Symbol, Any],
     initial_cash: Decimal,
     commission_calc: Any,
+    portfolio_policy_id: str | None = None,
+    entry_board_policy: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Replay the baseline's fixed rules under the bounded adverse cost panel."""
     scenarios = []
     for bps in RESEARCH_COST_STRESS_BPS:
-        stressed = BacktestEngine(
-            strategy=build_dual_ma_research_strategy(request.params, len(instruments)),
+        strategy = build_dual_ma_research_strategy(
+            request.params, len(instruments), portfolio_policy_id=portfolio_policy_id
+        )
+        engine = BacktestEngine(
+            strategy=strategy,
             instruments=instruments,
             data_handlers=handlers,
             initial_cash=initial_cash,
             execution_config=research_execution_config(
                 commission_calc, slippage_bps=bps
             ),
-        ).run()
+        )
+        strategy.bind_portfolio_engine(
+            engine,
+            handlers,
+            slippage_bps=Decimal(str(bps)),
+            entry_board_policy=entry_board_policy,
+        )
+        stressed = engine.run()
         scenarios.append(
             {
                 **research_friction_assumptions(bps),
@@ -593,13 +647,19 @@ def _dual_ma_parameter_robustness(
     handlers: dict[Symbol, DataHandler],
     instruments: dict[Symbol, Any],
     commission_calc: Any,
+    portfolio_policy_id: str | None = None,
+    entry_board_policy: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Measure the configured baseline's adjacent windows without retuning it.
 
     Reuse the same frozen bars, cash and fees as the selected run. This is a
     sensitivity report; even when a neighbor wins, the seed remains unchanged.
     """
-    selected = dict(request.params or {})
+    selected = {
+        key: value
+        for key, value in (request.params or {}).items()
+        if key != "entry_board_policy"
+    }
     results = [{"params": selected, "score": float(selected_result.total_return)}]
     for name in ("short_period", "long_period"):
         for delta in (-1, 1):
@@ -608,15 +668,22 @@ def _dual_ma_parameter_robustness(
                 params = StrategyRegistry.validate_params(request.strategy, params)
             except StrategyParameterValidationError:
                 continue
-            result = BacktestEngine(
-                strategy=build_dual_ma_research_strategy(params, len(instruments)),
+            strategy = build_dual_ma_research_strategy(
+                params, len(instruments), portfolio_policy_id=portfolio_policy_id
+            )
+            engine = BacktestEngine(
+                strategy=strategy,
                 instruments=instruments,
                 data_handlers=handlers,
                 initial_cash=selected_result.initial_cash,
                 commission_calc=commission_calc,
                 execution_config=research_execution_config(commission_calc),
                 db=None,
-            ).run()
+            )
+            strategy.bind_portfolio_engine(
+                engine, handlers, entry_board_policy=entry_board_policy
+            )
+            result = engine.run()
             results.append({"params": params, "score": float(result.total_return)})
     return build_sweep_robustness_evidence(
         results=results,
@@ -697,6 +764,7 @@ def _verify_and_load_baseline_market_truth(
     market_date: str,
     initial_cash: float,
     market_universe_snapshot: Mapping[str, Any] | None,
+    replay_policy: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], Any, dict[str, pd.DataFrame]]:
     try:
         trading_dates = verified_trading_dates(
@@ -737,7 +805,11 @@ def _verify_and_load_baseline_market_truth(
             start_date=start_date,
             end_date=market_date,
         )
-        policy_rules = MarketUniversePolicy()
+        policy_rules = (
+            MarketUniversePolicy.from_dict(replay_policy)
+            if replay_policy
+            else MarketUniversePolicy()
+        )
         members = (market_universe_snapshot or {}).get("members", [])
         ready = sum(
             len(frame) >= policy_rules.minimum_history_rows

@@ -12,9 +12,12 @@ import sqlite3
 import threading
 import uuid
 from collections.abc import Callable
+from contextvars import copy_context
 from datetime import date, datetime, time, timezone
 
+from data.dataset.reader import daily_bar_dataset_read_scope
 from data.market.contracts import MarketDataProviderDescriptor
+from data.market.corporate_actions import CorporateActionObservationError
 from data.source_policy import (
     source_policy_for_config,
     verification_source_policy_for_config,
@@ -22,8 +25,10 @@ from data.source_policy import (
 from server.contracts.jobs import JobRun, JobStore
 from server.db import AppDatabase
 from server.persistence.automation_runs import AutomationRunRepository
+from server.persistence.connection import connect_sqlite
 from server.persistence.jobs import SQLiteJobStore, job_id_for
 from server.persistence.market_daily_call_budget import (
+    BUDGET_DEFERRED_CODE,
     MarketDailyProviderBudgetDeferred,
     reserve_market_daily_provider_call,
 )
@@ -41,11 +46,17 @@ from server.services.daily_market_collection import (
 )
 from server.services.market_calendar_automation import MarketCalendarAutomationService
 from server.services.market_calendar_dates import (
+    project_market_session,
     resolve_verified_closed_trading_dates,
     resolve_verified_closed_trading_dates_in_range,
 )
 from server.services.market_calendar_evidence import validate_verified_market_calendar
 from server.services.market_hours import get_shanghai_now
+from server.services.research_corporate_action_jobs import (
+    CORPORATE_ACTION_DAY_JOB,
+    CorporateActionDayService,
+    require_corporate_action_job_permission,
+)
 from server.services.research_observation_data_preparation import (
     guard_observation_data_preparation,
     observation_daily_job_grant,
@@ -67,6 +78,8 @@ from server.workers.presence import run_with_presence
 
 logger = logging.getLogger(__name__)
 CALENDAR_JOB = "market_calendar_sync"
+# Bound one cache lifetime and pass over the existing queue; no new allowance.
+_MAX_FORWARD_INPUT_JOBS_PER_BATCH = 250
 
 
 def enqueue_daily_market_calendar_job(store: JobStore, *, now: datetime) -> JobRun:
@@ -234,6 +247,40 @@ def _require_current_verified_daily_market_job(
         raise VerifiedDailyMarketJobNotCurrent(
             "verified_daily_market_source_policy_stale"
         )
+    if request.is_range:
+        try:
+            dates = resolve_verified_closed_trading_dates_in_range(
+                db,
+                datetime.now(timezone.utc),
+                start_date=request.range_start_date,
+                end_date=request.range_end_date,
+                maximum_calendar_days=3653,
+            )
+        except ValueError as exc:
+            raise VerifiedDailyMarketJobNotCurrent(
+                "verified_daily_market_session_not_closed"
+            ) from exc
+        except Exception as exc:
+            raise VerifiedDailyMarketJobNotCurrent(
+                "verified_daily_market_calendar_evidence_stale"
+            ) from exc
+        if tuple(date.fromisoformat(item.trade_date) for item in dates) != (
+            request.expected_sessions()
+        ) or set(request.calendar_evidence_refs) != {
+            ref for item in dates for ref in item.calendar_evidence_refs
+        }:
+            raise VerifiedDailyMarketJobNotCurrent(
+                "verified_daily_market_range_calendar_mismatch"
+            )
+        for item in dates:
+            if (
+                request.calendar_refs_for_session(date.fromisoformat(item.trade_date))
+                != item.calendar_evidence_refs
+            ):
+                raise VerifiedDailyMarketJobNotCurrent(
+                    "verified_daily_market_calendar_evidence_stale"
+                )
+        return
     blocker = _current_daily_market_calendar_blocker(
         db, request.trade_date, request.calendar_evidence_refs
     )
@@ -395,6 +442,53 @@ async def execute_calendar_job(
             await heartbeat
 
 
+async def execute_corporate_action_day_job(
+    db,
+    config,
+    store,
+    job,
+    *,
+    stopped=lambda: False,
+    timeout=180,
+    heartbeat_interval=15,
+):
+    """Use the same lease fencing and actual upstream call budget as daily bars."""
+
+    def guard(conn):
+        if stopped():
+            raise ValueError("corporate_action_preparation_stopped")
+        require_corporate_action_job_permission(
+            conn, job.payload, now=datetime.now(timezone.utc)
+        )
+
+    def validate():
+        with connect_sqlite(db.path, readonly=True) as conn:
+            guard(conn)
+
+    def before_fetch(descriptor):
+        validate()
+        reserve_market_daily_provider_call(
+            db.path,
+            job.lease,
+            descriptor,
+            now=datetime.now(timezone.utc),
+            guard=guard,
+        )
+
+    await _execute_daily_market_job(
+        store,
+        job,
+        CorporateActionDayService(db.path.resolve().parent / "research", config),
+        timeout=timeout,
+        heartbeat_interval=heartbeat_interval,
+        result_prefix="corporate_action_day:sha256:",
+        label="corporate_action",
+        request_validator=validate,
+        before_provider_fetch=before_fetch,
+        finish_guard=guard,
+    )
+
+
 async def execute_verified_daily_market_job(
     store: JobStore,
     job: JobRun,
@@ -537,7 +631,8 @@ async def _execute_daily_market_job(
             pass
 
     threading.Thread(
-        target=run,
+        target=copy_context().run,
+        args=(run,),
         name=f"{label}-job",
         daemon=True,
     ).start()
@@ -587,6 +682,14 @@ async def _execute_daily_market_job(
     except Exception as exc:
         if isinstance(exc, MarketDailyProviderBudgetDeferred):
             # The reservation transaction already requeued this leased job.
+            logger.info(
+                "Daily provider budget deferred job=%s upstream_group=%s "
+                "code=%s available_at=%s",
+                job.job_id,
+                exc.upstream_group,
+                str(exc),
+                exc.available_at.isoformat(),
+            )
             return
         _record_source_resolution(
             source_resolution_recorder,
@@ -597,7 +700,15 @@ async def _execute_daily_market_job(
         try:
             now = datetime.now(timezone.utc)
             retry_seconds = min(60 * 2 ** (job.attempt - 1), 3600)
-            if isinstance(exc, DailyMarketCollectionFailure):
+            if isinstance(exc, CorporateActionObservationError):
+                store.fail(
+                    job.lease,
+                    now=now,
+                    error=str(exc),
+                    retry_seconds=retry_seconds,
+                    retryable=str(exc) != "tushare_dividend_response_may_be_truncated",
+                )
+            elif isinstance(exc, DailyMarketCollectionFailure):
                 store.fail(
                     job.lease,
                     now=now,
@@ -657,6 +768,119 @@ async def run_data_worker(config) -> None:
     owner = f"data-worker:{os.getpid()}:{uuid.uuid4().hex}"
     preparation_stop = threading.Event()
 
+    async def execute_market_job(market_job):
+        verified_service = VerifiedDailyMarketDataService(
+            db.path.resolve().parent / "research",
+            config,
+        )
+        try:
+            grant = observation_daily_job_grant(market_job.payload)
+        except ValueError:
+            # The validator rejects a malformed grant before fetching;
+            # keep that rejection within the ordinary job failure path.
+            grant = None
+
+        def publication_guard(action):
+            assert grant is not None
+            return AutomationRunRepository(db.path).publish_observation_dataset(
+                observation_id=grant["observation_id"],
+                generation=grant["generation"],
+                stop_requested=preparation_stop.is_set,
+                publish=action,
+            )
+
+        def finish_guard(conn):
+            assert grant is not None
+            guard_observation_data_preparation(conn, grant, preparation_stop.is_set)
+
+        def before_verified_fetch(
+            descriptor: MarketDataProviderDescriptor,
+        ) -> None:
+            _require_current_verified_daily_market_job(db, config, market_job)
+            reserve_market_daily_provider_call(
+                db.path,
+                market_job.lease,
+                descriptor,
+                now=datetime.now(timezone.utc),
+            )
+
+        def record_source_resolution(payload: dict[str, object]) -> None:
+            db.append_event_sync(
+                event_type=VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                entity_type="market_daily_job",
+                entity_id=market_job.job_id,
+                source="data_worker",
+                source_ref=market_job.job_id,
+                payload=payload,
+            )
+
+        try:
+            await execute_verified_daily_market_job(
+                store,
+                market_job,
+                verified_service,
+                request_validator=lambda: _require_current_verified_daily_market_job(
+                    db, config, market_job
+                ),
+                before_provider_fetch=before_verified_fetch,
+                publication_guard=publication_guard if grant is not None else None,
+                finish_guard=finish_guard if grant is not None else None,
+                source_resolution_recorder=record_source_resolution,
+            )
+        except WorkerExecutionAborted:
+            raise
+        except Exception:
+            logger.exception("Verified daily market job lease or completion failed")
+        return store.get(market_job.job_id)
+
+    async def prepare_observation(identity, now):
+        # Preparation performs the first canonical read outside any job's
+        # execution timeout. Each exact reference lives only for this book's
+        # bounded batch; no other book or next pass inherits its cached bytes.
+        with daily_bar_dataset_read_scope():
+            try:
+                preparation_reports = await asyncio.to_thread(
+                    run_research_observation_data_preparation_once,
+                    db,
+                    config,
+                    now=now,
+                    stop_requested=preparation_stop,
+                    observation_id=identity,
+                )
+            except Exception:
+                logger.exception("Research observation input preparation failed")
+                preparation_reports = []
+
+            forward_claimed = False
+            attempted = 0
+            budget_deferred = False
+            for report in preparation_reports:
+                for job_id in reversed(report.get("pending_job_ids", [])):
+                    if attempted >= _MAX_FORWARD_INPUT_JOBS_PER_BATCH:
+                        break
+                    attempted += 1
+                    market_job = store.claim(
+                        VERIFIED_DAILY_MARKET_JOB,
+                        owner,
+                        now=datetime.now(timezone.utc),
+                        job_id=job_id,
+                    )
+                    if market_job is None:
+                        continue
+                    forward_claimed = True
+                    finished = await execute_market_job(market_job)
+                    if finished is not None and finished.error == BUDGET_DEFERRED_CODE:
+                        budget_deferred = True
+                        break
+                if budget_deferred or attempted >= _MAX_FORWARD_INPUT_JOBS_PER_BATCH:
+                    break
+
+            return forward_claimed, any(
+                report.get("full_scope_input_active") is True
+                for report in preparation_reports
+            )
+
     async def consume():
         while True:
             await wait_for_release_activation()
@@ -678,18 +902,6 @@ async def run_data_worker(config) -> None:
                         logger.exception("Calendar job lease or completion failed")
 
             try:
-                preparation_reports = await asyncio.to_thread(
-                    run_research_observation_data_preparation_once,
-                    db,
-                    config,
-                    now=now,
-                    stop_requested=preparation_stop,
-                )
-            except Exception:
-                logger.exception("Research observation input preparation failed")
-                preparation_reports = []
-
-            try:
                 plan = enqueue_latest_daily_market_collection_jobs(
                     db,
                     config,
@@ -705,7 +917,62 @@ async def run_data_worker(config) -> None:
             except Exception:
                 logger.exception("Daily market collection job planning failed")
 
-            collection_job = store.claim(DAILY_MARKET_COLLECTION_JOB, owner, now=now)
+            # One market-date job needs four genuine SDK calls for every stock,
+            # so complete its source-reported distribution inputs before bars.
+            action_job = store.claim(CORPORATE_ACTION_DAY_JOB, owner, now=now)
+            if action_job:
+                try:
+                    await execute_corporate_action_day_job(
+                        db,
+                        config,
+                        store,
+                        action_job,
+                        stopped=preparation_stop.is_set,
+                    )
+                except WorkerExecutionAborted:
+                    raise
+                except Exception:
+                    logger.exception("Corporate action input job failed")
+
+            forward_claimed = False
+            full_scope_input_active = False
+            try:
+                policies = AutomationRunRepository(
+                    db.path
+                ).list_observation_automation_policies()
+            except Exception:
+                logger.exception("Research observation policies could not be read")
+                policies = []
+            for policy in policies:
+                identity = policy.get("observation_id")
+                if not isinstance(identity, str) or not policy.get(
+                    "dataset_preparation_enabled", False
+                ):
+                    continue
+                claimed, active = await prepare_observation(
+                    identity, datetime.now(timezone.utc)
+                )
+                forward_claimed = forward_claimed or claimed
+                full_scope_input_active = full_scope_input_active or active
+
+            # A verified trading day still needs its not-yet-closed full-market
+            # input. Historical collection must not spend that day's allowance
+            # before the opted-in forward jobs can be queued after close.
+            reserve_forward_budget = False
+            if full_scope_input_active:
+                session = project_market_session(db, datetime.now(timezone.utc))
+                reserve_forward_budget = session["calendar_verified"] and session[
+                    "status"
+                ] not in {"unknown", "non_trading_day"}
+            collection_job = (
+                None
+                if forward_claimed or reserve_forward_budget
+                else store.claim(
+                    DAILY_MARKET_COLLECTION_JOB,
+                    owner,
+                    now=datetime.now(timezone.utc),
+                )
+            )
             if collection_job:
                 collection_service = DailyMarketCollectionService(
                     db.path.resolve().parent / "research", config
@@ -741,92 +1008,14 @@ async def run_data_worker(config) -> None:
                 except Exception:
                     logger.exception("Daily market collection job failed")
 
-            market_job = None
-            # Complete the opted-in current input basket before unrelated older
-            # verification backfills. Lease selection and retries stay canonical.
-            for report in preparation_reports:
-                for job_id in reversed(report.get("pending_job_ids", [])):
-                    market_job = store.claim(
-                        VERIFIED_DAILY_MARKET_JOB, owner, now=now, job_id=job_id
-                    )
-                    if market_job is not None:
-                        break
-                if market_job is not None:
-                    break
-            if market_job is None:
-                market_job = store.claim(VERIFIED_DAILY_MARKET_JOB, owner, now=now)
-            if market_job:
-                verified_service = VerifiedDailyMarketDataService(
-                    db.path.resolve().parent / "research",
-                    config,
+            if not forward_claimed and not reserve_forward_budget:
+                market_job = store.claim(
+                    VERIFIED_DAILY_MARKET_JOB,
+                    owner,
+                    now=datetime.now(timezone.utc),
                 )
-                try:
-                    grant = observation_daily_job_grant(market_job.payload)
-                except ValueError:
-                    # The validator rejects a malformed grant before fetching;
-                    # keep that rejection within the ordinary job failure path.
-                    grant = None
-
-                def publication_guard(action):
-                    assert grant is not None
-                    return AutomationRunRepository(db.path).publish_observation_dataset(
-                        observation_id=grant["observation_id"],
-                        generation=grant["generation"],
-                        stop_requested=preparation_stop.is_set,
-                        publish=action,
-                    )
-
-                def finish_guard(conn):
-                    assert grant is not None
-                    guard_observation_data_preparation(
-                        conn, grant, preparation_stop.is_set
-                    )
-
-                def before_verified_fetch(
-                    descriptor: MarketDataProviderDescriptor,
-                ) -> None:
-                    _require_current_verified_daily_market_job(db, config, market_job)
-                    reserve_market_daily_provider_call(
-                        db.path,
-                        market_job.lease,
-                        descriptor,
-                        now=datetime.now(timezone.utc),
-                    )
-
-                def record_source_resolution(payload: dict[str, object]) -> None:
-                    db.append_event_sync(
-                        event_type=VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT,
-                        timestamp=datetime.now(timezone.utc).isoformat(),
-                        entity_type="market_daily_job",
-                        entity_id=market_job.job_id,
-                        source="data_worker",
-                        source_ref=market_job.job_id,
-                        payload=payload,
-                    )
-
-                try:
-                    await execute_verified_daily_market_job(
-                        store,
-                        market_job,
-                        verified_service,
-                        request_validator=lambda: (
-                            _require_current_verified_daily_market_job(
-                                db, config, market_job
-                            )
-                        ),
-                        before_provider_fetch=before_verified_fetch,
-                        publication_guard=publication_guard
-                        if grant is not None
-                        else None,
-                        finish_guard=finish_guard if grant is not None else None,
-                        source_resolution_recorder=record_source_resolution,
-                    )
-                except WorkerExecutionAborted:
-                    raise
-                except Exception:
-                    logger.exception(
-                        "Verified daily market job lease or completion failed"
-                    )
+                if market_job:
+                    await execute_market_job(market_job)
             await asyncio.sleep(5)
 
     try:

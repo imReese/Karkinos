@@ -437,14 +437,20 @@ def test_promoted_scan_reopens_exact_older_batch_after_new_research_batch(
         draft_prefix="newer-draft",
     )
     strategy_id = "ai_formula_shadow:normalized-candidate-5"
-    db = SimpleNamespace(
-        path=tmp_path / "app.db",
-        list_strategy_promotion_states_sync=lambda: [
-            {"strategy_id": strategy_id, "stage": "paper_shadow"}
-        ],
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.upsert_strategy_promotion_state_sync(
+        strategy_id=strategy_id,
+        stage="paper_shadow",
+        gate_status="paper_shadow_enabled",
+        live_like_enabled=False,
+        missing_requirements=[],
+        backtest_result_id=1,
+        payload={"human_review": {"reviewer": "human:fixture"}},
     )
     service = object.__new__(PromotedStrategyUniverseScanService)
     service._db = db
+    service._config = SimpleNamespace(start_date="2026-01-01")
     service._strategy_loader = service._load_strategy
     service._strategy_gate_resolver = lambda current_db, current_id, **kwargs: (
         {

@@ -72,6 +72,91 @@ def create(client, path, *, health_policy=None):
     return result.json(), request
 
 
+def test_new_portfolio_targets_use_actual_book_and_reject_concurrent_settlement(paper):
+    from data.dataset.model import DatasetRef
+    from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
+    from server.ai_runtime.formula_dsl import FORMULA_AST_CONTRACT
+    from server.contracts.content_identity import content_fingerprint
+
+    client, service, current, observation, path = paper
+    create(client, path)
+    row = service.observations.repository.get(observation["id"])
+    field = {"op": "field", "name": "close"}
+    scope = {
+        "scope_kind": "full_declared_market",
+        "universe_policy": {"minimum_history_rows": 2, "allocation_slots": 1},
+        "portfolio_policy_id": FORMULA_PORTFOLIO_POLICY_ID,
+    }
+    scope["deployment_scope_fingerprint"] = "sha256:" + content_fingerprint(
+        {k: v for k, v in scope.items() if k != "scope_kind"}
+    )
+    row["source"]["source_selection"] = {
+        "portfolio_policy_id": FORMULA_PORTFOLIO_POLICY_ID,
+        "deployment_scope": scope,
+    }
+    row["source"]["formula_binding"] = {
+        "formula_ast": {
+            "schema_version": FORMULA_AST_CONTRACT,
+            "entry": {
+                "op": "gt",
+                "left": field,
+                "right": {"op": "constant", "value": 0},
+            },
+            "exit": {
+                "op": "lt",
+                "left": field,
+                "right": {"op": "constant", "value": 0},
+            },
+            "position_size": {"op": "equal_weight"},
+        }
+    }
+    # An old desired target is not a filled position.
+    row["publications"] = [{"payload": {"target_weights": {STOCK.symbol: "0.25"}}}]
+    snapshot = SimpleNamespace(
+        instruments=(STOCK,), instruments_for_session=lambda _: (STOCK,)
+    )
+    bars = read_daily_bar_dataset(
+        service.observations.objects,
+        DatasetRef(
+            service.observations.objects.resolve_ref(row["source"]["dataset_id"])
+        ),
+    ).bars
+    published = service.observations._portfolio_publication(
+        row,
+        bars,
+        row["source"]["dataset_id"],
+        DAYS[4],
+        DAYS[5],
+        DAYS[6],
+        snapshot=snapshot,
+    )
+    assert published["payload"]["forecasts"][0]["action"] == "enter"
+    assert published["payload"]["previous_target_weights"] == {STOCK.symbol: "0"}
+    book = service.get(observation["id"])
+    assert published["payload"]["paper_book_binding"] == {
+        "book_id": book["id"],
+        "version": book["version"],
+    }
+    with sqlite3.connect(service.db.path) as conn:
+        conn.execute(
+            "UPDATE research_paper_books SET version=version+1 WHERE observation_id=?",
+            (observation["id"],),
+        )
+    with pytest.raises(ValueError, match="observation_paper_book_version_conflict"):
+        service.observations.repository.advance(
+            observation_id=observation["id"],
+            request_id="stale-book",
+            request_fingerprint="stale-book",
+            expected_version=row["version"],
+            publication=published,
+            publication_deadline=current[0] + timedelta(days=1),
+        )
+    assert (
+        service.observations.repository.get(observation["id"])["version"]
+        == row["version"]
+    )
+
+
 def publish(client, observation, ref):
     result = client.post(
         f"/api/research-observations/{observation['id']}/advance",

@@ -6,8 +6,14 @@ import json
 import logging
 import sqlite3
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
+from server.contracts.recommendation_publication import (
+    PUBLICATION_POLICY_ID,
+    publication_time,
+    validate_publication_grant,
+)
 from server.contracts.research_observation_automation import (
     OBSERVATION_AUTOMATION_PREFIX,
     observation_automation_policy_id,
@@ -74,6 +80,47 @@ def require_observation_automation_policy(
         )
         if row is None or (row["lifecycle"] != "active" and not has_paper_permission):
             raise ValueError("observation_data_preparation_paused")
+
+
+def require_corporate_action_capture_permission(
+    conn: sqlite3.Connection, permission: dict[str, str], *, now: datetime
+) -> None:
+    """Recheck either existing data opt-in in the caller's fenced transaction."""
+    conn.row_factory = sqlite3.Row
+    if permission.get("kind") == "observation":
+        if set(permission) != {"kind", "observation_id", "generation"}:
+            raise ValueError("corporate_action_permission_invalid")
+        require_observation_automation_policy(
+            conn,
+            permission["observation_id"],
+            permission["generation"],
+            dataset_preparation=True,
+        )
+    elif permission.get("kind") == "publication":
+        if set(permission) != {
+            "kind",
+            "grant_id",
+            "generation",
+            "deployment_scope_fingerprint",
+        }:
+            raise ValueError("corporate_action_permission_invalid")
+        row = conn.execute(
+            "SELECT payload_json FROM automation_policies WHERE policy_id=?",
+            (PUBLICATION_POLICY_ID,),
+        ).fetchone()
+        grant = validate_publication_grant(json.loads(row[0])) if row else None
+        if (
+            not grant
+            or not grant["enabled"]
+            or publication_time(now) >= publication_time(grant["expires_at"])
+            or any(
+                grant.get(key) != permission[key]
+                for key in ("grant_id", "generation", "deployment_scope_fingerprint")
+            )
+        ):
+            raise ValueError("corporate_action_publication_grant_changed")
+    else:
+        raise ValueError("corporate_action_permission_invalid")
 
 
 def upsert_automation_run_in_transaction(
@@ -280,6 +327,22 @@ class AutomationRunRepository(SQLiteRepository):
             require_observation_automation_policy(
                 conn, observation_id, generation, dataset_preparation=True
             )
+            return publish()
+
+    def publish_corporate_action_dataset(
+        self,
+        *,
+        permission: dict[str, str],
+        now: datetime,
+        stop_requested: Callable[[], bool],
+        publish: Callable[[], Any],
+    ) -> Any:
+        """Admit a prevalidated CA Dataset under a fresh, short opt-in lock."""
+        with connect_sqlite(self._path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if stop_requested():
+                raise ValueError("corporate_action_preparation_stopped")
+            require_corporate_action_capture_permission(conn, permission, now=now)
             return publish()
 
     def require_observation_dataset_preparation(

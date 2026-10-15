@@ -204,6 +204,19 @@ class ResearchObservationsRepository:
             ):
                 raise ValueError("research_observation_computation_clock_reversed")
             if publication is not None:
+                paper_binding = publication.get("payload", {}).get("paper_book_binding")
+                if paper_binding is not None:
+                    book = conn.execute(
+                        "SELECT id, version, lifecycle FROM research_paper_books WHERE observation_id=?",
+                        (observation_id,),
+                    ).fetchone()
+                    if (
+                        book is None
+                        or book["id"] != paper_binding.get("book_id")
+                        or book["version"] != paper_binding.get("version")
+                        or book["lifecycle"] != "active"
+                    ):
+                        raise ValueError("observation_paper_book_version_conflict")
                 if publication_deadline is None:
                     raise ValueError(
                         "research_observation_publication_deadline_required"

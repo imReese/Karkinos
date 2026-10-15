@@ -154,6 +154,124 @@ def test_collection_policy_change_does_not_stale_explicit_verification(
     _require_current_verified_daily_market_job(calendar_db, config, job)
 
 
+def _range_job(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    row = _calendar()
+    sessions = (DAY, date(2025, 9, 19), date(2025, 9, 22))
+    for item in row["days"]:
+        item["is_trading_day"] = date.fromisoformat(item["date"]) in sessions
+    row["trading_day_count"] = len(sessions)
+    row["closed_day_count"] = len(row["days"]) - len(sessions)
+    row = db.upsert_market_calendar_snapshot_sync(row)
+    row = db.update_market_calendar_verification_sync(
+        exchange="SSE",
+        year=DAY.year,
+        source_fingerprint=row["source_fingerprint"],
+        verification_status="verified",
+        official_source_url="https://example.test/calendar",
+        official_source_fingerprint="b" * 64,
+        verified_by="fixture",
+    )
+    ref = validate_verified_market_calendar(row).evidence_ref
+    assert ref is not None
+    instruments = (InstrumentKey("600000", InstrumentType.STOCK),)
+    request = VerifiedDailyMarketJobRequest(
+        sessions[-1],
+        instruments,
+        FREE_CN_RESEARCH_V1.policy_id,
+        (ref,),
+        range_start_date=sessions[0],
+        range_end_date=sessions[-1],
+        session_memberships=tuple(
+            (day, () if index == 1 else instruments, (ref,))
+            for index, day in enumerate(sessions)
+        ),
+    )
+    store = SQLiteJobStore(db.path)
+    now = datetime.now(timezone.utc)
+    store.enqueue(VERIFIED_DAILY_MARKET_JOB, request.to_payload(), now=now)
+    job = store.claim(VERIFIED_DAILY_MARKET_JOB, "worker", now=now)
+    assert job is not None
+    config = SimpleNamespace(
+        market_data_verification_source_policy=FREE_CN_RESEARCH_V1.policy_id
+    )
+    return db, store, job, config
+
+
+def test_range_worker_requires_every_closed_session_even_for_empty_membership(tmp_path):
+    db, _store, job, config = _range_job(tmp_path)
+    _require_current_verified_daily_market_job(db, config, job)
+    omitted = replace(
+        job,
+        payload={
+            **job.payload,
+            "session_memberships": [
+                job.payload["session_memberships"][0],
+                job.payload["session_memberships"][-1],
+            ],
+        },
+    )
+    with pytest.raises(
+        VerifiedDailyMarketJobNotCurrent,
+        match="verified_daily_market_range_calendar_mismatch",
+    ):
+        _require_current_verified_daily_market_job(db, config, omitted)
+
+
+def test_range_worker_rejects_unclosed_tail_before_io(tmp_path, monkeypatch):
+    db, _store, job, config = _range_job(tmp_path)
+    monkeypatch.setattr(
+        "server.workers.data_worker.datetime",
+        SimpleNamespace(now=lambda tz: datetime(2025, 9, 19, 8, tzinfo=timezone.utc)),
+    )
+    with pytest.raises(
+        VerifiedDailyMarketJobNotCurrent,
+        match="verified_daily_market_(range_calendar_mismatch|session_not_closed)",
+    ):
+        _require_current_verified_daily_market_job(db, config, job)
+
+
+@pytest.mark.asyncio
+async def test_range_worker_rechecks_calendar_before_each_provider_entry(tmp_path):
+    db, store, job, config = _range_job(tmp_path)
+    calls = []
+
+    class Service:
+        def run(self, payload, *, before_publish, before_provider_fetch):
+            before_provider_fetch(None)
+            calls.append("primary")
+            row = db.get_market_calendar_snapshot_sync(exchange="SSE", year=DAY.year)
+            db.update_market_calendar_verification_sync(
+                exchange="SSE",
+                year=DAY.year,
+                source_fingerprint=row["source_fingerprint"],
+                verification_status="verified",
+                official_source_url="https://example.test/revised-calendar",
+                official_source_fingerprint="c" * 64,
+                verified_by="fixture",
+            )
+            before_provider_fetch(None)
+            calls.append("comparison")
+            before_publish()
+            return "dataset:sha256:" + "a" * 64
+
+    await execute_verified_daily_market_job(
+        store,
+        job,
+        Service(),
+        request_validator=lambda: _require_current_verified_daily_market_job(
+            db, config, job
+        ),
+        before_provider_fetch=lambda _: _require_current_verified_daily_market_job(
+            db, config, job
+        ),
+    )
+    assert calls == ["primary"]
+    assert store.get(job.job_id).result_ref is None
+    assert store.get(job.job_id).status == "queued"
+
+
 @pytest.mark.asyncio
 async def test_queued_cn_verification_is_stale_before_provider_io(tmp_path) -> None:
     store, job, calendar_db, config, _row = _job(

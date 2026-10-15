@@ -152,6 +152,27 @@ class AiShadowResearchAutomationService(
         self._provider_call_runway_seconds = provider_call_runway_seconds
         self._execution_guard = execution_guard
 
+    def _open_deployment_reservation(
+        self, grant: Mapping[str, Any]
+    ) -> dict[str, Any] | None:
+        from server.persistence.strategy_research import StrategyResearchAuditStore
+
+        research_store = StrategyResearchAuditStore(self._db.path)
+        research_store.init()
+        return next(
+            (
+                row
+                for row in research_store.deployment_reservations(grant["grant_id"])
+                if row["status"] in {"reserved", "running"}
+                and row.get("evidence", {})
+                .get("reservation", {})
+                .get("publication_grant", {})
+                .get("generation")
+                == grant["generation"]
+            ),
+            None,
+        )
+
     def _require_execution_current(self) -> None:
         if self._execution_guard is not None:
             self._execution_guard()

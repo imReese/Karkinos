@@ -113,9 +113,16 @@ def sealed_return_from_result(
 ) -> Decimal:
     """Extract the sealed-tail net return from a full-window backtest result."""
 
-    sealed_start = datetime.combine(partition.sealed_start, datetime.min.time())
-    boundary = [equity for ts, equity in result.equity_curve if ts < sealed_start]
-    sealed = [equity for ts, equity in result.equity_curve if ts >= sealed_start]
+    boundary = [
+        equity
+        for ts, equity in result.equity_curve
+        if _session_day(ts) < partition.sealed_start
+    ]
+    sealed = [
+        equity
+        for ts, equity in result.equity_curve
+        if _session_day(ts) >= partition.sealed_start
+    ]
     fresh = _fresh_sealed_book(result, partition)
     if (not boundary and not fresh) or not sealed or (fresh and boundary):
         raise ValueError("sealed_evaluation_insufficient_sealed_bars")
@@ -331,12 +338,15 @@ def build_sealed_holdout_evaluation(
     if not str(formula_fingerprint).startswith("sha256:"):
         raise ValueError("sealed_evaluation_formula_fingerprint_invalid")
 
-    sealed_start = datetime.combine(partition.sealed_start, datetime.min.time())
     sealed_points = [
-        (ts, equity) for ts, equity in result.equity_curve if ts >= sealed_start
+        (ts, equity)
+        for ts, equity in result.equity_curve
+        if _session_day(ts) >= partition.sealed_start
     ]
     boundary_points = [
-        (ts, equity) for ts, equity in result.equity_curve if ts < sealed_start
+        (ts, equity)
+        for ts, equity in result.equity_curve
+        if _session_day(ts) < partition.sealed_start
     ]
     fresh = _fresh_sealed_book(result, partition)
     if (
@@ -348,7 +358,11 @@ def build_sealed_holdout_evaluation(
     boundary_equity = result.initial_cash if fresh else boundary_points[-1][1]
     sealed_initial_equity = boundary_equity
     sealed_final_equity = sealed_points[-1][1]
-    sealed_fills = [fill for fill in result.fills if fill.timestamp >= sealed_start]
+    sealed_fills = [
+        fill
+        for fill in result.fills
+        if _session_day(fill.timestamp) >= partition.sealed_start
+    ]
     sealed_cost = sum(
         (fill.commission + fill.slippage for fill in sealed_fills), Decimal("0")
     )
@@ -639,6 +653,19 @@ def final_research_evaluation_blocker(value: Any) -> str | None:
             return "independent_final_execution_code_binding_invalid"
         if evaluation.get("passed_benchmark") is not True:
             return "independent_final_excess_not_positive"
+        if binding.get("deployment_scope"):
+            assessment = dict(core.get("deployment_assessment") or {})
+            assessment_fp = assessment.pop("evidence_fingerprint", None)
+            if (
+                assessment_fp != _fingerprint(assessment)
+                or assessment.get("status") != "pass"
+            ):
+                return "deployment_validation_not_pass"
+            if assessment.get("deployment_scope_fingerprint") != binding[
+                "deployment_scope"
+            ].get("deployment_scope_fingerprint"):
+                return "deployment_scope_mismatch"
+            return None
         if (
             correction.get("status") != "assessed"
             or correction.get("significant_at_0_95") is not True
@@ -647,3 +674,13 @@ def final_research_evaluation_blocker(value: Any) -> str | None:
     except (TypeError, ValueError, KeyError, AttributeError):
         return "independent_final_evaluation_invalid"
     return None
+
+
+def _session_day(stamp: datetime) -> date:
+    from zoneinfo import ZoneInfo
+
+    return (
+        stamp.astimezone(ZoneInfo("Asia/Shanghai")).date()
+        if stamp.tzinfo is not None
+        else stamp.date()
+    )

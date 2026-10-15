@@ -828,36 +828,18 @@ async def test_provider_free_qualification_replays_all_five_and_is_idempotent():
 
 @pytest.mark.asyncio
 @pytest.mark.trading_safety
-async def test_qualification_finish_auto_switches_to_winner(monkeypatch):
+async def test_qualification_without_grant_never_creates_human_approval():
     service, store, capture, baseline, adapter, fee_calls = _harness()
-    approved = []
-    store.prepare_qualification_candidate_approval = lambda cand_id, **kw: {
-        "qualification_approval_id": "appr-1",
-        "qualification_candidate_id": cand_id,
-    }
-    store.approve_qualification_candidate_for_paper_shadow = lambda cand_id, **kw: (
-        approved.append(cand_id) or {"strategy_promotion": {}}
-    )
-    monkeypatch.setattr(
-        "server.services.ai_shadow_research_qualification.resolve_ai_shadow_qualification_promotion_evidence",
-        lambda db, cand_id, **kw: (
-            {
-                "status": "pass",
-                "source_candidate_id": "src-5",
-                "backtest_result_id": 100,
-                "qualification_run_id": "qrun-1",
-                "comparison_fingerprint": "fprint",
-                "qualification_approval_id": "appr-1",
-                "strategy_advancement_gate": {"evidence_fingerprint": "gate-fp"},
-                "daily_strategy_artifact_binding": {},
-                "qualification_binding": {},
-            },
-            [],
-        ),
-    )
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("qualification must not manufacture human approval")
+
+    store.prepare_qualification_candidate_approval = forbidden
+    store.approve_qualification_candidate_for_paper_shadow = forbidden
     result = await service.run_once()
     assert result["status"] == "completed"
-    assert approved == ["qualified-source-candidate-5"]
+    assert result["publication_attempt"]["status"] == "blocked"
+    assert result["publication_attempt"]["blockers"] == ["publication_grant_missing"]
 
 
 @pytest.mark.asyncio
@@ -1207,6 +1189,43 @@ def test_all_legacy_sources_report_compatible_backlog_empty() -> None:
         match="qualification_compatible_source_backlog_empty",
     ):
         select_oldest_retryable_source_run_id(Daily(), Qualifications())
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_exploration_without_final_reservation_cannot_starve_full_scope_batch() -> None:
+    class Daily:
+        @staticmethod
+        def list_verified_research_artifact_pairs():
+            return [{"run_id": "legacy-sampled"}, {"run_id": "full-scope"}]
+
+        @staticmethod
+        def load_verified_research_candidate_strategies(*, run_id):
+            return {"run_id": run_id}
+
+    class Qualifications:
+        @staticmethod
+        def list_qualification_runs(*, limit, source_run_id):
+            assert source_run_id == "full-scope"
+            return []
+
+    def reservation(run_id):
+        if run_id == "legacy-sampled":
+            raise LookupError("exploration_has_no_final_reservation")
+        return {
+            "status": "reserved",
+            "evidence": {"reservation": {"partition": {"sealed_end": "2026-10-14"}}},
+        }
+
+    assert (
+        select_oldest_retryable_source_run_id(
+            Daily(),
+            Qualifications(),
+            final_reservation_reader=reservation,
+            final_evaluation_as_of=datetime.fromisoformat("2026-10-15T10:00:00+08:00"),
+        )
+        == "full-scope"
+    )
 
 
 @pytest.mark.unit

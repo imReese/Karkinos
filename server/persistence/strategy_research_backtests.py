@@ -113,7 +113,13 @@ class StrategyResearchBacktestRepositoryMixin:
             raise LookupError(f"formula backtest not found: {run_id}")
         return dict(row)
 
-    def research_trial_family(self, selection: Any) -> JsonObject:
+    def research_trial_family(
+        self,
+        selection: Any,
+        *,
+        trial_cutoff: str | None = None,
+        exposure_cutoff: str | None = None,
+    ) -> JsonObject:
         """Count scored semantic tests, including local sweeps and rejected drafts.
 
         Replays of an identical formula/data/cost test count once. Related earlier
@@ -129,9 +135,15 @@ class StrategyResearchBacktestRepositoryMixin:
         with self._connect_readonly() as conn:
             if selection.has_sealed_holdout:
                 for session in conn.execute(
-                    "SELECT request_json FROM ai_strategy_research_sessions "
+                    "SELECT request_json,created_at,run_claimed_at FROM ai_strategy_research_sessions "
                     "WHERE context_snapshot_id IS NOT NULL OR run_claimed_at IS NOT NULL"
                 ).fetchall():
+                    if (
+                        exposure_cutoff
+                        and (session["run_claimed_at"] or session["created_at"])
+                        > exposure_cutoff
+                    ):
+                        continue
                     exposed = json.loads(session["request_json"]).get("selection", {})
                     if (
                         set(exposed.get("universe", [])) & set(selection.universe)
@@ -157,13 +169,21 @@ class StrategyResearchBacktestRepositoryMixin:
             if (
                 selection.has_sealed_holdout
                 and row["canonical_backtest_result_id"] is not None
+                and (not exposure_cutoff or row["created_at"] <= exposure_cutoff)
                 and set(selected.get("universe", [])) & set(selection.universe)
                 and selected.get("start_date", "") <= selection.sealed_end_date
                 and selected.get("end_date", "") > selection.end_date
             ):
                 raise StrategyResearchRejected("sealed_window_exposed_to_research")
+            if trial_cutoff and row["created_at"] > trial_cutoff:
+                continue
             if (
-                sorted(selected.get("universe", [])) != sorted(selection.universe)
+                (
+                    not (set(selected.get("universe", [])) & set(selection.universe))
+                    if selection.deployment_scope
+                    else sorted(selected.get("universe", []))
+                    != sorted(selection.universe)
+                )
                 or selected.get("frequency") != selection.frequency
                 or selected.get("cost_model_reference")
                 != selection.cost_model_reference

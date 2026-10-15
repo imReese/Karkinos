@@ -291,7 +291,16 @@ def build_strategy_advancement_gate(
     baseline_snapshot = str(baseline.get("dataset_snapshot_id") or "")
     candidate_snapshot = str(candidate.get("dataset_snapshot_id") or "")
     admission_blocker = None
-    if candidate.get("dataset_research_use") == "exploratory_backtest":
+    from analytics.sealed_holdout import final_research_evaluation_blocker
+
+    final = candidate.get("independent_evaluation") or {}
+    independent_deployment = (
+        bool(final.get("reservation", {}).get("deployment_scope"))
+        and final_research_evaluation_blocker(final) is None
+    )
+    if independent_deployment:
+        admission_blocker = None
+    elif candidate.get("dataset_research_use") == "exploratory_backtest":
         admission_blocker = "candidate_dataset_exploratory_only"
     elif "dataset_research_use" in candidate or "immutable_dataset_id" in candidate:
         admission_blocker = "candidate_dataset_research_use_not_admitted"

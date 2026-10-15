@@ -12,12 +12,17 @@ from zoneinfo import ZoneInfo
 from analytics.dataset_snapshot import backtest_dataset_snapshot_content_id
 from core.types import InstrumentKey, InstrumentType
 from data.dataset.model import DailyBarDatasetSnapshot, DatasetRef
-from data.dataset.reader import DailyBarDatasetReadResult, read_daily_bar_dataset
+from data.dataset.reader import (
+    DailyBarDatasetReadResult,
+    read_daily_bar_dataset,
+    read_daily_bar_dataset_prefix,
+)
 from data.market.capture import read_provider_capture
 from data.market.quality_evidence import read_market_quality_evidence
 from data.market.revision import read_market_revision_materialization
 from data.market.verification_evidence import read_market_verification_evidence
 from data.storage.objects import ContentAddressedObjectStore
+from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
 from server.ai_runtime.contracts import content_fingerprint
 from server.ai_runtime.formula_dsl import FORMULA_BINDING_CONTRACT, FormulaBinding
 from server.services.market_calendar_evidence import validate_verified_market_calendar
@@ -80,6 +85,34 @@ def load_research_observation_source(
     }
 
 
+def observation_deployment_scope(source: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Only explicitly versioned sources opt into dynamic portfolio observation."""
+    selection = source.get("source_selection") or source.get("selection") or {}
+    if (
+        not isinstance(selection, Mapping)
+        or selection.get("portfolio_policy_id") is None
+    ):
+        return None
+    if selection.get("portfolio_policy_id") != FORMULA_PORTFOLIO_POLICY_ID:
+        raise ResearchObservationInputError("observation_portfolio_policy_unsupported")
+    scope = selection.get("deployment_scope")
+    if (
+        not isinstance(scope, dict)
+        or scope.get("portfolio_policy_id") != FORMULA_PORTFOLIO_POLICY_ID
+    ):
+        raise ResearchObservationInputError("observation_deployment_scope_invalid")
+    core = {
+        key: value
+        for key, value in scope.items()
+        if key not in {"scope_kind", "deployment_scope_fingerprint"}
+    }
+    if scope.get("deployment_scope_fingerprint") != "sha256:" + content_fingerprint(
+        core
+    ):
+        raise ResearchObservationInputError("observation_deployment_scope_invalid")
+    return scope
+
+
 def observation_input_binding(source: Mapping[str, Any]) -> dict[str, Any]:
     """Keep a new forward warmup separate from the immutable research identity."""
     if "forward_input" in source:
@@ -121,8 +154,11 @@ def bind_observation_forward_input(
         now=now,
         calendar_rows=calendar_reader(snapshot.start_date, now),
         minimum_bars=source["minimum_bars"],
+        deployment_scope=observation_deployment_scope(source),
     )
-    if len(result.bars) > 200_000:
+    if len(result.bars) > (
+        20_000_000 if observation_deployment_scope(source) else 200_000
+    ):
         raise ResearchObservationInputError("observation_dataset_budget_exceeded")
     return {
         "dataset_id": dataset_id,
@@ -140,16 +176,58 @@ def read_research_observation_dataset(
     now: datetime,
     calendar_rows: Sequence[dict[str, Any]],
     minimum_bars: int,
+    deployment_scope: Mapping[str, Any] | None = None,
+    membership_after: date | None = None,
+    verified_parent: DailyBarDatasetReadResult | None = None,
 ) -> DailyBarDatasetReadResult:
     """Read a complete fixed-start history ending at the latest closed session."""
     now = _instant(now)
     calendars = _calendars(calendar_rows, now=now)
     end = latest_closed_session(calendar_rows, now=now)
-    result = _read(objects, dataset_id)
+    result = _read(objects, dataset_id, verified_parent=verified_parent)
     snapshot = result.snapshot
     if not snapshot.verification_bound:
         raise ResearchObservationInputError("observation_dataset_unverified")
-    if snapshot.instruments != tuple(
+    if deployment_scope is not None:
+        if (
+            not snapshot.session_memberships
+            or snapshot.universe_policy_id
+            != deployment_scope.get("deployment_scope_fingerprint")
+            or any(
+                key.instrument_type is not InstrumentType.STOCK
+                for key in snapshot.instruments
+            )
+        ):
+            raise ResearchObservationInputError("observation_dataset_universe_mismatch")
+        required_after = membership_after or end
+        for membership in snapshot.session_memberships:
+            if membership.partition_date < required_after:
+                continue
+            future_sessions = sorted(
+                day
+                for days in calendars.values()
+                for day in days
+                if day > membership.partition_date
+            )
+            if not future_sessions:
+                raise ResearchObservationInputError(
+                    "observation_calendar_horizon_missing"
+                )
+            if (
+                not membership.source_observation_ids
+                or membership.decision_at is None
+                or membership.available_at > now
+                or membership.decision_at > now
+                or membership.available_at > membership.decision_at
+                or membership.decision_at
+                < _session_time(membership.partition_date, time(15))
+                or membership.decision_at
+                >= _session_time(future_sessions[0], time(9, 30))
+            ):
+                raise ResearchObservationInputError(
+                    "observation_membership_not_available"
+                )
+    elif snapshot.instruments != tuple(
         sorted(instruments, key=lambda item: (item.instrument_type.value, item.symbol))
     ):
         raise ResearchObservationInputError("observation_dataset_universe_mismatch")
@@ -160,7 +238,7 @@ def read_research_observation_dataset(
     if snapshot.cutoff > now:
         raise ResearchObservationInputError("observation_dataset_cutoff_in_future")
     expected = _sessions_between(calendars, start_date, end)
-    if tuple(p.partition_date for p in snapshot.partitions) != expected:
+    if tuple(sorted({p.partition_date for p in snapshot.partitions})) != expected:
         raise ResearchObservationInputError("observation_dataset_prefix_incomplete")
     if type(minimum_bars) is not int or minimum_bars < 1:
         raise ResearchObservationInputError("observation_minimum_bars_invalid")
@@ -228,6 +306,8 @@ def require_observation_dataset_prefix(
     objects: ContentAddressedObjectStore,
     source: Mapping[str, Any],
     snapshot: DailyBarDatasetSnapshot,
+    *,
+    verified_parent: DailyBarDatasetReadResult | None = None,
 ) -> None:
     """Preserve frozen daily inputs while allowing newly captured action reports.
 
@@ -239,10 +319,17 @@ def require_observation_dataset_prefix(
         raise ResearchObservationInputError(
             "observation_data_preparation_verified_source_required"
         )
-    original = _read(objects, identity).snapshot
+    original = _read(objects, identity, verified_parent=verified_parent).snapshot
     if (
         not original.verification_bound
-        or original.instruments != snapshot.instruments
+        or (
+            original.instruments != snapshot.instruments
+            if observation_deployment_scope(source) is None
+            else not set(original.instruments) <= set(snapshot.instruments)
+        )
+        or original.universe_policy_id != snapshot.universe_policy_id
+        or original.session_memberships
+        != snapshot.session_memberships[: len(original.session_memberships)]
         or original.start_date != snapshot.start_date
         or original.end_date > snapshot.end_date
         or original.resolver_policy_id != snapshot.resolver_policy_id
@@ -454,11 +541,22 @@ def _formula_source(config, metrics, start, end):
     if any(item.get("frequency") != "1d" for item in snapshot["symbol_universe"]):
         raise ResearchObservationInputError("observation_source_frequency_unsupported")
     execution = _object(metrics.get("signal_execution_evidence"))
-    expected_weight = 1.0 / min(4, len(instruments))
+    selection = metrics.get("source_selection") or metrics.get("research_selection")
+    declared_scope = (
+        observation_deployment_scope({"source_selection": selection})
+        if isinstance(selection, Mapping)
+        else None
+    )
+    expected_slots = (
+        int(declared_scope["universe_policy"].get("allocation_slots", 4))
+        if declared_scope
+        else min(4, len(instruments))
+    )
+    expected_weight = 1.0 / expected_slots
     if (
         execution.get("schema_version") != "karkinos.ai.formula_signal_execution.v1"
         or execution.get("model_position_size_ignored") is not True
-        or execution.get("allocation_slots") != min(4, len(instruments))
+        or execution.get("allocation_slots") != expected_slots
         or execution.get("canonical_target_weight") != expected_weight
         or execution.get("evidence_fingerprint")
         != content_fingerprint(
@@ -470,6 +568,28 @@ def _formula_source(config, metrics, start, end):
         )
     ):
         raise ResearchObservationInputError("observation_formula_sizing_unbound")
+    extra: dict[str, Any] = {}
+    if (
+        isinstance(selection, Mapping)
+        and selection.get("portfolio_policy_id") is not None
+    ):
+        if (
+            tuple(selection.get("universe", ())) != binding.universe
+            or selection.get("dataset_snapshot_id") != binding.dataset_snapshot_id
+        ):
+            raise ResearchObservationInputError(
+                "observation_formula_source_selection_mismatch"
+            )
+        extra["source_selection"] = dict(selection)
+        scope = observation_deployment_scope(extra)
+        extra["minimum_bars"] = max(
+            max(_warmup(binding.formula_ast[k]) for k in ("entry", "exit")),
+            int(
+                (scope or {})
+                .get("universe_policy", {})
+                .get("minimum_history_rows", 120)
+            ),
+        )
     return {
         "strategy_kind": "formula",
         "formula_binding": raw,
@@ -483,8 +603,9 @@ def _formula_source(config, metrics, start, end):
         ),
         "instruments": _instrument_payload(instruments),
         "minimum_bars": max(_warmup(binding.formula_ast[k]) for k in ("entry", "exit")),
-        "entry_target_weight": str(Decimal(1) / Decimal(min(4, len(instruments)))),
+        "entry_target_weight": str(Decimal(1) / Decimal(expected_slots)),
         "signal_execution_evidence": execution,
+        **extra,
     }
 
 
@@ -504,10 +625,13 @@ def _warmup(node: Mapping[str, Any]) -> int:
     return child
 
 
-def _read(objects, dataset_id):
+def _read(objects, dataset_id, *, verified_parent=None):
     try:
-        result = read_daily_bar_dataset(
-            objects, DatasetRef(objects.resolve_ref(dataset_id))
+        ref = DatasetRef(objects.resolve_ref(dataset_id))
+        result = (
+            read_daily_bar_dataset_prefix(objects, ref, verified_parent=verified_parent)
+            if verified_parent is not None
+            else read_daily_bar_dataset(objects, ref)
         )
         require_supported_snapshot(result.snapshot)
         _instruments(_instrument_payload(result.snapshot.instruments))

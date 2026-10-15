@@ -21,7 +21,7 @@ from server.services.ai_shadow_research_baseline import (
     _load_baseline_seed,
 )
 from server.services.research_datasets import (
-    MAX_VERIFIED_DATASET_INSTRUMENTS,
+    MAX_VERIFIED_DAILY_JOB_INSTRUMENTS,
     ResearchDatasetError,
     ResearchDatasetService,
 )
@@ -112,16 +112,17 @@ async def test_explicit_invalid_baseline_result_id_fails_closed(tmp_path) -> Non
         )
 
 
-def test_max_verified_dataset_instruments_is_40() -> None:
-    """Observation data preparation admits up to 40 instruments matching the 40-stock panel."""
-    assert MAX_VERIFIED_DATASET_INSTRUMENTS == 40
+def test_verified_provider_jobs_retain_their_batch_limit() -> None:
+    assert MAX_VERIFIED_DAILY_JOB_INSTRUMENTS == 40
 
 
 from data.providers.tdx import TdxRuntimeSettings
 
 
-def test_prepare_daily_dataset_rejects_exceeding_40_instruments(tmp_path) -> None:
-    """Datasets service rejects 41 instruments while accepting up to 40."""
+def test_prepare_daily_dataset_accepts_more_than_one_provider_batch(
+    tmp_path, monkeypatch
+) -> None:
+    """Dataset scope is independent of the provider's 40-instrument jobs."""
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
 
@@ -131,7 +132,18 @@ def test_prepare_daily_dataset_rejects_exceeding_40_instruments(tmp_path) -> Non
     request_41 = DailyBarRequest(instruments_41, date(2026, 9, 1), date(2026, 9, 5))
 
     service = ResearchDatasetService(tmp_path / "datasets", TdxRuntimeSettings())
-    with pytest.raises(
-        ResearchDatasetError, match="dataset_stock_or_etf_universe_required"
-    ):
-        service.prepare(request_41, db=db)
+    called = []
+    monkeypatch.setattr(TdxRuntimeSettings, "require_credentials", lambda self: None)
+    monkeypatch.setattr(
+        "server.services.research_datasets.verified_dataset_dates",
+        lambda *_args: (date(2026, 9, 1),),
+    )
+    monkeypatch.setattr(
+        service,
+        "_prepare_in_child",
+        lambda request, dates, refresh: (
+            called.append(request) or {"status": "prepared"}
+        ),
+    )
+    assert service.prepare(request_41, db=db) == {"status": "prepared"}
+    assert called == [request_41]

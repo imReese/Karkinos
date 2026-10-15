@@ -139,7 +139,9 @@ class AiShadowResearchQualificationService:
             )._prepare_baseline
         )
         self._backtest_adapter = backtest_adapter or (
-            RestrictedFormulaBacktestAdapter(data_store=data_store)
+            RestrictedFormulaBacktestAdapter(
+                data_store=data_store, research_root=db.path.parent / "research"
+            )
         )
         self._advancement_gate_builder = advancement_gate_builder
 
@@ -214,7 +216,57 @@ class AiShadowResearchQualificationService:
                 dataset_snapshot_replay_reader=(self._dataset_snapshot_replay_reader),
                 advancement_gate_builder=self._advancement_gate_builder,
             )
+            from server.contracts.recommendation_publication import (
+                publication_number,
+                read_publication_grant,
+            )
+
+            try:
+                publication_grant = read_publication_grant(self._db, now=self._now())
+            except ValueError:
+                publication_grant = None
+            if terminal is not None and publication_grant:
+                saved_run = self._store.get_qualification_run(
+                    terminal["run"]["qualification_run_id"]
+                )
+                if (
+                    saved_run.get("account_truth_scope_fingerprint")
+                    == publication_grant["account_scope_fingerprint"]
+                ):
+                    from server.services.valuation_snapshot import (
+                        portfolio_equity_from_valuation,
+                    )
+
+                    expected_cash = min(
+                        qualification_initial_cash(
+                            portfolio_equity_from_valuation(self._db, valuation)
+                        ),
+                        publication_number(publication_grant["max_initial_cash"]),
+                    )
+                    if (
+                        publication_number(saved_run["initial_cash_text"])
+                        != expected_cash
+                    ):
+                        terminal = None
             if terminal is not None:
+                winner = (
+                    (terminal.get("run") or {})
+                    .get("selection", {})
+                    .get("winner_qualification_candidate_id")
+                )
+                if winner and terminal.get("status") == "completed":
+                    terminal[
+                        "publication_attempt"
+                    ] = await self._publish_qualified_winner_under_policy(
+                        winner_qualification_candidate_id=winner,
+                        timestamp=admission.timestamp(),
+                    )
+                    terminal["automatic_strategy_replacement_enabled"] = (
+                        publication_grant is not None
+                    )
+                    terminal["human_paper_shadow_approval_required"] = (
+                        publication_grant is None
+                    )
                 return terminal
             admission.require_open()
             account = await self._capture_account_state(
@@ -229,6 +281,21 @@ class AiShadowResearchQualificationService:
                 frozen[0].source_selection,
             )
             initial_cash = qualification_initial_cash(account["total_equity"])
+            from server.contracts.recommendation_publication import (
+                publication_number,
+                read_publication_grant,
+            )
+
+            try:
+                grant = read_publication_grant(self._db, now=self._now())
+            except ValueError:
+                grant = None
+            if grant and grant[
+                "account_scope_fingerprint"
+            ] == fee_resolution.fee_evidence.get("account_truth_scope_fingerprint"):
+                initial_cash = min(
+                    initial_cash, publication_number(grant["max_initial_cash"])
+                )
             account_capital = build_research_account_capital_evidence(
                 initial_cash=initial_cash,
                 account_evidence=account["record"].to_dict(),
@@ -485,6 +552,15 @@ class AiShadowResearchQualificationService:
             require_complete_account_evidence=True,
         )
         admission.require_open()
+        entry_policy = None
+        if source.source_selection.deployment_scope:
+            from server.contracts.recommendation_publication import (
+                read_publication_grant,
+            )
+
+            entry_policy = read_publication_grant(self._db, now=self._now())[
+                "entry_board_policy"
+            ]
         prepared = await asyncio.to_thread(
             self._baseline_preparer,
             policy,
@@ -492,6 +568,9 @@ class AiShadowResearchQualificationService:
             expected_market_date=source.source_selection.end_date,
             expected_dataset_snapshot_id=source.source_selection.dataset_snapshot_id,
             reviewed_fee_schedule_resolution=fee_resolution,
+            **(
+                {"entry_board_policy": entry_policy} if entry_policy is not None else {}
+            ),
         )
         if (
             prepared.market_date != source.source_selection.end_date
@@ -662,166 +741,53 @@ class AiShadowResearchQualificationService:
             failure_code=terminal["failure_code"],
             now=admission.timestamp(),
         )
+        publication_attempt = None
         if (
             terminal.get("run_status") == "completed"
             and terminal.get("selection", {}).get("status") == "winner_selected"
         ):
             winner_id = terminal["selection"].get("winner_qualification_candidate_id")
             if winner_id:
-                await self._auto_switch_to_qualified_winner(
+                publication_attempt = await self._publish_qualified_winner_under_policy(
                     winner_qualification_candidate_id=winner_id,
                     timestamp=admission.timestamp(),
                 )
-        return await asyncio.to_thread(public_result, self._store, finished, reused)
+        result = await asyncio.to_thread(public_result, self._store, finished, reused)
+        if publication_attempt is not None:
+            result["publication_attempt"] = publication_attempt
+        from server.contracts.recommendation_publication import read_publication_grant
 
-    async def _auto_switch_to_qualified_winner(
+        try:
+            read_publication_grant(self._db, now=self._now())
+            grant_active = True
+        except ValueError:
+            grant_active = False
+        result["automatic_strategy_replacement_enabled"] = grant_active
+        result["human_paper_shadow_approval_required"] = not grant_active
+        return result
+
+    async def _publish_qualified_winner_under_policy(
         self,
         *,
         winner_qualification_candidate_id: str,
         timestamp: str,
     ) -> dict[str, Any] | None:
+        """Publish only under a real active standing recommendation grant."""
+        from server.services.recommendation_publication import (
+            RecommendationPublicationService,
+        )
+
+        service = RecommendationPublicationService(self._db, self._store, now=self._now)
         try:
             return await asyncio.to_thread(
-                self._auto_switch_to_qualified_winner_sync,
-                winner_qualification_candidate_id=winner_qualification_candidate_id,
-                timestamp=timestamp,
+                service.publish, winner_qualification_candidate_id
             )
-        except Exception:
-            logger.warning(
-                "Automatic paper_shadow switch failed for qualified winner %s",
-                winner_qualification_candidate_id,
-                exc_info=True,
-            )
-            return None
-
-    def _auto_switch_to_qualified_winner_sync(
-        self,
-        *,
-        winner_qualification_candidate_id: str,
-        timestamp: str,
-    ) -> dict[str, Any] | None:
-        approval_method = getattr(
-            self._store, "prepare_qualification_candidate_approval", None
-        )
-        approve_method = getattr(
-            self._store, "approve_qualification_candidate_for_paper_shadow", None
-        )
-        if not callable(approval_method) or not callable(approve_method):
-            return None
-
-        approved_by = "automation:optimal_strategy_gate"
-        notes = "automatically_switched_to_latest_optimal_strategy_passed_gate"
-        try:
-            approval = self._store.prepare_qualification_candidate_approval(
-                winner_qualification_candidate_id,
-                approved_by=approved_by,
-                notes=notes,
-                confirmation=SHADOW_RESEARCH_QUALIFICATION_CONFIRMATION,
-                now=timestamp,
-            )
-        except Exception:
-            logger.warning(
-                "Could not prepare approval for winner %s",
-                winner_qualification_candidate_id,
-                exc_info=True,
-            )
-            return None
-
-        evidence, blockers = resolve_ai_shadow_qualification_promotion_evidence(
-            self._db,
-            winner_qualification_candidate_id,
-            proposed_qualification_approval=approval,
-        )
-        if blockers or evidence.get("status") != "pass":
-            logger.warning(
-                "Automatic paper_shadow switch blocked for winner %s: %s",
-                winner_qualification_candidate_id,
-                blockers,
-            )
-            return None
-
-        source_candidate_id = str(evidence["source_candidate_id"])
-        strategy_id = f"ai_formula_shadow:{source_candidate_id}"
-        readiness = {
-            "schema_version": AI_SHADOW_QUALIFICATION_READINESS_SCHEMA,
-            "strategy_id": strategy_id,
-            "promotion_status": "promotable_for_paper_review",
-            "is_promotable": True,
-            "missing_requirements": [],
-            "backtest_result_id": evidence["backtest_result_id"],
-            "candidate_id": source_candidate_id,
-            "qualification_candidate_id": winner_qualification_candidate_id,
-            "qualification_run_id": evidence["qualification_run_id"],
-            "comparison_fingerprint": evidence["comparison_fingerprint"],
-            "human_approval_id": evidence["qualification_approval_id"],
-            "strategy_advancement_gate": evidence["strategy_advancement_gate"],
-            "daily_strategy_artifact_binding": evidence[
-                "daily_strategy_artifact_binding"
-            ],
-            "qualification_binding": evidence["qualification_binding"],
-            "live_like_enabled": False,
-            "broker_submission_enabled": False,
-            "does_not_create_order": True,
-            "does_not_authorize_execution": True,
-            "does_not_change_capital_authority": True,
-        }
-        current = (
-            self._db.get_strategy_promotion_state_sync(strategy_id)
-            if hasattr(self._db, "get_strategy_promotion_state_sync")
-            else None
-        )
-        gate_fingerprint = (readiness.get("strategy_advancement_gate") or {}).get(
-            "evidence_fingerprint"
-        )
-        state_payload = {
-            "schema_version": STRATEGY_PROMOTION_SCHEMA_VERSION,
-            "readiness": readiness,
-            "human_review": {
-                "reviewer": approved_by,
-                "review_note": notes,
-                "confirmation_recorded": True,
-                "strategy_advancement_gate_fingerprint": gate_fingerprint,
-            },
-            "live_like_enabled": False,
-            "broker_submission_enabled": False,
-            "does_not_change_capital_authority": True,
-        }
-        event_payload = {
-            "manual_confirmation_required": True,
-            "manual_confirmation_recorded": True,
-            "reviewer": approved_by,
-            "review_note": notes,
-            "strategy_advancement_gate_fingerprint": gate_fingerprint,
-            "live_like_enabled": False,
-            "broker_submission_enabled": False,
-            "does_not_change_capital_authority": True,
-        }
-
-        def current_evidence_validator():
-            return resolve_ai_shadow_qualification_promotion_evidence(
-                self._db,
-                winner_qualification_candidate_id,
-                proposed_qualification_approval=approval,
-            )
-
-        committed = self._store.approve_qualification_candidate_for_paper_shadow(
-            winner_qualification_candidate_id,
-            approval=approval,
-            strategy_id=strategy_id,
-            readiness=readiness,
-            state_payload=state_payload,
-            event_payload=event_payload,
-            expected_state=current,
-            current_evidence_validator=current_evidence_validator,
-            actor=approved_by,
-            now=timestamp,
-        )
-        logger.info(
-            "Successfully auto-switched to latest optimal strategy %s (qualification candidate %s)",
-            strategy_id,
-            winner_qualification_candidate_id,
-        )
-        return committed
+        except Exception as exc:
+            return {
+                "status": "blocked",
+                "blockers": [str(exc)],
+                "decision_source": "policy",
+            }
 
     async def _replay_candidate(
         self,
@@ -852,6 +818,8 @@ class AiShadowResearchQualificationService:
             ).isoformat(),
             valuation_snapshot_id=str(account["valuation_snapshot_id"]),
             ledger_cutoff_id=int(account["ledger_cutoff_id"]),
+            deployment_scope=source.source_selection.deployment_scope,
+            portfolio_policy_id=source.source_selection.portfolio_policy_id,
         )
         draft = dict(source.source_draft)
         draft["cost_model_reference"] = selection.cost_model_reference
@@ -869,6 +837,15 @@ class AiShadowResearchQualificationService:
             expected_dataset_snapshot=prepared.snapshot,
             reviewed_fee_schedule_resolution=fee_resolution,
             account_capital_evidence=account_capital,
+            **(
+                {
+                    "entry_board_policy": final_evaluation["reservation"][
+                        "publication_grant"
+                    ]["entry_board_policy"]
+                }
+                if source.source_selection.deployment_scope
+                else {}
+            ),
         )
         result["metrics_json"]["independent_evaluation"] = (
             dict(final_evaluation)

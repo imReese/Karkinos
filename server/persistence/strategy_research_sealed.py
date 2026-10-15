@@ -206,6 +206,8 @@ class StrategyResearchSealedRepositoryMixin:
                 persisted = self._sealed_row(dict(existing))
                 original = (persisted.get("evidence") or {}).get("reservation", {})
                 replay_binding = {**binding, "frozen_at": original.get("frozen_at")}
+                if "publication_grant" in binding:
+                    replay_binding["error_budget"] = original.get("error_budget")
                 if existing["request_fingerprint"] != content_fingerprint(
                     replay_binding
                 ):
@@ -213,11 +215,16 @@ class StrategyResearchSealedRepositoryMixin:
                         "sealed_champion_reservation_conflict"
                     )
                 return persisted
-            if (
-                created.tzinfo is None
-                or created.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
-                >= partition["sealed_start"]
-            ):
+            from datetime import time
+
+            latest_freeze = datetime.combine(
+                datetime.fromisoformat(
+                    binding.get("first_evaluation_session", partition["sealed_start"])
+                ).date(),
+                time(9, 30) if binding.get("publication_grant") else time.min,
+                ZoneInfo("Asia/Shanghai"),
+            )
+            if created.tzinfo is None or created >= latest_freeze:
                 raise StrategyResearchRejected(
                     "sealed_champion_not_frozen_before_holdout"
                 )
@@ -244,6 +251,56 @@ class StrategyResearchSealedRepositoryMixin:
                     raise StrategyResearchRejected(
                         "sealed_partition_overlap_already_reserved"
                     )
+            if "publication_grant" in binding:
+                from decimal import Decimal
+
+                grant = binding["publication_grant"]
+                attempts = []
+                for raw in conn.execute(
+                    "SELECT evidence_json FROM ai_strategy_sealed_tests"
+                ).fetchall():
+                    previous = json.loads(raw["evidence_json"] or "{}").get(
+                        "reservation", {}
+                    )
+                    if (
+                        previous.get("publication_grant", {}).get("grant_id")
+                        == grant["grant_id"]
+                    ):
+                        attempts.append(previous)
+                alpha = Decimal(str(grant["statistical_policy"]["significance_level"]))
+                spent = (
+                    sum(
+                        (
+                            Decimal(
+                                str(
+                                    item.get("error_budget", {}).get(
+                                        "allocated_alpha", "0"
+                                    )
+                                )
+                            )
+                            for item in attempts
+                        ),
+                        Decimal("0"),
+                    )
+                    + alpha
+                )
+                if len(attempts) >= grant["max_final_tests"] or spent > Decimal(
+                    str(grant["total_error_budget"])
+                ):
+                    raise StrategyResearchRejected(
+                        "deployment_final_test_budget_exhausted"
+                    )
+                binding = {
+                    **binding,
+                    "error_budget": {
+                        "grant_id": grant["grant_id"],
+                        "generation": grant["generation"],
+                        "attempt_count": len(attempts) + 1,
+                        "allocated_alpha": str(alpha),
+                        "error_budget_spent": str(spent),
+                    },
+                }
+                request_fingerprint = content_fingerprint(binding)
             evidence = {"reservation": binding}
             conn.execute(
                 "INSERT INTO ai_strategy_sealed_tests "
@@ -269,6 +326,19 @@ class StrategyResearchSealedRepositoryMixin:
                 ),
             )
         return self.get_sealed_test(sealed_id)
+
+    def deployment_reservations(self, grant_id: str) -> list[dict[str, Any]]:
+        with self._connect_readonly() as conn:
+            rows = conn.execute(
+                "SELECT * FROM ai_strategy_sealed_tests ORDER BY created_at,sealed_test_id"
+            ).fetchall()
+        result = []
+        for raw in rows:
+            row = self._sealed_row(dict(raw))
+            binding = (row.get("evidence") or {}).get("reservation", {})
+            if binding.get("publication_grant", {}).get("grant_id") == grant_id:
+                result.append(row)
+        return result
 
     def research_champion_reservation(self, source_run_id: str) -> dict[str, Any]:
         sealed_id = (

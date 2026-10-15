@@ -539,6 +539,8 @@ class ShadowResearchQualificationRepositoryMixin:
                 "qualification approval requires exact human confirmation"
             )
         normalized_approver = qualification_required_text(approved_by, "approved_by")
+        if normalized_approver.startswith(("automation:", "policy:")):
+            raise PermissionError("automated_decision_cannot_create_human_approval")
         normalized_notes = qualification_required_text(notes, "approval_notes")
         timestamp = qualification_required_text(now, "now")
         with self._connect_readonly() as conn:

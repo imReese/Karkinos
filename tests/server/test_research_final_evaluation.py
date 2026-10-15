@@ -913,3 +913,67 @@ def test_exploration_and_unready_final_batches_cannot_starve_ready_backlog():
         )
         == "ready"
     )
+
+
+def test_next_opening_uses_verified_calendar_across_weekend_and_holiday(tmp_path):
+    from datetime import date
+    from zoneinfo import ZoneInfo
+
+    from server.services.research_final_evaluation import _next_verified_session_opens
+    from tests.server.test_verified_interval_dataset import _db
+
+    days = (date(2026, 9, 18), date(2026, 9, 22), date(2026, 9, 23))
+    db = _db(tmp_path, trading_days=days)
+    openings = _next_verified_session_opens(db, [day.isoformat() for day in days[:2]])
+    assert openings["2026-09-18"] == datetime(
+        2026, 9, 22, 9, 30, tzinfo=ZoneInfo("Asia/Shanghai")
+    )
+    assert openings["2026-09-22"].date() == days[2]
+
+
+def test_replacement_reserve_quotes_real_fees_and_slippage_instead_of_fixed_percent(
+    monkeypatch,
+):
+    from datetime import date
+
+    from execution.commission import MultiAssetCommission
+    from server.services.research_final_evaluation import (
+        _replacement_transition_reserve,
+    )
+
+    calculator = MultiAssetCommission()
+    monkeypatch.setattr(
+        "server.services.reviewed_fee_schedule.resolve_frozen_deployment_fee_schedule",
+        lambda *args: SimpleNamespace(commission_calc=calculator),
+    )
+    book = {
+        "session": "2026-09-18",
+        "equity": "10000",
+        "position_values": {"600000": "1000"},
+    }
+    restored = SimpleNamespace(
+        bars=[
+            SimpleNamespace(
+                session_date=date(2026, 9, 18),
+                instrument=SimpleNamespace(symbol="600000"),
+                close=Decimal("10"),
+            )
+        ]
+    )
+    result = SimpleNamespace(
+        portfolio_observations=[book], incumbent_portfolio_observations=[book]
+    )
+    reserve = _replacement_transition_reserve(
+        restored, {"fee_schedule": {}}, result, None
+    )
+    assert len(reserve["quotes"]) == 2
+    assert Decimal(reserve["modeled_cost"]) == sum(
+        Decimal(row["modeled_friction"]) for row in reserve["quotes"]
+    )
+    assert Decimal(reserve["cost_ratio"]) == Decimal(reserve["modeled_cost"]) / Decimal(
+        "10000"
+    )
+    assert Decimal(reserve["quotes"][0]["modeled_fee"]) > Decimal(
+        reserve["quotes"][1]["modeled_fee"]
+    )
+    assert Decimal("0") < Decimal(reserve["cost_ratio"]) < Decimal("0.02")

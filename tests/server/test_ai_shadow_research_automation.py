@@ -4796,7 +4796,7 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
     db.init_sync()
     market = DataStore(tmp_path / "market")
     symbol = Symbol("600000")
-    closes = [10.0] * 40 + [20.0] * 40
+    closes = [10.0] * 60 + [20.0] * 20
     bars = pd.DataFrame(
         {
             "timestamp": pd.bdate_range("2026-01-02", periods=len(closes)),
@@ -4805,6 +4805,7 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
             "low": [value - 1 for value in closes],
             "close": closes,
             "volume": [1_000_000.0] * len(closes),
+            "amount": [value * 1_000_000.0 for value in closes],
         }
     )
     universe_snapshot = market.save_market_universe_snapshot(
@@ -4813,6 +4814,25 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
         members=normalize_a_share_members(
             [f"{600000 + index:06d}" for index in range(1_000)]
         ),
+        capture_started_at=datetime.combine(
+            bars["timestamp"].iloc[-1].date(),
+            datetime.strptime("15:59", "%H:%M").time(),
+            tzinfo=ZoneInfo("Asia/Shanghai"),
+        ),
+        capture_completed_at=datetime.combine(
+            bars["timestamp"].iloc[-1].date(),
+            datetime.strptime("16:00", "%H:%M").time(),
+            tzinfo=ZoneInfo("Asia/Shanghai"),
+        ),
+        source_metadata=[
+            {
+                "symbol": f"{600000 + index:06d}",
+                "display_name": f"合成普通股{index}"
+                if index < 4
+                else f"*ST合成样本{index}",
+            }
+            for index in range(1_000)
+        ],
     )
     panel_symbols = [str(member["symbol"]) for member in universe_snapshot["members"]]
     for panel_symbol in panel_symbols:
@@ -4868,6 +4888,7 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
                     "low": [bars["low"].iloc[index]] * len(panel_symbols),
                     "close": [bars["close"].iloc[index]] * len(panel_symbols),
                     "volume": [bars["volume"].iloc[index]] * len(panel_symbols),
+                    "amount": [bars["amount"].iloc[index]] * len(panel_symbols),
                 }
             ),
         )
@@ -4956,6 +4977,13 @@ def test_automatic_baseline_uses_resolved_reviewed_fee_calculator(tmp_path) -> N
     )
 
     assert prepared.cost_model_reference == cost_model_reference
+    # This test measures fee propagation, not 1000 independent strategy books.
+    # The entire captured directory is still evaluated under the declared rule.
+    coverage = prepared.result["metrics_json"]["market_universe_truth"]["coverage"]
+    assert coverage["expected"] == 1_000
+    assert coverage["evaluated"] == 4
+    assert coverage["excluded"] == 996
+    assert coverage["unresolved"] == 0
     assert resolver_calls[-1]["account_truth_as_of"] == datetime.combine(
         bars["timestamp"].iloc[-1].date(),
         datetime.strptime("15:30", "%H:%M").time(),

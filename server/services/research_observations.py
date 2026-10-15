@@ -30,15 +30,17 @@ from analytics.forward_target_outcomes import (
     FORWARD_TARGET_OUTCOME_POLICY_ID,
     evaluate_forward_target_outcome,
 )
-from core.types import InstrumentKey
+from core.types import InstrumentKey, Symbol
 from data.storage.objects import ContentAddressedObjectStore
 from domain.research_targets import (
+    FORMULA_PORTFOLIO_POLICY_ID,
     RESEARCH_TARGET_POLICY_ID,
     build_research_target_weights,
 )
 from risk.target_limits import TARGET_LIMITS_POLICY_ID, evaluate_target_limits
 from server.contracts.content_identity import content_fingerprint
 from server.persistence.research_observations import ResearchObservationsRepository
+from server.services.backtest_costs import resolve_paper_book_costs
 from server.services.research_observation_forecasts import (
     FORECAST_POLICY_ID,
     build_observation_forecasts,
@@ -47,6 +49,7 @@ from server.services.research_observation_inputs import (
     bind_observation_forward_input,
     latest_closed_session,
     load_research_observation_source,
+    observation_deployment_scope,
     observation_input_binding,
     observation_outcome_sessions,
     read_research_observation_dataset,
@@ -63,9 +66,17 @@ def observation_code_binding() -> dict[str, Any]:
     paths = (
         "server/services/research_observations.py",
         "server/services/research_observation_forecasts.py",
+        "server/services/research/forecasts.py",
+        "server/ai_runtime/formula_portfolio.py",
         "server/services/research_observation_inputs.py",
         "server/services/market_calendar_evidence.py",
         "server/services/research_datasets.py",
+        "server/services/research/datasets.py",
+        "server/services/research_corporate_action_jobs.py",
+        "server/services/research_observation_data_preparation.py",
+        "server/contracts/recommendation_publication.py",
+        "server/services/market_universe_truth.py",
+        "server/services/backtest_costs.py",
         "server/persistence/research_observations.py",
         "server/persistence/automation_runs.py",
         "server/contracts/research_observation_automation.py",
@@ -83,10 +94,32 @@ def observation_code_binding() -> dict[str, Any]:
         "data/market/model.py",
         "data/market/capture.py",
         "data/market/revision.py",
+        "data/market/contracts.py",
+        "data/market/capture.py",
+        "data/market/normalize.py",
+        "data/market/ingestion.py",
+        "data/market/cross_source.py",
+        "data/market/quality.py",
+        "data/providers/baostock.py",
+        "data/providers/tencent.py",
+        "data/providers/tushare.py",
+        "data/providers/akshare.py",
+        "data/providers/eastmoney.py",
+        "data/market/corporate_actions.py",
+        "data/providers/tushare_corporate_actions.py",
         "data/market/quality_evidence.py",
         "data/market/verification_evidence.py",
         "data/storage/objects.py",
         "domain/research_targets.py",
+        "domain/instrument.py",
+        "execution/commission.py",
+        "server/services/research_paper_books.py",
+        "server/services/account_board_permissions.py",
+        "server/services/reviewed_fee_schedule.py",
+        "server/services/reviewed_fee_schedule_workflows.py",
+        "server/services/reviewed_fee_schedule_commission.py",
+        "server/services/reviewed_fee_schedule_repository.py",
+        "server/services/reviewed_fee_schedule_policy.py",
         "risk/target_limits.py",
         "analytics/forward_target_outcomes.py",
         "analytics/forward_observation_health.py",
@@ -140,6 +173,9 @@ class ResearchObservationService:
         max_gross_weight: Decimal,
         health_policy: Mapping[str, Any] | None = None,
         forward_dataset_id: str | None = None,
+        resource_limits: Mapping[str, int] | None = None,
+        authorization_binding: Mapping[str, Any] | None = None,
+        entry_board_policy: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not 1 <= horizon_sessions <= 60 or any(
             not value.is_finite() or not 0 < value <= 1
@@ -158,6 +194,19 @@ class ResearchObservationService:
             )
         if forward_dataset_id is not None:
             request["forward_dataset_id"] = forward_dataset_id
+        if resource_limits is not None:
+            request["resource_limits"] = dict(resource_limits)
+        if authorization_binding is not None:
+            request["authorization_binding"] = dict(authorization_binding)
+            from server.services.account_board_permissions import (
+                validate_entry_board_policy,
+            )
+
+            request["entry_board_policy"] = validate_entry_board_policy(
+                entry_board_policy
+            )
+        elif entry_board_policy is not None:
+            raise ValueError("observation_entry_board_policy_requires_authorization")
         identity = str(
             uuid5(NAMESPACE_URL, f"karkinos:research-observation:{request_id}")
         )
@@ -176,7 +225,8 @@ class ResearchObservationService:
         source = load_research_observation_source(
             row, self.objects, allow_unbound_dataset=forward_dataset_id is not None
         )
-        if len(source["instruments"]) > 50:
+        scope = observation_deployment_scope(source)
+        if len(source["instruments"]) > (10_000 if scope else 50):
             raise ValueError("observation_universe_budget_exceeded")
         if forward_dataset_id is not None:
             source["forward_input"] = bind_observation_forward_input(
@@ -186,20 +236,68 @@ class ResearchObservationService:
                 now=self.clock(),
                 calendar_reader=self._calendar,
             )
+        limits = (
+            {
+                "max_dataset_rows": 20_000_000,
+                "max_instruments": 10_000,
+                "max_paper_sessions": 2000,
+            }
+            if scope
+            else None
+        )
+        if resource_limits is not None:
+            if (
+                not scope
+                or set(resource_limits) != set(limits)
+                or any(
+                    type(value) is not int or not 1 <= value <= limits[key]
+                    for key, value in resource_limits.items()
+                )
+            ):
+                raise ValueError("observation_resource_limits_invalid")
+            limits = dict(resource_limits)
+        universe = source["instruments"]
+        if scope:
+            binding = observation_input_binding(source)
+            from data.dataset.model import DatasetRef
+            from data.dataset.reader import read_daily_bar_dataset
+
+            seed_result = read_daily_bar_dataset(
+                self.objects,
+                DatasetRef(self.objects.resolve_ref(binding["dataset_id"])),
+            )
+            seed = seed_result.snapshot
+            if (
+                len(seed.instruments) > limits["max_instruments"]
+                or len(seed_result.bars) > limits["max_dataset_rows"]
+                or len(seed_result.bars)
+                + len(seed.instruments) * (horizon_sessions + 1)
+                > limits["max_dataset_rows"]
+            ):
+                raise ValueError("observation_dataset_budget_exceeded")
+            universe = [
+                {"symbol": key.symbol, "instrument_type": key.instrument_type.value}
+                for key in seed.instruments
+            ]
         source["source_row_fingerprint"] = content_fingerprint(dict(row))
         # A fresh observation is a new, now-frozen derivative. Old backtests did
         # not bind these code bytes and are never retroactively certified.
         policy = {
             "policy_id": _POLICY_ID,
             "scope": "independent_target_shadow",
-            "decision_actor": "human_command",
+            "decision_actor": "standing_publication_grant"
+            if authorization_binding
+            else "human_command",
             **request,
             "forecast_policy_id": FORECAST_POLICY_ID,
-            "portfolio_policy_id": RESEARCH_TARGET_POLICY_ID,
+            "portfolio_policy_id": FORMULA_PORTFOLIO_POLICY_ID
+            if scope
+            else RESEARCH_TARGET_POLICY_ID,
             "risk_policy_id": TARGET_LIMITS_POLICY_ID,
             "outcome_policy_id": FORWARD_TARGET_OUTCOME_POLICY_ID,
             "concurrency_limit": 20,
-            "max_dataset_rows": 200_000,
+            "max_dataset_rows": limits["max_dataset_rows"] if limits else 200_000,
+            **({"resource_limits": limits, "deployment_scope": scope} if scope else {}),
             "entry_weight": source["entry_target_weight"],
             "contains_fills": False,
             "account_authority": False,
@@ -212,7 +310,7 @@ class ResearchObservationService:
             source=source,
             code_binding=observation_code_binding(),
             policy=policy,
-            universe=source["instruments"],
+            universe=universe,
             max_active_observations=20,
         )
 
@@ -286,6 +384,10 @@ class ResearchObservationService:
                 now=now,
                 calendar_rows=calendar,
                 minimum_bars=source["minimum_bars"],
+                deployment_scope=observation_deployment_scope(source),
+                membership_after=date.fromisoformat(
+                    observation_input_binding(source)["end_date"]
+                ),
             )
             if len(result.bars) > policy["max_dataset_rows"]:
                 raise ValueError("observation_dataset_budget_exceeded")
@@ -336,6 +438,7 @@ class ResearchObservationService:
                     decision_session,
                     reference_session,
                     end_session,
+                    result.snapshot,
                 )
                 publication["payload"]["calculation_started_at"] = now.isoformat()
                 if automation_generation is not None:
@@ -434,16 +537,32 @@ class ResearchObservationService:
         if year_now - start.year > 10:
             raise ValueError("observation_history_budget_exceeded")
         rows = []
-        for year in range(start.year, year_now + 1):
+        for year in range(start.year, year_now + 2):
             row = self.db.get_market_calendar_snapshot_sync(exchange="SSE", year=year)
             if row is not None:
                 rows.append(row)
         return rows
 
-    @staticmethod
     def _publication(
-        observation, bars, dataset_id, decision_session, reference_session, end_session
+        self,
+        observation,
+        bars,
+        dataset_id,
+        decision_session,
+        reference_session,
+        end_session,
+        snapshot=None,
     ):
+        if observation_deployment_scope(observation["source"]) is not None:
+            return self._portfolio_publication(
+                observation,
+                bars,
+                dataset_id,
+                decision_session,
+                reference_session,
+                end_session,
+                snapshot=snapshot,
+            )
         policy = observation["policy"]
         previous = {item["symbol"]: Decimal(0) for item in observation["universe"]}
         if observation["publications"]:
@@ -500,6 +619,172 @@ class ResearchObservationService:
             },
         }
 
+    def _portfolio_publication(
+        self,
+        observation,
+        bars,
+        dataset_id,
+        decision_session,
+        reference_session,
+        end_session,
+        *,
+        snapshot,
+    ):
+        from domain.instrument import make_research_stock
+        from server.ai_runtime.formula_portfolio import (
+            formula_session_targets,
+            prepare_formula_sessions,
+        )
+        from server.persistence.research_paper_books import ResearchPaperBooksRepository
+
+        book = ResearchPaperBooksRepository(self.db.path, clock=self.clock).get(
+            observation["id"]
+        )
+        if book is None:
+            raise ValueError("observation_paper_book_required")
+        if book["lifecycle"] != "active":
+            raise ValueError("observation_paper_book_paused")
+        if (
+            date.fromisoformat(book["evaluation_start"]) <= decision_session
+            and book["last_settled_session"] != decision_session.isoformat()
+        ):
+            raise ValueError("observation_paper_settlement_required")
+        scope = observation_deployment_scope(observation["source"])
+        universe_policy = scope["universe_policy"]
+        eligible = [
+            key.symbol for key in snapshot.instruments_for_session(decision_session)
+        ]
+        frames = {}
+        for bar in bars:
+            frames.setdefault(bar.instrument.symbol, []).append(
+                {
+                    "timestamp": bar.event_time,
+                    "amount": float(
+                        bar.amount if bar.amount is not None else bar.close * bar.volume
+                    ),
+                    **{
+                        name: float(getattr(bar, name))
+                        for name in ("open", "high", "low", "close", "volume")
+                    },
+                }
+            )
+        prepared = prepare_formula_sessions(
+            observation["source"]["formula_binding"]["formula_ast"],
+            {symbol: pd.DataFrame(rows) for symbol, rows in frames.items()},
+            universe_size=len(observation["source"]["instruments"]),
+        )
+        instruments = {
+            Symbol(key.symbol): make_research_stock(key.symbol, key.symbol)
+            for key in snapshot.instruments
+        }
+        costs, _ = resolve_paper_book_costs(
+            self.db, book["policy"], (key.symbol for key in snapshot.instruments)
+        )
+        limits = {
+            name: Decimal(observation["policy"][name])
+            for name in ("max_symbol_weight", "max_gross_weight")
+        }
+        kwargs = dict(
+            prepared=prepared,
+            decision_session=decision_session,
+            instruments=instruments,
+            commission_calc=costs.commission_calc,
+            eligible_symbols=eligible,
+            max_positions=4,
+            max_symbol_weight=Decimal("0.25"),
+            max_gross_weight=Decimal("0.97"),
+            cash_buffer_ratio=Decimal("0.03"),
+            minimum_history_rows=int(universe_policy.get("minimum_history_rows", 120)),
+            slippage_bps=Decimal(
+                str(book["policy"]["cost_assumptions"]["slippage_bps"])
+            ),
+            entry_board_policy=observation["policy"].get("entry_board_policy"),
+        )
+        state = book["state"]
+        quantities = {
+            symbol: Decimal(position["quantity"])
+            for symbol, position in state["positions"].items()
+        }
+        decision = formula_session_targets(
+            quantities=quantities,
+            cash=Decimal(state["cash"]),
+            equity=Decimal(state["equity"]),
+            **kwargs,
+        )
+        universe = sorted(
+            set(eligible)
+            | {symbol for symbol, quantity in quantities.items() if quantity > 0}
+        )
+        targets = {
+            symbol: decision["target_weights"].get(symbol, Decimal(0))
+            for symbol in universe
+        }
+        action_targets = {
+            symbol: targets[symbol]
+            for symbol in [*decision["exit_symbols"], *decision["selected_entries"]]
+        }
+        previous = {
+            symbol: Decimal(state["positions"].get(symbol, {}).get("market_value", "0"))
+            / Decimal(state["equity"])
+            for symbol in universe
+        }
+        risk = evaluate_target_limits(targets, frozen_universe=universe, **limits)
+        if risk["status"] != "allowed":
+            raise ValueError("observation_target_risk_blocked")
+        # Freeze the executable simple comparator at the same first actual target.
+        baseline_prepared = {
+            symbol: frame.assign(entry=True, exit=False)
+            for symbol, frame in prepared.items()
+        }
+        baseline = formula_session_targets(
+            quantities={},
+            cash=Decimal(book["initial_cash"]),
+            equity=Decimal(book["initial_cash"]),
+            **{**kwargs, "prepared": baseline_prepared},
+        )
+        return {
+            "id": str(uuid5(NAMESPACE_URL, f"{observation['id']}:{decision_session}")),
+            "decision_session": decision_session.isoformat(),
+            "dataset_id": dataset_id,
+            "payload": {
+                "forecasts": decision["forecasts"],
+                "previous_target_weights": {
+                    key: str(value) for key, value in previous.items()
+                },
+                "desired_weights": {key: str(value) for key, value in targets.items()},
+                "target_weights": {
+                    key: str(value) for key, value in action_targets.items()
+                },
+                "rebalance_weight_deltas": {
+                    key: str(value - previous[key]) for key, value in targets.items()
+                },
+                "risk_decision": risk,
+                "reference_session": reference_session.isoformat(),
+                "end_session": end_session.isoformat(),
+                "horizon_sessions": observation["policy"]["horizon_sessions"],
+                "scope": "independent_paper_portfolio",
+                "contains_fills": False,
+                "portfolio_policy_id": FORMULA_PORTFOLIO_POLICY_ID,
+                "entry_board_policy": observation["policy"].get("entry_board_policy"),
+                "paper_book_binding": {
+                    "book_id": book["id"],
+                    "version": book["version"],
+                },
+                "allocation": {
+                    key: (
+                        {symbol: str(amount) for symbol, amount in value.items()}
+                        if key in {"entry_quantities", "purchase_costs"}
+                        else value
+                    )
+                    for key, value in decision.items()
+                    if key not in {"target_weights", "forecasts"}
+                },
+                "benchmark_target_weights": {
+                    key: str(value) for key, value in baseline["target_weights"].items()
+                },
+            },
+        }
+
     @staticmethod
     def _outcomes(observation, result, dataset_id, now, decision_session):
         measured = {item["publication_id"] for item in observation["outcomes"]}
@@ -515,7 +800,12 @@ class ResearchObservationService:
                 end_session=end,
                 target_weights={
                     key: Decimal(value)
-                    for key, value in payload["target_weights"].items()
+                    for key, value in (
+                        payload["desired_weights"]
+                        if payload.get("portfolio_policy_id")
+                        == FORMULA_PORTFOLIO_POLICY_ID
+                        else payload["target_weights"]
+                    ).items()
                 },
                 bars=result.bars,
                 evaluated_at=now,

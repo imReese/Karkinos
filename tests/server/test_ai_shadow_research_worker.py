@@ -325,6 +325,76 @@ async def test_restarted_worker_consumes_stale_job_once(tmp_path: Path) -> None:
 @pytest.mark.unit
 @pytest.mark.trading_safety
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "waiting_status",
+    ["awaiting_verified_research_inputs", "awaiting_independent_validation"],
+)
+async def test_worker_retries_same_durable_job_when_research_inputs_become_ready(
+    tmp_path: Path,
+    waiting_status: str,
+) -> None:
+    state, _policy = _state(tmp_path)
+    store = AiShadowResearchWorkerJobStore(state.require_database().path)
+    clock = {"value": datetime(2026, 9, 4, 18, 0, tzinfo=SHANGHAI)}
+    scheduler = AiShadowResearchJobScheduler(
+        state=state, store=store, now=lambda: clock["value"]
+    )
+    enqueued = scheduler.enqueue_if_authorized()
+    assert enqueued["status"] == "enqueued"
+    inputs_ready = False
+    calls: list[str] = []
+
+    class Runner:
+        async def run_once(self) -> dict[str, object]:
+            calls.append("ready" if inputs_ready else "waiting")
+            return {
+                "run_status": "completed" if inputs_ready else waiting_status,
+                "run_id": "research:ready" if inputs_ready else None,
+            }
+
+    runner = Runner()
+    worker = AiShadowResearchWorker(
+        state=state,
+        store=store,
+        service_builder=lambda _fence: runner,
+        lease_owner="waiting-input-worker",
+        now=lambda: clock["value"],
+        retry_seconds=300,
+    )
+
+    waiting = await worker.run_one()
+
+    assert waiting is not None
+    assert waiting["job_id"] == enqueued["job_id"]
+    assert waiting["disposition"] == "rescheduled"
+    pending = store.get(enqueued["job_id"])
+    assert pending is not None and pending["status"] == "pending"
+    assert pending["payload"]["last_result"]["run_status"] == waiting_status
+    assert pending["payload"]["attempt_count"] == 1
+    assert await worker.run_one() is None
+    repeated = scheduler.enqueue_if_authorized()
+    assert repeated["status"] == "already_enqueued"
+    assert repeated["job_id"] == enqueued["job_id"]
+
+    inputs_ready = True
+    clock["value"] += timedelta(seconds=300)
+    completed = await worker.run_one()
+
+    assert completed is not None
+    assert completed["job_id"] == enqueued["job_id"]
+    assert completed["disposition"] == "completed"
+    finished = store.get(enqueued["job_id"])
+    assert finished is not None and finished["status"] == "completed"
+    assert finished["payload"]["attempt_count"] == 2
+    assert finished["payload"]["lease_generation"] == 2
+    assert finished["payload"]["last_result"]["run_id"] == "research:ready"
+    assert calls == ["waiting", "ready"]
+    assert len(store.list_recent()) == 1
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
 async def test_worker_rechecks_kill_switch_before_provider_construction(
     tmp_path: Path,
 ) -> None:

@@ -13,6 +13,10 @@ from server.persistence.jobs import SQLiteJobStore
 from server.persistence.market_calendar_publication_uow import (
     MarketCalendarPublicationUnitOfWork,
 )
+from server.persistence.market_daily_call_budget import (
+    market_daily_provider_call_budget_status,
+    reserve_market_daily_provider_call,
+)
 from server.services.verified_daily_market_data import (
     VerifiedDailyMarketDataNotPublishable,
     VerifiedDailySourceResolution,
@@ -846,3 +850,120 @@ async def test_data_worker_plans_collection_and_still_claims_existing_verified_j
     assert names.index("plan") < names.index("claim")
     assert ("claim", DAILY_MARKET_COLLECTION_JOB) in calls
     assert ("claim", VERIFIED_DAILY_MARKET_JOB) in calls
+
+
+@pytest.mark.asyncio
+async def test_forward_input_gets_last_budget_slot_before_watchlist_backfill(
+    tmp_path, monkeypatch
+):
+    from core.types import InstrumentKey, InstrumentType
+    from data.providers.baostock import BAOSTOCK_DAILY_BAR_DESCRIPTOR
+    from data.source_policy import FREE_CN_RESEARCH_V1
+    from server.services.market_calendar_evidence import (
+        validate_verified_market_calendar,
+    )
+    from server.services.verified_daily_market_data import VerifiedDailyMarketJobRequest
+    from tests.server.test_verified_daily_worker_gate import DAY, _calendar
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    calendar = db.upsert_market_calendar_snapshot_sync(_calendar())
+    calendar = db.update_market_calendar_verification_sync(
+        exchange="SSE",
+        year=DAY.year,
+        source_fingerprint=calendar["source_fingerprint"],
+        verification_status="verified",
+        official_source_url="https://example.test/calendar",
+        official_source_fingerprint="b" * 64,
+        verified_by="fixture",
+    )
+    evidence_ref = validate_verified_market_calendar(calendar).evidence_ref
+    assert evidence_ref is not None
+    now = datetime.now(timezone.utc)
+    store = SQLiteJobStore(db.path)
+    history = store.enqueue(
+        DAILY_MARKET_COLLECTION_JOB,
+        {"fixture": "historical-watchlist"},
+        now=now - timedelta(days=1),
+    )
+    verified_history = store.enqueue(
+        VERIFIED_DAILY_MARKET_JOB,
+        {"fixture": "historical-verification"},
+        now=now - timedelta(days=1),
+    )
+    current = store.enqueue(
+        VERIFIED_DAILY_MARKET_JOB,
+        VerifiedDailyMarketJobRequest(
+            DAY,
+            (InstrumentKey("600000", InstrumentType.STOCK),),
+            FREE_CN_RESEARCH_V1.policy_id,
+            (evidence_ref,),
+        ).to_payload(),
+        now=now,
+    )
+    budget_job = store.enqueue("fixture_budget", {"index": 1}, now=now)
+    budget_lease = store.claim("fixture_budget", "fixture", now=now)
+    assert budget_lease is not None
+    for _ in range(99):
+        reserve_market_daily_provider_call(
+            db.path, budget_lease.lease, BAOSTOCK_DAILY_BAR_DESCRIPTOR, now=now
+        )
+    store.finish(budget_lease.lease, now=now, result_ref="fixture:spent")
+    calls = []
+
+    class Service:
+        def run(self, payload, *, before_publish, before_provider_fetch):
+            before_provider_fetch(BAOSTOCK_DAILY_BAR_DESCRIPTOR)
+            calls.append(payload["trade_date"])
+            before_publish()
+            return "dataset:sha256:" + "a" * 64
+
+    async def presence(_controls, _name, _owner, work):
+        await work
+
+    real_sleep = asyncio.sleep
+
+    async def stop_after_cycle(_seconds):
+        if _seconds == 5:
+            raise asyncio.CancelledError
+        await real_sleep(_seconds)
+
+    monkeypatch.setattr("server.workers.data_worker.AppDatabase", lambda: db)
+    monkeypatch.setattr("server.workers.data_worker.run_with_presence", presence)
+    monkeypatch.setattr(
+        "server.workers.data_worker.AutomationRunRepository.list_observation_automation_policies",
+        lambda _: [
+            {
+                "observation_id": "da6a8efb-fc60-4c0a-80ac-f8d59d94fbe4",
+                "dataset_preparation_enabled": True,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "server.workers.data_worker.run_research_observation_data_preparation_once",
+        lambda *args, **kwargs: [{"pending_job_ids": [current.job_id]}],
+    )
+    monkeypatch.setattr(
+        "server.workers.data_worker.enqueue_latest_daily_market_collection_jobs",
+        lambda *args, **kwargs: SimpleNamespace(planned_count=0, trade_date=None),
+    )
+    monkeypatch.setattr(
+        "server.workers.data_worker.VerifiedDailyMarketDataService",
+        lambda *args: Service(),
+    )
+    monkeypatch.setattr("server.workers.data_worker.asyncio.sleep", stop_after_cycle)
+    config = SimpleNamespace(
+        market_calendar_auto_sync=False,
+        market_data_verification_source_policy=FREE_CN_RESEARCH_V1.policy_id,
+    )
+    with pytest.raises(asyncio.CancelledError):
+        await run_data_worker(config)
+
+    assert calls == [DAY.isoformat()]
+    assert store.get(current.job_id).status == "succeeded"
+    assert store.get(history.job_id) == history
+    assert store.get(verified_history.job_id) == verified_history
+    assert store.get(budget_job.job_id).status == "succeeded"
+    assert market_daily_provider_call_budget_status(db.path, now=now)["groups"][
+        "baostock"
+    ] == {"used": 100, "limit": 100, "remaining": 0}

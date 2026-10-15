@@ -22,6 +22,184 @@ from server.contracts.content_identity import canonical_json, content_fingerprin
 class ShadowResearchQualificationPromotionRepositoryMixin:
     """Read the exact canonical backtest rows bound by a qualification run."""
 
+    def configure_publication_grant(
+        self, *, policy: Mapping[str, Any], expected_generation: str | None, now: str
+    ) -> dict[str, Any]:
+        from server.contracts.recommendation_publication import (
+            PUBLICATION_POLICY_ID,
+            validate_publication_grant,
+        )
+
+        validated = validate_publication_grant(policy)
+        with self._connect(immediate=True) as conn:
+            row = conn.execute(
+                "SELECT * FROM automation_policies WHERE policy_id=?",
+                (PUBLICATION_POLICY_ID,),
+            ).fetchone()
+            previous = _json_object(row["payload_json"]) if row is not None else {}
+            if previous.get("generation") != expected_generation:
+                raise ValueError("publication_grant_generation_conflict")
+            if previous and previous.get("grant_id") != validated["grant_id"]:
+                raise ValueError("publication_grant_identity_conflict")
+            conn.execute(
+                """INSERT INTO automation_policies
+                (policy_id,payload_json,created_at,updated_at,updated_by)
+                VALUES (?,?,?,?,?) ON CONFLICT(policy_id) DO UPDATE SET
+                payload_json=excluded.payload_json,updated_at=excluded.updated_at,
+                updated_by=excluded.updated_by""",
+                (
+                    PUBLICATION_POLICY_ID,
+                    canonical_json(validated),
+                    row["created_at"] if row is not None else now,
+                    now,
+                    validated["updated_by"],
+                ),
+            )
+        return validated
+
+    def publish_qualified_candidate_under_policy(
+        self,
+        *,
+        strategy_id: str,
+        readiness: Mapping[str, Any],
+        decision: Mapping[str, Any],
+        expected_state: Mapping[str, Any] | None,
+        incumbent: Mapping[str, Any] | None,
+        current_evidence_validator: Callable[[], Mapping[str, Any]],
+        now: str,
+    ) -> dict[str, Any]:
+        """Commit a real policy decision and one explicitly bound replacement."""
+        from server.contracts.recommendation_publication import (
+            PUBLICATION_POLICY_ID,
+            publication_time,
+            validate_publication_grant,
+        )
+
+        with self._connect(immediate=True) as conn:
+            row = conn.execute(
+                "SELECT payload_json FROM automation_policies WHERE policy_id=?",
+                (PUBLICATION_POLICY_ID,),
+            ).fetchone()
+            policy = validate_publication_grant(_json_object(row[0]) if row else {})
+            if (
+                not policy["enabled"]
+                or policy["grant_id"] != decision["grant_id"]
+                or policy["generation"] != decision["generation"]
+                or publication_time(now) >= publication_time(policy["expires_at"])
+            ):
+                raise ValueError("publication_grant_changed_or_inactive")
+            current_row = conn.execute(
+                "SELECT * FROM strategy_promotion_states WHERE strategy_id=?",
+                (strategy_id,),
+            ).fetchone()
+            current = dict(current_row) if current_row is not None else None
+            payload = _json_object(current["payload_json"]) if current else {}
+            if (
+                current
+                and current["stage"] == "paper_shadow"
+                and payload.get("publication_decision") == dict(decision)
+            ):
+                return {"strategy_promotion": current, "reused": True}
+            if promotion_state_fingerprint(current) != promotion_state_fingerprint(
+                expected_state
+            ):
+                raise ValueError("publication_candidate_state_conflict")
+            if current and current["stage"] in {"retired", "paused"}:
+                raise ValueError("publication_terminal_source_requires_new_version")
+            events = conn.execute(
+                "SELECT payload_json FROM strategy_promotion_events WHERE event_type='policy_publication'"
+            ).fetchall()
+            used = sum(
+                _json_object(item[0]).get("grant_id") == policy["grant_id"]
+                for item in events
+            )
+            if used >= policy["max_publications"]:
+                raise ValueError("publication_count_budget_exhausted")
+            reopened = current_evidence_validator()
+            if dict(reopened) != dict(readiness):
+                raise ValueError("publication_evidence_changed")
+            incumbent_id = decision.get("expected_incumbent_strategy_id")
+            if incumbent_id:
+                incumbent_row = conn.execute(
+                    "SELECT * FROM strategy_promotion_states WHERE strategy_id=?",
+                    (incumbent_id,),
+                ).fetchone()
+                actual = dict(incumbent_row) if incumbent_row else None
+                if (
+                    not actual
+                    or actual["stage"] != "paper_shadow"
+                    or promotion_state_fingerprint(actual)
+                    != promotion_state_fingerprint(incumbent)
+                ):
+                    raise ValueError("publication_incumbent_state_conflict")
+            state_payload = {
+                "schema_version": "karkinos.strategy_promotion_pipeline.v1",
+                "decision_source": "policy",
+                "readiness": dict(readiness),
+                "publication_decision": dict(decision),
+                "live_like_enabled": False,
+                "broker_submission_enabled": False,
+                "does_not_change_capital_authority": True,
+            }
+            conn.execute(
+                """INSERT INTO strategy_promotion_states
+                (strategy_id,stage,gate_status,live_like_enabled,missing_requirements_json,
+                 backtest_result_id,payload_json,created_at,updated_at)
+                VALUES (?,'paper_shadow','paper_shadow_enabled',0,'[]',?,?,?,?)
+                ON CONFLICT(strategy_id) DO UPDATE SET stage=excluded.stage,
+                gate_status=excluded.gate_status,live_like_enabled=0,
+                missing_requirements_json='[]',backtest_result_id=excluded.backtest_result_id,
+                payload_json=excluded.payload_json,updated_at=excluded.updated_at""",
+                (
+                    strategy_id,
+                    readiness["backtest_result_id"],
+                    canonical_json(state_payload),
+                    current["created_at"] if current else now,
+                    now,
+                ),
+            )
+            conn.execute(
+                """INSERT INTO strategy_promotion_events
+                (strategy_id,event_type,from_stage,to_stage,actor,payload_json,created_at)
+                VALUES (?,'policy_publication',?,'paper_shadow',?,?,?)""",
+                (
+                    strategy_id,
+                    current["stage"] if current else "research",
+                    "policy:" + policy["grant_id"],
+                    canonical_json(dict(decision)),
+                    now,
+                ),
+            )
+            if incumbent_id and incumbent_id != strategy_id:
+                if incumbent is None:
+                    raise ValueError("publication_incumbent_state_conflict")
+                previous_payload = _json_object(incumbent["payload_json"])
+                previous_payload.update(
+                    superseded_by=strategy_id,
+                    replacement_decision=decision["decision_id"],
+                )
+                conn.execute(
+                    """UPDATE strategy_promotion_states SET stage='retired',
+                    gate_status='lifecycle_retired',payload_json=?,updated_at=? WHERE strategy_id=?""",
+                    (canonical_json(previous_payload), now, incumbent_id),
+                )
+                conn.execute(
+                    """INSERT INTO strategy_promotion_events
+                    (strategy_id,event_type,from_stage,to_stage,actor,payload_json,created_at)
+                    VALUES (?,'lifecycle_retired','paper_shadow','retired',?,?,?)""",
+                    (
+                        incumbent_id,
+                        "policy:" + policy["grant_id"],
+                        canonical_json(dict(decision)),
+                        now,
+                    ),
+                )
+            saved = conn.execute(
+                "SELECT * FROM strategy_promotion_states WHERE strategy_id=?",
+                (strategy_id,),
+            ).fetchone()
+            return {"strategy_promotion": dict(saved), "reused": False}
+
     def get_qualification_backtest_source(self, result_id: int) -> dict[str, Any]:
         if result_id <= 0:
             raise ValueError("qualification_backtest_result_identity_missing")
@@ -233,42 +411,6 @@ class ShadowResearchQualificationPromotionRepositoryMixin:
                     payload=event_payload,
                     now=now,
                 )
-                prior_active = conn.execute(
-                    "SELECT strategy_id, payload_json FROM strategy_promotion_states WHERE stage='paper_shadow' AND strategy_id != ?",
-                    (strategy_id,),
-                ).fetchall()
-                for prior_row in prior_active:
-                    prior_id = str(prior_row["strategy_id"])
-                    prior_payload = _json_object(prior_row["payload_json"])
-                    prior_payload["superseded_by"] = strategy_id
-                    prior_payload["reason"] = (
-                        f"superseded_by_new_optimal_strategy:{strategy_id}"
-                    )
-                    prior_payload_json = canonical_json(prior_payload)
-                    conn.execute(
-                        """
-                        UPDATE strategy_promotion_states
-                        SET stage='retired',
-                            gate_status='lifecycle_retired',
-                            payload_json=?,
-                            updated_at=?
-                        WHERE strategy_id=?
-                        """,
-                        (prior_payload_json, now, prior_id),
-                    )
-                    conn.execute(
-                        """
-                        INSERT INTO strategy_promotion_events
-                        (strategy_id, event_type, from_stage, to_stage, actor, payload_json, created_at)
-                        VALUES (?, 'lifecycle_retired', 'paper_shadow', 'retired', ?, ?, ?)
-                        """,
-                        (
-                            prior_id,
-                            actor,
-                            prior_payload_json,
-                            now,
-                        ),
-                    )
                 state_row = conn.execute(
                     "SELECT * FROM strategy_promotion_states WHERE strategy_id=?",
                     (strategy_id,),

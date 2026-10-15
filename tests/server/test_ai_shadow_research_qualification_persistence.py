@@ -287,7 +287,7 @@ def test_atomic_qualification_promotion_rejects_stale_state_cas(tmp_path) -> Non
         )
 
 
-def test_atomic_qualification_promotion_supersedes_prior_active_paper_shadow(
+def test_human_qualification_promotion_preserves_unrelated_published_sources(
     tmp_path,
 ) -> None:
     AppDatabase(tmp_path / "app.db").init_sync()
@@ -314,10 +314,9 @@ def test_atomic_qualification_promotion_supersedes_prior_active_paper_shadow(
             "SELECT * FROM strategy_promotion_states WHERE strategy_id=?",
             (prior_id,),
         ).fetchone()
-        assert prior_row["stage"] == "retired"
-        assert prior_row["gate_status"] == "lifecycle_retired"
-        payload = json.loads(prior_row["payload_json"])
-        assert payload["superseded_by"] == values["strategy_id"]
+        assert prior_row["stage"] == "paper_shadow"
+        assert prior_row["gate_status"] == "paper_shadow_enabled"
+        assert json.loads(prior_row["payload_json"]) == {}
 
         new_row = conn.execute(
             "SELECT * FROM strategy_promotion_states WHERE strategy_id=?",
@@ -330,7 +329,7 @@ def test_atomic_qualification_promotion_supersedes_prior_active_paper_shadow(
             "SELECT * FROM strategy_promotion_events WHERE strategy_id=? ORDER BY id ASC",
             (prior_id,),
         ).fetchall()
-        assert any(e["event_type"] == "lifecycle_retired" for e in events)
+        assert events == []
 
 
 def test_atomic_qualification_promotion_rejects_preflight_to_begin_evidence_drift(

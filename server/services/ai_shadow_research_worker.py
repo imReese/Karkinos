@@ -151,6 +151,8 @@ class AiShadowResearchWorker:
             "blocked_by_market_evidence",
             "blocked_by_account_evidence",
             "deferred_for_provider_off_peak",
+            "awaiting_verified_research_inputs",
+            "awaiting_independent_validation",
         }:
             next_at = _retry_at(result, now=now, retry_seconds=self._retry_seconds)
             committed = await asyncio.to_thread(

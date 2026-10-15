@@ -290,7 +290,7 @@ def test_pipeline_rejects_controlled_bridge_pilot_lifecycle_by_default(
     assert events[-1]["to_stage"] == "controlled_bridge_pilot_blocked"
 
 
-def test_paper_shadow_promotion_supersedes_prior_active_paper_shadow_strategy(
+def test_human_paper_shadow_promotion_preserves_other_active_strategy(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -332,12 +332,12 @@ def test_paper_shadow_promotion_supersedes_prior_active_paper_shadow_strategy(
     assert state_2["stage"] == "paper_shadow"
     assert state_2["gate_status"] == "paper_shadow_enabled"
 
-    # Strategy 1 must now be automatically retired
+    # A human approval names no incumbent and grants no blanket replacement scope.
     states_by_id = {s["strategy_id"]: s for s in service.list_states()}
-    assert states_by_id[strat_1_id]["stage"] == "retired"
-    assert states_by_id[strat_1_id]["gate_status"] == "lifecycle_retired"
+    assert states_by_id[strat_1_id]["stage"] == "paper_shadow"
+    assert states_by_id[strat_1_id]["gate_status"] == "paper_shadow_enabled"
     assert states_by_id[strat_2_id]["stage"] == "paper_shadow"
     assert states_by_id[strat_2_id]["gate_status"] == "paper_shadow_enabled"
 
     events_1 = service.list_events(strat_1_id)
-    assert any(e["event_type"] == "lifecycle_retired" for e in events_1)
+    assert not any(e["event_type"] == "lifecycle_retired" for e in events_1)

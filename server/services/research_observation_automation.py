@@ -7,6 +7,7 @@ import json
 import logging
 import threading
 from datetime import date, datetime, time, timezone
+from decimal import Decimal
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 from zoneinfo import ZoneInfo
@@ -19,10 +20,14 @@ from data.dataset.manifest import (
 )
 from data.storage.objects import ObjectStoreError
 from server.contracts.content_identity import content_fingerprint
+from server.contracts.recommendation_publication import read_publication_grant
 from server.contracts.research_observation_automation import (
     OBSERVATION_AUTOMATION_SCHEMA,
     OBSERVATION_DATASET_SELECTION,
     observation_automation_policy_valid,
+)
+from server.contracts.research_observation_automation import (
+    reserved_forward_identity as reserved_forward_identity,
 )
 from server.persistence.automation_runs import AutomationRunRepository
 from server.release_activation import (
@@ -31,6 +36,7 @@ from server.release_activation import (
 )
 from server.services.research_observation_inputs import (
     latest_closed_session,
+    observation_deployment_scope,
     observation_input_binding,
     observation_outcome_sessions,
     read_research_observation_dataset,
@@ -44,6 +50,172 @@ from server.services.research_observations import (
 logger = logging.getLogger(__name__)
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 OBSERVATION_AUTOMATION_INTERVAL_SECONDS = 300.0
+
+
+async def start_reserved_champion_observation(
+    db, store, *, source_result_id, grant, now, config, reservation_id=None
+):
+    """Resume one reservation's grant-authorized isolated forward book."""
+    from server.contracts.http.strategy_models import BacktestCostAssumptions
+    from server.persistence.strategy_research import StrategyResearchAuditStore
+    from server.services.research.datasets import ensure_forward_seed_for_source
+    from server.services.research_observation_inputs import (
+        load_research_observation_source,
+    )
+    from server.services.research_paper_books import ResearchPaperBookService
+
+    try:
+        current = read_publication_grant(db, now=now)
+        if any(current[key] != grant.get(key) for key in ("grant_id", "generation")):
+            raise ValueError("observation_publication_grant_changed")
+        if not reservation_id:
+            raise ValueError("observation_deployment_reservation_required")
+        reserved = StrategyResearchAuditStore(db.path).get_sealed_test(reservation_id)
+        binding = (reserved.get("evidence") or {}).get("reservation", {})
+        frozen_grant = binding.get("publication_grant", {})
+        if (
+            binding.get("candidate_result_id") != source_result_id
+            or any(
+                frozen_grant.get(key) != current[key]
+                for key in ("grant_id", "generation")
+            )
+            or binding.get("deployment_scope", {}).get("deployment_scope_fingerprint")
+            != current["deployment_scope_fingerprint"]
+            or binding.get("entry_board_policy") != current["entry_board_policy"]
+        ):
+            raise ValueError("observation_deployment_reservation_mismatch")
+        initial_cash = Decimal(str(binding.get("initial_cash")))
+        if not 0 < initial_cash <= Decimal(current["max_initial_cash"]):
+            raise ValueError("observation_deployment_cash_invalid")
+        if not binding.get("fee_schedule"):
+            raise ValueError("observation_deployment_fees_missing")
+        row = await db.get_backtest_result(source_result_id)
+        if row is None:
+            raise ValueError("observation_source_not_found")
+        source = load_research_observation_source(
+            row, store, allow_unbound_dataset=True
+        )
+        scope = observation_deployment_scope(source)
+        if (
+            not scope
+            or scope["deployment_scope_fingerprint"]
+            != current["deployment_scope_fingerprint"]
+        ):
+            raise ValueError("observation_deployment_grant_scope_mismatch")
+        key, identity = reserved_forward_identity(reservation_id, current)
+        request_id = key + ":observation"
+        service = ResearchObservationService(db, clock=lambda: now)
+        observation = service.repository.get(identity)
+        if observation is None:
+            from server.services.account_board_permissions import (
+                entry_board_policy_blocker,
+                resolve_board_buy_permissions,
+            )
+
+            blocker = entry_board_policy_blocker(
+                current["entry_board_policy"],
+                resolve_board_buy_permissions(
+                    config, now.astimezone(_SHANGHAI).date().isoformat()
+                ),
+                decision_date=now.astimezone(_SHANGHAI).date().isoformat(),
+            )
+            if blocker:
+                raise ValueError(blocker)
+            source["forward_minimum_observations"] = current["statistical_policy"][
+                "minimum_observations"
+            ]
+            seed = ensure_forward_seed_for_source(db, config, source=source, now=now)
+            if seed["status"] != "ready":
+                return {**seed, "observation_id": None}
+            await service.start(
+                request_id=request_id,
+                source_backtest_result_id=source_result_id,
+                horizon_sessions=1,
+                max_symbol_weight=Decimal(current["risk_limits"]["max_symbol_weight"]),
+                max_gross_weight=Decimal(current["risk_limits"]["max_gross_weight"]),
+                forward_dataset_id=seed["dataset_id"],
+                authorization_binding={
+                    "grant_id": current["grant_id"],
+                    "generation": current["generation"],
+                    "reservation_id": reservation_id,
+                },
+                entry_board_policy=current["entry_board_policy"],
+            )
+            observation = service.repository.get(identity)
+        paper = ResearchPaperBookService(db, clock=lambda: now)
+        book = paper.get(identity)
+        if book is None:
+            settings = json.loads(row["config_json"])
+            paper.start(
+                identity,
+                request_id=key + ":book",
+                initial_cash=initial_cash,
+                cost_assumptions=BacktestCostAssumptions.model_validate(
+                    settings.get("cost_assumptions") or {}
+                ),
+                fee_schedule_binding=binding["fee_schedule"],
+                health_policy={
+                    "mode": "pause_on_breach",
+                    "minimum_settled_sessions": current["statistical_policy"][
+                        "minimum_observations"
+                    ],
+                    "maximum_drawdown": current["risk_limits"]["max_drawdown"],
+                    "minimum_net_excess_return": "0",
+                },
+            )
+            book = paper.get(identity)
+        observation = service.repository.get(identity)
+        initial = None
+        if (
+            not observation["publications"]
+            and observation["lifecycle"] == book["lifecycle"] == "active"
+        ):
+            initial = service.advance(
+                identity,
+                request_id=key + ":initial-target:" + str(observation["version"]),
+                expected_version=observation["version"],
+                dataset_id=observation_input_binding(observation["source"])[
+                    "dataset_id"
+                ],
+            )
+            observation = service.repository.get(identity)
+        scheduler = AutomationRunRepository(db.path)
+        automation = scheduler.get_observation_automation_policy(identity)
+        # A user's later pause/revocation must survive worker retries.
+        if (
+            automation is None
+            and observation["lifecycle"] == book["lifecycle"] == "active"
+        ):
+            configure_observation_automation(
+                service,
+                identity,
+                enabled=True,
+                expected_generation=None,
+                paper_settlement_enabled=True,
+                dataset_preparation_enabled=True,
+            )
+            automation = scheduler.get_observation_automation_policy(identity)
+        active = (
+            observation["lifecycle"] == book["lifecycle"] == "active"
+            and automation
+            and automation["enabled"]
+        )
+        return {
+            "status": "waiting"
+            if initial and not initial.get("publication_id")
+            else "ready"
+            if active
+            else "paused",
+            "observation_id": identity,
+            "book_id": book["id"],
+            "last_blocker": initial.get("last_blocker") if initial else None,
+        }
+    except (ValueError, LookupError, KeyError, TypeError, ArithmeticError) as exc:
+        return {
+            "status": "blocked",
+            "observation_id": None,
+            "last_blocker": {"code": str(exc)},
+        }
 
 
 def configure_observation_automation(
@@ -336,7 +508,16 @@ def _select_dataset(
                 # unknown discovery evidence, not proof that this book is bad.
                 unreadable_candidate_dataset_ids.append(entry.ref.dataset_id)
                 continue
-            if not snapshot.verification_bound or snapshot.instruments != instruments:
+            scope = observation_deployment_scope(observation["source"])
+            if not snapshot.verification_bound:
+                continue
+            if scope is not None:
+                if (
+                    snapshot.universe_policy_id != scope["deployment_scope_fingerprint"]
+                    or not snapshot.session_memberships
+                ):
+                    continue
+            elif snapshot.instruments != instruments:
                 continue
             return entry, snapshot
     except ValueError:
@@ -543,6 +724,12 @@ def run_research_observation_automation_once(
                     now=now,
                     calendar_rows=calendar,
                     minimum_bars=observation["source"]["minimum_bars"],
+                    deployment_scope=observation_deployment_scope(
+                        observation["source"]
+                    ),
+                    membership_after=date.fromisoformat(
+                        observation_input_binding(observation["source"])["end_date"]
+                    ),
                 )
                 if len(result.bars) > observation["policy"]["max_dataset_rows"]:
                     raise ValueError("observation_dataset_budget_exceeded")

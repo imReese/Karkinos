@@ -50,6 +50,27 @@ from server.services.strategy_promotion_support import (
 
 
 class AiShadowResearchCommandsMixin:
+    def publication_service(self):
+        from server.services.recommendation_publication import (
+            RecommendationPublicationService,
+        )
+
+        return RecommendationPublicationService(
+            self._db,
+            self._store,
+            now=getattr(self, "_now", None),
+            state=getattr(self, "_state", None),
+        )
+
+    def get_publication_policy(self) -> dict[str, Any]:
+        return self.publication_service().status()
+
+    def preview_publication_policy(self, inputs: Mapping[str, Any]) -> dict[str, Any]:
+        return self.publication_service().preview(inputs)
+
+    def update_publication_policy(self, inputs: Mapping[str, Any]) -> dict[str, Any]:
+        return self.publication_service().update(inputs)
+
     def get_policy(self) -> ShadowResearchPolicy:
         stored = self._db.get_automation_policy_sync(SHADOW_RESEARCH_POLICY_ID)
         return ShadowResearchPolicy.from_mapping(stored)
@@ -292,22 +313,9 @@ class AiShadowResearchCommandsMixin:
                 "authority_effect": "none",
             }
         )
-        active_paper_shadow = None
-        state_lister = getattr(self._db, "list_strategy_promotion_states_sync", None)
-        if callable(state_lister):
-            try:
-                states = state_lister(limit=20)
-                active_paper_shadow = next(
-                    (
-                        state["strategy_id"]
-                        for state in states
-                        if state.get("stage") == "paper_shadow"
-                        and state.get("gate_status") == "paper_shadow_enabled"
-                    ),
-                    None,
-                )
-            except Exception:
-                active_paper_shadow = None
+        publication_status = self.get_publication_policy()
+        sources = publication_status["usable_current_sources"]
+        active_paper_shadow = sources[0]["strategy_id"] if sources else None
         return {
             "schema_version": SHADOW_RESEARCH_API_SCHEMA,
             "runtime_contract": SHADOW_RESEARCH_RUNTIME_CONTRACT,
@@ -330,10 +338,13 @@ class AiShadowResearchCommandsMixin:
             "daily_winner_candidate_id": daily_winner_candidate_id,
             "daily_research_winner_candidate_id": (daily_research_winner_candidate_id),
             "research_outcome": research_outcome,
-            "automatic_strategy_replacement_enabled": False,
+            "recommendation_publication_grant": publication_status,
+            "automatic_strategy_replacement_enabled": publication_status["status"]
+            == "active",
             "production_strategy_mutation_enabled": False,
             "broker_submission_enabled": False,
-            "human_paper_shadow_approval_required": True,
+            "human_paper_shadow_approval_required": publication_status["status"]
+            != "active",
             "authority_effect": "research_only",
             **(
                 {"provider_call_window": provider_call_window}
@@ -345,14 +356,17 @@ class AiShadowResearchCommandsMixin:
     def readiness_status(self) -> dict[str, Any]:
         """Return the bounded policy projection used by local readiness checks."""
         provider_call_window = self._provider_call_window_status()
+        publication_status = self.publication_service().status(include_preview=False)
         return {
             "schema_version": SHADOW_RESEARCH_API_SCHEMA,
             "runtime_contract": SHADOW_RESEARCH_RUNTIME_CONTRACT,
             "policy": self.get_policy().to_dict(),
-            "automatic_strategy_replacement_enabled": False,
+            "automatic_strategy_replacement_enabled": publication_status["status"]
+            == "active",
             "production_strategy_mutation_enabled": False,
             "broker_submission_enabled": False,
-            "human_paper_shadow_approval_required": True,
+            "human_paper_shadow_approval_required": publication_status["status"]
+            != "active",
             "authority_effect": "research_only",
             **(
                 {"provider_call_window": provider_call_window}
@@ -495,6 +509,8 @@ class AiShadowResearchCommandsMixin:
         notes: str,
         confirmation: str,
     ) -> dict[str, Any]:
+        if approved_by.strip().startswith(("automation:", "policy:")):
+            raise PermissionError("automated_decision_cannot_create_human_approval")
         candidate = self._store.get_candidate(candidate_id)
         comparison = candidate.get("comparison")
         comparison = comparison if isinstance(comparison, Mapping) else {}

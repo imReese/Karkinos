@@ -499,6 +499,43 @@ class AiShadowResearchCandidateWorkflowMixin:
         candidate_metrics = strategy_research_json_object(
             candidate.get("metrics") or candidate.get("metrics_json")
         )
+        selection = strategy_research_json_object(
+            candidate_metrics.get("source_selection")
+        )
+        scope = strategy_research_json_object(selection.get("deployment_scope"))
+        truth = strategy_research_json_object(
+            candidate_metrics.get("market_universe_truth")
+        )
+        if not truth and baseline_view.get("dataset_snapshot_id") == candidate_view.get(
+            "dataset_snapshot_id"
+        ):
+            baseline_metrics = strategy_research_json_object(
+                baseline.get("metrics") or baseline.get("metrics_json")
+            )
+            truth = strategy_research_json_object(
+                baseline_metrics.get("market_universe_truth")
+            )
+        if truth.get("deployment_scope", {}).get(
+            "deployment_scope_fingerprint"
+        ) != scope.get("deployment_scope_fingerprint"):
+            truth = {}
+        coverage = strategy_research_json_object(truth.get("coverage"))
+        scope_projection = (
+            {
+                "scope_kind": scope.get("scope_kind"),
+                "deployment_scope_fingerprint": scope.get(
+                    "deployment_scope_fingerprint"
+                ),
+                "status": truth.get("status"),
+                "as_of": coverage.get("as_of"),
+                **{
+                    f"{name}_count": coverage.get(name)
+                    for name in ("expected", "evaluated", "excluded", "unresolved")
+                },
+            }
+            if scope
+            else None
+        )
         operation_preview = project_normalized_research_operation_preview(
             candidate_metrics.get("normalized_research_operation_preview")
         )
@@ -626,6 +663,7 @@ class AiShadowResearchCandidateWorkflowMixin:
             "limitations": list(draft.get("limitations") or []),
             "baseline": baseline_view,
             "candidate": candidate_view,
+            **({"deployment_scope": scope_projection} if scope_projection else {}),
             "deltas": {
                 "total_return": candidate_view["total_return"]
                 - baseline_view["total_return"],

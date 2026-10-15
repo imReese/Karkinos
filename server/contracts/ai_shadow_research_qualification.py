@@ -554,6 +554,12 @@ def public_promotion_decision_projection(
 ) -> dict[str, Any]:
     """Project the explicit human research-stage promotion decision."""
 
+    from server.contracts.recommendation_publication import legacy_automated_approval
+
+    if legacy_automated_approval(approval):
+        raise ShadowResearchQualificationRejected(
+            "automated_record_is_not_human_publication"
+        )
     if (
         approval.get("target_stage") != SHADOW_RESEARCH_QUALIFICATION_TARGET_STAGE
         or approval.get("confirmation") != SHADOW_RESEARCH_QUALIFICATION_CONFIRMATION
@@ -647,6 +653,34 @@ def public_qualification_candidate_projection(
 ) -> dict[str, Any]:
     """Project a qualified candidate without its private comparison payload."""
 
+    comparison = candidate.get("comparison")
+    candidate_view = (
+        comparison.get("candidate", {}) if isinstance(comparison, Mapping) else {}
+    )
+    final = (
+        candidate_view.get("independent_evaluation", {})
+        if isinstance(candidate_view, Mapping)
+        else {}
+    )
+    reservation = final.get("reservation", {}) if isinstance(final, Mapping) else {}
+    assessment = (
+        final.get("deployment_assessment") if isinstance(final, Mapping) else None
+    )
+    summary = None
+    if (
+        isinstance(assessment, Mapping)
+        and isinstance(reservation, Mapping)
+        and reservation.get("candidate_id") == candidate.get("source_candidate_id")
+    ):
+        fees = reservation.get("fee_schedule", {})
+        summary = {
+            "status": assessment.get("status"),
+            "checkpoint": reservation.get("effective_checkpoint"),
+            "fee_cost_model_reference": fees.get("cost_model_reference")
+            if isinstance(fees, Mapping)
+            else None,
+            "blockers": assessment.get("blockers"),
+        }
     return {
         "schema_version": SHADOW_RESEARCH_QUALIFICATION_SCHEMA,
         "qualification_candidate_id": candidate.get("qualification_candidate_id"),
@@ -665,6 +699,9 @@ def public_qualification_candidate_projection(
         "comparison_fingerprint": candidate.get("comparison_fingerprint"),
         "status": candidate.get("status"),
         "recommendation": candidate.get("recommendation"),
+        "deployment_validation": {**summary, "initial_cash": None}
+        if summary is not None
+        else None,
         "rank": candidate.get("rank"),
         "created_at": candidate.get("created_at"),
         "private_account_values_redacted": True,
@@ -682,10 +719,15 @@ def public_qualification_approval_projection(
 ) -> dict[str, Any]:
     """Return the human audit fact with explicit non-authority semantics."""
 
+    from server.contracts.recommendation_publication import legacy_automated_approval
+
     return {
         "schema_version": SHADOW_RESEARCH_QUALIFICATION_APPROVAL_SCHEMA,
         **dict(approval),
-        "manual_confirmation_recorded": True,
+        "manual_confirmation_recorded": not legacy_automated_approval(approval),
+        "decision_source": "legacy_ungranted"
+        if legacy_automated_approval(approval)
+        else "human",
         "authority_effect": "paper_shadow_research_only",
         "production_strategy_replaced": False,
         "strategy_registry_mutated": False,
