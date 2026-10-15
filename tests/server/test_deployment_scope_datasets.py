@@ -161,7 +161,7 @@ def test_range_planner_batches_without_narrowing_declared_universe(tmp_path):
 
     db = _db(tmp_path)
     instruments = tuple(
-        InstrumentKey(str(600000 + index), InstrumentType.STOCK) for index in range(81)
+        InstrumentKey(str(600000 + index), InstrumentType.STOCK) for index in range(201)
     )
     jobs = enqueue_verified_daily_market_jobs_for_range(
         db,
@@ -181,7 +181,7 @@ def test_range_planner_batches_without_narrowing_declared_universe(tmp_path):
             for job in jobs
             if job.payload["trade_date"] == day.isoformat()
         ]
-        assert sorted(len(group) for group in groups) == [1, 40, 40]
+        assert sorted(len(group) for group in groups) == [1, 100, 100]
         assert {row["symbol"] for group in groups for row in group} == {
             key.symbol for key in instruments
         }
