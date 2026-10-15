@@ -51,7 +51,7 @@ from server.services.verified_daily_market_data import (
     verified_daily_resolver_policy_id,
 )
 from server.services.verified_daily_market_jobs import (
-    MAX_VERIFIED_DATASET_INSTRUMENTS,
+    MAX_VERIFIED_DAILY_JOB_INSTRUMENTS,
     VERIFIED_DAILY_MARKET_JOB,
 )
 
@@ -124,7 +124,7 @@ def _prefix(service, observation, now):
         or snapshot.start_date.isoformat() != source["start_date"]
         or snapshot.end_date.isoformat() != source["end_date"]
         or snapshot.cutoff > now
-        or not 1 <= len(instruments) <= MAX_VERIFIED_DATASET_INSTRUMENTS
+        or not 1 <= len(instruments) <= MAX_VERIFIED_DAILY_JOB_INSTRUMENTS
     ):
         raise ValueError("observation_data_preparation_source_mismatch")
     # Supply only histories that the target/paper readers can still consume.

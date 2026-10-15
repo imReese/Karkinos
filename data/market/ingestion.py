@@ -35,10 +35,11 @@ Revision 是“Provider 曾经提供过哪版市场事实”，Quality 只决定
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 
+from core.types import InstrumentKey
 from data.market.capture import (
     ProviderCapture,
     capture_provider_payload,
@@ -49,6 +50,7 @@ from data.market.contracts import (
     MarketDataProviderDescriptor,
     ProviderDailyBarBatch,
 )
+from data.market.model import DailyBarObservation
 from data.market.normalize import (
     canonicalize_daily_bars,
     normalize_daily_bar,
@@ -286,3 +288,94 @@ def _normalize_batch(
         )
 
     return canonicalize_daily_bars(bars)
+
+
+def ingest_daily_bars_range(
+    provider: DailyBarProvider,
+    store: ContentAddressedObjectStore,
+    *,
+    request: DailyBarRequest,
+    expected_sessions: Mapping[date, tuple[InstrumentKey, ...]],
+    quality_policy: DailyBarQualityPolicy,
+    normalizer_version: str,
+    checked_at: datetime | None = None,
+    before_fetch: Callable[[MarketDataProviderDescriptor], None] | None = None,
+) -> tuple[DailyBarIngestionResult, ...]:
+    """Capture a real range once and derive existing strictly checked day facts.
+
+    ``expected_sessions`` is an explicit warmup projection, never an intersection
+    of returned sources. Extra requested rows/days in the closed request range
+    remain in the raw capture and are explicitly outside that projection. Missing
+    planned members block quality; an entirely missing planned day fails rather
+    than manufacturing an empty revision. Availability remains actual capture
+    completion, including for old market sessions.
+    """
+    if not isinstance(store, ContentAddressedObjectStore) or not isinstance(
+        request, DailyBarRequest
+    ):
+        raise TypeError("daily_bar_range_request_invalid")
+    if (
+        not isinstance(expected_sessions, Mapping)
+        or not expected_sessions
+        or len(expected_sessions) > 2000
+        or (request.end_date - request.start_date).days > 3652
+    ):
+        raise ValueError("daily_bar_range_sessions_invalid")
+    requested = set(request.instruments)
+    for day, keys in expected_sessions.items():
+        if (
+            not isinstance(day, date)
+            or isinstance(day, datetime)
+            or not request.start_date <= day <= request.end_date
+            or not isinstance(keys, tuple)
+            or not keys
+            or any(
+                not isinstance(key, InstrumentKey) or key not in requested
+                for key in keys
+            )
+            or len(set(keys)) != len(keys)
+        ):
+            raise ValueError("daily_bar_range_sessions_invalid")
+    if before_fetch is not None:
+        before_fetch(provider.descriptor)
+    batch = provider.fetch_daily_bars(request)
+    capture = _capture_batch(store, request=request, batch=batch)
+    if not batch.rows:
+        raise DailyBarIngestionNoData(capture)
+    try:
+        bars = _normalize_batch(batch)
+        grouped: dict[date, list[DailyBarObservation]] = {}
+        expected_keys = {day: set(keys) for day, keys in expected_sessions.items()}
+        for bar in bars:
+            if (
+                bar.instrument not in requested
+                or not request.start_date <= bar.session_date <= request.end_date
+            ):
+                raise ValueError("daily_bar_range_response_outside_request")
+            if (
+                bar.session_date in expected_keys
+                and bar.instrument in expected_keys[bar.session_date]
+            ):
+                grouped.setdefault(bar.session_date, []).append(bar)
+        results = []
+        for day in sorted(expected_sessions):
+            revision, materialization = publish_daily_bar_revision(
+                store,
+                capture=capture,
+                bars=grouped.get(day, ()),
+                normalizer_version=normalizer_version,
+            )
+            quality = evaluate_daily_bar_revision(
+                store,
+                revision=revision,
+                materialization=materialization,
+                policy=quality_policy,
+                expected_instruments=expected_sessions[day],
+                checked_at=checked_at,
+            )
+            results.append(
+                DailyBarIngestionResult(capture, revision, materialization, quality)
+            )
+    except Exception as exc:
+        raise DailyBarIngestionCapturedFailure(capture) from exc
+    return tuple(results)

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
+from core.types import InstrumentKey
 from data.dataset.resolver import DailyBarResolutionCandidate
 from data.market.contracts import (
     DailyBarProvider,
@@ -17,6 +18,7 @@ from data.market.ingestion import (
     DailyBarIngestionNoData,
     DailyBarIngestionResult,
     ingest_daily_bars,
+    ingest_daily_bars_range,
 )
 from data.market.quality import (
     DailyBarQualityPolicy,
@@ -286,3 +288,100 @@ def _checked_at(value: datetime | None) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("cross_source_daily_bar_checked_at_must_be_timezone_aware")
     return value.astimezone(timezone.utc)
+
+
+def ingest_cross_source_daily_bars_range(
+    primary_provider: DailyBarProvider,
+    comparison_provider: DailyBarProvider,
+    store: ContentAddressedObjectStore,
+    *,
+    request: DailyBarRequest,
+    expected_sessions: Mapping[date, tuple[InstrumentKey, ...]],
+    quality_policy: DailyBarQualityPolicy,
+    normalizer_version: str,
+    reconciliation_policy: DailyBarReconciliationPolicy = STRICT_DAILY_RECONCILIATION,
+    checked_at: datetime | None = None,
+    before_fetch: Callable[[MarketDataProviderDescriptor], None] | None = None,
+) -> tuple[CrossSourceDailyBarResult, ...]:
+    """One real range capture per independent source, existing verification/day.
+
+    Expected members are explicit per-date projections, never a returned-source
+    intersection. Extras within the original request remain captured and are
+    outside the projection; missing expected members retain strict quality gates.
+    """
+    if not isinstance(quality_policy, DailyBarQualityPolicy) or not isinstance(
+        reconciliation_policy, DailyBarReconciliationPolicy
+    ):
+        raise TypeError("cross_source_daily_bar_range_policy_invalid")
+    _validate_provider_roles(
+        request,
+        primary_descriptor=primary_provider.descriptor,
+        comparison_descriptor=comparison_provider.descriptor,
+    )
+    quality_checked_at = _checked_at(checked_at) if checked_at is not None else None
+    sources = []
+    for provider in (primary_provider, comparison_provider):
+        try:
+            source = ingest_daily_bars_range(
+                provider,
+                store,
+                request=request,
+                expected_sessions=expected_sessions,
+                quality_policy=quality_policy,
+                normalizer_version=normalizer_version,
+                checked_at=quality_checked_at,
+                before_fetch=before_fetch,
+            )
+        except DailyBarIngestionNoData as exc:
+            raise CrossSourceDailyBarUnavailableError(
+                provider.descriptor.provider, "no_data"
+            ) from exc
+        except DailyBarProviderUnavailableError as exc:
+            raise CrossSourceDailyBarUnavailableError(
+                provider.descriptor.provider, "provider_unavailable"
+            ) from exc
+        for item in source:
+            _validate_ingestion_identity(item, provider.descriptor)
+        sources.append(source)
+    results = []
+    for primary, comparison in zip(*sources, strict=True):
+        if primary.revision.partition_date != comparison.revision.partition_date:
+            raise CrossSourceDailyBarIntegrityError(
+                "cross_source_daily_bar_range_partition_mismatch"
+            )
+        primary_quality = publish_market_quality_evidence(store, primary.quality)
+        comparison_quality = publish_market_quality_evidence(store, comparison.quality)
+        verification = None
+        if (
+            primary.quality.status is MarketQualityStatus.PASS
+            and comparison.quality.status is MarketQualityStatus.PASS
+        ):
+            report = reconcile_daily_bar_revisions(
+                store,
+                primary_revision=primary.revision,
+                primary_materialization=primary.materialization,
+                comparison_revision=comparison.revision,
+                comparison_materialization=comparison.materialization,
+                policy=reconciliation_policy,
+            )
+            verification_checked_at = _checked_at(checked_at)
+            if verification_checked_at < max(
+                primary.capture.completed_at, comparison.capture.completed_at
+            ):
+                raise ValueError("cross_source_daily_bar_checked_at_before_capture")
+            verification = publish_market_verification_evidence(
+                store,
+                report=report,
+                primary_quality=primary_quality,
+                comparison_quality=comparison_quality,
+                primary_descriptor=primary_provider.descriptor,
+                comparison_descriptor=comparison_provider.descriptor,
+                policy=reconciliation_policy,
+                checked_at=verification_checked_at,
+            )
+        results.append(
+            CrossSourceDailyBarResult(
+                primary, comparison, primary_quality, comparison_quality, verification
+            )
+        )
+    return tuple(results)

@@ -35,6 +35,7 @@ class JobRun:
     result_ref: str | None
     error: str | None
     failure_evidence_ref: str | None
+    available_at: str | None = None
 
     @property
     def lease(self) -> JobLease:

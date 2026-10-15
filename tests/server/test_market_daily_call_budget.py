@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -68,6 +68,7 @@ def test_budget_deferral_is_atomic_and_preserves_failure_allowance(tmp_path):
         store.path, now=NOW, daily_limit=2
     )
     assert status["scope"] == "managed_daily_market_jobs"
+    assert status["reset_at"] == NEXT_SHANGHAI_DAY.isoformat()
     assert status["groups"]["baostock"] == {
         "used": 2,
         "limit": 2,
@@ -79,6 +80,9 @@ def test_budget_deferral_is_atomic_and_preserves_failure_allowance(tmp_path):
     assert persisted.status == "queued"
     assert persisted.attempt == 1
     assert persisted.error == BUDGET_DEFERRED_CODE
+    assert persisted.available_at == NEXT_SHANGHAI_DAY.isoformat(
+        timespec="microseconds"
+    )
     with sqlite3.connect(store.path) as conn:
         max_attempts = conn.execute(
             "SELECT max_attempts FROM job_runs WHERE job_id=?", (job.job_id,)
@@ -109,6 +113,12 @@ def test_budget_deferral_is_atomic_and_preserves_failure_allowance(tmp_path):
             store.path, now=NEXT_SHANGHAI_DAY, daily_limit=2
         )["groups"]["baostock"]["used"]
         == 1
+    )
+    assert (
+        market_daily_provider_call_budget_status(
+            store.path, now=NEXT_SHANGHAI_DAY, daily_limit=2
+        )["reset_at"]
+        == (NEXT_SHANGHAI_DAY + timedelta(days=1)).isoformat()
     )
     for expected_attempt in (2, 3, 4):
         store.fail(

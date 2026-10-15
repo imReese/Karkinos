@@ -31,6 +31,7 @@ BAOSTOCK_DAILY_BAR_DESCRIPTOR = MarketDataProviderDescriptor(
     provider="baostock",
     upstream_group="baostock",
     adapter_version=BAOSTOCK_DAILY_BAR_ADAPTER_VERSION,
+    unsupported_stock_prefixes=("4", "8", "92"),
     daily_bar_capabilities=(
         DailyBarCapability(
             endpoint="query_history_k_data_plus",
@@ -122,17 +123,12 @@ class BaoStockDailyBarProvider:
     def fetch_daily_bars(self, request: DailyBarRequest) -> ProviderDailyBarBatch:
         if not isinstance(request, DailyBarRequest):
             raise TypeError("baostock_daily_bar_request_invalid")
-        if request.start_date != request.end_date:
-            raise BaoStockDailyBarRequestError(
-                "baostock_daily_bar_request_must_be_single_session"
-            )
-
         targets = tuple(
             (instrument, _provider_code(instrument))
             for instrument in request.instruments
         )
         started_at = _aware_utc(self._clock(), field="started_at")
-        if started_at < _session_close_utc(request.start_date):
+        if started_at < _session_close_utc(request.end_date):
             raise BaoStockDailyBarRequestError("baostock_daily_bar_session_not_closed")
 
         client = self._resolve_client()
@@ -150,6 +146,7 @@ class BaoStockDailyBarProvider:
                         client,
                         code=code,
                         session=request.start_date,
+                        end_session=request.end_date,
                     )
                     raw_rows = _consume_result(result)
                     parsed = _rows_from_result(
@@ -158,6 +155,7 @@ class BaoStockDailyBarProvider:
                         instrument=instrument,
                         expected_code=code,
                         expected_session=request.start_date,
+                        expected_end=request.end_date,
                     )
                     rows.extend(parsed)
                     calls.append(
@@ -246,13 +244,14 @@ def _query(
     *,
     code: str,
     session: date,
+    end_session: date | None = None,
 ) -> _Result:
     try:
         result = client.query_history_k_data_plus(
             code,
             _FIELDS_TEXT,
             start_date=session.isoformat(),
-            end_date=session.isoformat(),
+            end_date=(end_session or session).isoformat(),
             frequency="d",
             adjustflag="3",
         )
@@ -296,6 +295,7 @@ def _rows_from_result(
     instrument: InstrumentKey,
     expected_code: str,
     expected_session: date,
+    expected_end: date | None = None,
 ) -> list[ProviderDailyBarRow]:
     result: list[ProviderDailyBarRow] = []
     for raw in raw_rows:
@@ -310,7 +310,7 @@ def _rows_from_result(
             raise BaoStockDailyBarResponseError("baostock_response_tradestatus_invalid")
 
         session = _trade_date(row["date"])
-        if session != expected_session:
+        if not expected_session <= session <= (expected_end or expected_session):
             raise BaoStockDailyBarResponseError(
                 f"baostock_response_session_mismatch:{session.isoformat()}"
             )
@@ -334,7 +334,7 @@ def _rows_from_result(
                 suspended=row["tradestatus"] == "0",
             )
         )
-    if len(result) > 1:
+    if len({row.session_date for row in result}) != len(result):
         raise BaoStockDailyBarResponseError(
             f"baostock_response_duplicate_session:{expected_session.isoformat()}"
         )

@@ -33,10 +33,12 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, timezone
+from typing import Any, Mapping
 
 from core.types import InstrumentKey, InstrumentType
 from data.dataset.model import (
     DATASET_KIND_DAILY_BARS,
+    DailyBarDatasetMembership,
     DailyBarDatasetPartition,
     DailyBarDatasetSnapshot,
     DatasetRef,
@@ -49,6 +51,7 @@ from data.storage.objects import (
 DATASET_MANIFEST_SCHEMA_VERSION = "karkinos.dataset_manifest.v1"
 DATASET_MANIFEST_SCHEMA_VERSION_V2 = "karkinos.dataset_manifest.v2"
 DATASET_MANIFEST_SCHEMA_VERSION_V3 = "karkinos.dataset_manifest.v3"
+DATASET_MANIFEST_SCHEMA_VERSION_V4 = "karkinos.dataset_manifest.v4"
 
 
 class DatasetManifestError(RuntimeError):
@@ -136,13 +139,15 @@ def serialize_daily_bar_dataset_manifest(
         raise TypeError("dataset_manifest_snapshot_invalid")
 
     schema_version = (
-        DATASET_MANIFEST_SCHEMA_VERSION_V3
+        DATASET_MANIFEST_SCHEMA_VERSION_V4
+        if snapshot.session_memberships
+        else DATASET_MANIFEST_SCHEMA_VERSION_V3
         if snapshot.corporate_action_observation_ids
         else DATASET_MANIFEST_SCHEMA_VERSION_V2
         if snapshot.verification_bound
         else DATASET_MANIFEST_SCHEMA_VERSION
     )
-    payload = {
+    payload: dict[str, Any] = {
         "schema_version": schema_version,
         "kind": snapshot.kind,
         "start_date": (snapshot.start_date.isoformat()),
@@ -158,10 +163,27 @@ def serialize_daily_bar_dataset_manifest(
             for partition in snapshot.partitions
         ],
     }
-    if snapshot.corporate_action_observation_ids:
+    if snapshot.corporate_action_observation_ids or snapshot.session_memberships:
         payload["corporate_action_observation_ids"] = list(
             snapshot.corporate_action_observation_ids
         )
+    if snapshot.session_memberships:
+        payload["universe_policy_id"] = snapshot.universe_policy_id
+        payload["session_memberships"] = [
+            {
+                "partition_date": item.partition_date.isoformat(),
+                "instruments": [_instrument_payload(key) for key in item.instruments],
+                "available_at": _format_utc_instant(item.available_at),
+                "source_observation_ids": list(item.source_observation_ids),
+                "decision_at": _format_utc_instant(item.decision_at)
+                if item.decision_at
+                else None,
+                "maintenance_instruments": [
+                    _instrument_payload(key) for key in item.maintenance_instruments
+                ],
+            }
+            for item in snapshot.session_memberships
+        ]
 
     return _canonical_json(payload)
 
@@ -207,8 +229,13 @@ def deserialize_daily_bar_dataset_manifest(
         "instruments",
         "partitions",
     }
-    if schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V3:
+    if schema_version in {
+        DATASET_MANIFEST_SCHEMA_VERSION_V3,
+        DATASET_MANIFEST_SCHEMA_VERSION_V4,
+    }:
         expected_keys.add("corporate_action_observation_ids")
+    if schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V4:
+        expected_keys.update({"universe_policy_id", "session_memberships"})
     _require_exact_keys(
         root,
         expected_keys,
@@ -219,6 +246,7 @@ def deserialize_daily_bar_dataset_manifest(
         DATASET_MANIFEST_SCHEMA_VERSION,
         DATASET_MANIFEST_SCHEMA_VERSION_V2,
         DATASET_MANIFEST_SCHEMA_VERSION_V3,
+        DATASET_MANIFEST_SCHEMA_VERSION_V4,
     }:
         raise DatasetManifestIntegrityError("dataset_manifest_schema_unsupported")
 
@@ -276,13 +304,28 @@ def deserialize_daily_bar_dataset_manifest(
             ),
             partitions=partitions,
             corporate_action_observation_ids=tuple(
-                _require_list(
+                _require_text(item, field="corporate_action_observation_id")
+                for item in _require_list(
                     root["corporate_action_observation_ids"],
                     field="corporate_action_observation_ids",
                 )
             )
-            if schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V3
+            if schema_version
+            in {DATASET_MANIFEST_SCHEMA_VERSION_V3, DATASET_MANIFEST_SCHEMA_VERSION_V4}
             else (),
+            session_memberships=tuple(
+                _membership_from_payload(item)
+                for item in _require_list(
+                    root["session_memberships"], field="session_memberships"
+                )
+            )
+            if schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V4
+            else (),
+            universe_policy_id=_require_text(
+                root["universe_policy_id"], field="universe_policy_id"
+            )
+            if schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V4
+            else None,
         )
     except DatasetManifestIntegrityError:
         raise
@@ -297,7 +340,7 @@ def deserialize_daily_bar_dataset_manifest(
 
 def _instrument_payload(
     instrument: InstrumentKey,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     return {
         "symbol": instrument.symbol,
         "instrument_type": (instrument.instrument_type.value),
@@ -308,21 +351,93 @@ def _partition_payload(
     partition: DailyBarDatasetPartition,
     *,
     schema_version: str,
-) -> dict[str, str]:
-    payload = {
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "partition_date": partition.partition_date.isoformat(),
         "provider": partition.provider,
         "revision_id": partition.revision_id,
         "materialization_id": partition.materialization_id,
     }
     if schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V2 or (
-        schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V3
+        schema_version
+        in {DATASET_MANIFEST_SCHEMA_VERSION_V3, DATASET_MANIFEST_SCHEMA_VERSION_V4}
         and partition.verification_id is not None
     ):
         if partition.verification_id is None:
             raise DatasetManifestError("dataset_manifest_verification_id_missing")
         payload["verification_id"] = partition.verification_id
+    if schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V4:
+        payload["instruments"] = [
+            _instrument_payload(key) for key in partition.instruments
+        ]
     return payload
+
+
+def _membership_from_payload(value: object) -> DailyBarDatasetMembership:
+    payload = _require_object(value, field="membership")
+    _require_exact_keys(
+        payload,
+        {
+            "partition_date",
+            "instruments",
+            "available_at",
+            "source_observation_ids",
+            "decision_at",
+            "maintenance_instruments",
+        },
+        field="membership",
+    )
+    return DailyBarDatasetMembership(
+        partition_date=_parse_date(payload["partition_date"], field="membership_date"),
+        instruments=tuple(
+            _instrument_from_payload(item)
+            for item in _require_list(
+                payload["instruments"], field="membership_instruments"
+            )
+        ),
+        available_at=_parse_utc_instant(
+            payload["available_at"], field="membership_available_at"
+        ),
+        source_observation_ids=tuple(
+            _require_text(item, field="membership_observation_id")
+            for item in _require_list(
+                payload["source_observation_ids"], field="membership_observation_ids"
+            )
+        ),
+        decision_at=_parse_utc_instant(
+            payload["decision_at"], field="membership_decision_at"
+        )
+        if payload["decision_at"] is not None
+        else None,
+        maintenance_instruments=tuple(
+            _instrument_from_payload(item)
+            for item in _require_list(
+                payload["maintenance_instruments"],
+                field="membership_maintenance_instruments",
+            )
+        ),
+    )
+
+
+def bind_stock_master_observation(
+    store: ContentAddressedObjectStore, snapshot: Mapping[str, Any]
+) -> str:
+    """Copy an existing content-addressed stock-master observation into CAS.
+
+    Its identity and capture times stay unchanged. This does not convert a
+    current-active master into historical membership evidence.
+    """
+    core = dict(snapshot)
+    identity = core.pop("snapshot_id", None)
+    if core.get("schema_version") not in {
+        "karkinos.market_universe_snapshot.v2",
+        "karkinos.market_universe_snapshot.v3",
+    }:
+        raise DatasetManifestError("dataset_membership_observation_time_unknown")
+    ref = store.put_bytes(_canonical_json(core))
+    if ref.object_id != identity:
+        raise DatasetManifestError("dataset_membership_observation_identity_mismatch")
+    return ref.object_id
 
 
 def _instrument_from_payload(
@@ -389,10 +504,13 @@ def _partition_from_payload(
         "materialization_id",
     }
     if schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V2 or (
-        schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V3
+        schema_version
+        in {DATASET_MANIFEST_SCHEMA_VERSION_V3, DATASET_MANIFEST_SCHEMA_VERSION_V4}
         and "verification_id" in payload
     ):
         expected.add("verification_id")
+    if schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V4:
+        expected.add("instruments")
     _require_exact_keys(
         payload,
         expected,
@@ -425,6 +543,14 @@ def _partition_from_payload(
                     field="verification_id",
                 )
             ),
+            instruments=tuple(
+                _instrument_from_payload(item)
+                for item in _require_list(
+                    payload["instruments"], field="shard_instruments"
+                )
+            )
+            if schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V4
+            else (),
         )
     except DatasetManifestIntegrityError:
         raise

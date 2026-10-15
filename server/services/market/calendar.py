@@ -234,9 +234,15 @@ def resolve_verified_closed_trading_dates_in_range(
     *,
     start_date: date,
     end_date: date,
+    maximum_calendar_days: int = 366,
 ) -> tuple[VerifiedClosedTradingDate, ...]:
     """Select a bounded requested interval from complete, verified SSE calendars."""
-    if start_date > end_date or (end_date - start_date).days >= 366:
+    if (
+        type(maximum_calendar_days) is not int
+        or not 1 <= maximum_calendar_days <= 3653
+        or start_date > end_date
+        or (end_date - start_date).days >= maximum_calendar_days
+    ):
         raise ValueError("verified_trading_date_range_invalid")
     current = get_shanghai_now(now)
     cutoff_date = current.date()

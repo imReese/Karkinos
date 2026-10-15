@@ -12,12 +12,19 @@ from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
-from core.types import BarFrequency, Symbol
+from core.types import BarFrequency, InstrumentKey, Symbol
 from data.market_daily_store import is_supported_stock_receipt_identity
-from data.store import DataStore
+from data.store import DataStore, normalize_stock_master_metadata
+from domain.instrument import (
+    RESEARCH_STOCK_TRADING_RULES_ID,
+    a_share_identity,
+    make_research_stock,
+)
+from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
 from server.ai_runtime.contracts import content_fingerprint
 
-MARKET_UNIVERSE_POLICY_VERSION = "karkinos.market_universe_policy.v2"
+LEGACY_MARKET_UNIVERSE_POLICY_VERSION = "karkinos.market_universe_policy.v2"
+MARKET_UNIVERSE_POLICY_VERSION = "karkinos.market_universe_policy.v3"
 MARKET_UNIVERSE_TRUTH_SCHEMA_VERSION = "karkinos.market_universe_truth.v2"
 RESEARCH_PANEL_SCHEMA_VERSION = "karkinos.research_panel_snapshot.v2"
 RESEARCH_POSITION_SIZING_POLICY_VERSION = "karkinos.research_position_sizing_policy.v1"
@@ -42,11 +49,26 @@ class MarketUniversePolicy:
     policy_version: str = MARKET_UNIVERSE_POLICY_VERSION
 
     def __post_init__(self) -> None:
-        if self.panel_size != 40:
+        if self.policy_version not in {
+            MARKET_UNIVERSE_POLICY_VERSION,
+            LEGACY_MARKET_UNIVERSE_POLICY_VERSION,
+        }:
+            raise MarketUniverseRejected("market_universe_policy_version_invalid")
+        if (
+            self.panel_size != 40
+            and self.policy_version == LEGACY_MARKET_UNIVERSE_POLICY_VERSION
+        ):
             raise MarketUniverseRejected("research_panel_size_must_be_40")
-        if self.backfill_candidate_count < self.panel_size:
+        if (
+            self.backfill_candidate_count < self.panel_size
+            and self.policy_version == LEGACY_MARKET_UNIVERSE_POLICY_VERSION
+        ):
             raise MarketUniverseRejected("research_panel_backfill_pool_too_small")
-        if self.minimum_master_member_count < self.panel_size:
+        if self.minimum_master_member_count < (
+            self.panel_size
+            if self.policy_version == LEGACY_MARKET_UNIVERSE_POLICY_VERSION
+            else 1
+        ):
             raise MarketUniverseRejected("market_universe_minimum_too_small")
         if not 1 <= self.allocation_slots <= self.panel_size:
             raise MarketUniverseRejected("research_allocation_slots_invalid")
@@ -60,7 +82,7 @@ class MarketUniversePolicy:
         return Decimal("1") / Decimal(self.allocation_slots)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "schema_version": self.policy_version,
             "asset_scope": ["stock"],
             "supported_exchanges": ["BSE", "SSE", "SZSE"],
@@ -78,6 +100,56 @@ class MarketUniversePolicy:
             "authorizes_order_creation": False,
             "changes_capital_authority": False,
         }
+        if self.policy_version == MARKET_UNIVERSE_POLICY_VERSION:
+            result.pop("panel_size")
+            result.pop("backfill_candidate_count")
+            result["scope_kind"] = "full_declared_market"
+            result["selection_order"] = "all_eligible_then_symbol_asc"
+            result["trading_rules_id"] = RESEARCH_STOCK_TRADING_RULES_ID
+            result["session_eligibility"] = (
+                "source_observed_ordinary_name_and_verified_history"
+            )
+            result["minimum_history_basis"] = "verified_observed_sessions"
+        return result
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> MarketUniversePolicy:
+        version = str(value.get("schema_version") or value.get("policy_version") or "")
+        return cls(
+            policy_version=version,
+            panel_size=int(value.get("panel_size", 40)),
+            backfill_candidate_count=int(value.get("backfill_candidate_count", 160)),
+            minimum_master_member_count=int(
+                value.get("minimum_master_member_count", 1000)
+            ),
+            minimum_history_rows=int(value.get("minimum_history_rows", 60)),
+            allocation_slots=int(value.get("allocation_slots", 4)),
+            lot_size=int(value.get("lot_size", 100)),
+            fee_buffer_rate=Decimal(str(value.get("fee_buffer_rate", "0.01"))),
+        )
+
+    @classmethod
+    def legacy(cls, **kwargs: Any) -> MarketUniversePolicy:
+        return cls(policy_version=LEGACY_MARKET_UNIVERSE_POLICY_VERSION, **kwargs)
+
+
+def market_deployment_scope(
+    policy: MarketUniversePolicy,
+    *,
+    portfolio_policy_id: str = FORMULA_PORTFOLIO_POLICY_ID,
+) -> dict[str, Any]:
+    """Scope identity binds rules, never today's changing list of members."""
+    core = {
+        "universe_policy": policy.to_dict(),
+        "portfolio_policy_id": portfolio_policy_id,
+    }
+    return {
+        "scope_kind": "full_declared_market"
+        if policy.policy_version == MARKET_UNIVERSE_POLICY_VERSION
+        else "sampled_development",
+        **core,
+        "deployment_scope_fingerprint": "sha256:" + content_fingerprint(core),
+    }
 
 
 def normalize_a_share_members(symbols: Sequence[object]) -> list[dict[str, str]]:
@@ -85,7 +157,7 @@ def normalize_a_share_members(symbols: Sequence[object]) -> list[dict[str, str]]
     members: dict[str, dict[str, str]] = {}
     for raw in symbols:
         symbol = str(raw).strip().split(".", maxsplit=1)[0]
-        identity = _a_share_identity(symbol)
+        identity = a_share_identity(symbol)
         if identity is None:
             continue
         members[symbol] = {
@@ -112,11 +184,15 @@ def require_complete_market_universe_snapshot(
     if version not in {
         "karkinos.market_universe_snapshot.v1",
         "karkinos.market_universe_snapshot.v2",
+        "karkinos.market_universe_snapshot.v3",
     }:
         raise MarketUniverseRejected("market_universe_snapshot_contract_invalid")
     if available_as_of is not None and available_as_of.utcoffset() is None:
         raise MarketUniverseRejected("market_universe_as_of_timezone_required")
-    if version == "karkinos.market_universe_snapshot.v2":
+    if version in {
+        "karkinos.market_universe_snapshot.v2",
+        "karkinos.market_universe_snapshot.v3",
+    }:
         try:
             started, completed, available = (
                 datetime.fromisoformat(str(payload[key]))
@@ -165,6 +241,14 @@ def require_complete_market_universe_snapshot(
     )
     if normalized != members:
         raise MarketUniverseRejected("market_universe_members_not_canonical")
+    if (
+        version == "karkinos.market_universe_snapshot.v3"
+        and normalize_stock_master_metadata(
+            payload.get("member_metadata") or [], members
+        )
+        != payload.get("member_metadata")
+    ):
+        raise MarketUniverseRejected("market_universe_metadata_not_canonical")
     snapshot_id = str(payload.get("snapshot_id") or "")
     core = dict(payload)
     core.pop("snapshot_id", None)
@@ -201,6 +285,56 @@ def market_universe_observation(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _member_session_exclusion(snapshot: Mapping[str, Any], symbol: str) -> str | None:
+    metadata: Mapping[str, Any] = next(
+        (
+            row
+            for row in snapshot.get("member_metadata", [])
+            if row.get("symbol") == symbol
+        ),
+        {},
+    )
+    name = str(metadata.get("display_name") or "").strip()
+    if not name or name == symbol or name == f"{symbol} A股":
+        return "trading_state_unverified"
+    if "ST" in name.upper():
+        return "special_treatment_excluded"
+    if "退" in name:
+        return "delisting_period_excluded"
+    if name.startswith(("N", "C")) and len(name) > 1 and not name[1].isascii():
+        return "special_listing_period_excluded"
+    return None
+
+
+def market_master_buy_instruments(
+    snapshot: Mapping[str, Any],
+    policy: MarketUniversePolicy,
+    *,
+    require_status: bool = True,
+) -> tuple[InstrumentKey, ...]:
+    """Apply named ordinary-session scope before planning provider requests."""
+    eligible = []
+    unknown = 0
+    for member in snapshot["members"]:
+        symbol = str(member["symbol"])
+        reason = (
+            _member_session_exclusion(snapshot, symbol)
+            if policy.policy_version == MARKET_UNIVERSE_POLICY_VERSION
+            else None
+        )
+        if reason == "trading_state_unverified":
+            unknown += 1
+        if reason is None:
+            eligible.append(InstrumentKey.from_values(symbol, "stock"))
+    if unknown and require_status:
+        raise MarketUniverseRejected("market_universe_trading_state_unverified")
+    if not eligible:
+        raise MarketUniverseRejected("market_universe_eligible_members_missing")
+    return tuple(
+        sorted(eligible, key=lambda key: (key.instrument_type.value, key.symbol))
+    )
+
+
 def preliminary_research_panel_symbols(
     snapshot: Mapping[str, Any],
     *,
@@ -231,7 +365,7 @@ def build_market_universe_truth(
     policy: MarketUniversePolicy | None = None,
     frames: Mapping[str, pd.DataFrame] | None = None,
 ) -> dict[str, Any]:
-    """Build exact 40-stock research evidence from immutable persisted inputs."""
+    """Build the declared scope, retaining explicit legacy 40-stock selection."""
     active_policy = policy or MarketUniversePolicy()
     verified = require_complete_market_universe_snapshot(
         snapshot,
@@ -268,13 +402,25 @@ def build_market_universe_truth(
     eligible: list[dict[str, Any]] = []
     excluded_reason_counts: dict[str, int] = {}
     for symbol_text, member in sorted(member_by_symbol.items()):
+        state_reason = (
+            _member_session_exclusion(verified, symbol_text)
+            if active_policy.policy_version == MARKET_UNIVERSE_POLICY_VERSION
+            else None
+        )
+        if state_reason:
+            excluded_reason_counts[state_reason] = (
+                excluded_reason_counts.get(state_reason, 0) + 1
+            )
+            continue
         assessment = _assess_member_frame(
             frame=frames.get(symbol_text),
             member=member_by_symbol[symbol_text],
             start_date=start_date,
             end_date=end_date,
             minimum_history_rows=active_policy.minimum_history_rows,
-            lot_size=active_policy.lot_size,
+            lot_size=int(make_research_stock(symbol_text, symbol_text).lot_size)
+            if active_policy.policy_version == MARKET_UNIVERSE_POLICY_VERSION
+            else active_policy.lot_size,
             fee_buffer_rate=active_policy.fee_buffer_rate,
             per_name_budget=cash * active_policy.target_weight,
             enforce_lot_feasibility=True,
@@ -285,12 +431,19 @@ def build_market_universe_truth(
         reason = str(assessment["reason"])
         excluded_reason_counts[reason] = excluded_reason_counts.get(reason, 0) + 1
 
-    selected = _round_robin_ranked_members(
-        eligible,
-        limit=active_policy.panel_size,
-        policy_version=active_policy.policy_version,
+    selected = (
+        _round_robin_ranked_members(
+            eligible,
+            limit=active_policy.panel_size,
+            policy_version=active_policy.policy_version,
+        )
+        if active_policy.policy_version == LEGACY_MARKET_UNIVERSE_POLICY_VERSION
+        else sorted(eligible, key=lambda member: str(member["symbol"]))
     )
-    if len(selected) != active_policy.panel_size:
+    if not selected or (
+        active_policy.policy_version == LEGACY_MARKET_UNIVERSE_POLICY_VERSION
+        and len(selected) != active_policy.panel_size
+    ):
         raise MarketUniverseRejected(
             "research_panel_incomplete:"
             f"eligible={len(eligible)}:required={active_policy.panel_size}"
@@ -303,7 +456,9 @@ def build_market_universe_truth(
         }
     )
     panel_core = {
-        "schema_version": RESEARCH_PANEL_SCHEMA_VERSION,
+        "schema_version": RESEARCH_PANEL_SCHEMA_VERSION
+        if active_policy.policy_version == LEGACY_MARKET_UNIVERSE_POLICY_VERSION
+        else "karkinos.research_panel_snapshot.v3",
         "market_universe_snapshot_id": verified["snapshot_id"],
         "trade_date": end_date,
         "start_date": start_date,
@@ -353,9 +508,38 @@ def build_market_universe_truth(
         "authorizes_order_creation": False,
         "changes_capital_authority": False,
     }
-    if verified["schema_version"] == "karkinos.market_universe_snapshot.v2":
+    if verified["schema_version"] in {
+        "karkinos.market_universe_snapshot.v2",
+        "karkinos.market_universe_snapshot.v3",
+    }:
         truth_core["market_universe_observation"] = market_universe_observation(
             verified
+        )
+    if active_policy.policy_version == MARKET_UNIVERSE_POLICY_VERSION:
+        unresolved_reasons = {
+            "trading_state_unverified",
+            "persisted_bars_missing",
+            "market_date_missing",
+            "ohlcv_incomplete",
+            "ohlcv_invalid",
+        }
+        unresolved = sum(
+            count
+            for reason, count in excluded_reason_counts.items()
+            if reason in unresolved_reasons
+        )
+        truth_core.update(
+            schema_version="karkinos.market_universe_truth.v3",
+            universe_policy=active_policy.to_dict(),
+            deployment_scope=market_deployment_scope(active_policy),
+            coverage={
+                "expected": len(member_by_symbol),
+                "evaluated": len(eligible),
+                "excluded": len(member_by_symbol) - len(eligible) - unresolved,
+                "unresolved": unresolved,
+                "as_of": verified.get("available_at"),
+            },
+            status="complete" if unresolved == 0 else "incomplete",
         )
     return {
         **truth_core,
@@ -430,16 +614,27 @@ def build_full_market_universe_truth(
     excluded_reason_counts: dict[str, int] = {}
     per_name_budget = cash * weight
     for symbol, member in member_by_symbol.items():
-        assessment = _assess_member_frame(
-            frame=frames.get(symbol),
-            member=member,
-            start_date=start_date,
-            end_date=end_date,
-            minimum_history_rows=minimum_history_rows,
-            lot_size=active_policy.lot_size,
-            fee_buffer_rate=active_policy.fee_buffer_rate,
-            per_name_budget=per_name_budget,
-            enforce_lot_feasibility=True,
+        state_reason = (
+            _member_session_exclusion(verified, symbol)
+            if active_policy.policy_version == MARKET_UNIVERSE_POLICY_VERSION
+            else None
+        )
+        assessment = (
+            {"status": "excluded", "reason": state_reason}
+            if state_reason
+            else _assess_member_frame(
+                frame=frames.get(symbol),
+                member=member,
+                start_date=start_date,
+                end_date=end_date,
+                minimum_history_rows=minimum_history_rows,
+                lot_size=int(make_research_stock(symbol, symbol).lot_size)
+                if active_policy.policy_version == MARKET_UNIVERSE_POLICY_VERSION
+                else active_policy.lot_size,
+                fee_buffer_rate=active_policy.fee_buffer_rate,
+                per_name_budget=per_name_budget,
+                enforce_lot_feasibility=True,
+            )
         )
         if assessment["status"] == "eligible":
             eligible_symbols.append(symbol)
@@ -454,7 +649,9 @@ def build_full_market_universe_truth(
             start_date=start_date,
             end_date=end_date,
             minimum_history_rows=minimum_history_rows,
-            lot_size=active_policy.lot_size,
+            lot_size=int(make_research_stock(symbol, symbol).lot_size)
+            if active_policy.policy_version == MARKET_UNIVERSE_POLICY_VERSION
+            else active_policy.lot_size,
             fee_buffer_rate=active_policy.fee_buffer_rate,
             per_name_budget=per_name_budget,
             enforce_lot_feasibility=False,
@@ -465,9 +662,29 @@ def build_full_market_universe_truth(
             blockers.append(
                 f"holding_exit_evidence_incomplete:{symbol}:{maintenance['reason']}"
             )
-    if len(eligible_symbols) < active_policy.panel_size:
+    if len(eligible_symbols) < (
+        active_policy.panel_size
+        if active_policy.policy_version == LEGACY_MARKET_UNIVERSE_POLICY_VERSION
+        else 1
+    ):
         blockers.append("full_market_eligible_stock_pool_too_small")
     blockers = list(dict.fromkeys(blockers))
+    unresolved = 0
+    if active_policy.policy_version == MARKET_UNIVERSE_POLICY_VERSION:
+        unresolved = sum(
+            count
+            for reason, count in excluded_reason_counts.items()
+            if reason
+            in {
+                "persisted_bars_missing",
+                "market_date_missing",
+                "ohlcv_incomplete",
+                "ohlcv_invalid",
+                "trading_state_unverified",
+            }
+        )
+        if unresolved:
+            blockers.append("full_market_evidence_incomplete")
     capital_binding_fingerprint = "sha256:" + content_fingerprint(
         {
             "initial_cash": str(cash),
@@ -501,8 +718,20 @@ def build_full_market_universe_truth(
         "authorizes_order_creation": False,
         "changes_capital_authority": False,
     }
-    if verified["schema_version"] == "karkinos.market_universe_snapshot.v2":
+    if verified["schema_version"] in {
+        "karkinos.market_universe_snapshot.v2",
+        "karkinos.market_universe_snapshot.v3",
+    }:
         core["market_universe_observation"] = market_universe_observation(verified)
+    if active_policy.policy_version == MARKET_UNIVERSE_POLICY_VERSION:
+        core["deployment_scope"] = market_deployment_scope(active_policy)
+        core["coverage"] = {
+            "expected": len(member_by_symbol),
+            "evaluated": len(eligible_symbols),
+            "excluded": len(member_by_symbol) - len(eligible_symbols) - unresolved,
+            "unresolved": unresolved,
+            "as_of": verified.get("available_at"),
+        }
     return {**core, "evidence_fingerprint": "sha256:" + content_fingerprint(core)}
 
 
@@ -572,8 +801,8 @@ def _round_robin_ranked_members(
     buckets: dict[str, list[dict[str, Any]]] = {}
     for raw in members:
         member = dict(raw)
-        bucket = str(member.get("board") or "unknown")
-        buckets.setdefault(bucket, []).append(member)
+        board = str(member.get("board") or "unknown")
+        buckets.setdefault(board, []).append(member)
     for bucket in buckets.values():
         bucket.sort(
             key=lambda member: (
@@ -598,19 +827,3 @@ def _round_robin_ranked_members(
             break
         offset += 1
     return selected
-
-
-def _a_share_identity(symbol: str) -> dict[str, str] | None:
-    if len(symbol) != 6 or not symbol.isdigit():
-        return None
-    if symbol.startswith(("600", "601", "603", "605")):
-        return {"exchange": "SSE", "board": "sse_main"}
-    if symbol.startswith(("688", "689")):
-        return {"exchange": "SSE", "board": "star"}
-    if symbol.startswith(("000", "001", "002", "003")):
-        return {"exchange": "SZSE", "board": "szse_main"}
-    if symbol.startswith(("300", "301")):
-        return {"exchange": "SZSE", "board": "chinext"}
-    if symbol.startswith(("4", "8", "92")):
-        return {"exchange": "BSE", "board": "beijing"}
-    return None

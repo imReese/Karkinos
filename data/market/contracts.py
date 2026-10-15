@@ -32,6 +32,9 @@ class DailyBarProviderUnavailableError(RuntimeError):
     """The provider could not produce an observation because external I/O is unavailable."""
 
 
+MAX_DAILY_BAR_JOB_INSTRUMENTS = 40
+
+
 @dataclass(frozen=True, slots=True)
 class DailyBarCapability:
     """One explicitly supported daily-bar provider endpoint."""
@@ -78,6 +81,7 @@ class MarketDataProviderDescriptor:
     upstream_group: str
     adapter_version: str
     daily_bar_capabilities: tuple[DailyBarCapability, ...]
+    unsupported_stock_prefixes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         provider = _require_non_empty_text(self.provider, field="descriptor_provider")
@@ -108,6 +112,18 @@ class MarketDataProviderDescriptor:
             capability.supports(instrument_type)
             and (price_basis is None or capability.price_basis == price_basis)
             for capability in self.daily_bar_capabilities
+        )
+
+    def supports_daily_bar_instrument(
+        self, instrument: InstrumentKey, *, price_basis: str | None = None
+    ) -> bool:
+        """Preflight reviewed symbol restrictions before contacting a provider."""
+        return self.supports_daily_bars(
+            instrument.instrument_type, price_basis=price_basis
+        ) and not (
+            instrument.instrument_type is InstrumentType.STOCK
+            and self.unsupported_stock_prefixes
+            and instrument.symbol.startswith(self.unsupported_stock_prefixes)
         )
 
 

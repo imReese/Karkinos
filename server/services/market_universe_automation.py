@@ -33,7 +33,7 @@ from server.services.market_universe_truth import (
 
 logger = logging.getLogger(__name__)
 
-MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION = "karkinos.market_universe_automation.v4"
+MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION = "karkinos.market_universe_automation.v5"
 MARKET_UNIVERSE_AUTOMATION_RUN_TYPE = "market_universe_sync"
 MARKET_UNIVERSE_AUTOMATION_INTERVAL_SECONDS = 60 * 60
 
@@ -137,7 +137,7 @@ class MarketUniverseAutomationService:
                 },
             )
         run_id = (
-            "market_universe_sync:v4:"
+            "market_universe_sync:v5:"
             f"{master_provider_name}:{daily_provider_name}:{trade_date}"
         )
         existing = self._db.get_automation_run_sync(run_id)
@@ -149,15 +149,28 @@ class MarketUniverseAutomationService:
         instrument_metadata_persisted_count = 0
         symbol_metadata: Any = None
         try:
-            snapshot = self._data_store.get_market_universe_snapshot(
-                trade_date=trade_date,
-                provider_name=master_provider_name,
+            snapshot: dict[str, Any] | None = (
+                self._data_store.get_market_universe_snapshot(
+                    trade_date=trade_date,
+                    provider_name=master_provider_name,
+                )
             )
             provider_contacted = False
+            metadata_lister = getattr(
+                self._security_master_source, "list_symbol_metadata", None
+            )
             if (
                 snapshot is None
                 or snapshot.get("schema_version")
-                != "karkinos.market_universe_snapshot.v2"
+                not in {
+                    "karkinos.market_universe_snapshot.v2",
+                    "karkinos.market_universe_snapshot.v3",
+                }
+                or (
+                    snapshot.get("schema_version")
+                    == "karkinos.market_universe_snapshot.v2"
+                    and callable(metadata_lister)
+                )
             ):
                 capture_started_at = self._capture_clock()
                 metadata_lister = getattr(
@@ -176,13 +189,13 @@ class MarketUniverseAutomationService:
                     ]
                 capture_completed_at = self._capture_clock()
                 provider_contacted = True
-                members = normalize_a_share_members(symbols)
-                if len(members) < self._policy.minimum_master_member_count:
+                normalized_members = normalize_a_share_members(symbols)
+                if len(normalized_members) < self._policy.minimum_master_member_count:
                     raise ValueError("market_universe_provider_result_incomplete")
                 if stock_master_metadata_fetched:
                     metadata_items = _useful_stock_master_metadata(
                         symbol_metadata or [],
-                        members=members,
+                        members=normalized_members,
                         provider_name=master_provider_name,
                         fetched_at=capture_completed_at.isoformat(),
                         trade_date=trade_date,
@@ -206,9 +219,10 @@ class MarketUniverseAutomationService:
                 snapshot = self._data_store.save_market_universe_snapshot(
                     trade_date=trade_date,
                     provider_name=master_provider_name,
-                    members=members,
+                    members=normalized_members,
                     capture_started_at=capture_started_at,
                     capture_completed_at=capture_completed_at,
+                    source_metadata=symbol_metadata,
                 )
             snapshot = require_complete_market_universe_snapshot(
                 snapshot,
@@ -347,7 +361,7 @@ class MarketUniverseAutomationService:
             missing_receipt_dates = sorted(set(trading_dates) - receipt_dates)
             if missing_receipt_dates:
                 blockers.append("full_market_daily_receipt_coverage_incomplete")
-            end_receipt = next(
+            end_receipt: Mapping[str, Any] = next(
                 (
                     item
                     for item in receipts

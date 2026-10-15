@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any
 
 from core.types import InstrumentKey, InstrumentType
-from data.market.contracts import DailyBarRequest
+from data.market.contracts import MAX_DAILY_BAR_JOB_INSTRUMENTS, DailyBarRequest
 from data.source_policy import (
     source_policy_for_config,
     verification_source_policy_for_config,
@@ -30,7 +31,7 @@ from server.services.market_hours import get_shanghai_now
 from server.services.verified_daily_market_data import VerifiedDailyMarketJobRequest
 
 VERIFIED_DAILY_MARKET_JOB = "market_daily_verified"
-MAX_VERIFIED_DATASET_INSTRUMENTS: int = 40
+MAX_VERIFIED_DAILY_JOB_INSTRUMENTS = MAX_DAILY_BAR_JOB_INSTRUMENTS
 logger = logging.getLogger(__name__)
 
 
@@ -167,6 +168,8 @@ def enqueue_verified_daily_market_jobs_for_range(
     end_date: date,
     now: datetime,
     reobserve: bool = False,
+    historical_range: bool = False,
+    session_instruments: Mapping[date, tuple[InstrumentKey, ...]] | None = None,
 ) -> tuple[JobRun, ...]:
     """Explicitly enqueue one verified-source job for each closed SSE session."""
     if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
@@ -179,7 +182,7 @@ def enqueue_verified_daily_market_jobs_for_range(
         instruments = (instrument,)
     instruments = DailyBarRequest(instruments, start_date, end_date).instruments
     if (
-        not 1 <= len(instruments) <= MAX_VERIFIED_DATASET_INSTRUMENTS
+        not instruments
         or any(
             item.instrument_type not in {InstrumentType.STOCK, InstrumentType.ETF}
             for item in instruments
@@ -189,14 +192,74 @@ def enqueue_verified_daily_market_jobs_for_range(
         raise ValueError("verified_daily_market_universe_invalid")
     if not isinstance(reobserve, bool):
         raise ValueError("verified_daily_market_reobserve_invalid")
+    if not isinstance(historical_range, bool) or (
+        session_instruments is not None and not historical_range
+    ):
+        raise ValueError("verified_daily_market_range_plan_invalid")
     resolved_dates = resolve_verified_closed_trading_dates_in_range(
-        db, now, start_date=start_date, end_date=end_date
+        db,
+        now,
+        start_date=start_date,
+        end_date=end_date,
+        maximum_calendar_days=3653 if historical_range else 366,
     )
     if not resolved_dates:
         raise VerifiedDailyMarketJobPlanningError(
             "verified_daily_market_trading_dates_unavailable"
         )
     policy = verification_source_policy_for_config(config)
+    if historical_range:
+        dates = tuple(date.fromisoformat(row.trade_date) for row in resolved_dates)
+        if session_instruments is None:
+            session_instruments = {day: instruments for day in dates}
+        if (
+            set(session_instruments) != set(dates)
+            or {key for members in session_instruments.values() for key in members}
+            != set(instruments)
+            or any(
+                len(set(members)) != len(members)
+                for members in session_instruments.values()
+            )
+        ):
+            raise ValueError("verified_daily_market_range_membership_invalid")
+        all_refs = tuple(
+            dict.fromkeys(
+                ref for row in resolved_dates for ref in row.calendar_evidence_refs
+            )
+        )
+        round_name = (
+            f"historical_warmup_range.reobserve.{get_shanghai_now(now).date().isoformat()}"
+            if reobserve
+            else "historical_warmup_range.v1"
+        )
+        range_payloads = []
+        for batch in verified_daily_instrument_batches(instruments):
+            batch_set = set(batch)
+            planned = VerifiedDailyMarketJobRequest(
+                trade_date=dates[-1],
+                instruments=batch,
+                source_policy_id=policy.policy_id,
+                calendar_evidence_refs=all_refs,
+                observation_round=round_name,
+                range_start_date=dates[0],
+                range_end_date=dates[-1],
+                session_memberships=tuple(
+                    (
+                        day,
+                        tuple(
+                            key for key in session_instruments[day] if key in batch_set
+                        ),
+                        row.calendar_evidence_refs,
+                    )
+                    for day, row in zip(dates, resolved_dates, strict=True)
+                ),
+            )
+            range_payloads.append(
+                VerifiedDailyMarketJobRequest.from_payload(
+                    planned.to_payload()
+                ).to_payload()
+            )
+        return store.enqueue_many(VERIFIED_DAILY_MARKET_JOB, range_payloads, now=now)
     observation_round = (
         f"post_close.reobserve.{get_shanghai_now(now).date().isoformat()}"
         if reobserve
@@ -205,14 +268,28 @@ def enqueue_verified_daily_market_jobs_for_range(
     payloads = tuple(
         VerifiedDailyMarketJobRequest(
             trade_date=date.fromisoformat(resolved.trade_date),
-            instruments=instruments,
+            instruments=batch,
             source_policy_id=policy.policy_id,
             calendar_evidence_refs=resolved.calendar_evidence_refs,
             observation_round=observation_round,
         ).to_payload()
         for resolved in resolved_dates
+        for batch in verified_daily_instrument_batches(instruments)
     )
     return store.enqueue_many(VERIFIED_DAILY_MARKET_JOB, payloads, now=now)
+
+
+def verified_daily_instrument_batches(
+    instruments: tuple[InstrumentKey, ...],
+) -> tuple[tuple[InstrumentKey, ...], ...]:
+    """Transport batches never narrow the declared research universe."""
+    ordered = tuple(
+        sorted(instruments, key=lambda item: (item.instrument_type.value, item.symbol))
+    )
+    return tuple(
+        ordered[index : index + MAX_VERIFIED_DAILY_JOB_INSTRUMENTS]
+        for index in range(0, len(ordered), MAX_VERIFIED_DAILY_JOB_INSTRUMENTS)
+    )
 
 
 def _planning_facts(db: Any, now: datetime, lookback_days: int):

@@ -23,6 +23,79 @@ from data.market_daily_store import (
 )
 
 
+def resolve_daily_bar_receipts(
+    *,
+    data_store: Any,
+    start_date: str,
+    end_date: str,
+    config: Any = None,
+    snapshot: Mapping[str, Any] | None = None,
+    preferred_provider: str | None = None,
+) -> list[dict[str, Any]]:
+    """Choose verified receipts per date using deterministic provider priority.
+
+    The source may vary between dates. Reading a receipt neither contacts its
+    provider nor upgrades historical availability or membership to PIT proof.
+    """
+    preferred = str(preferred_provider or "").strip()
+    provider_priority: list[str] = []
+    if preferred:
+        provider_priority.append(preferred)
+    if config is not None:
+        data_source = str(getattr(config, "data_source", "") or "").strip()
+        if data_source and data_source not in provider_priority:
+            provider_priority.append(data_source)
+        try:
+            from data.source_policy import MarketDataUseCase
+            from data.source_routing import configured_data_provider_names
+
+            for candidate in configured_data_provider_names(
+                config, MarketDataUseCase.DAILY_BARS
+            ):
+                if candidate not in provider_priority:
+                    provider_priority.append(candidate)
+        except Exception:
+            pass
+    snapshot_provider = str(
+        (snapshot.get("provider_name") if isinstance(snapshot, Mapping) else "") or ""
+    ).strip()
+    if snapshot_provider and snapshot_provider not in provider_priority:
+        provider_priority.append(snapshot_provider)
+    raw_receipts = [
+        dict(item)
+        for item in data_store.list_market_daily_ingestion_receipts(
+            start_date=start_date,
+            end_date=end_date,
+            provider_name=preferred if preferred else None,
+            verify=True,
+        )
+    ]
+    by_date: dict[str, list[dict[str, Any]]] = {}
+    for item in raw_receipts:
+        date_key = str(item.get("trade_date") or "").strip()
+        if date_key:
+            by_date.setdefault(date_key, []).append(item)
+    selected: list[dict[str, Any]] = []
+    for date_key in sorted(by_date.keys()):
+        candidates = by_date[date_key]
+        if len(candidates) == 1:
+            selected.append(candidates[0])
+        else:
+
+            def rank(cand: dict[str, Any]) -> tuple[int, str]:
+                provider = str(cand.get("provider_name") or "").strip()
+                index = (
+                    provider_priority.index(provider)
+                    if provider in provider_priority
+                    else 9999
+                )
+                return index, provider
+
+            candidates.sort(key=rank)
+            selected.append(candidates[0])
+    return selected
+
+
 def research_market_binding(receipts: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     return {
         "normalizer_version": RESEARCH_BAR_NORMALIZATION,

@@ -40,6 +40,7 @@ import pyarrow as pa
 from data.market.capture import (
     ProviderCapture,
     read_provider_capture,
+    read_provider_raw_payload,
 )
 from data.market.model import DailyBarObservation
 from data.market.normalize import canonicalize_daily_bars
@@ -498,10 +499,10 @@ def validate_daily_bar_materialization(
     *,
     revision: MarketRevision,
     materialization: MarketRevisionMaterialization,
-) -> None:
-    """验证物化数据、Capture 与逻辑 Revision 是否完全一致。
+) -> tuple[DailyBarObservation, ...]:
+    """验证完整 lineage，并返回这次校验已经解码的 canonical bars。
 
-    成功时不返回值；任何不一致都 fail closed。
+    原始 Capture、物化数据或逻辑 Revision 不一致都 fail closed。
     """
     if materialization.revision_ref != revision.ref:
         raise MarketRevisionIntegrityError(
@@ -515,6 +516,8 @@ def validate_daily_bar_materialization(
 
     if capture.provider != revision.provider:
         raise MarketRevisionIntegrityError("market_revision_provider_mismatch")
+
+    read_provider_raw_payload(store, capture)
 
     table = read_parquet(
         store,
@@ -548,6 +551,8 @@ def validate_daily_bar_materialization(
         or last_event_time != revision.last_event_time
     ):
         raise MarketRevisionIntegrityError("market_revision_event_range_mismatch")
+
+    return bars
 
 
 def _canonical_json(

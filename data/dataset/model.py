@@ -102,6 +102,9 @@ class DailyBarDatasetPartition:
     revision_id: str
     materialization_id: str
     verification_id: str | None = None
+    # Empty retains the original fixed-basket contract. New shards declare
+    # exactly which instruments they supply, without combining their captures.
+    instruments: tuple[InstrumentKey, ...] = ()
 
     def __post_init__(self) -> None:
         if isinstance(
@@ -158,6 +161,58 @@ class DailyBarDatasetPartition:
             "verification_id",
             verification_id,
         )
+        if self.instruments:
+            object.__setattr__(
+                self, "instruments", _canonical_instruments(self.instruments)
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class DailyBarDatasetMembership:
+    """A session's explicit Dataset selection, separate from source facts.
+
+    Missing source references or decision time keep this exploratory. Merely
+    constructing a selection does not establish point-in-time market membership.
+    """
+
+    partition_date: date
+    instruments: tuple[InstrumentKey, ...]
+    available_at: datetime
+    source_observation_ids: tuple[str, ...] = ()
+    decision_at: datetime | None = None
+    maintenance_instruments: tuple[InstrumentKey, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "partition_date",
+            _require_date(self.partition_date, field="membership_date"),
+        )
+        object.__setattr__(
+            self, "instruments", _canonical_instruments(self.instruments)
+        )
+        if self.maintenance_instruments:
+            maintenance = _canonical_instruments(self.maintenance_instruments)
+            if set(maintenance).intersection(self.instruments):
+                raise ValueError("dataset_membership_maintenance_overlap")
+            object.__setattr__(self, "maintenance_instruments", maintenance)
+        object.__setattr__(
+            self,
+            "available_at",
+            _utc_instant(self.available_at, field="membership_available_at"),
+        )
+        refs = tuple(
+            _require_content_id(item, field="membership_observation_id")
+            for item in self.source_observation_ids
+        )
+        if len(refs) != len(set(refs)):
+            raise ValueError("dataset_membership_observation_duplicate")
+        object.__setattr__(self, "source_observation_ids", tuple(sorted(refs)))
+        if self.decision_at is not None:
+            decision = _utc_instant(self.decision_at, field="membership_decision_at")
+            if self.available_at > decision:
+                raise ValueError("dataset_membership_unavailable_at_decision")
+            object.__setattr__(self, "decision_at", decision)
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,6 +245,8 @@ class DailyBarDatasetSnapshot:
     ]
     # Observations only: no adjusted prices or modeled corporate-action returns.
     corporate_action_observation_ids: tuple[str, ...] = ()
+    session_memberships: tuple[DailyBarDatasetMembership, ...] = ()
+    universe_policy_id: str | None = None
 
     def __post_init__(self) -> None:
         start_date = _require_date(
@@ -226,7 +283,51 @@ class DailyBarDatasetSnapshot:
             self.partitions,
             start_date=start_date,
             end_date=end_date,
+            sharded=bool(self.session_memberships),
         )
+        memberships = tuple(
+            sorted(self.session_memberships, key=lambda item: item.partition_date)
+        )
+        if memberships:
+            if not self.universe_policy_id or not self.universe_policy_id.strip():
+                raise ValueError("dataset_membership_policy_required")
+            if len({item.partition_date for item in memberships}) != len(memberships):
+                raise ValueError("dataset_membership_date_duplicate")
+            if {item.partition_date for item in memberships} != {
+                item.partition_date for item in partitions
+            }:
+                raise ValueError("dataset_membership_date_coverage_mismatch")
+            if set(instruments) != {
+                instrument
+                for item in memberships
+                for instrument in (*item.instruments, *item.maintenance_instruments)
+            }:
+                raise ValueError("dataset_membership_universe_mismatch")
+            for membership in memberships:
+                if membership.available_at > cutoff or (
+                    membership.decision_at is not None
+                    and membership.decision_at > cutoff
+                ):
+                    raise ValueError("dataset_membership_after_cutoff")
+                supplied: set[InstrumentKey] = set()
+                for part in partitions:
+                    if part.partition_date != membership.partition_date:
+                        continue
+                    if not part.instruments:
+                        raise ValueError("dataset_shard_instruments_required")
+                    if supplied.intersection(part.instruments):
+                        raise ValueError("dataset_shard_instrument_duplicate")
+                    supplied.update(part.instruments)
+                if supplied != set(
+                    (*membership.instruments, *membership.maintenance_instruments)
+                ):
+                    raise ValueError("dataset_shard_membership_incomplete")
+        elif (
+            any(part.instruments for part in partitions)
+            or self.universe_policy_id is not None
+        ):
+            raise ValueError("dataset_session_memberships_required")
+        object.__setattr__(self, "session_memberships", memberships)
         verification_states = {
             partition.verification_id is not None for partition in partitions
         }
@@ -302,6 +403,22 @@ class DailyBarDatasetSnapshot:
             partition.verification_id is not None for partition in self.partitions
         )
 
+    @property
+    def membership_evidence_bound(self) -> bool:
+        """A binding, not a substitute for Reader verification or qualification."""
+        return bool(self.session_memberships) and all(
+            item.source_observation_ids and item.decision_at is not None
+            for item in self.session_memberships
+        )
+
+    def instruments_for_session(self, day: date) -> tuple[InstrumentKey, ...]:
+        if not self.session_memberships:
+            return self.instruments
+        for membership in self.session_memberships:
+            if membership.partition_date == day:
+                return membership.instruments
+        raise ValueError("dataset_session_membership_missing")
+
 
 def _canonical_instruments(
     instruments: tuple[
@@ -346,6 +463,7 @@ def _canonical_partitions(
     *,
     start_date: date,
     end_date: date,
+    sharded: bool = False,
 ) -> tuple[
     DailyBarDatasetPartition,
     ...,
@@ -371,14 +489,22 @@ def _canonical_partitions(
         if not (start_date <= partition.partition_date <= end_date):
             raise ValueError("dataset_partition_outside_range")
 
-        if partition.partition_date in seen_dates:
+        if partition.partition_date in seen_dates and not sharded:
             raise ValueError("dataset_partition_date_duplicate")
 
         seen_dates.add(partition.partition_date)
 
         normalized.append(partition)
 
-    normalized.sort(key=lambda item: item.partition_date)
+    normalized.sort(
+        key=lambda item: (
+            item.partition_date,
+            tuple(_instrument_sort_key(key) for key in item.instruments),
+            item.provider,
+            item.revision_id,
+            item.materialization_id,
+        )
+    )
 
     return tuple(normalized)
 

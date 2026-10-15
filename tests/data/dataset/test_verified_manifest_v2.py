@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -15,7 +16,7 @@ from data.dataset.manifest import (
 )
 from data.dataset.model import DailyBarDatasetPartition, DailyBarDatasetSnapshot
 from data.dataset.reader import DatasetReaderIntegrityError, read_daily_bar_dataset
-from data.market.capture import capture_provider_payload
+from data.market.capture import capture_provider_payload, read_provider_capture
 from data.market.normalize import normalize_daily_bar
 from data.market.quality import RESEARCH_STRICT_DAILY, evaluate_daily_bar_revision
 from data.market.quality_evidence import (
@@ -24,6 +25,7 @@ from data.market.quality_evidence import (
 )
 from data.market.reconciliation import (
     STRICT_DAILY_RECONCILIATION,
+    DailyBarReconciliationPolicy,
     reconcile_daily_bar_revisions,
 )
 from data.market.revision import (
@@ -109,6 +111,7 @@ def _verified_snapshot(
     store: ContentAddressedObjectStore,
     *,
     comparison_close: str = "10.48",
+    policy=STRICT_DAILY_RECONCILIATION,
 ):
     primary_revision, primary_materialization, primary_quality = _side(
         store, provider="tdx", close="10.48"
@@ -122,7 +125,7 @@ def _verified_snapshot(
         primary_materialization=primary_materialization,
         comparison_revision=comparison_revision,
         comparison_materialization=comparison_materialization,
-        policy=STRICT_DAILY_RECONCILIATION,
+        policy=policy,
     )
     verification = publish_market_verification_evidence(
         store,
@@ -131,7 +134,7 @@ def _verified_snapshot(
         comparison_quality=comparison_quality,
         primary_descriptor=TDX_PROVIDER_DESCRIPTOR,
         comparison_descriptor=TUSHARE_DAILY_BAR_DESCRIPTOR,
-        policy=STRICT_DAILY_RECONCILIATION,
+        policy=policy,
         checked_at=CHECKED,
     )
     snapshot = DailyBarDatasetSnapshot(
@@ -152,6 +155,88 @@ def _verified_snapshot(
         ),
     )
     return snapshot, verification
+
+
+def _select_verified_side(snapshot, verification, selected_source):
+    if selected_source == "primary":
+        return snapshot
+    return replace(
+        snapshot,
+        partitions=(
+            replace(
+                snapshot.partitions[0],
+                provider=verification.report.comparison_provider,
+                revision_id=verification.report.comparison_revision_id,
+                materialization_id=verification.comparison_materialization_id,
+            ),
+        ),
+    )
+
+
+@pytest.mark.parametrize("selected_source", ["primary", "comparison"])
+def test_verified_reader_decodes_each_source_once_and_returns_selected_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, selected_source: str
+) -> None:
+    from data.storage import parquet
+
+    store = ContentAddressedObjectStore(tmp_path / "objects")
+    snapshot, verification = _verified_snapshot(
+        store,
+        comparison_close="10.49",
+        policy=DailyBarReconciliationPolicy(price_tolerance=Decimal("0.01")),
+    )
+    snapshot = _select_verified_side(snapshot, verification, selected_source)
+    ref = publish_daily_bar_dataset_manifest(store, snapshot)
+    decoded = []
+    read_table = parquet.pq.read_table
+
+    def tracked_read(*args, **kwargs):
+        table = read_table(*args, **kwargs)
+        decoded.append(table["close"][0].as_py())
+        return table
+
+    monkeypatch.setattr(parquet.pq, "read_table", tracked_read)
+    replayed = read_daily_bar_dataset(store, ref)
+
+    assert replayed.bars[0].close == Decimal(
+        "10.48" if selected_source == "primary" else "10.49"
+    )
+    assert sorted(decoded) == [Decimal("10.48"), Decimal("10.49")]
+
+
+@pytest.mark.parametrize("selected_source", ["primary", "comparison"])
+@pytest.mark.parametrize("corrupted_source", ["primary", "comparison"])
+@pytest.mark.parametrize("object_kind", ["raw", "revision", "parquet"])
+def test_verified_reader_rejects_corruption_in_either_source(
+    tmp_path: Path,
+    selected_source: str,
+    corrupted_source: str,
+    object_kind: str,
+) -> None:
+    store = ContentAddressedObjectStore(tmp_path / "objects")
+    snapshot, verification = _verified_snapshot(store)
+    snapshot = _select_verified_side(snapshot, verification, selected_source)
+    ref = publish_daily_bar_dataset_manifest(store, snapshot)
+    materialization = read_market_revision_materialization(
+        store,
+        store.resolve_ref(
+            getattr(verification, f"{corrupted_source}_materialization_id")
+        ),
+    )
+    if object_kind == "raw":
+        target = read_provider_capture(
+            store, materialization.capture_ref
+        ).raw_object_ref
+    elif object_kind == "revision":
+        target = materialization.revision_ref.manifest_ref
+    else:
+        target = materialization.artifact.object_ref
+    path = store.root / "sha256" / target.digest[:2] / target.digest[2:]
+    path.chmod(0o600)
+    path.write_bytes(b"corrupted original source object")
+
+    with pytest.raises(DatasetReaderIntegrityError, match="unreadable"):
+        read_daily_bar_dataset(store, ref)
 
 
 def test_verified_snapshot_publishes_manifest_v2_and_replays(tmp_path: Path) -> None:

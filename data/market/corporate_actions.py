@@ -238,6 +238,7 @@ def _canonical_records(records: Sequence[Mapping[str, Any]]) -> list[dict[str, A
         identity = tuple(
             row[field]
             for field in (
+                "source_code",
                 "report_period",
                 "announcement_date",
                 "implementation_announcement_date",
@@ -341,3 +342,263 @@ def _read_json(store: ContentAddressedObjectStore, ref: ObjectRef) -> dict[str, 
             "corporate_action_object_invalid"
         ) from exc
     return value
+
+
+# A date query is genuinely market-wide. Its evidence is different from a
+# per-stock full-history response, so it has a distinct, explicitly bounded shape.
+MARKET_DAY_SCHEMA = "karkinos.market_dividend_day.v1"
+WINDOW_SCHEMA = "karkinos.corporate_action_window.v1"
+DIVIDEND_DATE_QUERIES = ("ann_date", "imp_ann_date", "record_date", "ex_date")
+_QUERY_RECORD_FIELDS = {
+    "ann_date": "announcement_date",
+    "imp_ann_date": "implementation_announcement_date",
+    "record_date": "record_date",
+    "ex_date": "ex_date",
+}
+
+
+def publish_market_dividend_day(
+    store: ContentAddressedObjectStore,
+    *,
+    day: date,
+    captures_and_records: Sequence[tuple[ProviderCapture, Sequence[Mapping[str, Any]]]],
+) -> ObjectRef:
+    """Retain four actual all-market queries, including actual empty responses."""
+    queries = []
+    for capture, records in captures_and_records:
+        queries.append(
+            {
+                "capture_ref": {
+                    "object_id": capture.capture_id,
+                    "size_bytes": capture.capture_ref.size_bytes,
+                },
+                "records": _canonical_records(records),
+            }
+        )
+    payload = {
+        "schema_version": MARKET_DAY_SCHEMA,
+        "date": day.isoformat(),
+        "queries": queries,
+    }
+    ref = store.put_bytes(_json_bytes(payload))
+    read_market_dividend_day(store, ref)
+    return ref
+
+
+def read_market_dividend_day(
+    store: ContentAddressedObjectStore, ref: ObjectRef
+) -> dict[str, Any]:
+    from datetime import datetime, time
+    from zoneinfo import ZoneInfo
+
+    value = _read_json(store, ref)
+    if value.get("schema_version") != MARKET_DAY_SCHEMA:
+        raise CorporateActionObservationError("corporate_action_market_day_invalid")
+    day = date.fromisoformat(value["date"])
+    rows: list[tuple[dict[str, Any], ProviderCapture]] = []
+    times, seen = [], set()
+    for item in value["queries"]:
+        capture = read_provider_capture(store, ObjectRef(**item["capture_ref"]))
+        store.read_bytes(capture.raw_object_ref)
+        request = json.loads(capture.request_json)
+        fields = set(request) - {"fields"}
+        field = next(iter(fields)) if len(fields) == 1 else ""
+        records = item["records"]
+        if (
+            field not in DIVIDEND_DATE_QUERIES
+            or field in seen
+            or request.get(field) != day.strftime("%Y%m%d")
+            or not isinstance(request.get("fields"), str)
+            or capture.provider != "tushare"
+            or capture.operation != "dividend"
+            or capture.record_count != len(records)
+            or len(records) >= 2000
+            or records != _canonical_records(records)
+            or any(
+                row[_QUERY_RECORD_FIELDS[field]] != day.isoformat() for row in records
+            )
+            or capture.started_at
+            < datetime.combine(day, time(21), ZoneInfo("Asia/Shanghai"))
+        ):
+            raise CorporateActionObservationError(
+                "corporate_action_market_query_invalid"
+            )
+        seen.add(field)
+        times.append(capture.completed_at)
+        rows.extend((row, capture) for row in records)
+    if seen != set(DIVIDEND_DATE_QUERIES):
+        raise CorporateActionObservationError("corporate_action_market_day_incomplete")
+    return {
+        "date": day,
+        "rows": rows,
+        "available_at": max(times),
+        "oldest_captured_at": min(times),
+        "observation_id": ref.object_id,
+    }
+
+
+def publish_corporate_action_window(
+    store: ContentAddressedObjectStore,
+    *,
+    instruments: Sequence[InstrumentKey],
+    day_observation_ids: Sequence[str],
+) -> ObjectRef:
+    """Compose a prospective input; it never certifies the price warmup's past."""
+    days = [
+        read_market_dividend_day(store, store.resolve_ref(item))
+        for item in day_observation_ids
+    ]
+    if not days:
+        raise CorporateActionObservationError("corporate_action_window_empty")
+    ordered = sorted(days, key=lambda item: item["date"])
+    payload = {
+        "schema_version": WINDOW_SCHEMA,
+        "instruments": [
+            _instrument_payload(key)
+            for key in sorted(
+                set(instruments), key=lambda k: (k.instrument_type.value, k.symbol)
+            )
+        ],
+        "start_date": ordered[0]["date"].isoformat(),
+        "end_date": ordered[-1]["date"].isoformat(),
+        "day_observation_ids": [item["observation_id"] for item in ordered],
+    }
+    ref = store.put_bytes(_json_bytes(payload))
+    read_corporate_action_window(store, ref)
+    return ref
+
+
+def read_corporate_action_window(
+    store: ContentAddressedObjectStore, ref: ObjectRef
+) -> dict[str, Any]:
+    from datetime import timedelta
+
+    window = _read_json(store, ref)
+    if window.get("schema_version") != WINDOW_SCHEMA:
+        raise CorporateActionObservationError("corporate_action_window_invalid")
+    keys = tuple(InstrumentKey.from_values(**item) for item in window["instruments"])
+    if (
+        not keys
+        or any(key.instrument_type is not InstrumentType.STOCK for key in keys)
+        or keys
+        != tuple(sorted(set(keys), key=lambda k: (k.instrument_type.value, k.symbol)))
+    ):
+        raise CorporateActionObservationError(
+            "corporate_action_window_instruments_invalid"
+        )
+    days = [
+        read_market_dividend_day(store, store.resolve_ref(item))
+        for item in window["day_observation_ids"]
+    ]
+    start, end = (
+        date.fromisoformat(window["start_date"]),
+        date.fromisoformat(window["end_date"]),
+    )
+    if (
+        end < start
+        or (end - start).days > 3652
+        or [item["date"] for item in days]
+        != [start + timedelta(days=index) for index in range((end - start).days + 1)]
+    ):
+        raise CorporateActionObservationError(
+            "corporate_action_window_dates_incomplete"
+        )
+    symbols = {key.symbol: key for key in keys}
+    versions: dict[
+        tuple[str, str | None, str | None],
+        tuple[bytes, dict[str, Any], ProviderCapture],
+    ] = {}
+    implemented_periods: set[tuple[str, str | None]] = set()
+    # Keep the first actual observation time for unchanged terms. A changed
+    # record retains its own capture time; materializing a later window is not
+    # the event's first availability time.
+    for day in days:
+        daily: dict[
+            tuple[str, str | None, str | None],
+            tuple[bytes, dict[str, Any], ProviderCapture],
+        ] = {}
+        for row, capture in day["rows"]:
+            symbol, _, venue = row["source_code"].partition(".")
+            if symbol not in symbols:
+                continue
+            if (
+                venue not in {"SH", "SZ", "BJ"}
+                or len(symbol) != 6
+                or not symbol.isdigit()
+            ):
+                raise CorporateActionObservationError(
+                    "corporate_action_market_symbol_invalid"
+                )
+            identity = (symbol, row["report_period"], row["announcement_date"])
+            encoded = _json_bytes(row)
+            if identity in daily and daily[identity][0] != encoded:
+                raise CorporateActionObservationError(
+                    "corporate_action_market_revision_ambiguous"
+                )
+            if (
+                identity not in daily
+                or capture.completed_at < daily[identity][2].completed_at
+            ):
+                daily[identity] = (encoded, row, capture)
+        for identity, (encoded, row, capture) in daily.items():
+            period = (identity[0], row["report_period"])
+            if row["implementation_status"] != "实施" and period in implemented_periods:
+                # An explicit later cancellation/retraction cannot leave the
+                # earlier implementation alive merely because ann_date changed.
+                raise CorporateActionObservationError(
+                    "corporate_action_market_implementation_retracted_or_ambiguous"
+                )
+            if row["implementation_status"] == "实施":
+                implemented_periods.add(period)
+            if identity not in versions or versions[identity][0] != encoded:
+                versions[identity] = (encoded, row, capture)
+    events = []
+    pending_count = 0
+    for _, row, capture in versions.values():
+        # A proposal is preserved source material, not an implemented cash or
+        # share entitlement. Implemented but undated terms remain unresolved.
+        if row["implementation_status"] != "实施":
+            pending_count += 1
+            continue
+        # Keep known future implementations too. Their actual capture time is
+        # valid information for a later record entitlement; missing terms must
+        # remain visible to the financial fail-closed reader.
+        symbol = row["source_code"].split(".")[0]
+        observed = {
+            "instrument": _instrument_payload(symbols[symbol]),
+            "available_at": capture.completed_at.isoformat(),
+            "captured_at": capture.completed_at.isoformat(),
+            "facts_revision_id": capture.capture_id,
+            "observation_id": ref.object_id,
+        }
+        events.append(_event_summary(row, observed))
+    return {
+        "schema_version": "karkinos.corporate_action_evidence.v1",
+        "status": "observed",
+        "observation_ids": [ref.object_id],
+        "provider": "tushare",
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        "coverage_start_date": start.isoformat(),
+        "coverage_end_date": end.isoformat(),
+        "available_at": max(day["available_at"] for day in days).isoformat(),
+        "captured_at": max(day["available_at"] for day in days).isoformat(),
+        "oldest_captured_at": days[-1]["oldest_captured_at"].isoformat(),
+        "availability_basis": "capture_completed_at",
+        "historical_availability_verified": False,
+        "covered_action_types": ["cash_dividend", "bonus_share_distribution"],
+        "coverage_status": "provider_reported_only",
+        "total_record_count": len(versions),
+        "unimplemented_record_count": pending_count,
+        "matched_event_count": len(events),
+        "undated_event_count": sum(event["ex_date"] is None for event in events),
+        "events": sorted(events, key=_json_bytes),
+        "returns_modeled": False,
+        "instruments": window["instruments"],
+        "day_observation_ids": window["day_observation_ids"],
+        "limitations": [
+            *_LIMITATIONS,
+            "Only prospective daily announcement, implementation, record and ex-date queries are covered; price warmup is not covered.",
+            "Unannounced retrospective source changes outside these date queries may remain unobserved.",
+        ],
+    }

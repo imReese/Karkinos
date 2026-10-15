@@ -14,7 +14,7 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import replace
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -28,7 +28,11 @@ from data.dataset.manifest import (
     publish_daily_bar_dataset_manifest,
     read_daily_bar_dataset_manifest,
 )
-from data.dataset.model import DailyBarDatasetSnapshot, DatasetRef
+from data.dataset.model import (
+    DailyBarDatasetMembership,
+    DailyBarDatasetSnapshot,
+    DatasetRef,
+)
 from data.dataset.reader import (
     DatasetReaderError,
     DatasetReaderIntegrityError,
@@ -71,7 +75,7 @@ from server.services.verified_daily_market_data import (
     verified_daily_resolver_policy_id,
 )
 from server.services.verified_daily_market_jobs import (
-    MAX_VERIFIED_DATASET_INSTRUMENTS,
+    MAX_VERIFIED_DAILY_JOB_INSTRUMENTS,
     VERIFIED_DAILY_MARKET_JOB,
 )
 
@@ -158,6 +162,7 @@ def dataset_summary(root: Path, ref: DatasetRef) -> dict[str, Any]:
             for item in snapshot.instruments
         ],
         "partition_count": snapshot.partition_count,
+        "session_count": len({part.partition_date for part in snapshot.partitions}),
         "price_basis": "unadjusted",
         "point_in_time_verified": False,
         "cross_source_verified": snapshot.verification_bound,
@@ -373,10 +378,10 @@ class ResearchDatasetService:
                     cutoff=cutoff,
                     corporate_action_observation_ids=tuple(observation_ids),
                 )
-                ref = publish_daily_bar_dataset_manifest(store, snapshot)
-                read_daily_bar_dataset(store, ref)
-                DatasetCatalog(self.root).register(store, ref)
-                return {**dataset_summary(self.root, ref), "reused": False}
+                dataset_ref = publish_daily_bar_dataset_manifest(store, snapshot)
+                read_daily_bar_dataset(store, dataset_ref)
+                DatasetCatalog(self.root).register(store, dataset_ref)
+                return {**dataset_summary(self.root, dataset_ref), "reused": False}
             except Exception:
                 # Never expose arbitrary SDK/credential-bearing exception messages.
                 raise ResearchDatasetError(
@@ -394,7 +399,7 @@ class ResearchDatasetService:
         refresh: bool = False,
     ) -> dict[str, Any]:
         if (
-            not 1 <= len(request.instruments) <= MAX_VERIFIED_DATASET_INSTRUMENTS
+            not request.instruments
             or any(
                 item.instrument_type not in {InstrumentType.STOCK, InstrumentType.ETF}
                 for item in request.instruments
@@ -515,10 +520,12 @@ def publish_verified_interval_dataset(
     db: Any,
     job_ids: tuple[str, ...],
     prefix_dataset_id: str | None = None,
+    session_memberships: tuple[DailyBarDatasetMembership, ...] = (),
+    universe_policy_id: str | None = None,
 ) -> dict[str, Any]:
     """Freeze verified-day jobs, optionally preserving an exact original prefix."""
     if (
-        not 1 <= len(request.instruments) <= MAX_VERIFIED_DATASET_INSTRUMENTS
+        not request.instruments
         or any(
             item.instrument_type not in {InstrumentType.STOCK, InstrumentType.ETF}
             for item in request.instruments
@@ -527,8 +534,13 @@ def publish_verified_interval_dataset(
         != len(request.instruments)
     ):
         raise ResearchDatasetError("verified_interval_stock_or_etf_universe_required")
-    if (request.end_date - request.start_date).days >= 366:
-        raise ResearchDatasetError("verified_interval_range_exceeds_366_days")
+    dated_scope = bool(session_memberships and universe_policy_id)
+    if (request.end_date - request.start_date).days >= (3653 if dated_scope else 366):
+        raise ResearchDatasetError(
+            "verified_interval_range_exceeds_ten_years"
+            if dated_scope
+            else "verified_interval_range_exceeds_366_days"
+        )
     close = datetime.combine(request.end_date, time(16), ZoneInfo("Asia/Shanghai"))
     if close > datetime.now(timezone.utc):
         raise ResearchDatasetError("verified_interval_session_not_closed")
@@ -536,6 +548,8 @@ def publish_verified_interval_dataset(
     expected_dates = _active_verified_dataset_dates()(
         db, request.start_date, request.end_date
     )
+    if dated_scope and len(expected_dates) > 2000:
+        raise ResearchDatasetError("verified_interval_session_budget_exceeded")
     root = root.resolve()
     store = ContentAddressedObjectStore(root / "objects")
     prefix = None
@@ -556,21 +570,31 @@ def publish_verified_interval_dataset(
         if (
             not prefix.verification_bound
             or not is_verified_daily_resolver_policy(prefix.resolver_policy_id)
-            or prefix.instruments != request.instruments
+            or (
+                not prefix.session_memberships
+                and prefix.instruments != request.instruments
+            )
+            or (
+                prefix.session_memberships
+                and not set(prefix.instruments) <= set(request.instruments)
+            )
             or prefix.start_date != request.start_date
             or prefix.end_date > request.end_date
             or prefix.cutoff > datetime.now(timezone.utc)
         ):
             raise ResearchDatasetError("verified_interval_prefix_mismatch")
         prefix_dates = tuple(day for day in expected_dates if day <= prefix.end_date)
-        if tuple(part.partition_date for part in prefix.partitions) != prefix_dates:
+        if (
+            tuple(sorted({part.partition_date for part in prefix.partitions}))
+            != prefix_dates
+        ):
             raise ResearchDatasetError("verified_interval_prefix_calendar_mismatch")
     job_dates = tuple(
         day for day in expected_dates if prefix is None or day > prefix.end_date
     )
     if (
         not isinstance(job_ids, tuple)
-        or len(job_ids) != len(job_dates)
+        or (bool(job_dates) and not job_ids)
         or any(not isinstance(job_id, str) for job_id in job_ids)
         or len(set(job_ids)) != len(job_ids)
     ):
@@ -578,7 +602,35 @@ def publish_verified_interval_dataset(
 
     jobs = SQLiteJobStore(db.path)
     calendar_refs: dict[int, str] = {}
-    selected: dict[date, DailyBarDatasetSnapshot] = {}
+    selected: dict[date, list[DailyBarDatasetSnapshot]] = {}
+    membership_by_date = {item.partition_date: item for item in session_memberships}
+    if session_memberships and (
+        len(membership_by_date) != len(session_memberships)
+        or set(membership_by_date) != set(expected_dates)
+        or not universe_policy_id
+        or {
+            key
+            for item in session_memberships
+            for key in (*item.instruments, *item.maintenance_instruments)
+        }
+        != set(request.instruments)
+    ):
+        raise ResearchDatasetError("verified_interval_membership_coverage_invalid")
+    if prefix is not None and prefix.session_memberships:
+        if (
+            universe_policy_id is not None
+            and universe_policy_id != prefix.universe_policy_id
+        ):
+            raise ResearchDatasetError("verified_interval_prefix_policy_mismatch")
+        if (
+            session_memberships
+            and tuple(
+                membership_by_date[item.partition_date]
+                for item in prefix.session_memberships
+            )
+            != prefix.session_memberships
+        ):
+            raise ResearchDatasetError("verified_interval_prefix_membership_changed")
     policy_id: str | None = prefix.resolver_policy_id if prefix is not None else None
     schema_version: str | None = (
         prefix.market_schema_version if prefix is not None else None
@@ -597,80 +649,152 @@ def publish_verified_interval_dataset(
             planned = VerifiedDailyMarketJobRequest.from_payload(job.payload)
         except (TypeError, ValueError, VerifiedDailyMarketDataRequestError) as exc:
             raise ResearchDatasetError("verified_interval_job_payload_invalid") from exc
-        day = planned.trade_date
-        if day not in job_dates or day in selected:
-            raise ResearchDatasetError("verified_interval_job_coverage_invalid")
-        if planned.instruments != request.instruments:
-            raise ResearchDatasetError("verified_interval_instrument_mismatch")
-        if day.year not in calendar_refs:
-            validation = validate_verified_market_calendar(
-                db.get_market_calendar_snapshot_sync(exchange="SSE", year=day.year)
-            )
-            if not validation.verified or validation.evidence_ref is None:
-                raise ResearchDatasetError(f"dataset_calendar_unavailable:{day.year}")
-            calendar_refs[day.year] = validation.evidence_ref
-        if calendar_refs[day.year] not in planned.calendar_evidence_refs:
-            raise ResearchDatasetError("verified_interval_calendar_evidence_mismatch")
-
-        result_ref = job.result_ref or ""
-        if not result_ref.startswith("dataset:sha256:"):
-            raise ResearchDatasetError("verified_interval_job_result_invalid")
-        try:
-            daily_ref = DatasetRef(
-                store.resolve_ref(result_ref.removeprefix("dataset:"))
-            )
-            daily = read_daily_bar_dataset(store, daily_ref).snapshot
-            verification_id = daily.partitions[0].verification_id
-            verification = (
-                read_market_verification_evidence(
-                    store, store.resolve_ref(verification_id)
-                )
-                if verification_id is not None
-                else None
-            )
-        except Exception:
-            raise ResearchDatasetError(
-                "verified_interval_daily_dataset_unreadable"
-            ) from None
-        expected_policy = verified_daily_resolver_policy_id(planned.source_policy_id)
         if (
-            not daily.verification_bound
-            or daily.resolver_policy_id != expected_policy
-            or daily.start_date != day
-            or daily.end_date != day
-            or daily.instruments != request.instruments
-            or len(daily.partitions) != 1
-            or daily.partitions[0].partition_date != day
-            or verification is None
-            or verification.checked_at > daily.cutoff
+            planned.is_range
+            and planned.expected_sessions()
+            != _active_verified_dataset_dates()(
+                db, planned.range_start_date, planned.range_end_date
+            )
         ):
-            raise ResearchDatasetError("verified_interval_daily_dataset_mismatch")
-        if policy_id is not None and policy_id != daily.resolver_policy_id:
-            raise ResearchDatasetError("verified_interval_policy_mismatch")
-        if schema_version is not None and schema_version != daily.market_schema_version:
-            raise ResearchDatasetError("verified_interval_schema_mismatch")
-        policy_id = daily.resolver_policy_id
-        schema_version = daily.market_schema_version
-        selected[day] = daily
+            raise ResearchDatasetError("verified_interval_job_calendar_mismatch")
+        for planned_day in planned.expected_sessions():
+            if planned_day.year not in calendar_refs:
+                validation = validate_verified_market_calendar(
+                    db.get_market_calendar_snapshot_sync(
+                        exchange="SSE", year=planned_day.year
+                    )
+                )
+                if not validation.verified or validation.evidence_ref is None:
+                    raise ResearchDatasetError(
+                        f"dataset_calendar_unavailable:{planned_day.year}"
+                    )
+                calendar_refs[planned_day.year] = validation.evidence_ref
+            if calendar_refs[planned_day.year] not in planned.calendar_refs_for_session(
+                planned_day
+            ):
+                raise ResearchDatasetError(
+                    "verified_interval_calendar_evidence_mismatch"
+                )
+        daily_snapshots = _verified_job_daily_snapshots(store, job, planned)
+        if not set(planned.expected_sessions()) <= set(job_dates):
+            raise ResearchDatasetError("verified_interval_job_coverage_invalid")
+        for day, daily in daily_snapshots.items():
+            members = planned.instruments_for_session(day)
+            expected_instruments = (
+                (
+                    *membership_by_date[day].instruments,
+                    *membership_by_date[day].maintenance_instruments,
+                )
+                if session_memberships
+                else request.instruments
+            )
+            already_supplied = {
+                key
+                for previous in selected.get(day, [])
+                for key in previous.instruments
+            }
+            if not set(members) <= set(
+                expected_instruments
+            ) or already_supplied.intersection(members):
+                raise ResearchDatasetError("verified_interval_instrument_mismatch")
+            if day.year not in calendar_refs:
+                validation = validate_verified_market_calendar(
+                    db.get_market_calendar_snapshot_sync(exchange="SSE", year=day.year)
+                )
+                if not validation.verified or validation.evidence_ref is None:
+                    raise ResearchDatasetError(
+                        f"dataset_calendar_unavailable:{day.year}"
+                    )
+                calendar_refs[day.year] = validation.evidence_ref
+            if calendar_refs[day.year] not in planned.calendar_refs_for_session(day):
+                raise ResearchDatasetError(
+                    "verified_interval_calendar_evidence_mismatch"
+                )
+            if policy_id is not None and policy_id != daily.resolver_policy_id:
+                raise ResearchDatasetError("verified_interval_policy_mismatch")
+            if (
+                schema_version is not None
+                and schema_version != daily.market_schema_version
+            ):
+                raise ResearchDatasetError("verified_interval_schema_mismatch")
+            policy_id = daily.resolver_policy_id
+            schema_version = daily.market_schema_version
+            selected.setdefault(day, []).append(daily)
 
     if set(selected) != set(job_dates):
         raise ResearchDatasetError("verified_interval_job_coverage_invalid")
-    ordered = tuple(selected[day] for day in job_dates)
+    for day in job_dates:
+        expected_instruments = (
+            (
+                *membership_by_date[day].instruments,
+                *membership_by_date[day].maintenance_instruments,
+            )
+            if session_memberships
+            else request.instruments
+        )
+        if {key for daily in selected[day] for key in daily.instruments} != set(
+            expected_instruments
+        ):
+            raise ResearchDatasetError(
+                "verified_interval_instrument_coverage_incomplete"
+            )
+    ordered = tuple(daily for day in job_dates for daily in selected[day])
     assert policy_id is not None and schema_version is not None
+    sharded = bool(
+        session_memberships
+        or (prefix is not None and prefix.session_memberships)
+        or any(len(rows) > 1 for rows in selected.values())
+    )
+    memberships = session_memberships
+    if sharded and not memberships:
+        previous_memberships = ()
+        if prefix is not None:
+            previous_memberships = prefix.session_memberships or tuple(
+                DailyBarDatasetMembership(day, prefix.instruments, prefix.cutoff)
+                for day in sorted({part.partition_date for part in prefix.partitions})
+            )
+        memberships = previous_memberships + tuple(
+            DailyBarDatasetMembership(
+                day, request.instruments, max(item.cutoff for item in selected[day])
+            )
+            for day in job_dates
+        )
+    prefix_instruments = prefix.instruments if prefix is not None else ()
+    prefix_partitions = tuple(
+        replace(part, instruments=part.instruments or prefix_instruments)
+        if sharded
+        else part
+        for part in (prefix.partitions if prefix else ())
+    )
     snapshot = DailyBarDatasetSnapshot(
         start_date=request.start_date,
         end_date=request.end_date,
         cutoff=max(
-            [item.cutoff for item in ordered] + ([prefix.cutoff] if prefix else [])
+            [item.cutoff for item in ordered]
+            + ([prefix.cutoff] if prefix else [])
+            + [item.decision_at or item.available_at for item in memberships]
         ),
         instruments=request.instruments,
         resolver_policy_id=policy_id,
         market_schema_version=schema_version,
-        partitions=(prefix.partitions if prefix else ())
-        + tuple(item.partitions[0] for item in ordered),
+        partitions=prefix_partitions
+        + tuple(
+            replace(item.partitions[0], instruments=item.instruments)
+            if sharded
+            else item.partitions[0]
+            for item in ordered
+        ),
         corporate_action_observation_ids=(
             prefix.corporate_action_observation_ids if prefix else ()
         ),
+        session_memberships=memberships,
+        universe_policy_id=(
+            universe_policy_id
+            or (prefix.universe_policy_id if prefix else None)
+            or "karkinos.dataset.explicit_fixed_membership.v1"
+        )
+        if sharded
+        else None,
     )
     ref = publish_daily_bar_dataset_manifest(store, snapshot)
     try:
@@ -683,6 +807,610 @@ def publish_verified_interval_dataset(
     return dataset_summary(root, ref)
 
 
+def _verified_job_daily_snapshots(store, job, planned):
+    result_ref = job.result_ref or ""
+    if not result_ref.startswith("dataset:sha256:"):
+        raise ResearchDatasetError("verified_interval_job_result_invalid")
+    try:
+        snapshot = read_daily_bar_dataset(
+            store, DatasetRef(store.resolve_ref(result_ref.removeprefix("dataset:")))
+        ).snapshot
+        expected = {
+            day: planned.instruments_for_session(day)
+            for day in planned.expected_sessions()
+            if planned.instruments_for_session(day)
+        }
+        partitions = {part.partition_date: part for part in snapshot.partitions}
+        if (
+            not snapshot.verification_bound
+            or snapshot.resolver_policy_id
+            != verified_daily_resolver_policy_id(planned.source_policy_id)
+            or snapshot.instruments != planned.instruments
+            or snapshot.start_date != min(expected)
+            or snapshot.end_date != max(expected)
+            or len(partitions) != len(snapshot.partitions)
+            or set(partitions) != set(expected)
+        ):
+            raise ResearchDatasetError("verified_interval_daily_dataset_mismatch")
+        rows = {}
+        for day, members in expected.items():
+            part = partitions[day]
+            actual = snapshot.instruments_for_session(day)
+            if actual != members or (part.instruments and part.instruments != members):
+                raise ResearchDatasetError("verified_interval_daily_dataset_mismatch")
+            verification = read_market_verification_evidence(
+                store, store.resolve_ref(part.verification_id)
+            )
+            if verification.checked_at > snapshot.cutoff:
+                raise ResearchDatasetError("verified_interval_daily_dataset_mismatch")
+            rows[day] = replace(
+                snapshot,
+                start_date=day,
+                end_date=day,
+                instruments=members,
+                partitions=(replace(part, instruments=()),),
+                session_memberships=(),
+                universe_policy_id=None,
+            )
+        return rows
+    except ResearchDatasetError:
+        raise
+    except Exception:
+        raise ResearchDatasetError(
+            "verified_interval_daily_dataset_unreadable"
+        ) from None
+
+
+def ensure_forward_seed_for_source(
+    db: Any,
+    config: Any,
+    *,
+    source: dict[str, Any],
+    now: datetime,
+    data_store: Any = None,
+) -> dict[str, Any]:
+    """Prepare a bounded, real verified warmup; never certify historical PIT.
+
+    Calls only queue existing provider-budgeted jobs. Repeated calls reuse their
+    immutable results, so automatic observation startup can resume after waiting.
+    """
+    from data.dataset.manifest import bind_stock_master_observation
+    from data.store import DataStore
+    from server.bootstrap import resolve_data_dir
+    from server.services.market_calendar_dates import (
+        resolve_latest_verified_closed_trading_date,
+        resolve_verified_closed_trading_dates_in_range,
+    )
+    from server.services.market_universe_truth import (
+        MarketUniversePolicy,
+        market_deployment_scope,
+        market_master_buy_instruments,
+        require_complete_market_universe_snapshot,
+    )
+    from server.services.verified_daily_market_jobs import (
+        enqueue_verified_daily_market_jobs_for_range,
+    )
+
+    selection = source.get("source_selection") or source.get("selection") or {}
+    scope = selection.get("deployment_scope") or {}
+    try:
+        if (
+            scope
+            != market_deployment_scope(
+                MarketUniversePolicy.from_dict(scope["universe_policy"])
+            )
+            or scope.get("scope_kind") != "full_declared_market"
+        ):
+            raise ValueError("forward_seed_scope_invalid")
+        minimum = max(
+            int(source["minimum_bars"]),
+            int(scope["universe_policy"]["minimum_history_rows"]),
+        )
+        forward_sessions = source.get("forward_minimum_observations", 0)
+        if type(forward_sessions) is not int or forward_sessions < 0:
+            return {
+                "status": "blocked",
+                "job_ids": [],
+                "last_blocker": {"code": "forward_seed_resource_limits_invalid"},
+            }
+        if minimum + forward_sessions > 2000:
+            return {
+                "status": "blocked",
+                "job_ids": [],
+                "last_blocker": {
+                    "code": "forward_seed_session_budget_exceeded",
+                    "warmup_sessions": minimum,
+                    "minimum_forward_sessions": forward_sessions,
+                    "limit": 2000,
+                },
+            }
+        closed = resolve_latest_verified_closed_trading_date(db, now)
+        if closed is None:
+            raise ValueError("forward_seed_calendar_unavailable")
+        through = date.fromisoformat(closed.trade_date)
+        dates = resolve_verified_closed_trading_dates_in_range(
+            db,
+            now,
+            start_date=through - timedelta(days=min(3652, max(30, minimum * 2))),
+            end_date=through,
+            maximum_calendar_days=3653,
+        )
+        if minimum < 1 or len(dates) < minimum:
+            raise ValueError("forward_seed_warmup_unavailable")
+        dates = dates[-minimum:]
+        original = tuple(
+            sorted(
+                (
+                    InstrumentKey.from_values(row["symbol"], row["instrument_type"])
+                    for row in source["instruments"]
+                ),
+                key=lambda key: (key.instrument_type.value, key.symbol),
+            )
+        )
+        root = db.path.resolve().parent / "research"
+        objects = ContentAddressedObjectStore(root / "objects")
+        market_store = data_store or DataStore(resolve_data_dir())
+        raw_master = market_store.get_market_universe_snapshot(
+            trade_date=through.isoformat(), as_of=now
+        )
+        master = require_complete_market_universe_snapshot(
+            raw_master,
+            policy=MarketUniversePolicy.from_dict(scope["universe_policy"]),
+            expected_trade_date=through.isoformat(),
+            available_as_of=now,
+        )
+        identity = bind_stock_master_observation(objects, master)
+        current = market_master_buy_instruments(
+            master, MarketUniversePolicy.from_dict(scope["universe_policy"])
+        )
+        warmup_universe = tuple(
+            sorted(
+                set(original) | set(current),
+                key=lambda key: (key.instrument_type.value, key.symbol),
+            )
+        )
+        if len(warmup_universe) > 10_000:
+            return {
+                "status": "blocked",
+                "job_ids": [],
+                "last_blocker": {
+                    "code": "forward_seed_instrument_budget_exceeded",
+                    "instruments": len(warmup_universe),
+                    "limit": 10_000,
+                },
+            }
+        # Membership in the old warmup is explicit and exploratory. Only the
+        # current session binds the actual observed master for a new decision.
+        expected = {
+            date.fromisoformat(item.trade_date): current
+            if item.trade_date == through.isoformat()
+            else warmup_universe
+            for item in dates
+        }
+        # Historical warmup is an explicit composition of rows that actually
+        # exist in frozen receipts, not a claim that today's IPOs existed then.
+        # The separate verified jobs still capture/reconcile the requested bars.
+        receipts = market_store.list_market_daily_ingestion_receipts(
+            start_date=min(expected).isoformat(), end_date=through.isoformat()
+        )
+        if receipts:
+            from data.research_market_data import (
+                load_research_market_frames,
+                research_market_binding,
+                resolve_daily_bar_receipts,
+            )
+
+            receipts = resolve_daily_bar_receipts(
+                data_store=market_store,
+                start_date=min(expected).isoformat(),
+                end_date=through.isoformat(),
+                config=config,
+            )
+            frames = load_research_market_frames(
+                market_store._root,
+                binding=research_market_binding(receipts),
+                symbols=[key.symbol for key in warmup_universe],
+                start_date=min(expected).isoformat(),
+                end_date=through.isoformat(),
+            )
+            for day in expected:
+                if day == through:
+                    continue
+                observed = tuple(
+                    key
+                    for key in warmup_universe
+                    if key.symbol in frames
+                    and any(
+                        value.date() == day for value in frames[key.symbol]["timestamp"]
+                    )
+                )
+                if not observed:
+                    raise ValueError("forward_seed_warmup_session_unavailable")
+                expected[day] = observed
+        warmup_rows = sum(len(members) for members in expected.values())
+        forward_rows = len(current) * forward_sessions
+        if warmup_rows + forward_rows > 20_000_000:
+            return {
+                "status": "blocked",
+                "job_ids": [],
+                "last_blocker": {
+                    "code": "forward_seed_row_budget_exceeded",
+                    "warmup_rows": warmup_rows,
+                    "minimum_forward_rows": forward_rows,
+                    "limit": 20_000_000,
+                },
+            }
+        catalog = DatasetCatalog(root)
+        entries = (
+            catalog.list_daily_bar_datasets(
+                start_date=date.fromisoformat(dates[0].trade_date), end_date=through
+            )
+            if catalog.path.exists()
+            else ()
+        )
+        for entry in entries:
+            if (
+                entry.start_date != date.fromisoformat(dates[0].trade_date)
+                or entry.end_date != through
+            ):
+                continue
+            candidate = read_daily_bar_dataset_manifest(objects, entry.ref)
+            # Range transport jobs are not a full-scope seed. Reject their
+            # declared scope cheaply; a matching seed still reopens all proof.
+            if candidate.universe_policy_id != scope["deployment_scope_fingerprint"]:
+                continue
+            restored = read_daily_bar_dataset(objects, entry.ref)
+            snapshot = restored.snapshot
+            if (
+                snapshot.universe_policy_id == scope["deployment_scope_fingerprint"]
+                and snapshot.verification_bound
+                and snapshot.cutoff <= now
+                and all(
+                    snapshot.instruments_for_session(day) == members
+                    for day, members in expected.items()
+                )
+                and snapshot.session_memberships[-1].source_observation_ids
+            ):
+                if forward_sessions:
+                    from server.services.research_corporate_action_jobs import (
+                        ensure_dataset_corporate_actions,
+                    )
+
+                    return ensure_dataset_corporate_actions(
+                        db,
+                        config,
+                        snapshot=snapshot,
+                        now=now,
+                        prospective_start=through,
+                        previous_observation_ids=snapshot.corporate_action_observation_ids,
+                    )
+                return {
+                    "status": "ready",
+                    "dataset_id": entry.ref.dataset_id,
+                    "job_ids": [],
+                    "last_blocker": None,
+                }
+        all_members = tuple(
+            sorted(
+                {key for members in expected.values() for key in members},
+                key=lambda key: (key.instrument_type.value, key.symbol),
+            )
+        )
+        jobs = enqueue_verified_daily_market_jobs_for_range(
+            db,
+            config,
+            SQLiteJobStore(db.path),
+            instruments=all_members,
+            start_date=min(expected),
+            end_date=through,
+            now=now,
+            historical_range=True,
+            session_instruments=expected,
+        )
+        if any(job.status != "succeeded" for job in jobs):
+            from server.persistence.market_daily_call_budget import BUDGET_DEFERRED_CODE
+
+            deferred = [job for job in jobs if job.error == BUDGET_DEFERRED_CODE]
+            retry_at = min(
+                (job.available_at for job in deferred if job.available_at is not None),
+                default=None,
+            )
+            return {
+                "status": "blocked"
+                if any(job.status == "failed" for job in jobs)
+                else "waiting",
+                "job_ids": [job.job_id for job in jobs],
+                "last_blocker": {"code": BUDGET_DEFERRED_CODE, "available_at": retry_at}
+                if deferred
+                else {"code": "forward_seed_verified_jobs_incomplete"},
+            }
+        job_snapshots = []
+        for job in jobs:
+            if not job.result_ref or not job.result_ref.startswith("dataset:sha256:"):
+                raise ResearchDatasetError("verified_interval_job_result_invalid")
+            job_snapshots.append(
+                (
+                    VerifiedDailyMarketJobRequest.from_payload(job.payload),
+                    read_daily_bar_dataset(
+                        objects,
+                        DatasetRef(
+                            objects.resolve_ref(job.result_ref.removeprefix("dataset:"))
+                        ),
+                    ).snapshot,
+                )
+            )
+        memberships = []
+        for day, members in expected.items():
+            available = max(
+                snapshot.cutoff
+                for planned, snapshot in job_snapshots
+                if planned.instruments_for_session(day)
+            )
+            memberships.append(
+                DailyBarDatasetMembership(
+                    day,
+                    members,
+                    datetime.fromisoformat(master["available_at"])
+                    if day == through
+                    else available,
+                    (identity,) if day == through else (),
+                    now if day == through else None,
+                )
+            )
+        all_instruments = tuple(
+            sorted(
+                {key for members in expected.values() for key in members},
+                key=lambda key: (key.instrument_type.value, key.symbol),
+            )
+        )
+        summary = publish_verified_interval_dataset(
+            root,
+            DailyBarRequest(all_instruments, min(expected), through),
+            db=db,
+            job_ids=tuple(job.job_id for job in jobs),
+            session_memberships=tuple(memberships),
+            universe_policy_id=scope["deployment_scope_fingerprint"],
+        )
+        if forward_sessions:
+            from server.services.research_corporate_action_jobs import (
+                ensure_dataset_corporate_actions,
+            )
+
+            snapshot = read_daily_bar_dataset(
+                objects, DatasetRef(objects.resolve_ref(summary["dataset_id"]))
+            ).snapshot
+            return ensure_dataset_corporate_actions(
+                db,
+                config,
+                snapshot=snapshot,
+                now=now,
+                prospective_start=through,
+            )
+        return {
+            "status": "ready",
+            "dataset_id": summary["dataset_id"],
+            "job_ids": [job.job_id for job in jobs],
+            "last_blocker": None,
+        }
+    except (ValueError, KeyError, TypeError, ResearchDatasetError) as exc:
+        return {"status": "waiting", "job_ids": [], "last_blocker": {"code": str(exc)}}
+
+
+def resolve_deployment_evaluation_dataset(
+    db: Any,
+    *,
+    source_result_id: int,
+    scope: dict[str, Any],
+    start_date: str,
+    end_date: str,
+    cutoff: datetime,
+    data_store: Any = None,
+) -> dict[str, Any]:
+    """Resolve a frozen source's actual forward inputs, or wait for its worker."""
+    from analytics.dataset_snapshot import (
+        build_backtest_dataset_snapshot,
+        load_immutable_dataset_inputs,
+    )
+    from server.persistence.automation_runs import AutomationRunRepository
+    from server.persistence.research_observations import ResearchObservationsRepository
+    from server.persistence.research_paper_books import ResearchPaperBooksRepository
+    from server.services.market_universe_truth import (
+        MarketUniversePolicy,
+        market_master_buy_instruments,
+    )
+
+    root = db.path.resolve().parent / "research"
+    objects = ContentAddressedObjectStore(root / "objects")
+    try:
+        required_sessions = verified_dataset_dates(
+            db, date.fromisoformat(start_date), date.fromisoformat(end_date)
+        )
+        calendar_sessions = verified_dataset_dates(
+            db,
+            date.fromisoformat(start_date),
+            date.fromisoformat(end_date) + timedelta(days=15),
+        )
+    except ResearchDatasetError:
+        return {
+            "status": "waiting",
+            "last_blocker": {"code": "deployment_final_calendar_unavailable"},
+        }
+    if not required_sessions:
+        return {
+            "status": "waiting",
+            "last_blocker": {"code": "deployment_final_sessions_unavailable"},
+        }
+    observations = ResearchObservationsRepository(db.path).list(
+        limit=100, source_backtest_result_id=source_result_id
+    )
+    for observation in observations:
+        source = observation["source"]
+        selection = source.get("source_selection") or source.get("selection") or {}
+        if selection.get("deployment_scope") != scope:
+            continue
+        identities = []
+        run = AutomationRunRepository(db.path).get_automation_run_sync(
+            f"research-observation-automation:{observation['id']}:latest:data"
+        )
+        if run is not None:
+            identities.append(json.loads(run["payload_json"]).get("dataset_id"))
+        book = ResearchPaperBooksRepository(db.path, clock=lambda: cutoff).get(
+            observation["id"]
+        )
+        for rows in (
+            observation.get("publications", []),
+            observation.get("outcomes", []),
+            (book or {}).get("steps", []),
+        ):
+            identities.extend(row["dataset_id"] for row in rows)
+        for identity in dict.fromkeys(item for item in identities if item):
+            ref = DatasetRef(objects.resolve_ref(identity))
+            try:
+                candidate = read_daily_bar_dataset_manifest(objects, ref)
+            except DatasetManifestError as exc:
+                raise DatasetReaderIntegrityError(
+                    "dataset_reader_manifest_invalid"
+                ) from exc
+            # Manifest bounds only reject irrelevant prefixes. An admissible
+            # candidate still reopens all canonical market and source evidence.
+            if (
+                candidate.universe_policy_id
+                != scope.get("deployment_scope_fingerprint")
+                or candidate.cutoff > cutoff
+                or candidate.start_date > date.fromisoformat(start_date)
+                or candidate.end_date < required_sessions[-1]
+            ):
+                continue
+            result = read_daily_bar_dataset(objects, ref)
+            snapshot = result.snapshot
+            if (
+                snapshot.universe_policy_id != scope.get("deployment_scope_fingerprint")
+                or snapshot.cutoff > cutoff
+                or snapshot.start_date > date.fromisoformat(start_date)
+                or snapshot.end_date < required_sessions[-1]
+            ):
+                continue
+            future = [
+                item
+                for item in snapshot.session_memberships
+                if date.fromisoformat(start_date)
+                <= item.partition_date
+                <= date.fromisoformat(end_date)
+            ]
+            if not future or any(
+                not item.source_observation_ids or item.decision_at is None
+                for item in future
+            ):
+                continue
+            if tuple(item.partition_date for item in future) != required_sessions:
+                continue
+            valid_memberships = True
+            for item in future:
+                following = next(
+                    (day for day in calendar_sessions if day > item.partition_date),
+                    None,
+                )
+                close = datetime.combine(
+                    item.partition_date, time(15), ZoneInfo("Asia/Shanghai")
+                )
+                deadline = (
+                    datetime.combine(following, time(9, 30), ZoneInfo("Asia/Shanghai"))
+                    if following is not None
+                    else None
+                )
+                if (
+                    item.decision_at is None
+                    or deadline is None
+                    or not close <= item.decision_at < deadline
+                ):
+                    valid_memberships = False
+                    break
+                if len(item.source_observation_ids) != 1:
+                    valid_memberships = False
+                    break
+                observed = json.loads(
+                    objects.read_bytes(
+                        objects.resolve_ref(item.source_observation_ids[0])
+                    )
+                )
+                try:
+                    expected_members = market_master_buy_instruments(
+                        observed,
+                        MarketUniversePolicy.from_dict(scope["universe_policy"]),
+                    )
+                except ValueError:
+                    valid_memberships = False
+                    break
+                if item.instruments != expected_members:
+                    valid_memberships = False
+                    break
+            if not valid_memberships:
+                continue
+            if snapshot.end_date != date.fromisoformat(end_date):
+                selected_memberships = tuple(
+                    item
+                    for item in snapshot.session_memberships
+                    if item.partition_date <= date.fromisoformat(end_date)
+                )
+                selected_instruments = tuple(
+                    sorted(
+                        {
+                            key
+                            for item in selected_memberships
+                            for key in (
+                                *item.instruments,
+                                *item.maintenance_instruments,
+                            )
+                        },
+                        key=lambda key: (key.instrument_type.value, key.symbol),
+                    )
+                )
+                if (
+                    snapshot.corporate_action_observation_ids
+                    and selected_instruments != snapshot.instruments
+                ):
+                    # A new action composition needs its own exact coverage;
+                    # never drop reports or rewrite settled financial prefixes.
+                    continue
+                snapshot = replace(
+                    snapshot,
+                    end_date=date.fromisoformat(end_date),
+                    instruments=selected_instruments,
+                    partitions=tuple(
+                        part
+                        for part in snapshot.partitions
+                        if part.partition_date <= date.fromisoformat(end_date)
+                    ),
+                    session_memberships=selected_memberships,
+                )
+                ref = publish_daily_bar_dataset_manifest(objects, snapshot)
+                read_daily_bar_dataset(objects, ref)
+                identity = ref.dataset_id
+            _, handlers, binding = load_immutable_dataset_inputs(
+                root, {"immutable_dataset_id": identity}
+            )
+            report_snapshot = build_backtest_dataset_snapshot(
+                start_date=snapshot.start_date.isoformat(),
+                end_date=snapshot.end_date.isoformat(),
+                configured_source="verified_forward_dataset",
+                data_handlers=handlers,
+                store=data_store,
+                source_names=binding["source_names"],
+                research_dataset_binding=binding,
+            )
+            return {
+                "status": "ready",
+                "dataset_id": identity,
+                "dataset_snapshot": report_snapshot,
+                "observation_id": observation["id"],
+                "last_blocker": None,
+            }
+    return {
+        "status": "waiting",
+        "last_blocker": {"code": "deployment_final_inputs_pending"},
+    }
+
+
 def verified_dataset_dates(
     db: Any,
     start: date,
@@ -690,7 +1418,7 @@ def verified_dataset_dates(
     config: Any = None,
 ) -> tuple[date, ...]:
     """复用项目已有的交易日历事实，不能用工作日或返回的行情猜交易日。"""
-    dates = []
+    dates: list[date] = []
     for year in range(start.year, end.year + 1):
         row = db.get_market_calendar_snapshot_sync(exchange="SSE", year=year)
         if not validate_verified_market_calendar(row).verified and config is not None:

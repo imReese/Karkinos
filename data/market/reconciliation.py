@@ -37,15 +37,8 @@ from data.market.revision import (
     MarketRevisionMaterialization,
     validate_daily_bar_materialization,
 )
-from data.market.schema import (
-    DAILY_BAR_SCHEMA,
-    daily_bars_from_table,
-)
 from data.storage.objects import (
     ContentAddressedObjectStore,
-)
-from data.storage.parquet import (
-    read_parquet,
 )
 
 logger = logging.getLogger(__name__)
@@ -173,6 +166,31 @@ def reconcile_daily_bar_revisions(
     comparison_materialization: MarketRevisionMaterialization,
     policy: DailyBarReconciliationPolicy = (STRICT_DAILY_RECONCILIATION),
 ) -> MarketReconciliationReport:
+    """完整验证两份 lineage 并返回稳定的跨 Provider 对账报告。"""
+    report, _, _ = reconcile_daily_bar_revisions_with_bars(
+        store,
+        primary_revision=primary_revision,
+        primary_materialization=primary_materialization,
+        comparison_revision=comparison_revision,
+        comparison_materialization=comparison_materialization,
+        policy=policy,
+    )
+    return report
+
+
+def reconcile_daily_bar_revisions_with_bars(
+    store: ContentAddressedObjectStore,
+    *,
+    primary_revision: MarketRevision,
+    primary_materialization: MarketRevisionMaterialization,
+    comparison_revision: MarketRevision,
+    comparison_materialization: MarketRevisionMaterialization,
+    policy: DailyBarReconciliationPolicy = (STRICT_DAILY_RECONCILIATION),
+) -> tuple[
+    MarketReconciliationReport,
+    tuple[DailyBarObservation, ...],
+    tuple[DailyBarObservation, ...],
+]:
     """比较两个 Provider 对同一个日线分区的 canonical 市场事实。
 
     两边在比较前都会完整验证：
@@ -189,25 +207,16 @@ def reconcile_daily_bar_revisions(
         comparison_revision,
     )
 
-    validate_daily_bar_materialization(
+    primary_bars = validate_daily_bar_materialization(
         store,
         revision=primary_revision,
         materialization=primary_materialization,
     )
 
-    validate_daily_bar_materialization(
+    comparison_bars = validate_daily_bar_materialization(
         store,
         revision=comparison_revision,
         materialization=comparison_materialization,
-    )
-
-    primary_bars = _read_daily_bars(
-        store,
-        primary_materialization,
-    )
-    comparison_bars = _read_daily_bars(
-        store,
-        comparison_materialization,
     )
 
     report = reconcile_daily_bars(
@@ -231,7 +240,7 @@ def reconcile_daily_bar_revisions(
         report.difference_count,
     )
 
-    return report
+    return report, primary_bars, comparison_bars
 
 
 def reconcile_daily_bars(
@@ -352,19 +361,6 @@ def _validate_revision_pair(
 
     if primary.provider == comparison.provider:
         raise ValueError("market_reconciliation_same_provider")
-
-
-def _read_daily_bars(
-    store: ContentAddressedObjectStore,
-    materialization: MarketRevisionMaterialization,
-) -> tuple[DailyBarObservation, ...]:
-    table = read_parquet(
-        store,
-        materialization.artifact,
-        expected_schema=DAILY_BAR_SCHEMA,
-    )
-
-    return daily_bars_from_table(table)
 
 
 def _index_bars(

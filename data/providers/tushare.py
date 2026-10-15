@@ -139,13 +139,8 @@ class TushareDailyBarProvider:
     def fetch_daily_bars(self, request: DailyBarRequest) -> ProviderDailyBarBatch:
         if not isinstance(request, DailyBarRequest):
             raise TypeError("tushare_daily_bar_request_invalid")
-        if request.start_date != request.end_date:
-            raise TushareDailyBarRequestError(
-                "tushare_daily_bar_request_must_be_single_session"
-            )
-
         started_at = _aware_utc(self._clock(), field="started_at")
-        if started_at < _session_close_utc(request.start_date):
+        if started_at < _session_close_utc(request.end_date):
             raise TushareDailyBarRequestError("tushare_daily_bar_session_not_closed")
 
         client = self._resolve_client()
@@ -172,6 +167,7 @@ class TushareDailyBarProvider:
                 frame,
                 instrument=instrument,
                 expected_session=request.start_date,
+                expected_end=request.end_date,
                 endpoint=endpoint,
             )
             captures.append(
@@ -286,6 +282,7 @@ def _rows_from_frame(
     instrument: InstrumentKey,
     expected_session: date,
     endpoint: str,
+    expected_end: date | None = None,
 ) -> list[ProviderDailyBarRow]:
     if frame.empty:
         return []
@@ -299,7 +296,7 @@ def _rows_from_frame(
     result: list[ProviderDailyBarRow] = []
     for _, row in frame.iterrows():
         session = _trade_date(row["trade_date"])
-        if session != expected_session:
+        if not expected_session <= session <= (expected_end or expected_session):
             raise TushareDailyBarResponseError(
                 f"tushare_response_session_mismatch:{session.isoformat()}"
             )
@@ -320,7 +317,7 @@ def _rows_from_frame(
                 suspended=False,
             )
         )
-    if len(result) > 1:
+    if len({row.session_date for row in result}) != len(result):
         raise TushareDailyBarResponseError(
             f"tushare_response_duplicate_session:{expected_session.isoformat()}"
         )
@@ -584,6 +581,8 @@ class TushareSource(DataSource):
                     "symbol": symbol,
                     "asset_class": AssetClass.STOCK.value,
                     "display_name": _clean_stock_master_text(row.get("name")),
+                    "list_date": _clean_stock_master_text(row.get("list_date")),
+                    "list_status": _clean_stock_master_text(row.get("list_status")),
                     "provider_symbol": provider_symbol,
                     "exchange": exchange,
                     "provider_name": "tushare",

@@ -23,7 +23,6 @@ from server.services.verified_daily_market_data import (
     VerifiedDailyMarketJobRequest,
 )
 from server.services.verified_daily_market_jobs import (
-    MAX_VERIFIED_DATASET_INSTRUMENTS,
     VERIFIED_DAILY_MARKET_JOB,
     VerifiedDailyMarketJobPlanningError,
     enqueue_verified_daily_market_jobs_for_range,
@@ -41,7 +40,7 @@ class VerifiedDatasetRangeRequest(BaseModel):
     symbol: str | None = Field(default=None, pattern=r"^[0-9]{6}$")
     instrument_type: Literal["stock", "etf"] | None = None
     instruments: list[DatasetInstrumentRequest] | None = Field(
-        default=None, min_length=1, max_length=MAX_VERIFIED_DATASET_INSTRUMENTS
+        default=None, min_length=1, max_length=10_000
     )
     start_date: date
     end_date: date
@@ -87,6 +86,7 @@ class PrepareVerifiedJobsRequest(VerifiedDatasetRangeRequest):
     model_config = ConfigDict(extra="forbid")
 
     reobserve: StrictBool = False
+    historical_range: StrictBool = False
 
 
 class PublishVerifiedIntervalRequest(VerifiedDatasetRangeRequest):
@@ -152,6 +152,7 @@ def create_router() -> APIRouter:
                 end_date=payload.end_date,
                 now=datetime.now(timezone.utc),
                 reobserve=payload.reobserve,
+                historical_range=payload.historical_range,
             )
         except VerifiedDailyMarketJobPlanningError as exc:
             raise HTTPException(409, str(exc)) from None
@@ -171,6 +172,15 @@ def create_router() -> APIRouter:
                     "observation_round": job.payload["observation_round"],
                     "status": job.status,
                     "result_ref": job.result_ref,
+                    **(
+                        {
+                            "schema_version": job.payload["schema_version"],
+                            "range_start_date": job.payload["range_start_date"],
+                            "range_end_date": job.payload["range_end_date"],
+                        }
+                        if "range_start_date" in job.payload
+                        else {}
+                    ),
                 }
                 for job in jobs
             ]
@@ -256,6 +266,16 @@ def create_router() -> APIRouter:
             "attempt": job.attempt,
             "result_ref": job.result_ref,
             "error": job.error,
+            "available_at": job.available_at,
+            **(
+                {
+                    "schema_version": job.payload["schema_version"],
+                    "range_start_date": job.payload["range_start_date"],
+                    "range_end_date": job.payload["range_end_date"],
+                }
+                if request.is_range
+                else {}
+            ),
         }
 
     return router

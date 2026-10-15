@@ -5,8 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
+from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
@@ -24,6 +25,44 @@ from data.meta_store_connection import connect_meta_sqlite
 from data.meta_store_schema import prepare_meta_database
 
 build_bar_diagnostics = _build_bar_diagnostics
+
+
+def normalize_stock_master_metadata(
+    rows: Sequence[Mapping[str, Any]], members: Sequence[Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    """Retain actual adapter facts without filling missing listing/status data."""
+    allowed = {str(member["symbol"]) for member in members}
+    result: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, Mapping):
+            raise ValueError("market_universe_metadata_row_invalid")
+        symbol = str(row.get("symbol") or "").split(".", maxsplit=1)[0].strip()
+        if symbol not in allowed:
+            continue
+        name = row.get("display_name")
+        name = name.strip() if isinstance(name, str) and name.strip() else None
+        listing = row.get("list_date")
+        if listing:
+            value = str(listing)
+            listing = (
+                datetime.strptime(value, "%Y%m%d").date().isoformat()
+                if len(value) == 8
+                else date.fromisoformat(value).isoformat()
+            )
+        else:
+            listing = None
+        status = row.get("list_status")
+        status = status.strip() if isinstance(status, str) and status.strip() else None
+        fact = {
+            "symbol": symbol,
+            "display_name": name,
+            "list_date": listing,
+            "list_status": status,
+        }
+        if symbol in result and result[symbol] != fact:
+            raise ValueError("market_universe_metadata_conflict")
+        result[symbol] = fact
+    return [result[symbol] for symbol in sorted(result)]
 
 
 def _market_universe_utc(value: datetime, *, field: str) -> str:
@@ -96,7 +135,10 @@ def _verified_market_universe_row(row: sqlite3.Row) -> dict[str, object]:
         if payload.get("schema_version") == "karkinos.market_universe_snapshot.v1":
             if any(row[field] is not None or field in payload for field in time_fields):
                 raise ValueError("legacy_availability_unknown")
-        elif payload.get("schema_version") == "karkinos.market_universe_snapshot.v2":
+        elif payload.get("schema_version") in {
+            "karkinos.market_universe_snapshot.v2",
+            "karkinos.market_universe_snapshot.v3",
+        }:
             expected = _market_universe_capture_fields(
                 datetime.fromisoformat(payload["capture_started_at"]),
                 datetime.fromisoformat(payload["capture_completed_at"]),
@@ -105,6 +147,12 @@ def _verified_market_universe_row(row: sqlite3.Row) -> dict[str, object]:
                 raise ValueError("capture_binding_mismatch")
             if any(row[field] != payload[field] for field in time_fields):
                 raise ValueError("capture_index_binding_mismatch")
+            if (
+                payload["schema_version"] == "karkinos.market_universe_snapshot.v3"
+                and normalize_stock_master_metadata(payload["member_metadata"], members)
+                != payload["member_metadata"]
+            ):
+                raise ValueError("metadata_not_canonical")
         else:
             raise ValueError("schema_unsupported")
     except (KeyError, TypeError, ValueError) as exc:
@@ -438,9 +486,10 @@ class DataStore(MarketDailyIngestionMixin):
         *,
         trade_date: str,
         provider_name: str,
-        members: list[dict[str, object]],
+        members: Sequence[Mapping[str, Any]],
         capture_started_at: datetime | None = None,
         capture_completed_at: datetime | None = None,
+        source_metadata: Sequence[Mapping[str, Any]] | None = None,
     ) -> dict[str, object]:
         """Append an adapter observation, or preserve a time-unknown legacy snapshot.
 
@@ -467,8 +516,12 @@ class DataStore(MarketDailyIngestionMixin):
         capture = _market_universe_capture_fields(
             capture_started_at, capture_completed_at
         )
+        if source_metadata is not None and not capture:
+            raise ValueError("market_universe_metadata_capture_required")
         core = {
-            "schema_version": "karkinos.market_universe_snapshot.v2"
+            "schema_version": "karkinos.market_universe_snapshot.v3"
+            if source_metadata is not None
+            else "karkinos.market_universe_snapshot.v2"
             if capture
             else "karkinos.market_universe_snapshot.v1",
             "trade_date": normalized_date,
@@ -483,6 +536,10 @@ class DataStore(MarketDailyIngestionMixin):
             "changes_capital_authority": False,
             **capture,
         }
+        if source_metadata is not None:
+            core["member_metadata"] = normalize_stock_master_metadata(
+                source_metadata, normalized_members
+            )
         snapshot_id = _market_universe_snapshot_id(core)
         payload = {**core, "snapshot_id": snapshot_id}
         payload_json = json.dumps(

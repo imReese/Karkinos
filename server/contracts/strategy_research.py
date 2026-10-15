@@ -76,6 +76,8 @@ class StrategyResearchSelection:
     account_truth_freshness_as_of: str | None = None
     valuation_snapshot_id: str | None = None
     ledger_cutoff_id: int | None = None
+    deployment_scope: dict[str, Any] | None = None
+    portfolio_policy_id: str | None = None
     schema_version: str = STRATEGY_RESEARCH_SELECTION_CONTRACT
 
     def __post_init__(self) -> None:
@@ -85,6 +87,26 @@ class StrategyResearchSelection:
             raise StrategyResearchRejected("selected_universe_invalid")
         if len(self.universe) != len(self.asset_classes):
             raise StrategyResearchRejected("selected_asset_classes_invalid")
+        if (self.deployment_scope is None) != (self.portfolio_policy_id is None):
+            raise StrategyResearchRejected(
+                "deployment_scope_portfolio_binding_incomplete"
+            )
+        if self.deployment_scope:
+            from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
+
+            scope_core = {
+                "universe_policy": self.deployment_scope.get("universe_policy"),
+                "portfolio_policy_id": self.portfolio_policy_id,
+            }
+            if (
+                self.portfolio_policy_id != FORMULA_PORTFOLIO_POLICY_ID
+                or self.deployment_scope.get("scope_kind") != "full_declared_market"
+                or self.deployment_scope.get("portfolio_policy_id")
+                != self.portfolio_policy_id
+                or self.deployment_scope.get("deployment_scope_fingerprint")
+                != "sha256:" + content_fingerprint(scope_core)
+            ):
+                raise StrategyResearchRejected("deployment_scope_identity_invalid")
         if self.frequency != BarFrequency.DAILY.value:
             raise StrategyResearchRejected("only_daily_research_is_supported")
         if not is_operator_approved_cost_model_reference(self.cost_model_reference):
@@ -197,6 +219,10 @@ class StrategyResearchSelection:
             )
         if self.sealed_end_date is not None:
             payload["sealed_end_date"] = self.sealed_end_date
+        if self.deployment_scope is not None:
+            payload["deployment_scope"] = self.deployment_scope
+        if self.portfolio_policy_id is not None:
+            payload["portfolio_policy_id"] = self.portfolio_policy_id
         return payload
 
     def to_external_dict(self) -> JsonObject:

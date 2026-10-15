@@ -153,8 +153,8 @@ def resolve_daily_bar_verification_pairs(
     for name, provider in registry.daily_bar_providers(route.candidates):
         descriptor = provider.descriptor
         if all(
-            descriptor.supports_daily_bars(
-                instrument.instrument_type,
+            descriptor.supports_daily_bar_instrument(
+                instrument,
                 price_basis=route.price_basis,
             )
             for instrument in request.instruments

@@ -26,8 +26,13 @@ Reader 不重新执行 Resolver，也不会访问 Provider。
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
+import json
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from copy import deepcopy
+from dataclasses import dataclass, replace
+from datetime import date, datetime
 from typing import Any
 
 import pyarrow as pa
@@ -38,6 +43,7 @@ from data.dataset.manifest import (
     read_daily_bar_dataset_manifest,
 )
 from data.dataset.model import (
+    DailyBarDatasetMembership,
     DailyBarDatasetPartition,
     DailyBarDatasetSnapshot,
     DatasetRef,
@@ -45,7 +51,7 @@ from data.dataset.model import (
 from data.market.model import (
     DailyBarObservation,
 )
-from data.market.reconciliation import reconcile_daily_bar_revisions
+from data.market.reconciliation import reconcile_daily_bar_revisions_with_bars
 from data.market.revision import (
     MARKET_DATA_KIND_DAILY_BARS,
     MarketRevision,
@@ -57,8 +63,6 @@ from data.market.revision import (
     validate_daily_bar_materialization,
 )
 from data.market.schema import (
-    DAILY_BAR_SCHEMA,
-    daily_bars_from_table,
     daily_bars_to_table,
 )
 from data.market.verification_evidence import (
@@ -72,7 +76,6 @@ from data.storage.objects import (
 )
 from data.storage.parquet import (
     ParquetStorageError,
-    read_parquet,
 )
 
 
@@ -119,7 +122,50 @@ class DailyBarDatasetReadResult:
         return daily_bars_to_table(self.bars)
 
 
+_CALL_VERIFIED_DATASETS: ContextVar[
+    dict[tuple[str, DatasetRef], DailyBarDatasetReadResult] | None
+] = ContextVar("call_verified_daily_bar_datasets", default=None)
+
+
+@contextmanager
+def daily_bar_dataset_read_scope(*, join_existing: bool = False) -> Iterator[None]:
+    """Reuse immutable reads within one caller, never across cold requests."""
+    if join_existing and _CALL_VERIFIED_DATASETS.get() is not None:
+        yield
+        return
+    token = _CALL_VERIFIED_DATASETS.set({})
+    try:
+        yield
+    finally:
+        _CALL_VERIFIED_DATASETS.reset(token)
+
+
 def read_daily_bar_dataset(
+    store: ContentAddressedObjectStore,
+    ref: DatasetRef,
+) -> DailyBarDatasetReadResult:
+    """Read verified bytes once per explicit call scope and isolate mutable CA."""
+    if not isinstance(store, ContentAddressedObjectStore):
+        raise TypeError("dataset_reader_store_invalid")
+    if not isinstance(ref, DatasetRef):
+        raise TypeError("dataset_reader_ref_invalid")
+    verified = _CALL_VERIFIED_DATASETS.get()
+    if verified is None:
+        return _read_daily_bar_dataset(store, ref)
+    key = (str(store.root.resolve()), ref)
+    if key in verified:
+        return replace(
+            verified[key],
+            corporate_action_evidence=deepcopy(verified[key].corporate_action_evidence),
+        )
+    result = _read_daily_bar_dataset(store, ref)
+    verified[key] = replace(
+        result, corporate_action_evidence=deepcopy(result.corporate_action_evidence)
+    )
+    return result
+
+
+def _read_daily_bar_dataset(
     store: ContentAddressedObjectStore,
     ref: DatasetRef,
 ) -> DailyBarDatasetReadResult:
@@ -155,12 +201,15 @@ def read_daily_bar_dataset(
         raise DatasetReaderIntegrityError("dataset_reader_manifest_invalid") from exc
 
     bars: list[DailyBarObservation] = []
+    _validate_membership_evidence(store, snapshot)
+    memberships = {item.partition_date: item for item in snapshot.session_memberships}
 
     for partition in snapshot.partitions:
         partition_bars = _read_partition(
             store,
             snapshot=snapshot,
             partition=partition,
+            membership=memberships.get(partition.partition_date),
         )
 
         bars.extend(partition_bars)
@@ -168,7 +217,16 @@ def read_daily_bar_dataset(
     result = DailyBarDatasetReadResult(
         ref=ref,
         snapshot=snapshot,
-        bars=tuple(bars),
+        bars=tuple(
+            sorted(
+                bars,
+                key=lambda bar: (
+                    bar.session_date,
+                    bar.instrument.instrument_type.value,
+                    bar.instrument.symbol,
+                ),
+            )
+        ),
         corporate_action_evidence=read_dataset_corporate_action_evidence(
             store, snapshot
         ),
@@ -176,6 +234,106 @@ def read_daily_bar_dataset(
 
     _validate_dataset_result(result)
 
+    return result
+
+
+def read_daily_bar_dataset_prefix(
+    store: ContentAddressedObjectStore,
+    ref: DatasetRef,
+    *,
+    verified_parent: DailyBarDatasetReadResult,
+) -> DailyBarDatasetReadResult:
+    """Reuse bars already fully verified by this caller's current read.
+
+    The parent is a call-scoped read result, never a persisted trust token or a
+    substitute for a new cold read. Reopen the old manifest, membership sources,
+    verification times and original action captures under its own time bounds.
+    A different lineage takes the ordinary complete reader path.
+    """
+    if not isinstance(store, ContentAddressedObjectStore):
+        raise TypeError("dataset_reader_store_invalid")
+    if not isinstance(ref, DatasetRef):
+        raise TypeError("dataset_reader_ref_invalid")
+    if not isinstance(verified_parent, DailyBarDatasetReadResult):
+        raise TypeError("dataset_reader_verified_parent_invalid")
+    try:
+        snapshot = read_daily_bar_dataset_manifest(store, ref)
+    except DatasetManifestError as exc:
+        raise DatasetReaderIntegrityError("dataset_reader_manifest_invalid") from exc
+    parent = verified_parent.snapshot
+    if (
+        snapshot.start_date != parent.start_date
+        or snapshot.end_date > parent.end_date
+        or snapshot.resolver_policy_id != parent.resolver_policy_id
+        or snapshot.market_schema_version != parent.market_schema_version
+        or snapshot.universe_policy_id != parent.universe_policy_id
+        or not set(snapshot.instruments) <= set(parent.instruments)
+        or snapshot.partitions != parent.partitions[: len(snapshot.partitions)]
+        or snapshot.session_memberships
+        != parent.session_memberships[: len(snapshot.session_memberships)]
+    ):
+        return read_daily_bar_dataset(store, ref)
+    _validate_membership_evidence(store, snapshot)
+    memberships = {item.partition_date: item for item in snapshot.session_memberships}
+    grouped: dict[date, dict[InstrumentKey, DailyBarObservation]] = {}
+    for bar in verified_parent.bars:
+        if bar.session_date <= snapshot.end_date:
+            grouped.setdefault(bar.session_date, {})[bar.instrument] = bar
+    bars: list[DailyBarObservation] = []
+    for partition in snapshot.partitions:
+        if partition.verification_id is not None:
+            try:
+                verification = read_market_verification_evidence(
+                    store, store.resolve_ref(partition.verification_id)
+                )
+            except (ObjectStoreError, MarketVerificationEvidenceError) as exc:
+                raise DatasetReaderIntegrityError(
+                    "dataset_reader_verification_unreadable"
+                ) from exc
+            if verification.checked_at > snapshot.cutoff:
+                raise DatasetReaderIntegrityError(
+                    "dataset_reader_verification_after_cutoff"
+                )
+            membership = memberships.get(partition.partition_date)
+            if (
+                membership is not None
+                and membership.decision_at is not None
+                and verification.checked_at > membership.decision_at
+            ):
+                raise DatasetReaderIntegrityError(
+                    "dataset_reader_verification_after_decision"
+                )
+        available = grouped.get(partition.partition_date, {})
+        bars.extend(
+            _select_partition_bars(
+                snapshot=snapshot,
+                partition=partition,
+                membership=memberships.get(partition.partition_date),
+                bars=tuple(
+                    available[key]
+                    for key in (partition.instruments or snapshot.instruments)
+                    if key in available
+                ),
+            )
+        )
+    result = DailyBarDatasetReadResult(
+        ref=ref,
+        snapshot=snapshot,
+        bars=tuple(
+            sorted(
+                bars,
+                key=lambda bar: (
+                    bar.session_date,
+                    bar.instrument.instrument_type.value,
+                    bar.instrument.symbol,
+                ),
+            )
+        ),
+        corporate_action_evidence=read_dataset_corporate_action_evidence(
+            store, snapshot
+        ),
+    )
+    _validate_dataset_result(result)
     return result
 
 
@@ -188,12 +346,63 @@ def read_dataset_corporate_action_evidence(
     """Replay the bound observations; an empty provider report is not full coverage."""
     if not snapshot.corporate_action_observation_ids:
         return None
+    from data.market.capture import ProviderCaptureError
     from data.market.corporate_actions import (
         CorporateActionObservationError,
         read_corporate_action_observation,
         summarize_corporate_action_observation,
     )
 
+    # A prospective market-date window is a single actual batch composition,
+    # distinct from the persisted per-stock full-history v1 observations.
+    if len(snapshot.corporate_action_observation_ids) == 1:
+        from data.market.corporate_actions import (
+            WINDOW_SCHEMA,
+            read_corporate_action_window,
+        )
+
+        identity = snapshot.corporate_action_observation_ids[0]
+        try:
+            raw = json.loads(store.read_bytes(store.resolve_ref(identity)))
+            if raw.get("schema_version") == WINDOW_SCHEMA:
+                evidence = read_corporate_action_window(
+                    store, store.resolve_ref(identity)
+                )
+                actual = tuple(
+                    InstrumentKey.from_values(**item)
+                    for item in evidence.pop("instruments")
+                )
+                if actual != snapshot.instruments:
+                    raise DatasetReaderIntegrityError(
+                        "dataset_corporate_action_coverage_mismatch"
+                    )
+                if datetime.fromisoformat(evidence["available_at"]) > snapshot.cutoff:
+                    raise DatasetReaderIntegrityError(
+                        "dataset_corporate_action_after_cutoff"
+                    )
+                if (
+                    date.fromisoformat(evidence["coverage_end_date"])
+                    < snapshot.end_date
+                ):
+                    raise DatasetReaderIntegrityError(
+                        "dataset_corporate_action_window_incomplete"
+                    )
+                if not include_capture_freshness:
+                    evidence.pop("oldest_captured_at")
+                return evidence
+        except (
+            CorporateActionObservationError,
+            ProviderCaptureError,
+            ObjectStoreError,
+            KeyError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            if isinstance(exc, DatasetReaderIntegrityError):
+                raise
+            raise DatasetReaderIntegrityError(
+                "dataset_corporate_action_unreadable"
+            ) from exc
     summaries, seen = [], set()
     try:
         for observation_id in snapshot.corporate_action_observation_ids:
@@ -270,6 +479,7 @@ def _read_partition(
     *,
     snapshot: DailyBarDatasetSnapshot,
     partition: DailyBarDatasetPartition,
+    membership: DailyBarDatasetMembership | None,
 ) -> tuple[
     DailyBarObservation,
     ...,
@@ -292,27 +502,23 @@ def _read_partition(
             materialization_manifest_ref,
         )
 
-        _validate_partition_lineage(
+        all_bars = _validate_partition_lineage(
             store=store,
             snapshot=snapshot,
             partition=partition,
+            membership=membership,
             revision=revision,
             materialization=materialization,
         )
 
-        # 这里使用 MarketRevision 自己的 canonical validation，
-        # Dataset Reader 不复制 Revision domain 的完整性规则。
-        validate_daily_bar_materialization(
-            store,
-            revision=revision,
-            materialization=materialization,
-        )
-
-        table = read_parquet(
-            store,
-            materialization.artifact,
-            expected_schema=DAILY_BAR_SCHEMA,
-        )
+        if all_bars is None:
+            # A verified partition already validated both sources while replaying
+            # reconciliation. Legacy partitions validate their selected lineage.
+            all_bars = validate_daily_bar_materialization(
+                store,
+                revision=revision,
+                materialization=materialization,
+            )
 
     except (
         ObjectStoreError,
@@ -324,20 +530,10 @@ def _read_partition(
             f"{partition.partition_date.isoformat()}"
         ) from exc
 
-    try:
-        all_bars = daily_bars_from_table(table)
-    except (
-        TypeError,
-        ValueError,
-    ) as exc:
-        raise DatasetReaderIntegrityError(
-            "dataset_reader_partition_schema_invalid:"
-            f"{partition.partition_date.isoformat()}"
-        ) from exc
-
     return _select_partition_bars(
         snapshot=snapshot,
         partition=partition,
+        membership=membership,
         bars=all_bars,
     )
 
@@ -347,9 +543,10 @@ def _validate_partition_lineage(
     store: ContentAddressedObjectStore,
     snapshot: DailyBarDatasetSnapshot,
     partition: DailyBarDatasetPartition,
+    membership: DailyBarDatasetMembership | None,
     revision: MarketRevision,
     materialization: MarketRevisionMaterialization,
-) -> None:
+) -> tuple[DailyBarObservation, ...] | None:
     """验证 Dataset Manifest 与 Market lineage 一致。"""
     if revision.ref.revision_id != partition.revision_id:
         raise DatasetReaderIntegrityError("dataset_reader_revision_id_mismatch")
@@ -389,6 +586,14 @@ def _validate_partition_lineage(
         if verification.checked_at > snapshot.cutoff:
             raise DatasetReaderIntegrityError(
                 "dataset_reader_verification_after_cutoff"
+            )
+        if (
+            membership is not None
+            and membership.decision_at is not None
+            and verification.checked_at > membership.decision_at
+        ):
+            raise DatasetReaderIntegrityError(
+                "dataset_reader_verification_after_decision"
             )
         selected = (
             partition.provider,
@@ -432,13 +637,15 @@ def _validate_partition_lineage(
                 store,
                 store.resolve_ref(verification.comparison_materialization_id),
             )
-            replayed_report = reconcile_daily_bar_revisions(
-                store,
-                primary_revision=primary_revision,
-                primary_materialization=primary_materialization,
-                comparison_revision=comparison_revision,
-                comparison_materialization=comparison_materialization,
-                policy=verification.policy,
+            replayed_report, primary_bars, comparison_bars = (
+                reconcile_daily_bar_revisions_with_bars(
+                    store,
+                    primary_revision=primary_revision,
+                    primary_materialization=primary_materialization,
+                    comparison_revision=comparison_revision,
+                    comparison_materialization=comparison_materialization,
+                    policy=verification.policy,
+                )
             )
         except (
             ObjectStoreError,
@@ -454,12 +661,21 @@ def _validate_partition_lineage(
             raise DatasetReaderIntegrityError(
                 "dataset_reader_verification_report_mismatch"
             )
+        if selected == (
+            verification.report.primary_provider,
+            verification.report.primary_revision_id,
+            verification.primary_materialization_id,
+        ):
+            return primary_bars
+        return comparison_bars
+    return None
 
 
 def _select_partition_bars(
     *,
     snapshot: DailyBarDatasetSnapshot,
     partition: DailyBarDatasetPartition,
+    membership: DailyBarDatasetMembership | None,
     bars: tuple[
         DailyBarObservation,
         ...,
@@ -475,7 +691,7 @@ def _select_partition_bars(
     Reader 必须精确重放 snapshot.instruments，不能因为 Revision 中多了
     其他股票而把额外记录带入 Research。
     """
-    requested = set(snapshot.instruments)
+    requested = set(partition.instruments or snapshot.instruments)
 
     selected: dict[
         InstrumentKey,
@@ -498,6 +714,12 @@ def _select_partition_bars(
         # replay contract，因此读取边界不能只依赖“当初 Resolver 应该没错”。
         if bar.available_at > snapshot.cutoff:
             raise DatasetReaderIntegrityError("dataset_reader_bar_after_cutoff")
+        if (
+            membership is not None
+            and membership.decision_at is not None
+            and max(bar.available_at, bar.captured_at) > membership.decision_at
+        ):
+            raise DatasetReaderIntegrityError("dataset_reader_bar_after_decision")
 
         selected[bar.instrument] = bar
 
@@ -506,23 +728,79 @@ def _select_partition_bars(
 
     # snapshot.instruments 已经在 model.py 中 canonicalize。
     # 按这个顺序读取可以保证不同机器上的 replay 顺序完全一致。
-    return tuple(selected[instrument] for instrument in snapshot.instruments)
+    return tuple(
+        selected[instrument]
+        for instrument in (partition.instruments or snapshot.instruments)
+    )
 
 
 def _validate_dataset_result(
     result: DailyBarDatasetReadResult,
 ) -> None:
     """对完整 replay 结果做最后的结构检查。"""
-    expected_rows = result.snapshot.partition_count * result.snapshot.instrument_count
+    expected_rows = (
+        sum(
+            len(item.instruments) + len(item.maintenance_instruments)
+            for item in result.snapshot.session_memberships
+        )
+        if result.snapshot.session_memberships
+        else result.snapshot.partition_count * result.snapshot.instrument_count
+    )
 
     if result.row_count != expected_rows:
         raise DatasetReaderIntegrityError("dataset_reader_row_count_mismatch")
 
     expected_dates = tuple(
-        partition.partition_date for partition in result.snapshot.partitions
+        sorted({partition.partition_date for partition in result.snapshot.partitions})
     )
 
     actual_dates = tuple(sorted({bar.session_date for bar in result.bars}))
 
     if actual_dates != expected_dates:
         raise DatasetReaderIntegrityError("dataset_reader_partition_coverage_mismatch")
+
+
+def _validate_membership_evidence(store, snapshot: DailyBarDatasetSnapshot) -> None:
+    """Verify actual source bytes/times, without inferring historical membership."""
+    for membership in snapshot.session_memberships:
+        if not membership.source_observation_ids:
+            continue
+        members: set[InstrumentKey] = set()
+        availability = []
+        try:
+            for identity in membership.source_observation_ids:
+                source = json.loads(store.read_bytes(store.resolve_ref(identity)))
+                if (
+                    source["schema_version"]
+                    not in {
+                        "karkinos.market_universe_snapshot.v2",
+                        "karkinos.market_universe_snapshot.v3",
+                    }
+                    or source["membership_basis"] != "current_active_stock_master"
+                    or source["availability_basis"] != "capture_completed_at"
+                    or source["observation_basis"] != "adapter_response"
+                ):
+                    raise ValueError("unsupported_membership_source")
+                started = datetime.fromisoformat(source["capture_started_at"])
+                completed = datetime.fromisoformat(source["capture_completed_at"])
+                available = datetime.fromisoformat(source["available_at"])
+                if (
+                    any(
+                        value.utcoffset() is None
+                        for value in (started, completed, available)
+                    )
+                    or not started <= completed == available
+                ):
+                    raise ValueError("invalid_membership_source_time")
+                availability.append(available)
+                for row in source["members"]:
+                    members.add(InstrumentKey(str(row["symbol"]), InstrumentType.STOCK))
+            if (
+                max(availability) != membership.available_at
+                or not set(membership.instruments) <= members
+            ):
+                raise ValueError("membership_source_mismatch")
+        except (ObjectStoreError, ValueError, TypeError, KeyError) as exc:
+            raise DatasetReaderIntegrityError(
+                "dataset_membership_evidence_invalid"
+            ) from exc

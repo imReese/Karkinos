@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -34,11 +35,13 @@ def reserve_market_daily_provider_call(
     *,
     now: datetime,
     daily_limit: int = DEFAULT_DAILY_PROVIDER_ATTEMPT_LIMIT,
+    guard: Callable[[sqlite3.Connection], None] | None = None,
 ) -> None:
     """Count one canonical fetch attempt before I/O, or defer under the same lock.
 
     A reservation remains spent when Provider I/O fails, times out, or the process
-    exits. The limit is on calls to ``fetch_daily_bars``, not hidden SDK requests.
+    exits. Daily bars count canonical fetch calls; the prospective dividend
+    adapter explicitly reserves each of its four actual date-query SDK calls.
     """
     if not isinstance(lease, JobLease):
         raise TypeError("market_daily_provider_budget_lease_invalid")
@@ -67,6 +70,8 @@ def reserve_market_daily_provider_call(
     try:
         conn.execute("BEGIN IMMEDIATE")
         require_job_lease(conn, lease, now=now)
+        if guard is not None:
+            guard(conn)
         used = conn.execute(
             "SELECT COUNT(*) FROM market_daily_provider_call_reservations "
             "WHERE shanghai_date=? AND upstream_group=?",
@@ -119,7 +124,11 @@ def market_daily_provider_call_budget_status(
         or daily_limit < 1
     ):
         raise ValueError("market_daily_provider_budget_limit_invalid")
-    local_day = now.astimezone(_SHANGHAI).date().isoformat()
+    local_date = now.astimezone(_SHANGHAI).date()
+    local_day = local_date.isoformat()
+    reset_at = datetime.combine(
+        local_date + timedelta(days=1), time.min, _SHANGHAI
+    ).astimezone(timezone.utc)
     try:
         conn = connect_sqlite(Path(db_path), readonly=True)
         try:
@@ -139,6 +148,7 @@ def market_daily_provider_call_budget_status(
     return {
         "scope": "managed_daily_market_jobs",
         "shanghai_date": local_day,
+        "reset_at": reset_at.isoformat(),
         "groups": {
             group: {
                 "used": used_by_group.get(group, 0),

@@ -719,7 +719,8 @@ def test_multi_asset_verified_jobs_are_one_complete_universe_per_day(tmp_path):
         },
         {
             "instruments": [
-                {"symbol": str(510300 + i), "instrument_type": "etf"} for i in range(41)
+                {"symbol": str(510300 + i), "instrument_type": "etf"}
+                for i in range(10_001)
             ]
         },
         {"symbol": "600000"},
@@ -741,3 +742,38 @@ def test_multi_asset_http_rejects_ambiguous_or_unbounded_universe_before_enqueue
         )
     assert response.status_code == 422, response.text
     assert store.list_recent(VERIFIED_DAILY_MARKET_JOB) == []
+
+
+def test_41_instrument_http_universe_has_two_lossless_idempotent_provider_batches(
+    tmp_path,
+):
+    client, store = _verified_jobs_api(tmp_path, trading_dates={TRADE_DATE})
+    instruments = [
+        {"symbol": str(510300 + index), "instrument_type": "etf"} for index in range(41)
+    ]
+    request = {
+        "instruments": instruments,
+        "start_date": TRADE_DATE.isoformat(),
+        "end_date": TRADE_DATE.isoformat(),
+    }
+    with client:
+        first = client.post("/api/backtest/datasets/verified-jobs", json=request)
+        repeated = client.post(
+            "/api/backtest/datasets/verified-jobs",
+            json={**request, "instruments": list(reversed(instruments))},
+        )
+        assert first.status_code == 200, first.text
+        assert repeated.status_code == 200, repeated.text
+        assert repeated.json() == first.json()
+        jobs = first.json()["jobs"]
+        assert [len(job["instruments"]) for job in jobs] == [40, 1]
+        assert [item for job in jobs for item in job["instruments"]] == instruments
+        assert len({job["job_id"] for job in jobs}) == 2
+        assert all(job["trade_date"] == TRADE_DATE.isoformat() for job in jobs)
+        for job in jobs:
+            status = client.get(f"/api/backtest/datasets/verified-jobs/{job['job_id']}")
+            assert status.status_code == 200, status.text
+            assert status.json()["instruments"] == job["instruments"]
+    persisted = store.list_recent(VERIFIED_DAILY_MARKET_JOB)
+    assert len(persisted) == 2
+    assert {row["job_id"] for row in persisted} == {job["job_id"] for job in jobs}

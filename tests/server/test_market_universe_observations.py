@@ -105,12 +105,12 @@ def test_delayed_adapter_observation_keeps_legacy_and_actual_capture_time(tmp_pa
 
     assert run["status"] == "completed"
     payload = json.loads(run["payload_json"])
-    assert payload["schema_version"] == "karkinos.market_universe_automation.v4"
+    assert payload["schema_version"] == "karkinos.market_universe_automation.v5"
     observed = store.get_market_universe_snapshot(
         snapshot_id=payload["market_universe_snapshot_id"]
     )
     assert observed["snapshot_id"] != legacy["snapshot_id"]
-    assert observed["schema_version"] == "karkinos.market_universe_snapshot.v2"
+    assert observed["schema_version"] == "karkinos.market_universe_snapshot.v3"
     assert observed["trade_date"] == TRADE_DATE
     assert datetime.fromisoformat(observed["capture_started_at"]) == CAPTURE_START
     assert datetime.fromisoformat(observed["capture_completed_at"]) == CAPTURE_END

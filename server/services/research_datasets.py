@@ -10,26 +10,30 @@ import subprocess
 from data.dataset.reader import read_daily_bar_dataset
 from data.providers.tdx import prepare_tdx_runtime
 from server.services.research.datasets import (
-    MAX_VERIFIED_DATASET_INSTRUMENTS,
+    MAX_VERIFIED_DAILY_JOB_INSTRUMENTS,
     ResearchDatasetError,
     ResearchDatasetService,
     dataset_summary,
+    ensure_forward_seed_for_source,
     prepare_daily_dataset,
     publish_verified_interval_dataset,
     require_supported_snapshot,
+    resolve_deployment_evaluation_dataset,
     verified_dataset_dates,
 )
 
 __all__ = [
-    "MAX_VERIFIED_DATASET_INSTRUMENTS",
+    "MAX_VERIFIED_DAILY_JOB_INSTRUMENTS",
     "ResearchDatasetError",
     "ResearchDatasetService",
     "dataset_summary",
+    "ensure_forward_seed_for_source",
     "prepare_daily_dataset",
     "prepare_tdx_runtime",
     "publish_verified_interval_dataset",
     "read_daily_bar_dataset",
     "require_supported_snapshot",
+    "resolve_deployment_evaluation_dataset",
     "subprocess",
     "verified_dataset_dates",
 ]

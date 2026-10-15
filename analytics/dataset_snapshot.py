@@ -868,13 +868,16 @@ def load_immutable_dataset_inputs(
     instruments: dict[Symbol, Any] = {}
     handlers: dict[Symbol, DataHandler] = {}
 
+    bars_by_instrument = {}
+    for bar in restored.bars:
+        bars_by_instrument.setdefault(bar.instrument, []).append(bar)
     for key in restored.snapshot.instruments:
         symbol = Symbol(key.symbol)
         factory = (
             make_stock if key.instrument_type is InstrumentType.STOCK else make_etf
         )
         instruments[symbol] = factory(key.symbol, key.symbol)
-        bars = [bar for bar in restored.bars if bar.instrument == key]
+        bars = bars_by_instrument.get(key, [])
         frame = pd.DataFrame(
             [
                 {

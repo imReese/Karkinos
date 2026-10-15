@@ -37,6 +37,7 @@ AKSHARE_TENCENT_DAILY_BAR_DESCRIPTOR = MarketDataProviderDescriptor(
     provider="akshare_tencent",
     upstream_group="tencent",
     adapter_version=AKSHARE_TENCENT_DAILY_BAR_ADAPTER_VERSION,
+    unsupported_stock_prefixes=("4", "8", "92"),
     daily_bar_capabilities=(
         DailyBarCapability(
             endpoint="stock_zh_a_hist_tx",
@@ -108,17 +109,12 @@ class AkshareTencentDailyBarProvider:
     def fetch_daily_bars(self, request: DailyBarRequest) -> ProviderDailyBarBatch:
         if not isinstance(request, DailyBarRequest):
             raise TypeError("akshare_tencent_daily_bar_request_invalid")
-        if request.start_date != request.end_date:
-            raise AkshareTencentDailyBarRequestError(
-                "akshare_tencent_daily_bar_request_must_be_single_session"
-            )
-
         targets = tuple(
             (instrument, _provider_symbol(instrument))
             for instrument in request.instruments
         )
         started_at = _aware_utc(self._clock(), field="started_at")
-        if started_at < _session_close_utc(request.start_date):
+        if started_at < _session_close_utc(request.end_date):
             raise AkshareTencentDailyBarRequestError(
                 "akshare_tencent_daily_bar_session_not_closed"
             )
@@ -159,6 +155,7 @@ class AkshareTencentDailyBarProvider:
                 frame,
                 instrument=instrument,
                 expected_session=request.start_date,
+                expected_end=request.end_date,
             )
             rows.extend(parsed_rows)
             calls.append(
@@ -263,6 +260,7 @@ def _rows_from_frame(
     *,
     instrument: InstrumentKey,
     expected_session: date,
+    expected_end: date | None = None,
 ) -> list[ProviderDailyBarRow]:
     if frame.empty:
         return []
@@ -276,7 +274,7 @@ def _rows_from_frame(
     result: list[ProviderDailyBarRow] = []
     for _, item in frame.iterrows():
         session = _trade_date(item["date"])
-        if session != expected_session:
+        if not expected_session <= session <= (expected_end or expected_session):
             raise AkshareTencentDailyBarResponseError(
                 f"akshare_tencent_response_session_mismatch:{session.isoformat()}"
             )
@@ -300,7 +298,7 @@ def _rows_from_frame(
             )
         )
 
-    if len(result) > 1:
+    if len({row.session_date for row in result}) != len(result):
         raise AkshareTencentDailyBarResponseError(
             f"akshare_tencent_response_duplicate_session:{expected_session.isoformat()}"
         )

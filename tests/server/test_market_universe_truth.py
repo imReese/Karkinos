@@ -76,7 +76,7 @@ def test_market_universe_snapshot_is_immutable_stock_only_and_content_addressed(
 def test_research_panel_is_exactly_40_lot_feasible_and_deterministic(tmp_path) -> None:
     store = DataStore(tmp_path / "market")
     snapshot = _snapshot(store)
-    policy = MarketUniversePolicy()
+    policy = MarketUniversePolicy.legacy()
     preliminary = preliminary_research_panel_symbols(snapshot, policy=policy)
     assert len(preliminary) == 160
     for symbol in preliminary:
@@ -131,7 +131,7 @@ def test_research_panel_fails_closed_before_model_when_one_lot_is_not_feasible(
     snapshot = _snapshot(store)
     preliminary = preliminary_research_panel_symbols(
         snapshot,
-        policy=MarketUniversePolicy(),
+        policy=MarketUniversePolicy.legacy(),
     )
     for index, symbol in enumerate(preliminary):
         store.save_bars(
@@ -151,6 +151,7 @@ def test_research_panel_fails_closed_before_model_when_one_lot_is_not_feasible(
             start_date="2026-04-01",
             end_date="2026-08-21",
             initial_cash=100_000,
+            policy=MarketUniversePolicy.legacy(),
         )
 
 
@@ -185,7 +186,7 @@ def test_market_universe_rejects_previous_day_or_short_history(tmp_path) -> None
 def test_research_panel_hard_filters_the_full_stock_directory(tmp_path) -> None:
     store = DataStore(tmp_path / "market")
     snapshot = _snapshot(store)
-    policy = MarketUniversePolicy()
+    policy = MarketUniversePolicy.legacy()
     preliminary = set(preliminary_research_panel_symbols(snapshot, policy=policy))
     eligible_outside_preliminary = [
         symbol for symbol in _symbols() if symbol not in preliminary

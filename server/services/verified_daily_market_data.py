@@ -1,9 +1,9 @@
-"""Publish one verified daily market-data partition from versioned source policy."""
+"""Publish verified daily partitions from a versioned source policy."""
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -11,17 +11,26 @@ from typing import Any
 from core.types import InstrumentKey, InstrumentType
 from data.dataset.catalog import DatasetCatalog
 from data.dataset.manifest import publish_daily_bar_dataset_manifest
-from data.dataset.model import DatasetRef
+from data.dataset.model import (
+    DailyBarDatasetMembership,
+    DailyBarDatasetSnapshot,
+    DatasetRef,
+)
 from data.dataset.reader import read_daily_bar_dataset
 from data.dataset.resolver import (
     DailyBarDatasetResolverPolicy,
     resolve_daily_bar_dataset,
 )
-from data.market.contracts import DailyBarRequest, MarketDataProviderDescriptor
+from data.market.contracts import (
+    MAX_DAILY_BAR_JOB_INSTRUMENTS,
+    DailyBarRequest,
+    MarketDataProviderDescriptor,
+)
 from data.market.cross_source import (
     CrossSourceDailyBarResult,
     CrossSourceDailyBarUnavailableError,
     ingest_cross_source_daily_bars,
+    ingest_cross_source_daily_bars_range,
 )
 from data.market.quality import RESEARCH_STRICT_DAILY
 from data.market.serving import MarketServingStore
@@ -33,6 +42,7 @@ from data.source_routing import (
 from data.storage.objects import ContentAddressedObjectStore
 
 VERIFIED_DAILY_MARKET_JOB_SCHEMA_VERSION = "karkinos.market_daily_verified_job.v1"
+VERIFIED_DAILY_MARKET_RANGE_JOB_SCHEMA_VERSION = "karkinos.market_daily_verified_job.v2"
 VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT = "market.daily.source_resolution"
 _NORMALIZER_VERSION = "karkinos.market.normalize.v1"
 _RESOLVER_POLICY_PREFIX = "karkinos.dataset.pit.verified.daily.v1:"
@@ -129,6 +139,36 @@ class VerifiedDailyMarketJobRequest:
     source_policy_id: str
     calendar_evidence_refs: tuple[str, ...]
     observation_round: str = "post_close.v1"
+    range_start_date: date | None = None
+    range_end_date: date | None = None
+    session_memberships: tuple[
+        tuple[date, tuple[InstrumentKey, ...], tuple[str, ...]], ...
+    ] = ()
+
+    @property
+    def is_range(self) -> bool:
+        return self.range_start_date is not None
+
+    def expected_sessions(self) -> tuple[date, ...]:
+        return (
+            tuple(item[0] for item in self.session_memberships)
+            if self.is_range
+            else (self.trade_date,)
+        )
+
+    def instruments_for_session(self, day: date) -> tuple[InstrumentKey, ...]:
+        if not self.is_range:
+            return self.instruments if day == self.trade_date else ()
+        return next(
+            (item[1] for item in self.session_memberships if item[0] == day), ()
+        )
+
+    def calendar_refs_for_session(self, day: date) -> tuple[str, ...]:
+        if not self.is_range:
+            return self.calendar_evidence_refs if day == self.trade_date else ()
+        return next(
+            (item[2] for item in self.session_memberships if item[0] == day), ()
+        )
 
     @classmethod
     def from_payload(cls, payload: Mapping[str, Any]) -> VerifiedDailyMarketJobRequest:
@@ -136,7 +176,11 @@ class VerifiedDailyMarketJobRequest:
             raise VerifiedDailyMarketDataRequestError(
                 "verified_daily_market_payload_invalid"
             )
-        if payload.get("schema_version") != VERIFIED_DAILY_MARKET_JOB_SCHEMA_VERSION:
+        version = payload.get("schema_version")
+        if version not in (
+            VERIFIED_DAILY_MARKET_JOB_SCHEMA_VERSION,
+            VERIFIED_DAILY_MARKET_RANGE_JOB_SCHEMA_VERSION,
+        ):
             raise VerifiedDailyMarketDataRequestError(
                 "verified_daily_market_schema_unsupported"
             )
@@ -151,6 +195,10 @@ class VerifiedDailyMarketJobRequest:
         if not isinstance(raw_instruments, list) or not raw_instruments:
             raise VerifiedDailyMarketDataRequestError(
                 "verified_daily_market_instruments_invalid"
+            )
+        if len(raw_instruments) > MAX_DAILY_BAR_JOB_INSTRUMENTS:
+            raise VerifiedDailyMarketDataRequestError(
+                "verified_daily_market_job_batch_exceeded"
             )
         instruments: list[InstrumentKey] = []
         seen: set[InstrumentKey] = set()
@@ -209,6 +257,19 @@ class VerifiedDailyMarketJobRequest:
                 "verified_daily_market_observation_round_invalid"
             )
 
+        range_fields: dict[str, Any] = {}
+        if version == VERIFIED_DAILY_MARKET_RANGE_JOB_SCHEMA_VERSION:
+            range_fields = _read_range_fields(
+                payload, tuple(instruments), refs, trade_date
+            )
+        elif any(
+            key in payload
+            for key in ("range_start_date", "range_end_date", "session_memberships")
+        ):
+            raise VerifiedDailyMarketDataRequestError(
+                "verified_daily_market_range_schema_required"
+            )
+
         return cls(
             trade_date=trade_date,
             instruments=tuple(
@@ -223,10 +284,11 @@ class VerifiedDailyMarketJobRequest:
             source_policy_id=source_policy_id,
             calendar_evidence_refs=refs,
             observation_round=observation_round,
+            **range_fields,
         )
 
     def to_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             "schema_version": VERIFIED_DAILY_MARKET_JOB_SCHEMA_VERSION,
             "trade_date": self.trade_date.isoformat(),
             "instruments": [
@@ -240,6 +302,102 @@ class VerifiedDailyMarketJobRequest:
             "calendar_evidence_refs": list(self.calendar_evidence_refs),
             "observation_round": self.observation_round,
         }
+        if self.is_range:
+            assert self.range_start_date is not None and self.range_end_date is not None
+            payload.update(
+                schema_version=VERIFIED_DAILY_MARKET_RANGE_JOB_SCHEMA_VERSION,
+                range_start_date=self.range_start_date.isoformat(),
+                range_end_date=self.range_end_date.isoformat(),
+                session_memberships=[
+                    {
+                        "trade_date": day.isoformat(),
+                        "instruments": [
+                            {
+                                "symbol": key.symbol,
+                                "instrument_type": key.instrument_type.value,
+                            }
+                            for key in instruments
+                        ],
+                        "calendar_evidence_refs": list(refs),
+                    }
+                    for day, instruments, refs in self.session_memberships
+                ],
+            )
+        return payload
+
+
+def _read_range_fields(
+    payload: Mapping[str, Any],
+    instruments: tuple[InstrumentKey, ...],
+    refs: tuple[str, ...],
+    trade_date: date,
+) -> dict[str, Any]:
+    try:
+        start = date.fromisoformat(payload["range_start_date"])
+        end = date.fromisoformat(payload["range_end_date"])
+        rows = payload["session_memberships"]
+        if (
+            not start <= end == trade_date
+            or (end - start).days >= 3653
+            or not isinstance(rows, list)
+            or not 1 <= len(rows) <= 2000
+        ):
+            raise ValueError()
+        memberships = []
+        seen = set()
+        observed: set[InstrumentKey] = set()
+        for row in rows:
+            day = date.fromisoformat(row["trade_date"])
+            raw = row["instruments"]
+            evidence = row["calendar_evidence_refs"]
+            if (
+                day in seen
+                or not start <= day <= end
+                or not isinstance(raw, list)
+                or not isinstance(evidence, list)
+                or not evidence
+                or any(not isinstance(ref, str) or not ref.strip() for ref in evidence)
+            ):
+                raise ValueError()
+            members = tuple(
+                InstrumentKey(
+                    str(item["symbol"]), InstrumentType(str(item["instrument_type"]))
+                )
+                for item in raw
+            )
+            if (
+                len(set(members)) != len(members)
+                or not set(members) <= set(instruments)
+                or len(set(evidence)) != len(evidence)
+                or not set(evidence) <= set(refs)
+            ):
+                raise ValueError()
+            seen.add(day)
+            observed.update(members)
+            memberships.append(
+                (
+                    day,
+                    tuple(sorted(members, key=lambda key: key.storage_tuple())),
+                    tuple(evidence),
+                )
+            )
+        memberships.sort(key=lambda item: item[0])
+        if (
+            memberships[0][0] != start
+            or memberships[-1][0] != end
+            or observed != set(instruments)
+            or {ref for _, _, evidence in memberships for ref in evidence} != set(refs)
+        ):
+            raise ValueError()
+    except (KeyError, TypeError, ValueError) as exc:
+        raise VerifiedDailyMarketDataRequestError(
+            "verified_daily_market_range_payload_invalid"
+        ) from exc
+    return {
+        "range_start_date": start,
+        "range_end_date": end,
+        "session_memberships": tuple(memberships),
+    }
 
 
 class VerifiedDailyMarketDataService:
@@ -261,6 +419,14 @@ class VerifiedDailyMarketDataService:
     ) -> VerifiedDailyMarketPublication:
         request = VerifiedDailyMarketJobRequest.from_payload(payload)
         checked_at = _utc_now(checked_at) if checked_at is not None else None
+        if request.is_range:
+            return self._run_range(
+                request,
+                checked_at=checked_at,
+                before_publish=before_publish,
+                before_provider_fetch=before_provider_fetch,
+                publication_guard=publication_guard,
+            )
 
         daily_request = DailyBarRequest(
             request.instruments,
@@ -407,6 +573,183 @@ class VerifiedDailyMarketDataService:
             ),
         )
 
+    def _run_range(
+        self,
+        request: VerifiedDailyMarketJobRequest,
+        *,
+        checked_at: datetime | None,
+        before_publish: Callable[[], None] | None,
+        before_provider_fetch: Callable[[MarketDataProviderDescriptor], None] | None,
+        publication_guard: Callable[[Callable[[], None]], None] | None,
+    ) -> VerifiedDailyMarketPublication:
+        """Capture a historical range once per source; retain daily verification.
+
+        Memberships are an explicit transport projection, with no historical
+        availability claim. Each materialization retains the real range capture.
+        """
+        assert (
+            request.range_start_date is not None and request.range_end_date is not None
+        )
+        daily_request = DailyBarRequest(
+            request.instruments, request.range_start_date, request.range_end_date
+        )
+        expected = {
+            day: members for day, members, _ in request.session_memberships if members
+        }
+        policy = resolve_market_source_policy(request.source_policy_id)
+        pairs = resolve_daily_bar_verification_pairs(
+            policy,
+            provider_registry_for_config(self._config, include_tdx=False),
+            daily_request,
+        )
+        store = ContentAddressedObjectStore(self.root / "objects")
+        unavailable: set[str] = set()
+        attempted: list[tuple[str, str]] = []
+        evidence_rows: tuple[CrossSourceDailyBarResult, ...] = ()
+        selected_pair = None
+        for pair in pairs:
+            if {pair.primary_name, pair.comparison_name} & unavailable:
+                continue
+            attempted.append((pair.primary_name, pair.comparison_name))
+            try:
+                rows = ingest_cross_source_daily_bars_range(
+                    pair.primary,
+                    pair.comparison,
+                    store,
+                    request=daily_request,
+                    expected_sessions=expected,
+                    quality_policy=RESEARCH_STRICT_DAILY,
+                    normalizer_version=_NORMALIZER_VERSION,
+                    reconciliation_policy=pair.reconciliation_policy,
+                    checked_at=checked_at,
+                    before_fetch=before_provider_fetch,
+                )
+            except CrossSourceDailyBarUnavailableError as exc:
+                unavailable.add(exc.provider)
+                continue
+            for row in rows:
+                if not row.eligible_for_verified_dataset:
+                    raise VerifiedDailyMarketDataNotPublishable(
+                        _not_publishable_code(row),
+                        source_resolution=VerifiedDailySourceResolution(
+                            policy.policy_id,
+                            "quality_blocked"
+                            if row.verification is None
+                            else "conflict",
+                            tuple(attempted),
+                            tuple(sorted(unavailable)),
+                            (pair.primary_name, pair.comparison_name),
+                        ),
+                    )
+            evidence_rows, selected_pair = rows, pair
+            break
+        if not evidence_rows or selected_pair is None:
+            raise VerifiedDailyMarketDataUnavailable(
+                "verified_daily_market_sources_unavailable:"
+                + (",".join(sorted(unavailable)) or "unknown"),
+                source_resolution=VerifiedDailySourceResolution(
+                    policy.policy_id,
+                    "unavailable",
+                    tuple(attempted),
+                    tuple(sorted(unavailable)),
+                ),
+            )
+        if len(evidence_rows) != len(expected):
+            raise VerifiedDailyMarketDataError(
+                "verified_daily_market_range_coverage_mismatch"
+            )
+        pair = selected_pair
+        resolver_policy = DailyBarDatasetResolverPolicy(
+            policy_id=verified_daily_resolver_policy_id(policy.policy_id),
+            provider_priority=(pair.primary_name, pair.comparison_name),
+            required_quality_policy_id=RESEARCH_STRICT_DAILY.policy_id,
+        )
+        snapshots = []
+        for (day, members), evidence in zip(
+            expected.items(), evidence_rows, strict=True
+        ):
+            assert evidence.verification is not None
+            cutoff = max(
+                evidence.primary.capture.completed_at,
+                evidence.comparison.capture.completed_at,
+                evidence.verification.checked_at,
+            )
+            snapshot = resolve_daily_bar_dataset(
+                store,
+                candidates=evidence.resolution_candidates(),
+                start_date=day,
+                end_date=day,
+                cutoff=cutoff,
+                instruments=members,
+                expected_partition_dates=(day,),
+                policy=resolver_policy,
+            )
+            if not snapshot.verification_bound:
+                raise VerifiedDailyMarketDataNotPublishable(
+                    "verified_daily_market_dataset_not_verification_bound"
+                )
+            snapshots.append(snapshot)
+        snapshot = DailyBarDatasetSnapshot(
+            start_date=snapshots[0].start_date,
+            end_date=snapshots[-1].end_date,
+            cutoff=max(item.cutoff for item in snapshots),
+            instruments=request.instruments,
+            resolver_policy_id=resolver_policy.policy_id,
+            market_schema_version=snapshots[0].market_schema_version,
+            partitions=tuple(
+                replace(item.partitions[0], instruments=item.instruments)
+                for item in snapshots
+            ),
+            session_memberships=tuple(
+                DailyBarDatasetMembership(
+                    item.start_date, item.instruments, item.cutoff
+                )
+                for item in snapshots
+            ),
+            universe_policy_id="karkinos.dataset.verified_range_projection.v1",
+        )
+        ref = publish_daily_bar_dataset_manifest(store, snapshot)
+        if read_daily_bar_dataset(store, ref).snapshot != snapshot:
+            raise VerifiedDailyMarketDataError(
+                "verified_daily_market_dataset_replay_mismatch"
+            )
+        if before_publish is not None:
+            before_publish()
+
+        def publish() -> None:
+            DatasetCatalog(self.root).register(
+                store, ref, registered_at=snapshot.cutoff
+            )
+            serving = MarketServingStore(self.root)
+            for daily, evidence in zip(snapshots, evidence_rows, strict=True):
+                selected = _selected_candidate(evidence, daily.partitions[0].provider)
+                serving.apply_daily_bar_revision(
+                    store,
+                    revision=selected.revision,
+                    materialization=selected.materialization,
+                )
+
+        if publication_guard is None:
+            publish()
+        else:
+            publication_guard(publish)
+        assert evidence_rows[-1].verification is not None
+        return VerifiedDailyMarketPublication(
+            dataset_ref=ref,
+            verification_id=evidence_rows[-1].verification.verification_id,
+            trade_date=request.trade_date,
+            source_policy_id=policy.policy_id,
+            primary_provider=pair.primary_name,
+            comparison_provider=pair.comparison_name,
+            source_resolution=VerifiedDailySourceResolution(
+                policy.policy_id,
+                "matched",
+                tuple(attempted),
+                tuple(sorted(unavailable)),
+                (pair.primary_name, pair.comparison_name),
+            ),
+        )
+
 
 def _selected_candidate(
     evidence: CrossSourceDailyBarResult,
@@ -447,6 +790,7 @@ def _utc_now(value: datetime | None) -> datetime:
 
 __all__ = [
     "VERIFIED_DAILY_MARKET_JOB_SCHEMA_VERSION",
+    "VERIFIED_DAILY_MARKET_RANGE_JOB_SCHEMA_VERSION",
     "VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT",
     "VerifiedDailyMarketDataError",
     "VerifiedDailyMarketDataNotPublishable",

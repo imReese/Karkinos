@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from core.types import (
@@ -37,6 +38,98 @@ class Instrument:
 
 
 # ---------- 工厂函数 ----------
+
+RESEARCH_STOCK_TRADING_RULES_ID = (
+    "karkinos.a_share.ordinary_session.conservative_lots.v1"
+)
+
+
+def a_share_identity(symbol: str) -> dict[str, str] | None:
+    """Canonical ordinary A-share exchange and board identity."""
+    if len(symbol) != 6 or not symbol.isdigit():
+        return None
+    if symbol.startswith(("600", "601", "603", "605")):
+        return {"exchange": "SSE", "board": "sse_main"}
+    if symbol.startswith(("688", "689")):
+        return {"exchange": "SSE", "board": "star"}
+    if symbol.startswith(("000", "001", "002", "003")):
+        return {"exchange": "SZSE", "board": "szse_main"}
+    if symbol.startswith(("300", "301")):
+        return {"exchange": "SZSE", "board": "chinext"}
+    if symbol.startswith(("4", "8", "92")):
+        return {"exchange": "BSE", "board": "beijing"}
+    return None
+
+
+def entry_board_symbols(
+    allowed_boards: Sequence[str], symbols: Sequence[str]
+) -> set[str]:
+    """Apply an entry mask without shrinking market membership or forecasts."""
+    allowed = set(allowed_boards)
+    return {
+        symbol
+        for symbol in symbols
+        if (identity := a_share_identity(symbol)) is not None
+        and (
+            identity["board"] in allowed
+            or "main" in allowed
+            and identity["board"] in {"sse_main", "szse_main"}
+        )
+    }
+
+
+def make_research_stock(symbol: str, name: str) -> Instrument:
+    """Opt-in ordinary-session model for the deployment-scope research path.
+
+    STAR trades use a legal conservative subset (multiples of 200), rather than
+    claiming the exchange requires a 200-share increment. BSE trades similarly
+    use multiples of 100. This factory does not establish current permissions,
+    ST status, listing age, or eligibility for an ordinary-session price limit.
+
+    Exchange rules: SSE 2026 sections 6.6/6.7; BSE 2026 sections 3.3.8/3.3.11.
+    https://www.sse.com.cn/lawandrules/sselawsrules2025/fund/trading/c/c_20260424_10817739.shtml
+    https://www.bse.cn/jygl_list/200028217.html
+    """
+    if len(symbol) != 6 or not symbol.isdigit():
+        raise ValueError("research_stock_symbol_invalid")
+    identity = a_share_identity(symbol)
+    if identity is None:
+        raise ValueError("research_stock_board_unsupported")
+    if identity["board"] == "star":
+        return replace(
+            make_stock(symbol, name), lot_size=Decimal("200"), limit_pct=Decimal("0.20")
+        )
+    if identity["board"] == "beijing":
+        return replace(make_stock(symbol, name), limit_pct=Decimal("0.30"))
+    return make_stock(symbol, name)
+
+
+def research_stock_session_blocker(
+    symbol: str,
+    *,
+    is_st: bool | None = None,
+    listing_session_count: int | None = None,
+    in_delisting_period: bool | None = None,
+) -> str | None:
+    """Separate known exclusions from unavailable ordinary-session evidence."""
+    make_research_stock(symbol, symbol)
+    if is_st is True:
+        return "special_treatment_excluded"
+    if in_delisting_period is True:
+        return "delisting_period_excluded"
+    if listing_session_count is not None:
+        if type(listing_session_count) is not int or listing_session_count < 1:
+            raise ValueError("research_stock_listing_age_invalid")
+        initial_sessions = 1 if symbol.startswith(("4", "8", "92")) else 5
+        if listing_session_count <= initial_sessions:
+            return "initial_listing_period_excluded"
+    if (
+        is_st is not False
+        or in_delisting_period is not False
+        or listing_session_count is None
+    ):
+        return "ordinary_session_state_unverified"
+    return None
 
 
 def make_stock(

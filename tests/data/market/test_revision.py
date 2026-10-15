@@ -451,12 +451,12 @@ def test_valid_materialization_replays_revision(
         normalizer_version="karkinos.market.normalize.v1",
     )
 
-    # 成功时不返回值，只要不抛异常即表示完整 lineage 可重放。
-    validate_daily_bar_materialization(
+    bars = validate_daily_bar_materialization(
         store,
         revision=revision,
         materialization=materialization,
     )
+    assert bars == tuple(sorted(_bars(), key=lambda bar: bar.instrument.symbol))
 
 
 def test_materialization_rejects_wrong_capture_provider(

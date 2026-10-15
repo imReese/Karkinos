@@ -108,6 +108,27 @@ def test_free_policy_exposes_all_independent_pairs_in_preference_order() -> None
     ]
 
 
+def test_beijing_preflight_excludes_unsupported_sources_before_provider_io():
+    day = date(2026, 9, 17)
+    request = DailyBarRequest(
+        (InstrumentKey("920001", InstrumentType.STOCK),), day, day
+    )
+    with pytest.raises(
+        MarketSourceRoutingError, match="verified_daily_pair_unavailable"
+    ):
+        resolve_daily_bar_verification_pairs(
+            FREE_CN_RESEARCH_V1, build_provider_registry(include_tdx=False), request
+        )
+    pairs = resolve_daily_bar_verification_pairs(
+        FREE_CN_RESEARCH_V1,
+        build_provider_registry(tushare_token="fixture", include_tdx=False),
+        request,
+    )
+    assert [(pair.primary_name, pair.comparison_name) for pair in pairs] == [
+        ("akshare", "tushare")
+    ]
+
+
 def test_free_policy_pair_supports_etf_unadjusted_daily_bars() -> None:
     pair = resolve_daily_bar_verification_pair(
         FREE_CN_RESEARCH_V1,
