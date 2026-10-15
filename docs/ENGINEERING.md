@@ -114,17 +114,22 @@ failed, cancelled, skipped, or missing results block the gate.
 
 Every commit runs Python quality, repository integrity, secret scanning, the
 backend suite with coverage, trading safety, frontend checks, workflow security,
-and a small product smoke suite. Trading safety runs independently of quality
+and product journey checks. Trading safety runs independently of quality
 results once source identity is established. No path classifier can skip these
 correctness checks.
 
-One Python job runs three disjoint groups: ordinary tests with
-`-m "not trading_safety and not product_smoke"`, Trading safety with
+One Python job runs four disjoint groups: ordinary tests with
+`-m "not trading_safety and not product_smoke and not database_format"`,
+database format conformance with `-m database_format`, trading safety with
 `-m trading_safety`, and Python product smoke with `-m product_smoke`.
 Each test runs once. The job accumulates coverage locally and enforces the existing
-85% threshold after all three groups. A failed group does not skip the remaining
+85% threshold after all four groups. A failed group does not skip the remaining
 groups and still fails the job. Dedicated smoke tests must not also carry the
 trading-safety marker. The small browser safety smoke remains a separate job.
+
+The backend job allows 90 minutes for coverage and the real 60-session forward
+book, independent evaluation, account qualification and recommendation publication
+journey, alongside the other Python groups.
 
 `.github/workflows/nightly.yml` owns the complete browser suite, Docker runtime
 smoke, dependency audits, and full Git-history secret scanning. Commit CI scans

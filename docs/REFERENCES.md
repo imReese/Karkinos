@@ -16,6 +16,13 @@ and [scikit-learn's evaluation guidance](https://scikit-learn.org/stable/modules
 for separation of iterative validation from final test data. Karkinos retains its
 own publication authority and independent Risk Decision semantics.
 
+Full-market validation also consults [LEAN universe history](https://www.quantconnect.com/docs/v2/writing-algorithms/historical-data/universe-data)
+for time-varying membership, [Qlib portfolio strategies](https://qlib.readthedocs.io/en/stable/component/strategy.html)
+for the distinction between predictions and a capital-constrained portfolio, and
+[Bailey and Lopez de Prado's Deflated Sharpe Ratio paper](https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf)
+for search multiplicity and the assumptions behind statistical evidence. These
+references do not supply universal admission thresholds or Karkinos authority.
+
 ## Reference rules
 
 - Extract domain semantics and trade-offs, not project structure by default.

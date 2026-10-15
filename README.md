@@ -153,7 +153,28 @@ The default `market_data.source_policy` is **`free_cn_research_v1`**. The data w
 4. Enable data preparation, automatic advance and paper settlement separately in the observation panel. Keep the service and data worker running.
 5. Inspect modeled net performance, benchmark-relative return, drawdown and costs in the same panel. Missing data waits; targets missed before the next opening are never backfilled. Use outcomes to decide whether to continue, pause or start a new research experiment.
 
-Automatic preparation preserves the frozen input prefix and appends subsequent verified sessions in batches of at most 366 calendar days, for up to 32 instruments and within the observation's frozen row budget. Completed batches remain available across restart; provider budgets and revocation checks still apply. A newly selected warmup Dataset is a new forward experiment, not verification or replacement of the old report's historical inputs. ETF paper results currently use price-only returns. Observation evidence does not grant account qualification or publication authority.
+Legacy fixed-basket preparation preserves the frozen input prefix and appends subsequent verified sessions in batches of at most 366 calendar days, within the observation's frozen instrument and row budgets. New full-scope formula observations instead compose dated, complete market shards within explicit session and row budgets; provider batch size does not restrict their research universe. Completed batches remain available across restart; provider budgets and revocation checks still apply. A newly selected warmup Dataset is a new forward experiment, not verification or replacement of the old report's historical inputs. ETF paper results currently use price-only returns. Observation evidence does not grant account qualification or publication authority.
+
+Account recommendation publication has a separate, default-off standing grant in
+AI Research. Review its account and market scope, tested capital, actual fee
+coverage, statistical budget, checkpoint, risk limits and expiry before enabling
+it. A passing full-scope final evaluation and current account qualification may
+then publish or replace only its designated recommendation source automatically,
+without another confirmation for each candidate. The grant also starts and resumes
+the frozen forward book with coordinated data preparation, targets and settlement;
+missing inputs wait, and missed prospective targets cannot be created afterward.
+Revoking or expiring the grant makes its sources unusable without restoring an
+older strategy; it grants no broker, order or trade authority.
+
+The current formula portfolio permits at most four positions. New entries are
+sized within 25% per symbol and 97% gross exposure; held positions retain their
+actual share quantities until an exit signal. Grant risk limits bound **observed**
+book exposure and drawdown, including modeled costs and price movements.
+The proposed per-symbol observed limit defaults to 30%, while the target remains
+25%. Limits below the fixed target policy are rejected. Proposed capital is also
+capped by the actual reviewed fee notional envelope. Infeasible checkpoints,
+insufficient bootstrap resolution and samples beyond the supported observation
+budget block authorization; these defaults are not guarantees of profitability.
 
 ## Development
 

@@ -335,6 +335,43 @@ Invariants:
 * Research charts consume canonical platform outputs.
 * Browser code must not independently recreate authoritative research metrics.
 
+Research presents three separate scopes: development sample, final validation
+universe and permitted recommendation universe. A sampled result never appears
+as full-market evidence. A full-market result names its eligibility rule and
+shows expected, evaluated, excluded and unresolved coverage with an as-of date.
+
+Use saved research batches, iteration numbers and actual parent identities for
+lineage. A global generation number is shown only if the backend actually owns
+that identity. Model names, formulas, metrics, report links, gate checks and
+evidence identities come from their bound records. Empty, loading, failed and
+unknown states cannot display a default champion or fabricated PASS. Gate counts
+derive from required checks, and research ranking is distinct from admission.
+
+The primary research journey follows a selected candidate through full-scope
+validation, a frozen forward experiment, current account qualification and a
+publication decision. Show the latest accepted target, last settlement, effective
+observation length, net performance versus the frozen comparator, costs, cash
+drag, risks and missing evidence. Started, running and evidence-sufficient are
+different facts. Backtest results and paper outcomes remain labeled separately.
+
+Automatic simulation and automatic account-recommendation publication are
+separately enabled scopes. Before enabling either, show its market, resource and
+risk bounds, validation requirements, replacement/exit conditions and revocation
+control. After authorization, routine eligible candidates do not require repeated
+confirmation. Each automated decision shows its actual policy source and affected
+version; it must never appear as a human-reviewed candidate. Order or capital
+permissions remain separately visible and cannot be inferred from these controls.
+Pausing future automatic replacements and revoking current recommendation
+authority are distinct controls with explicit effects on the incumbent. Neither
+action erases books or stops the maintenance of existing holdings.
+
+Keep run state, evidence disposition and account applicability/publication visible
+as separate dimensions. A healthy worker, completed scan, highest research rank
+or a paper rule marked within-range does not by itself mean investment edge.
+Results can legitimately be preliminary edge, insufficient evidence or no edge.
+An automatic replacement identifies the prior source, comparable evidence and
+reason; it does not turn the older book's history into the new candidate's return.
+
 ---
 
 ## 7. Portfolio

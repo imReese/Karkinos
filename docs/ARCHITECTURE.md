@@ -146,6 +146,140 @@ Rules:
 - Publication binds the intended consumer and financial book. A forecast published
   for research simulation is not eligible for actual-account recommendations.
 
+### Deployment scope and full-market validation
+
+The validation subject is a deployable strategy version: formula and parameters,
+universe eligibility and timing rules, feature/return basis, signal-state rules,
+candidate ranking, total position limits, allocation and cash policy, market
+constraints, costs, decision/execution clock, and deterministic implementation.
+Formula equality alone does not establish strategy equality.
+
+The same versioned universe rule applies in research, final evaluation, forward
+simulation and recommendations. Membership is resolved with facts available at
+each decision cutoff; the rule may admit new listings and remove ineligible
+members without silently changing the strategy. Held instruments retain their
+valuation and exit-maintenance lane after leaving the buy universe. Unknown
+listing, trading or availability facts are not known exclusions.
+
+Full-market means the explicitly declared eligible market, not every security
+irrespective of exchange support, liquidity, listing history or account
+permissions. A restricted scope must be named and validated as such. Deployment
+cannot exceed its validated scope; adding exchanges or changing eligibility,
+ranking, feature basis or execution rules requires a new applicable evaluation.
+The legacy 40-stock research panel preserves its frozen replay identity; new
+full-scope experiments do not inherit that sample bound. Sampled development is permitted for bounded early
+screening, with selection fixed before inspecting outcomes. It never supplies
+full-market qualification. Full-scope development is preferred when measured
+local runtime and resource budgets permit it.
+
+Historical universe reconstruction includes the securities and states known at
+the historical cutoff, including subsequently delisted members. Today's active
+master cannot certify historical membership. When historical PIT or economic
+return inputs are unavailable, historical results remain exploratory. A new
+preregistered full-scope prospective experiment can accumulate independently
+valid evidence from actual captures; it does not repair the historical claim.
+
+Provider batch size and dataset scope are separate. Existing capture, verified
+jobs, object storage and Dataset readers remain the data path. Dataset
+manifest v4 references daily membership and disjoint collection shards;
+previous versions and their frozen budgets retain their original meaning. A
+complete section validates expected membership, duplicate/missing rows, source
+identities, verification and decision availability before publication. Separate
+captures remain separate provenance. Features may be computed by shard, but
+global ranking, portfolio allocation and the financial book are not sharded into
+independent portfolios whose equity curves are later combined.
+
+The reader verifies original capture hashes and both source materializations,
+and reuses the canonical bars already decoded during that verification. One
+daily recommendation read may reuse fully verified immutable Dataset reads with
+the same object-store root and DatasetRef through preparation, quote freezing,
+the persisted scan and current-input checks. Nested consumers explicitly join
+that call's scope; independent scans and the next daily read verify the bytes
+again. Grant, publication, account, fees, health and risk
+checks still run at consumption and before atomic task publication. Data reuse
+never caches an authority decision.
+
+Coverage is measured against the declared universe before provider failures are
+removed. Operational sync thresholds do not prove full validation coverage.
+Known policy exclusions, unavailable evidence and actually evaluated members
+remain separately countable. Missing members that could change a global ranking
+block that strategy's affected new targets; they do not disable unrelated books
+or excuse missing valuation of an existing position. A narrower available-data
+scope is admissible only when explicitly declared in advance and used throughout
+the experiment and publication.
+
+Research, historical validation, forward paper and recommendation adapters use
+one deterministic session-level decision path. It evaluates the admitted cross
+section, emits forecasts, then invokes the existing Portfolio and Risk owners.
+The path uses the relevant book's actual positions and available cash: held
+positions consume total slots, unfilled targets are not positions, an unfilled
+exit does not free a slot or cash, and new allocations reserve their full modeled
+cost. Positions outside a strategy's approved scope are constraints, not implicit
+authority for that strategy to sell them. Stable tie-breaking removes dependence
+on bar, symbol or shard traversal order. Accounting and execution retain their
+own calculations and isolated books.
+
+The initial formula policy uses entry and exit intents. A hold preserves actual
+share quantity as prices move; its observed weight remains book metadata. The
+25% symbol target sizes a new entry, while the separately authorized observed
+concentration bound governs the resulting book.
+
+Signal features use a frozen, as-of-valid treatment of corporate actions;
+execution and accounting use raw tradable prices and explicit distributions.
+Adjusted features must not book distributions a second time. Cost, tax, lot,
+suspension, price-limit and participation assumptions apply consistently across
+candidate and comparators. A next-session-close simulation establishes evidence
+for that explicit model only; an intraday recommendation/execution window needs
+its corresponding timing and price evidence.
+
+Validation is portfolio-level, with shared capital, simultaneous opportunities,
+cash drag, actual slot limits, modeled fills and costs. Per-stock success rates
+or the average of independent stock backtests cannot replace it. The primary
+simple comparator must be executable at the tested capital and have the same
+return basis; a thousands-name equal-weight index can be a diagnostic but cannot
+be presented as an executable small-account baseline. Frozen simple/random
+challengers share the universe, clock, risk/capital limits and costs. Market,
+sector, size and liquidity attribution expose concentrated explanations without
+requiring every stock or subgroup to make money.
+
+Full-scope development and rolling validation may guide revisions. Final evidence
+starts after the formula, universe rule, portfolio/execution implementation,
+comparators, cost scenarios, search budget and evaluation checkpoints are frozen.
+It consists of an untouched, correctly timed final interval or a genuinely new
+prospective interval over that same deployment scope. A viewed historical tail
+does not become untouched by changing its label. All related trials, parameter
+variants and development panels remain in the research history when scope
+changes; changing a sample does not reset the search count.
+
+Final evaluation uses the full portfolio's net outcomes, uncertainty and risk
+constraints. Thousands of correlated stocks do not create thousands of
+independent time observations. Autocorrelation and overlapping holding periods
+must be reflected in the chosen inference method; DSR/PBO are supplementary
+diagnostics under their stated assumptions, not substitutes for independent
+evidence. Observation horizon, effective sample requirements, minimum useful
+improvement, risk limits and statistical error budget are explicit preregistered
+policy. They are not universal Sharpe or day-count constants. Repeated candidate
+tests, related research cycles and repeated looks at accumulating performance
+consume the standing grant's preregistered nominal error budget. New run IDs,
+development samples or policy renewal do not erase already consumed related
+tests. Finite cycles/checkpoints may share a conservatively allocated budget;
+inference assumptions and finite-sample limitations remain explicit.
+Checking worker health daily does not create permission to test for admission
+daily until a candidate happens to pass.
+
+The simplest research schedule is a bounded development cycle, one frozen
+champion and comparator family, then a fixed final observation and decision.
+That candidate's development cutoff stays frozen throughout the final interval.
+Capture, settlement and operational monitoring continue. With the current global
+holdout-exposure guard, overlapping model research that would consume final dates
+must keep the frozen cutoff or wait. Concurrent current-market research requires
+explicit experiment isolation and bounded cross-candidate testing before that
+guard can be changed. Consumed data are never reused as an untouched test to
+select another version. Concurrent final candidates or checkpoints must be bounded
+and accounted for before their results are inspected.
+Insufficient evidence remains a supported outcome; a final failure is retained
+instead of triggering unlimited optimization on the same final interval.
+
 ## 5. Portfolio and risk
 
 ```text
@@ -190,7 +324,7 @@ Rebalance Plan
 
 Backtest and paper may use simulated Order/Fill semantics. Shadow may evaluate a target or plan without an Order/Fill lifecycle.
 
-The daily-bar backtest engine queues completed-bar targets for a strictly later
+The existing bounded daily-bar backtest engine queues completed-bar targets for a strictly later
 bar of the same instrument and sizes them at that later close. A final-bar signal
 without a later price cannot fill. Baselines, Formula DSL candidates and parameter
 variants share this execution rule, including execution-time trading constraints.
@@ -199,6 +333,11 @@ order. Same-time instruments are processed in deterministic symbol order rather
 than as a simultaneous portfolio rebalance.
 Saved results identify the timing policy; missing metadata on an older result
 does not establish its execution timing.
+These are preserved legacy replay semantics. The full-deployment-scope path must
+first complete the session's cross-sectional decisions and shared-capital
+allocation; it cannot inherit symbol-order portfolio selection and call it the
+same validated strategy. Existing matching/accounting may be reused behind that
+path without changing previously saved results or their timing-policy identity.
 
 The `next_bar_close.v2` policy also checks each final buy fill against available
 cash, including its simulated price and complete fees. Quantity reductions use
@@ -325,7 +464,7 @@ Research Task
       -> Attribution / Alpha Health -> continue / pause / retire / research feedback
    -> Final Qualification Evidence (independent holdout or forward observation)
       -> Account Qualification
-      -> Human Account Publication Review
+      -> Account Publication (human decision or standing publication policy)
       -> Account-scoped Forecast
       -> Current Portfolio / Risk / Rebalance Plan
       -> Human Trade Review
@@ -334,8 +473,10 @@ Research Task
 Research selection, simulation admission, account qualification, account publication,
 and trade approval are distinct decisions. An AI-generated candidate never
 authorizes its own publication. Deterministic platform code may admit it to
-simulation under an explicit owner-authorized policy; this records an automated
-decision, not human confirmation.
+simulation, or publish a qualified version for bounded account recommendations,
+under the corresponding explicit owner-authorized policy. These record automated
+decisions, not per-candidate human confirmation. Research, simulation and account
+publication permissions remain separate grants.
 
 An exact exploratory Dataset snapshot with complete content identities and clean
 consumed rows can support research selection and hypothetical simulation. Its
@@ -354,7 +495,7 @@ rules. These assumptions do not prove venue liquidity or executable returns.
 | Research selection | Frozen datasets, formulas, costs, evaluation; Research | Selects an experiment for further work |
 | Simulation admission | Research evidence and standing simulation policy; Research / Simulation | Activates one frozen version for a specified hypothetical book |
 | Account qualification | Frozen strategy, current Account Truth, valuation, reviewed fees and account-sized replay; deterministic qualification | Establishes account applicability for those exact inputs |
-| Account publication | Qualification and observation evidence plus human review; Research publication | Allows the exact version to supply account recommendations |
+| Account publication | Scope-matched final evidence, current qualification and either human review or an active standing publication grant; Research publication | Allows the exact version to supply bounded account recommendations |
 | Trade approval | Current account, market, portfolio and risk evidence plus human decision | Remains separate from research and simulation |
 
 Keep research disposition, observation lifecycle, account applicability, and
@@ -363,12 +504,47 @@ in for all four. Their identities bind the frozen strategy version and applicabl
 book/account, policy and evidence. A new experiment does not replace a published
 incumbent merely because it wins that day's ranking.
 
-Human account publication approves a specific version and bounded account use,
-with explicit validity and revocation conditions. Daily recommendation generation
-then runs deterministically inside that scope, checking current account, market
-and risk facts each time. Ordinary snapshot refresh is not a new strategy approval;
-changed formulas, cost rules or approved limits require a new applicable decision.
-Refreshing evidence does not widen an existing publication's scope.
+An owner may approve one version or explicitly enable automatic publication under
+a standing policy. The latter binds the account/strategy allocation scope,
+permitted market and strategy family, capital/risk and resource bounds, required
+full-scope validation, evaluation checkpoints, replacement/health rules, expiry
+and revocation. It is default-off and cannot be inferred from an enabled research
+or simulation policy. It authorizes recommendation publication only, not orders,
+broker access or increased capital authority. No per-candidate human click is
+required inside that grant.
+
+The grant freezes the account's permitted entry boards before ranking. Research
+data and features still cover the full declared universe; baseline, candidate,
+comparators, forward paper and account recommendations apply the same entry
+constraint. Unsupported trade units remain excluded. A later permission loss
+blocks new policy buys rather than silently substituting a narrower portfolio;
+exit maintenance remains available. Daily formula initialization uses the frozen
+forward seed's history boundary, independent of mutable runtime start dates.
+
+An automated publication decision binds the policy identity/generation, exact
+candidate and deployment rules, final-evidence interval, current qualification,
+and expected incumbent version. The publication command revalidates all of them
+and the grant immediately before an atomic, idempotent write. Changing a formula,
+scope, cost rule or approved limit requires a new applicable decision; the policy
+may authorize that new decision but cannot reuse incompatible evidence. Ordinary
+snapshot refresh does not widen an existing publication's scope.
+
+Daily recommendations run deterministically inside the approved scope, checking
+publication validity, the bound grant's expiry/revocation, and current account,
+market and risk facts each time. Revoking or expiring a grant invalidates the
+sources whose authority depends on it; it does not erase their history or stop
+valuation and exit maintenance. Pausing future automatic admission/replacement
+is a separate scheduling control and may retain a currently valid publication
+under its still-active grant. The UI distinguishes these effects explicitly.
+A replacement must satisfy the
+preregistered absolute admission requirements and its net benefit over a
+comparable incumbent, after transition costs. Comparison uses a common interval,
+capital, data, timing and cost basis; the incumbent's original lifetime return
+is not compared directly with a new book. Replacement frequency and minimum
+improvement prevent daily winner churn. Only the specifically authorized source
+is superseded; other strategies and books are unaffected. Switching publication
+does not liquidate actual holdings, inherit simulated fills, or reset performance.
+Existing holdings retain explicit ownership and a transition/exit plan.
 
 Research and simulation do not depend on actual-account completeness. Missing or
 stale account facts block qualification and account recommendations. Shared market
@@ -482,11 +658,23 @@ When this supply permission is enabled, automatic target and paper consumers als
 check the selected Dataset against the original prefix. A newer catalog entry
 with revised history blocks the action; it cannot silently substitute that history
 or cause fallback to an older matching entry.
-The scope is at most 32 instruments, within the frozen total row limit and configured
-provider budgets. Each appended batch spans at most 366 calendar days; successful
+Legacy fixed-basket observations retain their frozen instrument/row budgets and
+configured provider budgets. Full-scope formula observations compose complete
+dated shards, bounded by 10,000 instruments, 2,000 sessions and 20 million rows. Each appended batch spans at most 366 calendar days; successful
 batches extend the preserved prefix and serve as the next batch's cursor. Pending
 or failed jobs cannot advance that cursor. Long-lived observations do not lose data
 supply merely because their original start is more than a year old.
+
+Full-scope cash books also collect prospective corporate actions through the
+existing leased data queue. Four actual all-market dividend queries per calendar
+day bind their raw captures and availability to the Dataset, beginning at the
+cash book's observation start. Collection waits for the provider's 21:00 update
+window and consumes the existing daily call budget. Truncated responses,
+incomplete implemented terms, conflicting revisions or missing days block the
+affected settlement. This is provider-reported coverage, not a historical warmup
+or exchange-completeness guarantee. Heavy immutable composition and replay run
+outside the account write lock; final catalog acceptance rechecks the current
+permission and generation in a short transaction.
 
 At observation creation, an explicit forward Dataset may supply a separate warmup
 history. The source report identity, original research dates and parameters stay
@@ -497,6 +685,29 @@ old backtest state. Subsequent manual and automatic observation/paper inputs mus
 preserve its exact partitions. Existing observations without this binding retain
 their original source history. A verified prefix is still required for automatic
 preparation; a new seed does not certify historical research or account publication.
+
+Cold full-scope warmup collects each stock shard over its complete required date
+range, rather than fetching the same stock separately for every historical day.
+Each source retains one genuine range capture; normalization, revisions, quality
+and independent reconciliation remain dated per session. The capture's actual
+completion time remains its conservative availability boundary. Missing sessions,
+duplicate rows, incomplete membership or a conflicting source block acceptance.
+The forward interval is frozen only after the seed is ready; late historical
+collection cannot become an already elapsed forward sample.
+
+Opted-in current forward input jobs take precedence over ordinary historical
+watchlist collection. The existing daily provider-attempt budget remains bounded;
+its status exposes the next Shanghai-midnight reset and deferred jobs retain their
+actual retry time. A transport batch may contain multiple real SDK requests, so
+the attempt count is not a count of individual network requests or a completion
+time guarantee. Source failures or insufficient supply can still miss a target's
+next-opening deadline; those targets remain missed. While full-scope preparation
+is enabled, ordinary historical jobs yield their allowance on verified trading
+days, including before the close; non-trading days can use remaining capacity.
+One book's bounded preparation batch shares its already verified immutable reads
+across collection guards. The first cold read occurs before an individual job's
+execution timeout. Each provider entry still rereads mutable permission, lease
+and calendar state; another book or the next batch verifies its Dataset cold.
 
 This permission never enables target publication or paper settlement. Queued jobs
 bind the configuration generation. Revocation is checked at provider entry, visible
@@ -597,16 +808,30 @@ inputs and current state. Events identify human versus automated decisions and
 their evidence. Automated decisions never fill `human_review`,
 `human_approval_id`, or `manual_confirmation_recorded` with fabricated confirmation.
 
-The current legacy runtime has a narrower contract: `strategy_promotion_states`
-with `stage=paper_shadow` means a human-reviewed account-recommendation source.
-`promoted_strategy_universe_scan` consumes it through the existing qualification,
-artifact and human-review gates. Preserve those persisted records and readers;
-do not reinterpret this stage as automatic research-simulation admission.
-Normalized research already publishes a read-only operation preview, which is
-research evidence rather than a simulation run. The current paper/shadow runner
-consumes account trading plans and does not supply an independent research book.
-Implement independent observation before adding automatic simulation admission,
-and keep its inputs outside the account scan. Delivery sequence belongs to
+Legacy `strategy_promotion_states` with `stage=paper_shadow` identify an
+account-recommendation publication, not an independent research simulation.
+Preserve existing human-reviewed records and their validation. Policy-authorized
+publication needs an explicit decision-source and grant/evidence binding in the
+existing publication contract; a stage flag or nonempty actor name is never
+sufficient. Do not reinterpret legacy records as a new grant or manufacture
+human confirmation for automated decisions.
+
+Historical qualification auto-switch records and static frontend PASS/champion
+presentation did not implement this authority model. Historical automated approval
+records without a bound publication grant remain inspectable but cannot acquire
+authority retroactively. Exclude such sources from the usable publication set
+without disabling valid unrelated sources; if none remain, report no applicable
+source. Never rewrite immutable approvals or automatically revive retired
+incumbents. A fresh applicable publication decision needs a real grant or human
+review and freshly validated evidence; recovery of a qualification with an
+existing immutable approval must not overwrite that approval.
+
+Reuse the existing observation, paper book, policy storage, publication commands
+and events. The account-plan paper runner is not an independent full-market
+experiment. The existing fixed-basket observation cannot be relabeled as
+full-market validation. New data composition and decision-source bindings belong
+in these existing owners, with versioned persistence only where their actual
+consumers require it. Delivery sequence and implementation gaps belong to
 [PLAN.md](PLAN.md).
 
 New research contracts should prefer provider-neutral entities:
