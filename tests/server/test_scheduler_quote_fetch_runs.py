@@ -29,6 +29,17 @@ from server.db import AppDatabase
 from server.services.valuation_snapshot import build_current_valuation_snapshot
 
 
+@pytest.fixture(autouse=True)
+def isolated_rotation_data(monkeypatch, tmp_path):
+    # Stock quote publication also attempts the unrelated ETF refresh. Keep
+    # that real side path in this test's directory, never the owner's store.
+    from server.services.etf_rotation_automation import EtfRotationAutomationService
+
+    monkeypatch.setattr(
+        EtfRotationAutomationService, "default_data_dir", tmp_path / "rotation-data"
+    )
+
+
 class FakeBridge:
     def __init__(self) -> None:
         self.bound_bus = None

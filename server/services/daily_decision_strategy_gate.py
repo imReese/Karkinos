@@ -77,15 +77,26 @@ def build_daily_candidate_strategy_gate_binding(
         blockers.append("strategy_paper_shadow_gate_not_enabled")
     if promotion.get("live_like_enabled") is not False:
         blockers.append("strategy_live_like_boundary_invalid")
-    if not str(promotion.get("human_reviewer") or "").strip():
-        blockers.append("strategy_human_reviewer_missing")
-    if promotion.get("human_review_note_recorded") is not True:
-        blockers.append("strategy_human_review_note_missing")
+    policy_publication = promotion.get("decision_source") == "policy"
+    if policy_publication:
+        decision = object_dict(promotion.get("publication_decision"))
+        grant = object_dict(promotion.get("publication_grant"))
+        if (
+            not decision.get("grant_id")
+            or decision.get("grant_id") != grant.get("grant_id")
+            or decision.get("generation") != grant.get("generation")
+        ):
+            blockers.append("strategy_publication_grant_binding_invalid")
+    else:
+        if not str(promotion.get("human_reviewer") or "").strip():
+            blockers.append("strategy_human_reviewer_missing")
+        if promotion.get("human_review_note_recorded") is not True:
+            blockers.append("strategy_human_review_note_missing")
     comparison_fingerprint = str(promotion.get("comparison_fingerprint") or "")
     if not is_sha256(comparison_fingerprint):
         blockers.append("strategy_comparison_fingerprint_invalid")
     human_approval_id = str(promotion.get("human_approval_id") or "")
-    if not human_approval_id:
+    if not policy_publication and not human_approval_id:
         blockers.append("strategy_human_approval_missing")
     daily_strategy_artifact_binding = object_dict(
         promotion.get("daily_strategy_artifact_binding")

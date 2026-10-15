@@ -12,6 +12,9 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from data.research_market_data import (
+    resolve_daily_bar_receipts as resolve_daily_bar_receipts,
+)
 from server.ai_runtime.contracts import content_fingerprint
 from server.ai_runtime.formula_dsl import (
     FORMULA_AST_CONTRACT,
@@ -31,7 +34,7 @@ SHANGHAI_TIME_ZONE = ZoneInfo("Asia/Shanghai")
 DECISION_WINDOW_START = time(9, 35)
 DECISION_WINDOW_END = time(9, 45)
 PROMOTED_STRATEGY_SCAN_EVALUATION_POLICY_VERSION = (
-    "karkinos.promoted_strategy_universe_scan_evaluation_policy.v4"
+    "karkinos.promoted_strategy_universe_scan_evaluation_policy.v5"
 )
 SIGNAL_SELECTION_POLICY = (
     "exits_first_fail_closed_on_multi_strategy_sell_symbol_conflict_"
@@ -213,8 +216,113 @@ def account_eligible_signals(
     portfolio: Mapping[str, Any],
     policy: MarketUniversePolicy,
     cash_buffer_ratio: Decimal,
+    db: Any = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     """Keep research signals intact while choosing only affordable account buys."""
+    signals, profile_blocked = policy_entry_signals(
+        signals, portfolio=portfolio, decision_date=decision_date, db=db
+    )
+    if any(signal.get("portfolio_policy_id") for signal in signals):
+        policy_buys = [
+            row
+            for row in signals
+            if row.get("direction") == "buy" and row.get("portfolio_policy_id")
+        ]
+        legacy_buys = [
+            row
+            for row in signals
+            if row.get("direction") == "buy" and not row.get("portfolio_policy_id")
+        ]
+        if policy_buys and legacy_buys:
+            selected, blocked = _mixed_account_signals(
+                signals,
+                config=config,
+                decision_date=decision_date,
+                portfolio=portfolio,
+                policy=policy,
+                cash_buffer_ratio=cash_buffer_ratio,
+                db=db,
+            )
+            return selected, [*profile_blocked, *blocked]
+        if policy_buys:
+            selected, blocked, _ = _portfolio_account_signals(
+                signals,
+                portfolio=portfolio,
+                cash_buffer_ratio=cash_buffer_ratio,
+                decision_date=decision_date,
+                db=db,
+            )
+            return selected, [*profile_blocked, *blocked]
+    selected, blocked = _legacy_account_signals(
+        signals,
+        config=config,
+        decision_date=decision_date,
+        portfolio=portfolio,
+        policy=policy,
+        cash_buffer_ratio=cash_buffer_ratio,
+    )
+    return selected, [*profile_blocked, *blocked]
+
+
+def policy_entry_signals(signals, *, portfolio, decision_date, db):
+    """Apply the frozen entry universe before ranking, preserving exit maintenance."""
+    from domain.instrument import entry_board_symbols
+    from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
+    from server.contracts.recommendation_publication import validate_entry_board_policy
+    from server.services.account_board_permissions import entry_board_policy_blocker
+
+    selected, blocked, profiles = [], [], {}
+    for row in signals:
+        if row.get("direction") != "buy" or not row.get("portfolio_policy_id"):
+            selected.append(row)
+            continue
+        identity = str(row["strategy_id"])
+        if identity not in profiles:
+            try:
+                if row["portfolio_policy_id"] != FORMULA_PORTFOLIO_POLICY_ID:
+                    raise ValueError("portfolio_policy_conflict")
+                state = db.get_strategy_promotion_state_sync(identity)
+                payload = json_object(state.get("payload_json"))
+                profile = validate_entry_board_policy(
+                    payload["readiness"]["deployment_validation"].get(
+                        "entry_board_policy"
+                    )
+                )
+                permissions = portfolio.get("board_buy_permissions")
+                blocker = entry_board_policy_blocker(
+                    profile, permissions, decision_date=decision_date
+                )
+                profiles[identity] = profile, blocker
+            except (
+                AttributeError,
+                KeyError,
+                LookupError,
+                TypeError,
+                ValueError,
+            ) as exc:
+                profiles[identity] = None, str(exc)
+        profile, blocker = profiles[identity]
+        if not blocker and str(row["symbol"]) not in entry_board_symbols(
+            profile["allowed_boards"], [str(row["symbol"])]
+        ):
+            blocker = "frozen_entry_board_policy"
+        if blocker:
+            blocked.append(
+                {
+                    "strategy_id": identity,
+                    "symbol": str(row["symbol"]),
+                    "reason": blocker,
+                }
+            )
+        else:
+            selected.append(row)
+    return selected, blocked
+
+
+def _legacy_account_signals(
+    signals, *, config, decision_date, portfolio, policy, cash_buffer_ratio
+):
+    """Preserve the existing human-source permission and minimum-lot checks."""
     exits = [signal for signal in signals if signal.get("direction") == "sell"]
     buys = sorted(
         (signal for signal in signals if signal.get("direction") == "buy"),
@@ -291,6 +399,173 @@ def account_eligible_signals(
     return [*exits, *selected_buys], blocked
 
 
+def _mixed_account_signals(
+    signals, *, config, decision_date, portfolio, policy, cash_buffer_ratio, db
+):
+    """Rank once and reserve one account budget across independent sources."""
+    from domain.instrument import make_research_stock
+    from domain.research_targets import allocate_formula_targets
+
+    exits = [row for row in signals if row.get("direction") == "sell"]
+    exit_symbols = {str(row["symbol"]) for row in exits}
+    cash = _nonnegative_decimal(portfolio.get("cash"))
+    equity = _nonnegative_decimal(portfolio.get("total_equity"))
+    values = portfolio.get("stock_position_market_values")
+    reason = None
+    if (
+        portfolio.get("fact_authority") != "persisted_valuation_snapshot"
+        or cash is None
+        or equity is None
+        or equity <= 0
+    ):
+        reason = "cash_evidence_missing"
+    if not isinstance(values, Mapping) or any(
+        symbol not in values for symbol in portfolio.get("stock_symbols", [])
+    ):
+        reason = "position_value_evidence_missing"
+    position_values = {}
+    if isinstance(values, Mapping):
+        for symbol, value in values.items():
+            parsed = _nonnegative_decimal(value)
+            if parsed is None:
+                reason = "position_value_evidence_missing"
+                break
+            if parsed:
+                position_values[str(symbol)] = parsed
+    available = (
+        max(Decimal(0), cash - equity * cash_buffer_ratio)
+        if cash is not None and equity is not None
+        else Decimal(0)
+    )
+    selected, blocked, seen = [], [], set()
+    for row in sorted(
+        (row for row in signals if row.get("direction") == "buy"),
+        key=lambda row: (
+            -float(row["ranking_liquidity"]),
+            str(row["symbol"]),
+            str(row["strategy_id"]),
+        ),
+    ):
+        symbol = str(row["symbol"])
+        if symbol in seen:
+            continue
+        seen.add(symbol)
+        blocker = reason or (
+            "account_exit_signal_conflict" if symbol in exit_symbols else None
+        )
+        if blocker:
+            blocked.append(
+                {
+                    "strategy_id": str(row["strategy_id"]),
+                    "symbol": symbol,
+                    "reason": blocker,
+                }
+            )
+            continue
+        current_portfolio = {
+            **portfolio,
+            "cash": available,
+            "stock_position_market_values": position_values,
+            "stock_symbols": list(position_values),
+        }
+        if row.get("portfolio_policy_id"):
+            accepted, rejected, allocation = _portfolio_account_signals(
+                [row],
+                portfolio=current_portfolio,
+                cash_buffer_ratio=Decimal(0),
+                decision_date=decision_date,
+                db=db,
+            )
+            selected.extend(accepted)
+            blocked.extend(rejected)
+        else:
+            accepted, rejected = _legacy_account_signals(
+                [row],
+                config=config,
+                decision_date=decision_date,
+                portfolio=current_portfolio,
+                policy=policy,
+                cash_buffer_ratio=Decimal(0),
+            )
+            blocked.extend(rejected)
+            if not accepted:
+                continue
+            price = _nonnegative_decimal(row.get("frozen_close"))
+            weight = _nonnegative_decimal(row.get("target_weight"))
+            if (
+                price is None
+                or price <= 0
+                or weight is None
+                or weight <= 0
+                or weight > 1
+            ):
+                blocked.append(
+                    {
+                        "strategy_id": str(row["strategy_id"]),
+                        "symbol": symbol,
+                        "reason": "frozen_price_or_target_invalid",
+                    }
+                )
+                continue
+
+            def cost(_symbol, quote_price, quantity):
+                fee = resolve_manual_trade_fee_breakdown(
+                    config,
+                    asset_class="stock",
+                    direction="buy",
+                    quantity=float(quantity),
+                    price=float(quote_price),
+                    symbol=symbol,
+                )
+                gross = quote_price * quantity
+                configured_fee = (
+                    _nonnegative_decimal(fee.total_fee) if fee is not None else None
+                )
+                return gross + max(
+                    gross * policy.fee_buffer_rate, configured_fee or Decimal(0)
+                )
+
+            allocation = allocate_formula_targets(
+                entries=[symbol],
+                exits=sorted(exit_symbols),
+                position_values=position_values,
+                prices={symbol: price},
+                liquidity={symbol: Decimal(str(row["ranking_liquidity"]))},
+                lot_sizes={symbol: make_research_stock(symbol, symbol).lot_size},
+                cash=available,
+                equity=equity,
+                buy_cost=cost,
+                max_positions=policy.allocation_slots,
+                max_symbol_weight=weight,
+                cash_buffer_ratio=Decimal(0),
+            )
+            if symbol in allocation["selected_entries"]:
+                selected.append(
+                    {
+                        **row,
+                        "target_weight": float(allocation["target_weights"][symbol]),
+                    }
+                )
+            else:
+                blocked.append(
+                    {
+                        "strategy_id": str(row["strategy_id"]),
+                        "symbol": symbol,
+                        "reason": allocation["rejected_entries"].get(
+                            symbol, "already_held"
+                        ),
+                    }
+                )
+        if allocation is not None and symbol in allocation["entry_quantities"]:
+            # A policy-selected but account-blocked top name keeps its slot;
+            # replacing it with another name would change the validated ranking.
+            position_values[symbol] = allocation["entry_quantities"][symbol] * Decimal(
+                str(row["frozen_close"])
+            )
+            available -= allocation["purchase_costs"][symbol]
+    return [*exits, *selected], blocked
+
+
 def cash_buffer_ratio(config: Any) -> Decimal:
     configured = getattr(config, "trading_plan_min_cash_buffer_ratio", None)
     if configured is None:
@@ -315,6 +590,7 @@ def portfolio_scan_binding(
         "fact_authority": portfolio.get("fact_authority"),
         "cash_buffer_ratio": str(reserve_ratio),
         "board_buy_permissions": permissions,
+        "stock_position_market_values": portfolio.get("stock_position_market_values"),
     }
     return {
         "valuation_snapshot_id": portfolio["valuation_snapshot_id"] or None,
@@ -427,6 +703,20 @@ def history_start(config: Any, market_date: str) -> str:
     return start.isoformat()
 
 
+def promoted_history_start(promoted, config, market_date):
+    """Load each frozen policy's full initialization; legacy retains runtime scope."""
+    return (
+        min(
+            str(item["history_start"])
+            if item.get("portfolio_policy_id") or item.get("history_start")
+            else history_start(config, market_date)
+            for item in promoted
+        )
+        if promoted
+        else history_start(config, market_date)
+    )
+
+
 def resolve_daily_bar_receipt_provider(
     *,
     data_store: Any,
@@ -494,82 +784,6 @@ def resolve_daily_bar_receipt_provider(
     return str(getattr(config, "data_source", "") or "").strip()
 
 
-def resolve_daily_bar_receipts(
-    *,
-    data_store: Any,
-    start_date: str,
-    end_date: str,
-    config: Any = None,
-    snapshot: Mapping[str, Any] | None = None,
-    preferred_provider: str | None = None,
-) -> list[dict[str, Any]]:
-    """Resolve a continuous, date-deduplicated window of verified daily receipts.
-
-    Supports heterogeneous daily bar ingestion across the window (e.g. historical
-    migration or multi-source fallback) while deterministically arbitrating
-    between competing receipts on the same date according to provider priority.
-    """
-    preferred = str(preferred_provider or "").strip()
-    provider_priority: list[str] = []
-    if preferred:
-        provider_priority.append(preferred)
-
-    if config is not None:
-        data_source = str(getattr(config, "data_source", "") or "").strip()
-        if data_source and data_source not in provider_priority:
-            provider_priority.append(data_source)
-        try:
-            from data.source_policy import MarketDataUseCase
-            from data.source_routing import configured_data_provider_names
-
-            for candidate in configured_data_provider_names(
-                config, MarketDataUseCase.DAILY_BARS
-            ):
-                if candidate not in provider_priority:
-                    provider_priority.append(candidate)
-        except Exception:
-            pass
-
-    snapshot_provider = str(
-        (snapshot.get("provider_name") if isinstance(snapshot, Mapping) else "") or ""
-    ).strip()
-    if snapshot_provider and snapshot_provider not in provider_priority:
-        provider_priority.append(snapshot_provider)
-
-    raw_receipts = [
-        dict(item)
-        for item in data_store.list_market_daily_ingestion_receipts(
-            start_date=start_date,
-            end_date=end_date,
-            provider_name=preferred if preferred else None,
-            verify=True,
-        )
-    ]
-
-    by_date: dict[str, list[dict[str, Any]]] = {}
-    for item in raw_receipts:
-        date_key = str(item.get("trade_date") or "").strip()
-        if date_key:
-            by_date.setdefault(date_key, []).append(item)
-
-    selected: list[dict[str, Any]] = []
-    for date_key in sorted(by_date.keys()):
-        candidates = by_date[date_key]
-        if len(candidates) == 1:
-            selected.append(candidates[0])
-        else:
-
-            def rank(cand: dict[str, Any]) -> tuple[int, str]:
-                p = str(cand.get("provider_name") or "").strip()
-                idx = provider_priority.index(p) if p in provider_priority else 9999
-                return (idx, p)
-
-            candidates.sort(key=rank)
-            selected.append(candidates[0])
-
-    return selected
-
-
 def formula_history_rows(formula_ast: Mapping[str, Any]) -> int:
     def expression_rows(expression: Any) -> int:
         if not isinstance(expression, Mapping):
@@ -635,6 +849,7 @@ def evaluate_promoted_strategy_market(
     truths: dict[str, dict[str, Any]] = {}
     raw_signals: list[dict[str, Any]] = []
     blockers: list[str] = []
+    unavailable_policy_history: list[str] = []
     target_weight = 1.0 / policy.allocation_slots
     held = set(held_stock_symbols)
     for promoted_strategy in promoted:
@@ -644,14 +859,43 @@ def evaluate_promoted_strategy_market(
         selected_universe = tuple(
             str(symbol) for symbol in strategy.get("selected_universe") or []
         )
+        strategy_start = str(promoted_strategy.get("history_start") or start_date)
+        strategy_frames = (
+            {
+                symbol: frame.loc[
+                    pd.to_datetime(frame["timestamp"]).dt.date
+                    >= date.fromisoformat(strategy_start)
+                ].copy()
+                for symbol, frame in frames.items()
+            }
+            if promoted_strategy.get("history_start")
+            else frames
+        )
+        strategy_dates = [day for day in trading_dates if day >= strategy_start]
+        strategy_receipts = [
+            row
+            for row in receipts
+            if str(row.get("trade_date") or "") >= strategy_start
+        ]
+        if promoted_strategy.get("portfolio_policy_id") and set(strategy_dates) - {
+            str(row.get("trade_date") or "") for row in strategy_receipts
+        }:
+            blocker = f"strategy_frozen_history_unavailable:{strategy_id}"
+            truths[strategy_id] = {
+                "status": "blocked",
+                "blockers": [blocker],
+                "minimum_history_rows": policy.minimum_history_rows,
+            }
+            unavailable_policy_history.append(blocker)
+            continue
         try:
             validate_formula_ast(formula_ast, universe_size=len(selected_universe))
             truth = build_full_market_universe_truth(
                 snapshot=snapshot,
-                frames=frames,
-                receipts=receipts,
-                required_trading_dates=trading_dates,
-                start_date=start_date,
+                frames=strategy_frames,
+                receipts=strategy_receipts,
+                required_trading_dates=strategy_dates,
+                start_date=strategy_start,
                 end_date=market_date,
                 initial_cash=total_equity,
                 target_weight=target_weight,
@@ -675,19 +919,24 @@ def evaluate_promoted_strategy_market(
                 for item in truth.get("blockers") or []
             )
             continue
-        raw_signals.extend(
-            evaluate_strategy_signals(
-                strategy_id=strategy_id,
-                formula_ast=formula_ast,
-                universe_size=len(selected_universe),
-                target_weight=target_weight,
-                frames=frames,
-                eligible_symbols=list(truth["eligible_symbols"]),
-                maintenance_symbols=list(truth["maintenance_symbols"]),
-                held_symbols=held,
-                market_date=market_date,
-            )
+        evaluated_signals = evaluate_strategy_signals(
+            strategy_id=strategy_id,
+            formula_ast=formula_ast,
+            universe_size=len(selected_universe),
+            target_weight=target_weight,
+            frames=strategy_frames,
+            eligible_symbols=list(truth["eligible_symbols"]),
+            maintenance_symbols=list(truth["maintenance_symbols"]),
+            held_symbols=held,
+            market_date=market_date,
         )
+        if promoted_strategy.get("portfolio_policy_id"):
+            for signal in evaluated_signals:
+                signal["portfolio_policy_id"] = promoted_strategy["portfolio_policy_id"]
+        raw_signals.extend(evaluated_signals)
+    if not raw_signals:
+        # An unobservable policy cannot be reported as an ordinary no-signal day.
+        blockers.extend(unavailable_policy_history)
     return truths, raw_signals, blockers
 
 
@@ -725,3 +974,166 @@ def positive_float(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return parsed if math.isfinite(parsed) and parsed > 0 else None
+
+
+def _portfolio_account_signals(
+    signals, *, portfolio, cash_buffer_ratio, decision_date, db
+):
+    """The same complete-capital kernel, adapted to current account facts."""
+    from domain.instrument import make_research_stock
+    from domain.research_targets import (
+        FORMULA_PORTFOLIO_POLICY_ID,
+        allocate_formula_targets,
+    )
+    from server.persistence.strategy_research import StrategyResearchAuditStore
+    from server.services.reviewed_fee_schedule import (
+        resolve_frozen_deployment_fee_schedule,
+    )
+
+    exits = [row for row in signals if row["direction"] == "sell"]
+    buys, blocked = {}, []
+    values = portfolio.get("stock_position_market_values")
+    equity = _nonnegative_decimal(portfolio.get("total_equity"))
+    cash = _nonnegative_decimal(portfolio.get("cash"))
+    reason = None
+    if not isinstance(values, Mapping) or any(
+        s not in values for s in portfolio.get("stock_symbols", [])
+    ):
+        reason = "position_value_evidence_missing"
+    if (
+        portfolio.get("fact_authority") != "persisted_valuation_snapshot"
+        or equity is None
+        or equity <= 0
+        or cash is None
+    ):
+        reason = "cash_evidence_missing"
+    calculators, capitals, validated_limits = {}, [], []
+    for row in sorted(
+        signals,
+        key=lambda item: (
+            -float(item.get("ranking_liquidity", 0)),
+            str(item["symbol"]),
+            str(item["strategy_id"]),
+        ),
+    ):
+        if row["direction"] != "buy":
+            continue
+        symbol = row["symbol"]
+        blocker = reason
+        if row.get("portfolio_policy_id") != FORMULA_PORTFOLIO_POLICY_ID:
+            blocker = blocker or "portfolio_policy_conflict"
+        if blocker is None:
+            try:
+                identity = row["strategy_id"]
+                if identity not in calculators:
+                    state = db.get_strategy_promotion_state_sync(identity)
+                    payload = json_object(state.get("payload_json"))
+                    validation = payload["readiness"]["deployment_validation"]
+                    final = StrategyResearchAuditStore(db._path).get_sealed_test(
+                        validation["final_evaluation_id"]
+                    )
+                    binding = final["evidence"]["reservation"]
+                    resolution = resolve_frozen_deployment_fee_schedule(
+                        db, binding["fee_schedule"], tuple(r["symbol"] for r in signals)
+                    )
+                    if not (
+                        date.fromisoformat(resolution.review.effective_start_date)
+                        <= date.fromisoformat(decision_date)
+                        <= date.fromisoformat(resolution.review.effective_end_date)
+                    ):
+                        blocker = "reviewed_fee_schedule_action_date_not_covered"
+                    else:
+                        calculators[identity] = resolution.commission_calc
+                        capitals.append(Decimal(str(validation["initial_cash"])))
+                        validated_limits.append(
+                            binding["publication_grant"]["risk_limits"]
+                        )
+                if blocker is None:
+                    buys.setdefault(symbol, row)
+            except (ValueError, KeyError, TypeError, LookupError, AttributeError):
+                blocker = "validated_account_execution_binding_unavailable"
+        if blocker:
+            blocked.append(
+                {
+                    "strategy_id": str(row["strategy_id"]),
+                    "symbol": str(symbol),
+                    "reason": blocker,
+                }
+            )
+    if not buys:
+        return exits, blocked, None
+    scoped_equity = min(equity, *capitals)
+    held_values = [
+        Decimal(str(value)) for value in values.values() if Decimal(str(value)) > 0
+    ]
+    for limits in validated_limits:
+        if (
+            len(held_values) > limits["max_positions"]
+            or sum(held_values, Decimal(0)) / scoped_equity
+            > Decimal(str(limits["max_gross_weight"]))
+            or max(held_values, default=Decimal(0)) / scoped_equity
+            > Decimal(str(limits["max_symbol_weight"]))
+        ):
+            blocked.extend(
+                {
+                    "strategy_id": str(row["strategy_id"]),
+                    "symbol": symbol,
+                    "reason": "current_portfolio_exceeds_publication_risk_bounds",
+                }
+                for symbol, row in buys.items()
+            )
+            return exits, blocked, None
+    prices = {symbol: Decimal(str(row["frozen_close"])) for symbol, row in buys.items()}
+    instruments = {symbol: make_research_stock(symbol, symbol) for symbol in buys}
+
+    from server.services.backtest_costs import quote_formula_purchase
+
+    def cost(symbol, price, quantity):
+        return quote_formula_purchase(
+            calculators[buys[symbol]["strategy_id"]],
+            instruments[symbol],
+            symbol,
+            price,
+            quantity,
+        )
+
+    try:
+        decision = allocate_formula_targets(
+            entries=list(buys),
+            exits=[row["symbol"] for row in exits],
+            position_values={s: Decimal(str(value)) for s, value in values.items()},
+            prices=prices,
+            liquidity={
+                s: Decimal(str(row["ranking_liquidity"])) for s, row in buys.items()
+            },
+            lot_sizes={s: item.lot_size for s, item in instruments.items()},
+            cash=cash,
+            equity=scoped_equity,
+            buy_cost=cost,
+            cash_buffer_ratio=cash_buffer_ratio,
+        )
+    except ValueError as exc:
+        blocked.extend(
+            {
+                "strategy_id": str(row["strategy_id"]),
+                "symbol": symbol,
+                "reason": "validated_cost_or_portfolio_constraint:" + str(exc),
+            }
+            for symbol, row in buys.items()
+        )
+        return exits, blocked, None
+    selected = []
+    for symbol in decision["selected_entries"]:
+        selected.append(
+            {
+                **buys[symbol],
+                "target_weight": float(
+                    decision["target_weights"][symbol] * scoped_equity / equity
+                ),
+            }
+        )
+    blocked.extend(
+        {"strategy_id": str(buys[s]["strategy_id"]), "symbol": s, "reason": why}
+        for s, why in decision["rejected_entries"].items()
+    )
+    return [*exits, *selected], blocked, decision

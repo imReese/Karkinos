@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from math import isfinite
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
+from data.dataset.reader import daily_bar_dataset_read_scope
 from data.store import DataStore
 from server.ai_runtime.contracts import content_fingerprint
 from server.bootstrap import resolve_data_dir
+from server.contracts.recommendation_publication import publication_source_blocker
 from server.services.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactRejected,
     DailyStrategyArtifactStore,
@@ -27,14 +29,17 @@ from server.services.promoted_strategy_universe_scan_support import (
     account_eligible_signals,
     aggregate_ranked_signals,
     automation_safety_blockers,
+    board_buy_blocker,
     cash_buffer_ratio,
     decision_window_blockers,
     evaluate_promoted_strategy_market,
     history_start,
     json_object,
+    policy_entry_signals,
     portfolio_scan_binding,
     positive_float,
     prior_verified_trading_date,
+    promoted_history_start,
     promoted_scan_evaluation_policy_fingerprint,
     resolve_daily_bar_receipt_provider,
     resolve_daily_bar_receipts,
@@ -95,6 +100,24 @@ class PromotedStrategyUniverseScanService:
         additional_blockers: list[str] | None = None,
     ) -> dict[str, Any]:
         """Scan once for the exact decision date using only prior closed bars."""
+        with daily_bar_dataset_read_scope(join_existing=True):
+            return self._run_once(
+                decision_date=decision_date,
+                portfolio_summary=portfolio_summary,
+                persist_actions=persist_actions,
+                expected_signal_selection_fingerprint=expected_signal_selection_fingerprint,
+                additional_blockers=additional_blockers,
+            )
+
+    def _run_once(
+        self,
+        *,
+        decision_date: str,
+        portfolio_summary: Mapping[str, Any],
+        persist_actions: bool,
+        expected_signal_selection_fingerprint: str | None,
+        additional_blockers: list[str] | None,
+    ) -> dict[str, Any]:
         started_at = self._clock()
         safety_gate = self._read_safety_gate()
         blockers = decision_window_blockers(
@@ -175,17 +198,18 @@ class PromotedStrategyUniverseScanService:
         portfolio_summary: Mapping[str, Any],
     ) -> list[str]:
         """Reopen every mutable input before a persisted scan is consumed."""
-        return current_scan_input_blockers(
-            db=self._db,
-            config=self._config,
-            data_store=self._data_store,
-            policy=self._policy,
-            scan=scan,
-            portfolio_summary=portfolio_summary,
-            portfolio_reader=self._portfolio_context,
-            promoted_reader=self._resolve_promoted_strategies,
-            safety_reader=self._read_safety_gate,
-        )
+        with daily_bar_dataset_read_scope(join_existing=True):
+            return current_scan_input_blockers(
+                db=self._db,
+                config=self._config,
+                data_store=self._data_store,
+                policy=self._policy,
+                scan=scan,
+                portfolio_summary=portfolio_summary,
+                portfolio_reader=self._portfolio_context,
+                promoted_reader=self._resolve_promoted_strategies,
+                safety_reader=self._read_safety_gate,
+            )
 
     def _portfolio_context(
         self,
@@ -213,6 +237,9 @@ class PromotedStrategyUniverseScanService:
         return {
             "total_equity": total_equity,
             "stock_equity": stock_equity,
+            "stock_position_market_values": portfolio_summary.get(
+                "stock_position_market_values"
+            ),
             "cash": _nonnegative_cash(portfolio_summary.get("cash")),
             "fact_authority": portfolio_summary.get("fact_authority"),
             "board_buy_permissions": portfolio_summary.get("board_buy_permissions"),
@@ -252,7 +279,7 @@ class PromotedStrategyUniverseScanService:
         )
         if not snapshot:
             blockers.append("full_market_universe_snapshot_missing")
-        start_date = history_start(self._config, market_date)
+        start_date = promoted_history_start(promoted, self._config, market_date)
         try:
             trading_dates = verified_trading_dates(
                 self._db,
@@ -285,7 +312,7 @@ class PromotedStrategyUniverseScanService:
             ]
             held_symbols = sorted(set(portfolio_stock_symbols))
             frames = self._data_store.load_market_bar_windows(
-                symbols=members,
+                symbols=sorted(set(members) | set(held_symbols)),
                 start_date=start_date,
                 end_date=market_date,
             )
@@ -347,6 +374,7 @@ class PromotedStrategyUniverseScanService:
             portfolio=portfolio,
             policy=self._policy,
             cash_buffer_ratio=reserve_ratio,
+            db=self._db,
         )
         selected_signals, signal_conflict_blockers = aggregate_ranked_signals(
             account_signals,
@@ -416,6 +444,19 @@ class PromotedStrategyUniverseScanService:
                 "completed_no_signal",
             }:
                 payload = json_object(existing.get("payload_json"))
+                if blockers:
+                    payload = {
+                        **payload,
+                        "status": "blocked",
+                        "blockers": blockers,
+                        "action_tasks": [],
+                        "normal_no_signal": False,
+                        "finished_at": self._clock().isoformat(),
+                    }
+                    payload.pop("output_fingerprint", None)
+                    payload["output_fingerprint"] = "sha256:" + content_fingerprint(
+                        payload
+                    )
                 return {**payload, "run_id": run_id, "reused": True}
 
         action_tasks: list[dict[str, Any]] = []
@@ -432,11 +473,121 @@ class PromotedStrategyUniverseScanService:
                 else ("prepared" if selected_signals else "prepared_no_signal")
             )
         if persist_actions and not blockers and selected_signals:
-            action_tasks = persist_recommendation_tasks(
-                db=self._db,
-                decision_date=decision_date,
-                signals=selected_signals,
-            )
+
+            def current_authority_validator():
+                from server.services.account_board_permissions import (
+                    resolve_board_buy_permissions,
+                )
+                from server.services.valuation_snapshot import (
+                    build_current_valuation_snapshot,
+                )
+
+                current, changed = self._resolve_promoted_strategies(decision_date)
+                changed.extend(
+                    decision_window_blockers(
+                        db=self._db, decision_date=decision_date, now=self._clock()
+                    )
+                )
+                current_safety = self._read_safety_gate()
+                changed.extend(automation_safety_blockers(current_safety))
+                for item in current:
+                    row = self._db.get_strategy_promotion_state_sync(
+                        item["strategy_id"]
+                    )
+                    blocker = publication_source_blocker(self._db, row or {})
+                    if blocker:
+                        changed.append(blocker)
+                permissions = resolve_board_buy_permissions(self._config, decision_date)
+                buys = [row for row in selected_signals if row["direction"] == "buy"]
+                _, board_blockers = policy_entry_signals(
+                    buys,
+                    portfolio={**portfolio, "board_buy_permissions": permissions},
+                    decision_date=decision_date,
+                    db=self._db,
+                )
+                changed.extend(
+                    "current_board_permission_changed:" + row["reason"]
+                    for row in board_blockers
+                )
+                for row in buys:
+                    if not row.get("portfolio_policy_id"):
+                        blocker = board_buy_blocker(
+                            row["symbol"], permissions, decision_date
+                        )
+                        if blocker:
+                            changed.append(
+                                "current_board_permission_changed:" + blocker
+                            )
+                try:
+                    valuation = build_current_valuation_snapshot(
+                        self._db, persist=False, now=self._clock()
+                    )
+                    if (
+                        not is_asset_class_valuation_healthy(valuation, "stock")
+                        or valuation.get("snapshot_id")
+                        != portfolio["valuation_snapshot_id"]
+                    ):
+                        changed.append("current_portfolio_valuation_changed")
+                    if (
+                        prior_verified_trading_date(self._db, decision_date)
+                        != market_date
+                    ):
+                        changed.append("current_market_session_changed")
+                    snapshot = dict(
+                        self._data_store.get_market_universe_snapshot(
+                            trade_date=market_date
+                        )
+                        or {}
+                    )
+                    if snapshot != market["snapshot"]:
+                        changed.append("current_market_universe_changed")
+                    receipts = resolve_daily_bar_receipts(
+                        data_store=self._data_store,
+                        start_date=market["history_start"],
+                        end_date=market_date,
+                        config=self._config,
+                        snapshot=snapshot,
+                    )
+                    if receipts != market["receipts"]:
+                        changed.append("current_market_receipts_changed")
+                    if (
+                        verified_trading_dates(
+                            self._db,
+                            start_date=market["history_start"],
+                            end_date=market_date,
+                        )
+                        != market["trading_dates"]
+                    ):
+                        changed.append("current_market_calendar_changed")
+                except (
+                    AttributeError,
+                    KeyError,
+                    LookupError,
+                    OSError,
+                    TypeError,
+                    ValueError,
+                ):
+                    changed.append("current_account_or_market_evidence_unavailable")
+                if changed or current != promoted or current_safety != safety_gate:
+                    raise ValueError(
+                        "promoted_strategy_scan_authority_changed_before_persist"
+                        + (":" + ",".join(changed) if changed else "")
+                    )
+
+            try:
+                action_tasks = persist_recommendation_tasks(
+                    db=self._db,
+                    decision_date=decision_date,
+                    signals=selected_signals,
+                    current_authority_validator=current_authority_validator,
+                )
+            except ValueError as exc:
+                if not str(exc).startswith(
+                    "promoted_strategy_scan_authority_changed_before_persist"
+                ):
+                    raise
+                blockers.append(str(exc))
+                status = "blocked"
         payload_core = {
             **input_core,
             "status": status,
@@ -518,7 +669,13 @@ class PromotedStrategyUniverseScanService:
             return [], ["promoted_daily_candidate_strategy_missing"]
         resolved: list[dict[str, Any]] = []
         blockers: list[str] = []
+        from server.contracts.recommendation_publication import (
+            publication_source_blocker,
+        )
+
         for row in active:
+            if publication_source_blocker(self._db, row) is not None:
+                continue
             strategy_id = str(row["strategy_id"])
             gate, gate_blockers = self._strategy_gate_resolver(
                 self._db,
@@ -569,18 +726,53 @@ class PromotedStrategyUniverseScanService:
             ):
                 blockers.append(f"promoted_strategy_snapshot:{strategy_id}:drift")
                 continue
+            policy_history = None
+            if promotion.get("decision_source") == "policy":
+                from server.persistence.strategy_research import (
+                    StrategyResearchAuditStore,
+                )
+
+                try:
+                    final = StrategyResearchAuditStore(self._db.path).get_sealed_test(
+                        promotion["publication_decision"]["final_evaluation_id"]
+                    )
+                    policy_history = date.fromisoformat(
+                        final["evidence"]["sealed_dataset_snapshot"]["date_range"][
+                            "start"
+                        ]
+                    ).isoformat()
+                    if policy_history >= decision_date:
+                        raise ValueError("frozen_history_not_before_decision")
+                except (KeyError, LookupError, TypeError, ValueError):
+                    blockers.append(
+                        f"promoted_strategy_snapshot:{strategy_id}:frozen_history_unavailable"
+                    )
+                    continue
             resolved.append(
                 {
                     "strategy_id": strategy_id,
                     "strategy": dict(loaded.get("strategy") or {}),
+                    "portfolio_policy_id": (
+                        "karkinos.research.session_portfolio.liquidity_slots.v1"
+                        if promotion.get("decision_source") == "policy"
+                        else None
+                    ),
                     "strategy_artifact_fingerprint": loaded.get(
                         "strategy_artifact_fingerprint"
                     ),
                     "order_generation_gate_fingerprint": "sha256:"
                     + content_fingerprint(gate),
                     "qualification_fingerprint": (qualification_fingerprint or None),
+                    "history_start": policy_history
+                    or history_start(
+                        self._config,
+                        prior_verified_trading_date(self._db, decision_date)
+                        or decision_date,
+                    ),
                 }
             )
+        if not resolved and not blockers:
+            blockers.append("promoted_daily_candidate_strategy_missing")
         return resolved, blockers
 
     def _load_strategy(self, *, candidate_id: str, run_id: str) -> dict[str, Any]:

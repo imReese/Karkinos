@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from data.dataset.reader import daily_bar_dataset_read_scope
 from server.services.automation_control import AutomationControlService
 from server.services.daily_candidate_execution_closure import (
     build_daily_candidate_execution_closure,
@@ -23,6 +24,7 @@ from server.services.daily_decision_evidence_values import (
 from server.services.daily_decision_preflight_operator import build_preflight_gate
 
 
+@daily_bar_dataset_read_scope(join_existing=True)
 def build_daily_candidate_preparation_check(
     state: Any,
     *,

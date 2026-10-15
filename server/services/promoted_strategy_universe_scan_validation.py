@@ -18,9 +18,9 @@ from server.services.promoted_strategy_universe_scan_support import (
     automation_safety_blockers,
     cash_buffer_ratio,
     evaluate_promoted_strategy_market,
-    history_start,
     portfolio_scan_binding,
     prior_verified_trading_date,
+    promoted_history_start,
     promoted_scan_evaluation_policy_fingerprint,
     resolve_daily_bar_receipt_provider,
     resolve_daily_bar_receipts,
@@ -150,7 +150,7 @@ def current_scan_input_blockers(
     if scan.get("evaluation_policy_fingerprint") != current_policy_fingerprint:
         blockers.append("promoted_strategy_scan_evaluation_policy_changed")
 
-    start_date = history_start(config, market_date)
+    start_date = promoted_history_start(promoted, config, market_date)
     snapshot: dict[str, Any] = {}
     receipts: list[dict[str, Any]] = []
     frames: dict[str, Any] = {}
@@ -244,6 +244,7 @@ def current_scan_input_blockers(
                 portfolio=portfolio,
                 policy=policy,
                 cash_buffer_ratio=reserve_ratio,
+                db=db,
             )
             selected_signals, signal_conflict_blockers = aggregate_ranked_signals(
                 account_signals,

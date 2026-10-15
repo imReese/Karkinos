@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from server.persistence.signal_journal import SignalJournalRepository
 from server.services.promoted_strategy_universe_scan_support import (
     DECISION_WINDOW_START,
     SHANGHAI_TIME_ZONE,
@@ -20,39 +22,24 @@ def persist_recommendation_tasks(
     db: Any,
     decision_date: str,
     signals: list[dict[str, Any]],
+    current_authority_validator: Callable[[], None],
 ) -> list[dict[str, Any]]:
-    """Persist the exact selected signals under one process-local write lock."""
+    """Persist the exact signals and tasks with their current source authority."""
     with _WRITE_LOCK:
         base = datetime.combine(
             date.fromisoformat(decision_date),
             DECISION_WINDOW_START,
             tzinfo=SHANGHAI_TIME_ZONE,
         )
-        persisted: list[dict[str, Any]] = []
+        recommendations: list[dict[str, Any]] = []
         for index, signal in enumerate(signals):
             timestamp = (
                 base + timedelta(microseconds=len(signals) - index)
             ).isoformat()
-            signal_id = db.find_signal_id_sync(
-                timestamp=timestamp,
-                strategy_id=str(signal["strategy_id"]),
-                symbol=str(signal["symbol"]),
-                direction=str(signal["direction"]),
-            )
-            if signal_id is None:
-                signal_id = db.save_signal_sync(
-                    timestamp=timestamp,
-                    strategy_id=str(signal["strategy_id"]),
-                    symbol=str(signal["symbol"]),
-                    direction=str(signal["direction"]),
-                    target_weight=float(signal["target_weight"]),
-                    price=float(signal["frozen_close"]),
-                    asset_class="stock",
-                )
             task = build_recommendation_cycle(
                 signals=[
                     {
-                        "id": signal_id,
+                        "id": 0,
                         "timestamp": timestamp,
                         "strategy_id": signal["strategy_id"],
                         "symbol": signal["symbol"],
@@ -65,26 +52,21 @@ def persist_recommendation_tasks(
                 available_cash=0,
                 existing_positions={},
             ).tasks[0]
-            action_id = db.upsert_action_task_sync(
-                source_signal_id=task.source_signal_id,
-                symbol=task.symbol,
-                title=task.title,
-                detail=task.detail,
-                direction=task.direction,
-                urgency="high" if task.direction == "sell" else "medium",
-                target_weight=task.target_weight,
-                price=task.price,
-                strategy_id=task.strategy_id,
-                timestamp=task.timestamp,
-                asset_class=task.asset_class,
-            )
-            persisted.append(
+            recommendations.append(
                 {
-                    "action_id": int(action_id),
-                    "source_signal_id": signal_id,
                     "symbol": task.symbol,
+                    "title": task.title,
+                    "detail": task.detail,
                     "direction": task.direction,
+                    "urgency": "high" if task.direction == "sell" else "medium",
+                    "target_weight": task.target_weight,
+                    "price": task.price,
+                    "strategy_id": task.strategy_id,
                     "timestamp": timestamp,
+                    "asset_class": task.asset_class,
                 }
             )
-        return persisted
+        return SignalJournalRepository(db.path).persist_recommendation_tasks_sync(
+            recommendations,
+            current_authority_validator=current_authority_validator,
+        )

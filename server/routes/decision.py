@@ -10,6 +10,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from data.dataset.reader import daily_bar_dataset_read_scope
 from server.ai_runtime.store import IdempotencyConflict
 from server.services import decision_application
 from server.services.decision.quality import (
@@ -257,6 +258,7 @@ def _build_daily_trading_plan_for_state(
     return plan
 
 
+@daily_bar_dataset_read_scope(join_existing=True)
 def _current_account_action_evidence(
     state: Any,
     *,

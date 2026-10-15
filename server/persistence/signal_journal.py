@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from collections.abc import Callable
+from contextlib import nullcontext
 from typing import Any
 
 from server.persistence.connection import SQLiteRepository, connect_sqlite
@@ -68,9 +70,15 @@ class SignalJournalRepository(SQLiteRepository):
         target_weight: float,
         price: float | None,
         asset_class: str,
+        *,
+        _connection: sqlite3.Connection | None = None,
     ) -> int:
         """同步写入信号（后台线程调用）。"""
-        with connect_sqlite(self._path) as conn:
+        with (
+            nullcontext(_connection)
+            if _connection is not None
+            else connect_sqlite(self._path)
+        ) as conn:
             cursor = conn.execute(
                 """INSERT INTO signals
                    (timestamp, strategy_id, symbol, direction, target_weight, price, asset_class)
@@ -85,7 +93,8 @@ class SignalJournalRepository(SQLiteRepository):
                     asset_class,
                 ),
             )
-            conn.commit()
+            if _connection is None:
+                conn.commit()
             if cursor.lastrowid is None:
                 raise RuntimeError("signal insert did not return an identity")
             return int(cursor.lastrowid)
@@ -97,10 +106,15 @@ class SignalJournalRepository(SQLiteRepository):
         strategy_id: str,
         symbol: str,
         direction: str,
+        _connection: sqlite3.Connection | None = None,
     ) -> int | None:
         """Return the canonical persisted identity for one exact signal."""
 
-        with connect_sqlite(self._path) as conn:
+        with (
+            nullcontext(_connection)
+            if _connection is not None
+            else connect_sqlite(self._path)
+        ) as conn:
             row = conn.execute(
                 """
                 SELECT id FROM signals
@@ -325,10 +339,15 @@ class SignalJournalRepository(SQLiteRepository):
         strategy_id: str,
         timestamp: str,
         asset_class: str,
+        _connection: sqlite3.Connection | None = None,
     ) -> int:
         """同步写入或更新待执行任务，避免重复生成。"""
         now = self._now().isoformat()
-        with connect_sqlite(self._path) as conn:
+        with (
+            nullcontext(_connection)
+            if _connection is not None
+            else connect_sqlite(self._path)
+        ) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute(
                 """
@@ -385,10 +404,51 @@ class SignalJournalRepository(SQLiteRepository):
                     source_ref=str(row["id"]),
                     payload=action_task_event_payload(row),
                 )
-            conn.commit()
+            if _connection is None:
+                conn.commit()
         if row is None:
             raise RuntimeError("action_task_upsert_did_not_return_identity")
         return int(row["id"])
+
+    def persist_recommendation_tasks_sync(
+        self,
+        recommendations: list[dict[str, Any]],
+        *,
+        current_authority_validator: Callable[[], None],
+    ) -> list[dict[str, Any]]:
+        """Serialize authority changes and the complete recommendation batch."""
+        with connect_sqlite(self._path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            current_authority_validator()
+            persisted = []
+            for item in recommendations:
+                identity = {
+                    field: item[field]
+                    for field in ("timestamp", "strategy_id", "symbol", "direction")
+                }
+                signal_id = self.find_signal_id_sync(**identity, _connection=conn)
+                if signal_id is None:
+                    signal_id = self.save_signal_sync(
+                        **identity,
+                        target_weight=item["target_weight"],
+                        price=item["price"],
+                        asset_class=item["asset_class"],
+                        _connection=conn,
+                    )
+                action_id = self.upsert_action_task_sync(
+                    **item, source_signal_id=signal_id, _connection=conn
+                )
+                persisted.append(
+                    {
+                        "action_id": action_id,
+                        "source_signal_id": signal_id,
+                        **{
+                            field: item[field]
+                            for field in ("symbol", "direction", "timestamp")
+                        },
+                    }
+                )
+            return persisted
 
     async def get_action_tasks(
         self, statuses: list[str] | None = None, limit: int = 20, offset: int = 0

@@ -32,6 +32,15 @@ from server.services.promoted_strategy_universe_scan import (
 from server.services.promoted_strategy_universe_scan_support import (
     account_eligible_signals,
 )
+from server.services.valuation_snapshot import build_current_valuation_snapshot
+
+
+def _valuation_id(db):
+    return build_current_valuation_snapshot(
+        db,
+        persist=False,
+        now=datetime(2026, 8, 24, 9, 36, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )["snapshot_id"]
 
 
 def _calendar(db: AppDatabase) -> list[str]:
@@ -99,6 +108,16 @@ def _freeze_market(
         trade_date="2026-08-21",
         provider_name=snapshot_provider,
         members=members,
+        capture_started_at=datetime(
+            2026, 8, 21, 15, 59, tzinfo=ZoneInfo("Asia/Shanghai")
+        ),
+        capture_completed_at=datetime(
+            2026, 8, 21, 16, tzinfo=ZoneInfo("Asia/Shanghai")
+        ),
+        source_metadata=[
+            {"symbol": symbol, "display_name": f"合成股票{symbol}"}
+            for symbol in symbols
+        ],
     )
     for market_date in market_dates:
         closes = [10.0 if symbol == symbols[0] else 20.0 for symbol in symbols]
@@ -257,6 +276,242 @@ def _board_permissions(board: str, status: str) -> dict:
     }
 
 
+def _board_review(board, status):
+    return {
+        "source": "self_reported_broker_account",
+        "reviewed_by": "human:fixture",
+        "reviewed_at": "2026-08-24T09:00:00+08:00",
+        "boards": {board: status},
+    }
+
+
+@pytest.mark.parametrize("change", ["revoke", "generation", "pause"])
+@pytest.mark.parametrize("source_kind", ["policy", "human"])
+def test_authority_change_after_evaluation_is_checked_before_atomic_task_write(
+    tmp_path, monkeypatch, change, source_kind
+):
+    from uuid import uuid4
+
+    from server.persistence.ai_shadow_research import ShadowResearchStore
+    from tests.server.test_recommendation_publication import _grant
+
+    db, service, symbols = _service(tmp_path, produces_signals=True)
+    store = ShadowResearchStore(db.path)
+    store.init()
+    grant = _grant()
+    store.configure_publication_grant(
+        policy=grant, expected_generation=None, now="2026-08-24T01:35:00+00:00"
+    )
+    strategy_id = "ai_formula_shadow:fixture-winner"
+    payload = (
+        {
+            "decision_source": "policy",
+            "publication_decision": {
+                "grant_id": grant["grant_id"],
+                "generation": grant["generation"],
+            },
+        }
+        if source_kind == "policy"
+        else {
+            "human_review": {
+                "reviewer": "human:fixture-owner",
+                "review_note": "Explicit fixture source",
+                "confirmation_recorded": True,
+            }
+        }
+    )
+    db.upsert_strategy_promotion_state_sync(
+        strategy_id=strategy_id,
+        stage="paper_shadow",
+        gate_status="paper_shadow_enabled",
+        live_like_enabled=False,
+        missing_requirements=[],
+        backtest_result_id=1,
+        payload=payload,
+    )
+    evaluate = service._evaluate_promoted_strategies
+
+    def evaluate_then_change(**kwargs):
+        result = evaluate(**kwargs)
+        assert result[1]
+        if change == "pause":
+            db.upsert_strategy_promotion_state_sync(
+                strategy_id=strategy_id,
+                stage="paused",
+                gate_status="lifecycle_paused",
+                live_like_enabled=False,
+                missing_requirements=[],
+                backtest_result_id=1,
+                payload=payload,
+            )
+        else:
+            store.configure_publication_grant(
+                policy={
+                    **grant,
+                    "generation": str(uuid4()),
+                    "enabled": change != "revoke",
+                },
+                expected_generation=grant["generation"],
+                now="2026-08-24T01:36:00+00:00",
+            )
+        return result
+
+    monkeypatch.setattr(service, "_evaluate_promoted_strategies", evaluate_then_change)
+    result = service.run_once(
+        decision_date="2026-08-24",
+        portfolio_summary={
+            "total_equity": 100000,
+            "cash": 100000,
+            "fact_authority": "persisted_valuation_snapshot",
+            "valuation_status": "complete",
+            "symbols": [symbols[0]],
+            "instrument_types": {symbols[0]: "stock"},
+            "valuation_snapshot_id": _valuation_id(db),
+        },
+    )
+    if source_kind == "human" and change != "pause":
+        assert result["status"] == "completed", result
+        assert result["action_tasks"]
+    else:
+        assert result["status"] == "blocked", result
+        assert any(
+            item.startswith("promoted_strategy_scan_authority_changed_before_persist")
+            for item in result["blockers"]
+        )
+        assert result["raw_signals"] and result["selected_signals"]
+        assert result["action_tasks"] == []
+        assert db.get_action_tasks_sync(statuses=["pending"], limit=100) == []
+        assert db.list_signal_journal_sync(limit=100) == []
+
+
+@pytest.mark.parametrize("change", ["cash_withdrawal", "held_quote", "daily_receipt"])
+def test_current_account_and_market_change_after_evaluation_blocks_atomic_tasks(
+    tmp_path, monkeypatch, change
+):
+    db, service, symbols = _service(tmp_path, produces_signals=True)
+    db.insert_ledger_entry_sync(
+        entry_type="cash_deposit",
+        timestamp="2026-08-24T09:00:00+08:00",
+        amount=100000,
+        asset_class="cash",
+    )
+    held = symbols[0] if change == "held_quote" else None
+    if held:
+        db.insert_ledger_entry_sync(
+            entry_type="trade_buy",
+            timestamp="2026-08-24T09:01:00+08:00",
+            symbol=held,
+            quantity=100,
+            price=10,
+            asset_class="stock",
+        )
+        db.save_quote_snapshot_sync(
+            symbol=held,
+            asset_class="stock",
+            price=10,
+            volume=100000,
+            timestamp="2026-08-24T09:35:00+08:00",
+            quote_status="live",
+        )
+    snapshot_id = _valuation_id(db)
+    portfolio = {
+        "total_equity": 100000,
+        "cash": 99000 if held else 100000,
+        "fact_authority": "persisted_valuation_snapshot",
+        "valuation_status": "complete",
+        "valuation_snapshot_id": snapshot_id,
+        "symbols": [held] if held else [],
+        "instrument_types": {held: "stock"} if held else {},
+        "stock_position_market_values": {held: 1000} if held else {},
+    }
+    evaluate = service._evaluate_promoted_strategies
+
+    def evaluate_then_change(**kwargs):
+        result = evaluate(**kwargs)
+        assert result[1]
+        if change == "cash_withdrawal":
+            db.insert_ledger_entry_sync(
+                entry_type="cash_withdrawal",
+                timestamp="2026-08-24T09:36:00+08:00",
+                amount=100000,
+                asset_class="cash",
+            )
+        elif change == "held_quote":
+            db.save_quote_snapshot_sync(
+                symbol=held,
+                asset_class="stock",
+                price=9,
+                volume=100000,
+                timestamp="2026-08-24T09:36:00+08:00",
+                quote_status="live",
+            )
+        else:
+            with sqlite3.connect(service._data_store._meta_path) as conn:
+                conn.execute(
+                    "UPDATE market_bars SET amount=amount+1 "
+                    "WHERE timestamp >= '2026-08-21' AND timestamp < '2026-08-22'"
+                )
+        return result
+
+    monkeypatch.setattr(service, "_evaluate_promoted_strategies", evaluate_then_change)
+    result = service.run_once(decision_date="2026-08-24", portfolio_summary=portfolio)
+    assert result["status"] == "blocked", result
+    assert any(
+        item.startswith("promoted_strategy_scan_authority_changed_before_persist")
+        for item in result["blockers"]
+    )
+    assert result["action_tasks"] == []
+    with sqlite3.connect(db.path) as conn:
+        assert conn.execute("SELECT count(*) FROM signals").fetchone()[0] == 0
+        assert conn.execute("SELECT count(*) FROM action_tasks").fetchone()[0] == 0
+
+
+def test_current_board_permission_revoked_after_evaluation_blocks_atomic_tasks(
+    tmp_path, monkeypatch
+):
+    from server.services.account_board_permissions import resolve_board_buy_permissions
+
+    db, service, _ = _service(tmp_path, produces_signals=True, special_symbol="301251")
+    db.insert_ledger_entry_sync(
+        entry_type="cash_deposit",
+        timestamp="2026-08-24T09:00:00+08:00",
+        amount=100000,
+        asset_class="cash",
+    )
+    service._config.account_board_permissions = _board_review("chinext", "enabled")
+    portfolio = {
+        "total_equity": 100000,
+        "cash": 100000,
+        "fact_authority": "persisted_valuation_snapshot",
+        "valuation_status": "complete",
+        "valuation_snapshot_id": _valuation_id(db),
+        "symbols": [],
+        "instrument_types": {},
+        "board_buy_permissions": resolve_board_buy_permissions(
+            service._config, "2026-08-24"
+        ),
+    }
+    evaluate = service._evaluate_promoted_strategies
+
+    def evaluate_then_revoke(**kwargs):
+        result = evaluate(**kwargs)
+        assert any(row["symbol"] == "301251" for row in result[1])
+        service._config.account_board_permissions = _board_review("chinext", "disabled")
+        return result
+
+    monkeypatch.setattr(service, "_evaluate_promoted_strategies", evaluate_then_revoke)
+    result = service.run_once(decision_date="2026-08-24", portfolio_summary=portfolio)
+    assert result["status"] == "blocked"
+    assert any(
+        "current_board_permission_changed:board_permission_disabled" in item
+        for item in result["blockers"]
+    )
+    assert result["action_tasks"] == []
+    with sqlite3.connect(db.path) as conn:
+        assert conn.execute("SELECT count(*) FROM signals").fetchone()[0] == 0
+        assert conn.execute("SELECT count(*) FROM action_tasks").fetchone()[0] == 0
+
+
 def test_decision_portfolio_summary_carries_exact_instrument_types() -> None:
     summary = portfolio_state_summary(
         SimpleNamespace(),
@@ -295,7 +550,7 @@ def test_promoted_strategy_scans_full_stock_pool_and_persists_ranked_tasks(
         "valuation_status": "complete",
         "symbols": [symbols[0], "019999"],
         "instrument_types": {symbols[0]: "stock", "019999": "open_end_fund"},
-        "valuation_snapshot_id": "valuation-fixture",
+        "valuation_snapshot_id": _valuation_id(db),
     }
 
     first = service.run_once(decision_date="2026-08-24", portfolio_summary=portfolio)
@@ -350,7 +605,7 @@ def test_chinext_research_signal_needs_current_account_permission_before_ranking
         "valuation_status": "complete",
         "symbols": [],
         "instrument_types": {},
-        "valuation_snapshot_id": "valuation-fixture",
+        "valuation_snapshot_id": _valuation_id(db),
     }
 
     unknown = service.run_once(
@@ -375,9 +630,14 @@ def test_chinext_research_signal_needs_current_account_permission_before_ranking
         service.current_input_blockers(scan=unknown, portfolio_summary=portfolio) == []
     )
 
+    from server.services.account_board_permissions import resolve_board_buy_permissions
+
+    service._config.account_board_permissions = _board_review("chinext", "enabled")
     permitted_portfolio = {
         **portfolio,
-        "board_buy_permissions": _board_permissions("chinext", "enabled"),
+        "board_buy_permissions": resolve_board_buy_permissions(
+            service._config, "2026-08-24"
+        ),
     }
     assert "promoted_strategy_scan_current_portfolio_changed" in (
         service.current_input_blockers(
@@ -408,7 +668,7 @@ def test_cash_capacity_blocks_buys_without_erasing_held_stock_exit(tmp_path) -> 
         "valuation_status": "complete",
         "symbols": [symbols[0]],
         "instrument_types": {symbols[0]: "stock"},
-        "valuation_snapshot_id": "valuation-fixture",
+        "valuation_snapshot_id": _valuation_id(db),
     }
 
     result = service.run_once(decision_date="2026-08-24", portfolio_summary=portfolio)
@@ -421,6 +681,53 @@ def test_cash_capacity_blocks_buys_without_erasing_held_stock_exit(tmp_path) -> 
         "insufficient_cash_for_one_lot"
     }
     assert len(db.get_action_tasks_sync(statuses=["pending"], limit=20)) == 1
+
+
+@pytest.mark.parametrize("change", ["quote_blocked", "outside_window", "selection"])
+def test_successful_scan_cache_does_not_override_current_blockers(tmp_path, change):
+    db, service, symbols = _service(tmp_path, produces_signals=True)
+    portfolio = {
+        "total_equity": 100000,
+        "cash": 100000,
+        "fact_authority": "persisted_valuation_snapshot",
+        "valuation_status": "complete",
+        "symbols": [symbols[0]],
+        "instrument_types": {symbols[0]: "stock"},
+        "valuation_snapshot_id": _valuation_id(db),
+    }
+    first = service.run_once(decision_date="2026-08-24", portfolio_summary=portfolio)
+    assert first["status"] == "completed" and first["action_tasks"]
+    original_run = db.get_automation_run_sync(first["run_id"])
+    original_tasks = db.get_action_tasks_sync(statuses=["pending"], limit=100)
+    original_signals = db.list_signal_journal_sync(limit=100)
+    inputs = {}
+    if change == "outside_window":
+        service._clock = lambda: datetime(
+            2026, 8, 24, 9, 46, tzinfo=ZoneInfo("Asia/Shanghai")
+        )
+        blocker = "strategy_scan_outside_reviewed_decision_window"
+    elif change == "quote_blocked":
+        blocker = "daily_candidate_quote_freeze:current_quote_unavailable"
+        inputs["additional_blockers"] = [blocker]
+    else:
+        blocker = "signal_selection_changed_after_quote_freeze"
+        inputs["expected_signal_selection_fingerprint"] = "sha256:" + "0" * 64
+    current = service.run_once(
+        decision_date="2026-08-24", portfolio_summary=portfolio, **inputs
+    )
+    assert current["status"] == "blocked"
+    assert current["blockers"] == [blocker]
+    assert current["action_tasks"] == [] and current["reused"] is True
+    assert current["run_id"] == first["run_id"]
+    core = {
+        key: value
+        for key, value in current.items()
+        if key not in {"run_id", "reused", "output_fingerprint"}
+    }
+    assert current["output_fingerprint"] == "sha256:" + content_fingerprint(core)
+    assert db.get_automation_run_sync(first["run_id"]) == original_run
+    assert db.get_action_tasks_sync(statuses=["pending"], limit=100) == original_tasks
+    assert db.list_signal_journal_sync(limit=100) == original_signals
 
 
 def test_minimum_commission_is_included_in_one_lot_cash_gate() -> None:
@@ -456,6 +763,103 @@ def test_minimum_commission_is_included_in_one_lot_cash_gate() -> None:
     assert unblocked == []
 
 
+@pytest.mark.parametrize("permission_enabled", [False, True])
+def test_portfolio_policy_filters_frozen_board_universe_before_ranking(
+    tmp_path, monkeypatch, permission_enabled
+):
+    from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
+    from execution.commission import StockACommission
+    from server.persistence.strategy_research import StrategyResearchAuditStore
+    from server.services.account_board_permissions import freeze_entry_board_policy
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    strategy_id = "ai_formula_shadow:complete-market"
+    db.upsert_strategy_promotion_state_sync(
+        strategy_id=strategy_id,
+        stage="paper_shadow",
+        gate_status="paper_shadow_enabled",
+        live_like_enabled=False,
+        missing_requirements=[],
+        backtest_result_id=1,
+        payload={
+            "readiness": {
+                "deployment_validation": {
+                    "final_evaluation_id": "sealed-fixture",
+                    "initial_cash": "32000",
+                    "entry_board_policy": freeze_entry_board_policy(None, "2026-08-24"),
+                }
+            }
+        },
+    )
+    monkeypatch.setattr(
+        StrategyResearchAuditStore,
+        "get_sealed_test",
+        lambda self, identity: {
+            "evidence": {
+                "reservation": {
+                    "fee_schedule": {},
+                    "publication_grant": {
+                        "risk_limits": {
+                            "max_positions": 4,
+                            "max_gross_weight": "0.97",
+                            "max_symbol_weight": "0.30",
+                        }
+                    },
+                }
+            }
+        },
+    )
+    monkeypatch.setattr(
+        "server.services.reviewed_fee_schedule.resolve_frozen_deployment_fee_schedule",
+        lambda *args: SimpleNamespace(
+            commission_calc=StockACommission(),
+            review=SimpleNamespace(
+                effective_start_date="2026-01-01", effective_end_date="2026-12-31"
+            ),
+        ),
+    )
+    symbols = ["688001", "600000", "600001", "600002", "600003"]
+    signals = [
+        {
+            "strategy_id": strategy_id,
+            "symbol": symbol,
+            "direction": "buy",
+            "ranking_liquidity": 10_000_000 - index,
+            "frozen_close": 10,
+            "portfolio_policy_id": FORMULA_PORTFOLIO_POLICY_ID,
+        }
+        for index, symbol in enumerate(symbols)
+    ]
+    selected, blocked = account_eligible_signals(
+        signals,
+        config=SimpleNamespace(),
+        decision_date="2026-08-24",
+        portfolio={
+            "cash": 32000,
+            "total_equity": 32000,
+            "fact_authority": "persisted_valuation_snapshot",
+            "stock_position_market_values": {},
+            "stock_symbols": [],
+            "board_buy_permissions": {
+                "status": "current",
+                "resolved_for_date": "2026-08-24",
+                "evidence_fingerprint": "sha256:" + "a" * 64,
+                "boards": {"star": "enabled"},
+            }
+            if permission_enabled
+            else None,
+        },
+        policy=MarketUniversePolicy(),
+        cash_buffer_ratio=Decimal("0.03"),
+        db=db,
+    )
+    assert [row["symbol"] for row in selected] == symbols[1:]
+    assert {row["symbol"]: row["reason"] for row in blocked} == {
+        symbols[0]: "frozen_entry_board_policy",
+    }
+
+
 @pytest.mark.parametrize(
     ("cash", "fact_authority"),
     [(None, "persisted_valuation_snapshot"), (100_000, "legacy_fallback")],
@@ -471,7 +875,7 @@ def test_untrusted_cash_is_account_blocked_not_a_normal_no_signal_day(
         "valuation_status": "complete",
         "symbols": [],
         "instrument_types": {},
-        "valuation_snapshot_id": "valuation-fixture",
+        "valuation_snapshot_id": _valuation_id(db),
     }
 
     result = service.run_once(decision_date="2026-08-24", portfolio_summary=portfolio)
@@ -487,7 +891,7 @@ def test_untrusted_cash_is_account_blocked_not_a_normal_no_signal_day(
 
 
 def test_star_buy_stays_blocked_until_downstream_trade_unit_support(tmp_path) -> None:
-    _, service, _ = _service(tmp_path, produces_signals=True, special_symbol="688001")
+    db, service, _ = _service(tmp_path, produces_signals=True, special_symbol="688001")
     portfolio = {
         "total_equity": 100_000,
         "cash": 100_000,
@@ -495,7 +899,7 @@ def test_star_buy_stays_blocked_until_downstream_trade_unit_support(tmp_path) ->
         "valuation_status": "complete",
         "symbols": [],
         "instrument_types": {},
-        "valuation_snapshot_id": "valuation-fixture",
+        "valuation_snapshot_id": _valuation_id(db),
         "board_buy_permissions": _board_permissions("star", "enabled"),
     }
 
@@ -534,7 +938,7 @@ def test_scan_calendar_failure_blocks_new_and_prepared_recommendations(
         "valuation_status": "complete",
         "symbols": [],
         "instrument_types": {},
-        "valuation_snapshot_id": "valuation-fixture",
+        "valuation_snapshot_id": _valuation_id(db),
     }
     prepared = service.run_once(
         decision_date="2026-08-24",
@@ -589,7 +993,7 @@ def test_multi_strategy_exit_for_same_account_holding_fails_closed(
         "valuation_status": "complete",
         "symbols": [symbols[0]],
         "instrument_types": {symbols[0]: "stock"},
-        "valuation_snapshot_id": "valuation-fixture",
+        "valuation_snapshot_id": _valuation_id(db),
     }
 
     result = service.run_once(
@@ -645,7 +1049,7 @@ def test_complete_full_market_scan_without_signal_is_normal_no_action(tmp_path) 
             "valuation_status": "complete",
             "symbols": ["019999"],
             "instrument_types": {"019999": "open_end_fund"},
-            "valuation_snapshot_id": "valuation-fixture",
+            "valuation_snapshot_id": _valuation_id(db),
         },
     )
 
@@ -671,7 +1075,7 @@ def test_held_stock_outside_active_universe_blocks_instead_of_no_action(
                 "000001": "stock",
                 "019999": "open_end_fund",
             },
-            "valuation_snapshot_id": "valuation-fixture",
+            "valuation_snapshot_id": _valuation_id(db),
         },
     )
 
@@ -695,7 +1099,7 @@ def test_portfolio_instrument_type_must_be_authoritative_before_scan(tmp_path) -
             "valuation_status": "complete",
             "symbols": [symbols[0]],
             "instrument_types": {},
-            "valuation_snapshot_id": "valuation-fixture",
+            "valuation_snapshot_id": _valuation_id(db),
         },
     )
 
@@ -712,7 +1116,7 @@ def test_persisted_scan_is_rejected_after_current_input_drift(tmp_path) -> None:
         "valuation_status": "complete",
         "symbols": ["019999"],
         "instrument_types": {"019999": "open_end_fund"},
-        "valuation_snapshot_id": "valuation-fixture",
+        "valuation_snapshot_id": _valuation_id(db),
     }
     scan = service.run_once(
         decision_date="2026-08-24",
@@ -765,13 +1169,13 @@ def test_persisted_scan_is_rejected_after_current_input_drift(tmp_path) -> None:
 
 
 def test_persisted_scan_rejects_same_id_universe_payload_tamper(tmp_path) -> None:
-    _, service, _ = _service(tmp_path, produces_signals=False)
+    db, service, _ = _service(tmp_path, produces_signals=False)
     portfolio = {
         "total_equity": 100_000,
         "valuation_status": "complete",
         "symbols": ["019999"],
         "instrument_types": {"019999": "open_end_fund"},
-        "valuation_snapshot_id": "valuation-fixture",
+        "valuation_snapshot_id": _valuation_id(db),
     }
     scan = service.run_once(
         decision_date="2026-08-24",
@@ -799,13 +1203,13 @@ def test_persisted_scan_rejects_same_id_universe_payload_tamper(tmp_path) -> Non
 
 
 def test_persisted_scan_rejects_current_evaluation_policy_change(tmp_path) -> None:
-    _, service, _ = _service(tmp_path, produces_signals=False)
+    db, service, _ = _service(tmp_path, produces_signals=False)
     portfolio = {
         "total_equity": 100_000,
         "valuation_status": "complete",
         "symbols": ["019999"],
         "instrument_types": {"019999": "open_end_fund"},
-        "valuation_snapshot_id": "valuation-fixture",
+        "valuation_snapshot_id": _valuation_id(db),
     }
     scan = service.run_once(
         decision_date="2026-08-24",
@@ -835,7 +1239,7 @@ def test_prepared_scan_writes_nothing_until_exact_selection_is_committed(
         "valuation_status": "complete",
         "symbols": [],
         "instrument_types": {},
-        "valuation_snapshot_id": "valuation-fixture",
+        "valuation_snapshot_id": _valuation_id(db),
     }
 
     prepared = service.run_once(
@@ -875,7 +1279,7 @@ def test_strategy_scan_obeys_kill_switch_before_signal_writes(tmp_path) -> None:
             "valuation_status": "complete",
             "symbols": [],
             "instrument_types": {},
-            "valuation_snapshot_id": "valuation-fixture",
+            "valuation_snapshot_id": _valuation_id(db),
         },
     )
 
@@ -897,7 +1301,7 @@ def test_strategy_scan_requires_complete_valuation_before_signal_writes(
             "valuation_status": "degraded",
             "symbols": [],
             "instrument_types": {},
-            "valuation_snapshot_id": "valuation-fixture",
+            "valuation_snapshot_id": _valuation_id(db),
         },
     )
 
@@ -968,7 +1372,7 @@ def test_scan_outside_decision_window_evaluates_signals_without_persisting_actio
         "valuation_status": "complete",
         "symbols": [symbols[0], "019999"],
         "instrument_types": {symbols[0]: "stock", "019999": "open_end_fund"},
-        "valuation_snapshot_id": "valuation-fixture",
+        "valuation_snapshot_id": _valuation_id(db),
     }
 
     result = service.run_once(decision_date="2026-08-24", portfolio_summary=portfolio)
@@ -1049,7 +1453,7 @@ def test_scan_succeeds_when_fund_valuation_lane_is_missing_but_stock_lane_is_com
         ],
         "symbols": [symbols[0], "019999"],
         "instrument_types": {symbols[0]: "stock", "019999": "open_end_fund"},
-        "valuation_snapshot_id": "valuation-fixture",
+        "valuation_snapshot_id": _valuation_id(db),
     }
 
     result = service.run_once(decision_date="2026-08-24", portfolio_summary=portfolio)
@@ -1077,7 +1481,7 @@ def test_promoted_strategy_scan_succeeds_with_heterogeneous_providers(
         "valuation_status": "complete",
         "symbols": [symbols[0], "019999"],
         "instrument_types": {symbols[0]: "stock", "019999": "open_end_fund"},
-        "valuation_snapshot_id": "valuation-fixture",
+        "valuation_snapshot_id": _valuation_id(db),
     }
 
     first = service.run_once(decision_date="2026-08-24", portfolio_summary=portfolio)
@@ -1225,6 +1629,16 @@ def test_promoted_strategy_scan_succeeds_with_multi_source_daily_receipts(
         trade_date="2026-08-21",
         provider_name="master_fixture",
         members=members,
+        capture_started_at=datetime(
+            2026, 8, 21, 15, 59, tzinfo=ZoneInfo("Asia/Shanghai")
+        ),
+        capture_completed_at=datetime(
+            2026, 8, 21, 16, tzinfo=ZoneInfo("Asia/Shanghai")
+        ),
+        source_metadata=[
+            {"symbol": symbol, "display_name": f"合成股票{symbol}"}
+            for symbol in symbols
+        ],
     )
     # Split dates across two different daily providers: half tushare, half akshare
     mid = len(market_dates) // 2
@@ -1317,7 +1731,7 @@ def test_promoted_strategy_scan_succeeds_with_multi_source_daily_receipts(
         "valuation_status": "complete",
         "symbols": [symbols[0], "019999"],
         "instrument_types": {symbols[0]: "stock", "019999": "open_end_fund"},
-        "valuation_snapshot_id": "valuation-fixture",
+        "valuation_snapshot_id": _valuation_id(db),
     }
 
     first = service.run_once(decision_date="2026-08-24", portfolio_summary=portfolio)

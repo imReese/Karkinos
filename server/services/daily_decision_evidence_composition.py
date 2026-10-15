@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from data.dataset.reader import daily_bar_dataset_read_scope
 from server.contracts.content_identity import content_fingerprint
 from server.projections.portfolio_read_snapshot import PortfolioReadSnapshotRejected
 from server.services.automation_control import AutomationControlService
@@ -71,112 +72,115 @@ def build_daily_decision_evidence_automation_service(
     initial_read_pending = True
 
     async def read_plan() -> tuple[dict[str, Any], dict[str, Any]]:
-        nonlocal initial_read_pending
-        try:
-            decision, trading_plan = await plan_reader(state)
-        except Exception as exc:
-            if initial_read_pending and _is_initial_market_revision_conflict(exc):
-                raise InitialDailyCandidateReadConflict() from exc
-            raise
-        # All later reads may follow scan, quote, action, or risk writes. Only
-        # failure of this first raw read can safely restart the whole cycle.
-        initial_read_pending = False
-        decision_date = str(decision.get("decision_date") or "")
-        plan_date = str(trading_plan.get("plan_date") or "")
-        if decision_date and decision_date == plan_date:
-            portfolio = object_dict(
-                object_dict(decision.get("summary")).get("portfolio")
-            )
-            promotion_state_identity = promoted_strategy_state_cache_identity(state.db)
-            cache_key = promoted_scan_cache_key(
-                decision_date,
-                portfolio,
-                promotion_state_identity=promotion_state_identity,
-            )
-            cached = scan_cache.get(cache_key)
-            if cached is not None:
-                cached_blockers = await asyncio.to_thread(
-                    scanner.current_input_blockers,
-                    scan=cached["scan"],
-                    portfolio_summary=portfolio,
-                )
-                if cached_blockers:
-                    cached = None
-            if cached is None:
-                prepared = await asyncio.to_thread(
-                    scanner.run_once,
-                    decision_date=decision_date,
-                    portfolio_summary=portfolio,
-                    persist_actions=False,
-                )
-                quote_freeze = await quote_freezer.run_once(prepared)
+        with daily_bar_dataset_read_scope():
+            nonlocal initial_read_pending
+            try:
                 decision, trading_plan = await plan_reader(state)
-                final_portfolio = object_dict(
+            except Exception as exc:
+                if initial_read_pending and _is_initial_market_revision_conflict(exc):
+                    raise InitialDailyCandidateReadConflict() from exc
+                raise
+            # All later reads may follow scan, quote, action, or risk writes. Only
+            # failure of this first raw read can safely restart the whole cycle.
+            initial_read_pending = False
+            decision_date = str(decision.get("decision_date") or "")
+            plan_date = str(trading_plan.get("plan_date") or "")
+            if decision_date and decision_date == plan_date:
+                portfolio = object_dict(
                     object_dict(decision.get("summary")).get("portfolio")
                 )
-                quote_blockers = [
-                    f"daily_candidate_quote_freeze:{item}"
-                    for item in quote_freeze.get("blockers") or []
-                ]
-                final_scan = await asyncio.to_thread(
-                    scanner.run_once,
-                    decision_date=decision_date,
-                    portfolio_summary=final_portfolio,
-                    expected_signal_selection_fingerprint=prepared.get(
-                        "signal_selection_fingerprint"
-                    ),
-                    additional_blockers=quote_blockers,
+                promotion_state_identity = promoted_strategy_state_cache_identity(
+                    state.db
                 )
-                decision, trading_plan = await plan_reader(state)
-                final_portfolio = object_dict(
-                    object_dict(decision.get("summary")).get("portfolio")
+                cache_key = promoted_scan_cache_key(
+                    decision_date,
+                    portfolio,
+                    promotion_state_identity=promotion_state_identity,
                 )
-                final_input_blockers = await asyncio.to_thread(
-                    scanner.current_input_blockers,
-                    scan=final_scan,
-                    portfolio_summary=final_portfolio,
-                )
-                if final_input_blockers:
-                    final_scan = {
-                        **final_scan,
-                        "status": "blocked",
-                        "normal_no_signal": False,
-                        "blockers": list(
-                            dict.fromkeys(
-                                [
-                                    *list(final_scan.get("blockers") or []),
-                                    *final_input_blockers,
-                                ]
-                            )
-                        ),
-                    }
-                cached = {
-                    "scan": final_scan,
-                    "quote_freeze": quote_freeze,
-                }
-                if final_scan.get("status") in {
-                    "completed",
-                    "completed_no_signal",
-                }:
-                    final_promotion_state_identity = (
-                        promoted_strategy_state_cache_identity(state.db)
+                cached = scan_cache.get(cache_key)
+                if cached is not None:
+                    cached_blockers = await asyncio.to_thread(
+                        scanner.current_input_blockers,
+                        scan=cached["scan"],
+                        portfolio_summary=portfolio,
                     )
-                    if final_promotion_state_identity == promotion_state_identity:
-                        scan_cache[
-                            promoted_scan_cache_key(
-                                decision_date,
-                                final_portfolio,
-                                promotion_state_identity=(
-                                    final_promotion_state_identity
-                                ),
-                            )
-                        ] = cached
-            decision = bind_promoted_strategy_scan(
-                decision,
-                cached["scan"],
-                quote_freeze=cached["quote_freeze"],
-            )
-        return decision, trading_plan
+                    if cached_blockers:
+                        cached = None
+                if cached is None:
+                    prepared = await asyncio.to_thread(
+                        scanner.run_once,
+                        decision_date=decision_date,
+                        portfolio_summary=portfolio,
+                        persist_actions=False,
+                    )
+                    quote_freeze = await quote_freezer.run_once(prepared)
+                    decision, trading_plan = await plan_reader(state)
+                    final_portfolio = object_dict(
+                        object_dict(decision.get("summary")).get("portfolio")
+                    )
+                    quote_blockers = [
+                        f"daily_candidate_quote_freeze:{item}"
+                        for item in quote_freeze.get("blockers") or []
+                    ]
+                    final_scan = await asyncio.to_thread(
+                        scanner.run_once,
+                        decision_date=decision_date,
+                        portfolio_summary=final_portfolio,
+                        expected_signal_selection_fingerprint=prepared.get(
+                            "signal_selection_fingerprint"
+                        ),
+                        additional_blockers=quote_blockers,
+                    )
+                    decision, trading_plan = await plan_reader(state)
+                    final_portfolio = object_dict(
+                        object_dict(decision.get("summary")).get("portfolio")
+                    )
+                    final_input_blockers = await asyncio.to_thread(
+                        scanner.current_input_blockers,
+                        scan=final_scan,
+                        portfolio_summary=final_portfolio,
+                    )
+                    if final_input_blockers:
+                        final_scan = {
+                            **final_scan,
+                            "status": "blocked",
+                            "normal_no_signal": False,
+                            "blockers": list(
+                                dict.fromkeys(
+                                    [
+                                        *list(final_scan.get("blockers") or []),
+                                        *final_input_blockers,
+                                    ]
+                                )
+                            ),
+                        }
+                    cached = {
+                        "scan": final_scan,
+                        "quote_freeze": quote_freeze,
+                    }
+                    if final_scan.get("status") in {
+                        "completed",
+                        "completed_no_signal",
+                    }:
+                        final_promotion_state_identity = (
+                            promoted_strategy_state_cache_identity(state.db)
+                        )
+                        if final_promotion_state_identity == promotion_state_identity:
+                            scan_cache[
+                                promoted_scan_cache_key(
+                                    decision_date,
+                                    final_portfolio,
+                                    promotion_state_identity=(
+                                        final_promotion_state_identity
+                                    ),
+                                )
+                            ] = cached
+                decision = bind_promoted_strategy_scan(
+                    decision,
+                    cached["scan"],
+                    quote_freeze=cached["quote_freeze"],
+                )
+            return decision, trading_plan
 
     async def run_risk() -> dict[str, Any]:
         return await risk_runner(state)
@@ -278,4 +282,17 @@ def promoted_strategy_state_cache_identity(db: Any) -> str:
         ),
         key=lambda row: str(row.get("strategy_id") or ""),
     )
-    return "sha256:" + content_fingerprint(promoted)
+    from server.services.recommendation_publication import publication_source_blocker
+
+    return "sha256:" + content_fingerprint(
+        {
+            "states": promoted,
+            "current_publication_eligibility": [
+                {
+                    "strategy_id": row["strategy_id"],
+                    "blocker": publication_source_blocker(db, row),
+                }
+                for row in promoted
+            ],
+        }
+    )

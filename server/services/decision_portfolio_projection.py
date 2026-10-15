@@ -163,6 +163,7 @@ def portfolio_state_summary(
     instrument_types: dict[str, str] = {}
     position_values: list[float] = []
     stock_position_values: list[float] = []
+    stock_position_market_values: dict[str, float] = {}
     position_valuation_complete = True
     stock_valuation_complete = True
     for symbol, position in position_items:
@@ -186,6 +187,7 @@ def portfolio_state_summary(
             position_values.append(market_value)
             if resolved_type in {"", "stock"}:
                 stock_position_values.append(market_value)
+                stock_position_market_values[symbol_text] = market_value
     cash = float_or_zero(getattr(portfolio, "cash", 0.0))
     snapshot = context.get("valuation_snapshot")
     aggregate_valuation_complete = (
@@ -211,6 +213,9 @@ def portfolio_state_summary(
         "total_market_value": total_market_value,
         "total_equity": total_equity,
         "stock_market_value": stock_market_value,
+        "stock_position_market_values": stock_position_market_values
+        if stock_valuation_complete
+        else None,
         "stock_equity": stock_equity,
         "board_buy_permissions": board_permissions,
     }
