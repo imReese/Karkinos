@@ -65,6 +65,12 @@ Cold warmup uses actual range captures per stock shard and retains per-session
 dual-source verification. It does not repeat every historical request by day or
 claim historical availability. Current forward jobs take priority over ordinary
 backfills; budget deferrals expose their retry time without raising the limit.
+Single-day collection uses up to 100 instruments per batch; historical ranges
+remain bounded to 40. This keeps one complete declared-market input round within
+the continuous trading-week provider budget, including same-upstream dividend
+queries and the next-opening deadline. Concurrent books share that capacity.
+Network or provider failures can still miss that deadline;
+late data never repairs an already missed point-in-time observation.
 
 Publication is default-off and affects account recommendations. Inside a current
 standing grant, successful final evidence plus fresh account qualification can

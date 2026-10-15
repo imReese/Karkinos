@@ -131,6 +131,13 @@ The backend job allows 90 minutes for coverage and the real 60-session forward
 book, independent evaluation, account qualification and recommendation publication
 journey, alongside the other Python groups.
 
+Full-scope supply tests also exercise a continuous trading week with real SQLite
+provider-budget reservations and next-opening deadlines. They include the maximum
+declared market and same-upstream dividend queries, keeping the 100-attempt daily
+budget unchanged. Single-day jobs allow 100 instruments while historical range
+jobs retain 40; neither canonical attempts nor transport batches are individual
+SDK/network-request counts or network completion guarantees.
+
 `.github/workflows/nightly.yml` owns the complete browser suite, Docker runtime
 smoke, dependency audits, and full Git-history secret scanning. Commit CI scans
 all unpromoted commits and the working tree for secrets. Nightly failures remain

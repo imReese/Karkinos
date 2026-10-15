@@ -10,7 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from core.types import InstrumentKey, InstrumentType
-from data.market.contracts import MAX_DAILY_BAR_JOB_INSTRUMENTS, DailyBarRequest
+from data.market.contracts import (
+    MAX_DAILY_BAR_JOB_INSTRUMENTS,
+    MAX_DAILY_BAR_RANGE_JOB_INSTRUMENTS,
+    DailyBarRequest,
+)
 from data.source_policy import (
     source_policy_for_config,
     verification_source_policy_for_config,
@@ -233,7 +237,9 @@ def enqueue_verified_daily_market_jobs_for_range(
             else "historical_warmup_range.v1"
         )
         range_payloads = []
-        for batch in verified_daily_instrument_batches(instruments):
+        for batch in verified_daily_instrument_batches(
+            instruments, historical_range=True
+        ):
             batch_set = set(batch)
             planned = VerifiedDailyMarketJobRequest(
                 trade_date=dates[-1],
@@ -281,14 +287,20 @@ def enqueue_verified_daily_market_jobs_for_range(
 
 def verified_daily_instrument_batches(
     instruments: tuple[InstrumentKey, ...],
+    *,
+    historical_range: bool = False,
 ) -> tuple[tuple[InstrumentKey, ...], ...]:
     """Transport batches never narrow the declared research universe."""
+    maximum = (
+        MAX_DAILY_BAR_RANGE_JOB_INSTRUMENTS
+        if historical_range
+        else MAX_DAILY_BAR_JOB_INSTRUMENTS
+    )
     ordered = tuple(
         sorted(instruments, key=lambda item: (item.instrument_type.value, item.symbol))
     )
     return tuple(
-        ordered[index : index + MAX_VERIFIED_DAILY_JOB_INSTRUMENTS]
-        for index in range(0, len(ordered), MAX_VERIFIED_DAILY_JOB_INSTRUMENTS)
+        ordered[index : index + maximum] for index in range(0, len(ordered), maximum)
     )
 
 

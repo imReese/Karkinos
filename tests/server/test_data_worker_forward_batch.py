@@ -34,6 +34,57 @@ from tests.server.test_research_observations_journey import (
 from tests.server.test_verified_daily_worker_gate import DAY, _calendar
 
 
+def test_existing_forty_stock_and_new_daily_jobs_keep_the_exact_scope_guard(
+    supplied, monkeypatch
+):
+    from core.types import InstrumentKey, InstrumentType
+    from server.services import research_observation_data_preparation as preparation
+
+    _, observations, current, _, _, _, jobs, _ = supplied
+    toggle(supplied)
+    report = prepare(supplied)[0]
+    original = jobs.get(report["pending_job_ids"][0])
+    assert original is not None
+    day = datetime.fromisoformat(original.payload["trade_date"]).date()
+    expected = tuple(
+        InstrumentKey(str(600000 + index), InstrumentType.STOCK) for index in range(101)
+    )
+    monkeypatch.setattr(
+        preparation, "ResearchObservationService", lambda _: observations
+    )
+    monkeypatch.setattr(
+        preparation,
+        "_dynamic_memberships",
+        lambda *args, **kwargs: (
+            SimpleNamespace(
+                partition_date=day, instruments=expected, maintenance_instruments=()
+            ),
+        ),
+    )
+
+    def job_for(keys):
+        return replace(
+            original,
+            payload={
+                **original.payload,
+                "instruments": [
+                    {"symbol": key.symbol, "instrument_type": key.instrument_type.value}
+                    for key in keys
+                ],
+            },
+        )
+
+    for members in (expected[:40], expected[:100], expected[100:]):
+        preparation.require_observation_preparation_job(
+            observations.db, CONFIG, job_for(members)
+        )
+    # Preserving old batches never permits an arbitrary overlapping subset.
+    with pytest.raises(ValueError, match="job_scope_mismatch"):
+        preparation.require_observation_preparation_job(
+            observations.db, CONFIG, job_for(expected[1:41])
+        )
+
+
 def test_forward_waiting_preserves_real_budget_resume_time(supplied):
     from data.providers.baostock import BAOSTOCK_DAILY_BAR_DESCRIPTOR
 

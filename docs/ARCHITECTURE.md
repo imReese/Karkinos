@@ -688,6 +688,16 @@ preparation; a new seed does not certify historical research or account publicat
 
 Cold full-scope warmup collects each stock shard over its complete required date
 range, rather than fetching the same stock separately for every historical day.
+Historical range jobs retain at most 40 instruments per capture, while single-day
+jobs allow 100. One complete input round at the declared 10,000-instrument limit
+therefore needs at most 100 daily batches per upstream, within the existing
+Shanghai-calendar-day budget of
+100 canonical fetch attempts. The next midnight can supply the small remainder
+when that upstream also performs the four prospective dividend queries; continuous
+trading-week admission is tested against each next-opening deadline, rather than
+only comparing weekly totals. Concurrent books share this capacity; the bound
+does not guarantee arbitrary concurrent workloads or provider completion times.
+Existing 40-instrument jobs and immutable Dataset identities remain readable.
 Each source retains one genuine range capture; normalization, revisions, quality
 and independent reconciliation remain dated per session. The capture's actual
 completion time remains its conservative availability boundary. Missing sessions,

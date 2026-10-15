@@ -113,7 +113,7 @@ async def test_explicit_invalid_baseline_result_id_fails_closed(tmp_path) -> Non
 
 
 def test_verified_provider_jobs_retain_their_batch_limit() -> None:
-    assert MAX_VERIFIED_DAILY_JOB_INSTRUMENTS == 40
+    assert MAX_VERIFIED_DAILY_JOB_INSTRUMENTS == 100
 
 
 from data.providers.tdx import TdxRuntimeSettings
@@ -122,7 +122,7 @@ from data.providers.tdx import TdxRuntimeSettings
 def test_prepare_daily_dataset_accepts_more_than_one_provider_batch(
     tmp_path, monkeypatch
 ) -> None:
-    """Dataset scope is independent of the provider's 40-instrument jobs."""
+    """Dataset scope is independent of the provider's acquisition jobs."""
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
 

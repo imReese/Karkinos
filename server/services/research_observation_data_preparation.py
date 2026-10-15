@@ -376,7 +376,12 @@ def require_observation_preparation_job(db, config, job: JobRun) -> None:
         prefix.instruments,
     )
     if (
-        planned.instruments not in verified_daily_instrument_batches(expected)
+        planned.instruments
+        not in (
+            *verified_daily_instrument_batches(expected),
+            # Already queued v1 jobs retain their original 40-stock layout.
+            *verified_daily_instrument_batches(expected, historical_range=True),
+        )
         or planned.trade_date.isoformat() not in {item.trade_date for item in dates}
         or planned.source_policy_id
         != verification_source_policy_for_config(config).policy_id

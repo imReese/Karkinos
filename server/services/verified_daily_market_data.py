@@ -23,6 +23,7 @@ from data.dataset.resolver import (
 )
 from data.market.contracts import (
     MAX_DAILY_BAR_JOB_INSTRUMENTS,
+    MAX_DAILY_BAR_RANGE_JOB_INSTRUMENTS,
     DailyBarRequest,
     MarketDataProviderDescriptor,
 )
@@ -196,7 +197,12 @@ class VerifiedDailyMarketJobRequest:
             raise VerifiedDailyMarketDataRequestError(
                 "verified_daily_market_instruments_invalid"
             )
-        if len(raw_instruments) > MAX_DAILY_BAR_JOB_INSTRUMENTS:
+        maximum_instruments = (
+            MAX_DAILY_BAR_RANGE_JOB_INSTRUMENTS
+            if version == VERIFIED_DAILY_MARKET_RANGE_JOB_SCHEMA_VERSION
+            else MAX_DAILY_BAR_JOB_INSTRUMENTS
+        )
+        if len(raw_instruments) > maximum_instruments:
             raise VerifiedDailyMarketDataRequestError(
                 "verified_daily_market_job_batch_exceeded"
             )

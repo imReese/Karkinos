@@ -744,12 +744,13 @@ def test_multi_asset_http_rejects_ambiguous_or_unbounded_universe_before_enqueue
     assert store.list_recent(VERIFIED_DAILY_MARKET_JOB) == []
 
 
-def test_41_instrument_http_universe_has_two_lossless_idempotent_provider_batches(
+def test_101_instrument_http_universe_has_two_lossless_idempotent_provider_batches(
     tmp_path,
 ):
     client, store = _verified_jobs_api(tmp_path, trading_dates={TRADE_DATE})
     instruments = [
-        {"symbol": str(510300 + index), "instrument_type": "etf"} for index in range(41)
+        {"symbol": str(510300 + index), "instrument_type": "etf"}
+        for index in range(101)
     ]
     request = {
         "instruments": instruments,
@@ -766,7 +767,7 @@ def test_41_instrument_http_universe_has_two_lossless_idempotent_provider_batche
         assert repeated.status_code == 200, repeated.text
         assert repeated.json() == first.json()
         jobs = first.json()["jobs"]
-        assert [len(job["instruments"]) for job in jobs] == [40, 1]
+        assert [len(job["instruments"]) for job in jobs] == [100, 1]
         assert [item for job in jobs for item in job["instruments"]] == instruments
         assert len({job["job_id"] for job in jobs}) == 2
         assert all(job["trade_date"] == TRADE_DATE.isoformat() for job in jobs)

@@ -152,6 +152,7 @@ def test_range_planner_has_125_batches_for_5000_by_120_and_preserves_v1_identity
         historical_range=True,
     )
     assert len(jobs) == 125
+    assert all(len(job.payload["instruments"]) == 40 for job in jobs)
     assert all(
         len(VerifiedDailyMarketJobRequest.from_payload(job.payload).expected_sessions())
         == 120
@@ -170,14 +171,17 @@ def test_range_planner_has_125_batches_for_5000_by_120_and_preserves_v1_identity
     assert [job.job_id for job in repeated] == [job.job_id for job in jobs]
     legacy = VerifiedDailyMarketJobRequest(
         DAYS[0],
-        (STOCKS[0],),
+        keys[:40],
         _config().market_data_verification_source_policy,
         ("calendar:fixture",),
     ).to_payload()
     expected = {
         "schema_version": VERIFIED_DAILY_MARKET_JOB_SCHEMA_VERSION,
         "trade_date": DAYS[0].isoformat(),
-        "instruments": [{"symbol": "600000", "instrument_type": "stock"}],
+        "instruments": [
+            {"symbol": key.symbol, "instrument_type": key.instrument_type.value}
+            for key in keys[:40]
+        ],
         "source_policy_id": _config().market_data_verification_source_policy,
         "calendar_evidence_refs": ["calendar:fixture"],
         "observation_round": "post_close.v1",
@@ -186,6 +190,43 @@ def test_range_planner_has_125_batches_for_5000_by_120_and_preserves_v1_identity
     assert job_id_for(VERIFIED_DAILY_MARKET_JOB, legacy) == job_id_for(
         VERIFIED_DAILY_MARKET_JOB, expected
     )
+    assert VerifiedDailyMarketJobRequest.from_payload(legacy).to_payload() == expected
+
+
+def test_daily_and_range_payloads_keep_separate_instrument_bounds():
+    keys = tuple(
+        InstrumentKey(f"{600000 + index}", InstrumentType.STOCK) for index in range(101)
+    )
+    daily = VerifiedDailyMarketJobRequest(
+        DAYS[-1],
+        keys[:100],
+        _config().market_data_verification_source_policy,
+        ("calendar:fixture",),
+    ).to_payload()
+    assert len(VerifiedDailyMarketJobRequest.from_payload(daily).instruments) == 100
+    with pytest.raises(VerifiedDailyMarketDataRequestError, match="batch_exceeded"):
+        VerifiedDailyMarketJobRequest.from_payload(
+            {
+                **daily,
+                "instruments": [
+                    {"symbol": key.symbol, "instrument_type": key.instrument_type.value}
+                    for key in keys
+                ],
+            }
+        )
+    oversized_range = VerifiedDailyMarketJobRequest(
+        DAYS[-1],
+        keys[:41],
+        _config().market_data_verification_source_policy,
+        ("calendar:fixture",),
+        range_start_date=DAYS[0],
+        range_end_date=DAYS[-1],
+        session_memberships=tuple(
+            (day, keys[:41], ("calendar:fixture",)) for day in DAYS
+        ),
+    ).to_payload()
+    with pytest.raises(VerifiedDailyMarketDataRequestError, match="batch_exceeded"):
+        VerifiedDailyMarketJobRequest.from_payload(oversized_range)
 
 
 def test_range_capture_replays_daily_verification_and_composes_declared_members(

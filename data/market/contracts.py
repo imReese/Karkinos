@@ -32,7 +32,11 @@ class DailyBarProviderUnavailableError(RuntimeError):
     """The provider could not produce an observation because external I/O is unavailable."""
 
 
-MAX_DAILY_BAR_JOB_INSTRUMENTS = 40
+# Single-session jobs must cover the admitted 10,000-stock scope within the
+# existing 100-attempt daily budget. Historical ranges retain the smaller I/O
+# bound because each instrument can contribute thousands of rows.
+MAX_DAILY_BAR_JOB_INSTRUMENTS = 100
+MAX_DAILY_BAR_RANGE_JOB_INSTRUMENTS = 40
 
 
 @dataclass(frozen=True, slots=True)

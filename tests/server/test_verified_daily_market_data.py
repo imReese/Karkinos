@@ -998,6 +998,52 @@ def test_matched_market_job_publishes_v2_catalog_and_serving(
     assert [bar.instrument for bar in serving] == [ETF, STOCK]
 
 
+def test_hundred_stock_daily_job_captures_both_sources_and_replays_complete_dataset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from data.market.revision import read_market_revision_materialization
+
+    calls = []
+    service = _service(tmp_path, monkeypatch, call_log=calls)
+    instruments = tuple(
+        InstrumentKey(str(600000 + index), InstrumentType.STOCK) for index in range(100)
+    )
+    payload = VerifiedDailyMarketJobRequest(
+        DAY,
+        instruments,
+        _payload()["source_policy_id"],
+        ("calendar:2026:sse:fixture",),
+    ).to_payload()
+    publication = service.run(payload, checked_at=CHECKED)
+    objects = ContentAddressedObjectStore(tmp_path / "research" / "objects")
+    replayed = read_daily_bar_dataset(objects, publication.dataset_ref)
+    assert calls == ["baostock", "akshare_tencent"]
+    assert replayed.snapshot.verification_bound
+    assert replayed.snapshot.instruments == instruments
+    assert tuple(bar.instrument for bar in replayed.bars) == instruments
+    assert len(replayed.bars) == 100
+    verification = read_market_verification_evidence(
+        objects, objects.resolve_ref(publication.verification_id)
+    )
+    for identity in (
+        verification.primary_materialization_id,
+        verification.comparison_materialization_id,
+    ):
+        materialization = read_market_revision_materialization(
+            objects, objects.resolve_ref(identity)
+        )
+        capture = read_provider_capture(objects, materialization.capture_ref)
+        assert capture.record_count == 100
+        assert (
+            json.loads(capture.request_json)
+            == DailyBarRequest(instruments, DAY, DAY).to_capture_request()
+        )
+    assert (
+        DatasetCatalog(tmp_path / "research").get(publication.dataset_id).ref
+        == publication.dataset_ref
+    )
+
+
 def test_verified_service_does_not_date_check_before_provider_captures(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
