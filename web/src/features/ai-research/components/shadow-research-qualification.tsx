@@ -12,6 +12,7 @@ import type {
 import type { ShadowResearchCopy } from './shadow-research-copy';
 import { ShadowResearchObservations } from './shadow-research-observations';
 import { QualificationForwardReview } from './qualification-forward-review';
+import { usePublicationPolicy } from '../publication-policy-api';
 
 type QualificationView = {
   run: ShadowResearchQualificationRun | undefined;
@@ -20,11 +21,14 @@ type QualificationView = {
   sourceCandidateBound: boolean;
   sourceCandidate: ShadowResearchCandidate | undefined;
   approved: boolean;
+  approvalRecorded: boolean;
+  legacyApproval: boolean;
   approvalEligible: boolean;
 };
 
 function qualificationView(
   status: ShadowResearchAutomationStatus | undefined,
+  usableSourceIds: string[],
 ): QualificationView {
   const runs = status?.qualification_runs ?? [];
   const candidates = status?.qualification_candidates ?? [];
@@ -69,20 +73,31 @@ function qualificationView(
     sourceCandidate.recommendation === 'formula_research_candidate' &&
     sourceCandidate.promotion_status === 'account_qualification_required',
   );
+  const approval = winner
+    ? (status?.qualification_approvals ?? []).find(
+        (item) =>
+          item.qualification_run_id === run?.qualification_run_id &&
+          item.qualification_candidate_id ===
+            winner.qualification_candidate_id &&
+          item.target_stage === 'paper_shadow',
+      )
+    : undefined;
+  const approvalRecorded = Boolean(approval);
+  const legacyApproval =
+    approval?.decision_source === 'legacy_ungranted' ||
+    approval?.manual_confirmation_recorded === false;
   const approved = Boolean(
     winner &&
-    (status?.qualification_approvals ?? []).some(
-      (approval) =>
-        approval.qualification_run_id === run?.qualification_run_id &&
-        approval.qualification_candidate_id ===
-          winner.qualification_candidate_id &&
-        approval.target_stage === 'paper_shadow',
+    sourceCandidate &&
+    usableSourceIds.includes(
+      `ai_formula_shadow:${sourceCandidate.candidate_id}`,
     ),
   );
   const approvalEligible = Boolean(
     run &&
     winner &&
     sourceCandidateBound &&
+    !approvalRecorded &&
     !approved &&
     run.status === 'completed' &&
     run.selection_status === 'winner_selected' &&
@@ -102,6 +117,8 @@ function qualificationView(
     sourceCandidateBound,
     sourceCandidate,
     approved,
+    approvalRecorded,
+    legacyApproval,
     approvalEligible,
   };
 }
@@ -129,7 +146,13 @@ export function ShadowResearchQualificationReview({
   const [confirmed, setConfirmed] = useState(false);
   const [forwardReview, setForwardReview] =
     useState<ForwardReviewBinding | null>(null);
-  const view = qualificationView(status);
+  const publication = usePublicationPolicy();
+  const usableSourceIds = !publication.isError
+    ? (publication.data?.usable_current_sources?.map(
+        (source) => source.strategy_id,
+      ) ?? [])
+    : [];
+  const view = qualificationView(status, usableSourceIds);
   const outcomeStatus =
     status?.research_outcome.account_qualification_status ?? 'not_evaluated';
   const statusKey = view.run?.status ?? view.attempt?.status ?? outcomeStatus;
@@ -214,6 +237,24 @@ export function ShadowResearchQualificationReview({
       </dl>
 
       <p className="sr-only">{copy.qualificationSourceLocked}</p>
+      {view.winner?.deployment_validation ? (
+        <div
+          className="app-muted mt-3 break-words text-xs"
+          data-testid="qualification-deployment-validation"
+        >
+          <p>
+            {locale === 'zh'
+              ? '独立最终验证 / 固定检查点 / 费用来源'
+              : 'Independent final validation / checkpoint / fee source'}
+            : {view.winner.deployment_validation.status ?? '—'} /{' '}
+            {view.winner.deployment_validation.checkpoint ?? '—'} /{' '}
+            {view.winner.deployment_validation.fee_cost_model_reference ?? '—'}
+          </p>
+          {view.winner.deployment_validation.blockers?.length ? (
+            <p>{view.winner.deployment_validation.blockers.join(' · ')}</p>
+          ) : null}
+        </div>
+      ) : null}
 
       {blockers.length ? (
         <div className="mt-4">
@@ -238,6 +279,18 @@ export function ShadowResearchQualificationReview({
       {view.approved ? (
         <p className="mt-4 text-sm font-semibold text-[var(--app-success-text)]">
           {copy.qualificationApproved}
+        </p>
+      ) : null}
+
+      {view.approvalRecorded && !view.approved ? (
+        <p role="status" className="mt-3 text-xs">
+          {view.legacyApproval
+            ? locale === 'zh'
+              ? '历史自动批准记录：未绑定有效发布授权，不代表人工确认或当前可用账户来源。'
+              : 'Historical automatic approval: no valid publication grant is bound. This is not human confirmation or a currently usable account source.'
+            : locale === 'zh'
+              ? '批准记录已保留；当前账户来源尚未核验生效。'
+              : 'Approval record retained; current account publication is not verified as applicable.'}
         </p>
       ) : null}
 

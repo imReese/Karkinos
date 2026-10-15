@@ -48,6 +48,7 @@ def test_daily_provider_budget_route_reads_shared_reservations(tmp_path, monkeyp
     assert payload["schema_version"] == "karkinos.market_daily_provider_budget.v1"
     assert payload["scope"] == "managed_daily_market_jobs"
     assert payload["shanghai_date"] == "2026-09-29"
+    assert payload["reset_at"] == "2026-09-29T16:00:00+00:00"
     assert payload["groups"]["baostock"] == {
         "used": 1,
         "limit": DEFAULT_DAILY_PROVIDER_ATTEMPT_LIMIT,

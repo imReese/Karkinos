@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from data.dataset.reader import daily_bar_dataset_read_scope
 from server.ai_runtime.strategy_research import (
     STRATEGY_RESEARCH_MAX_CANDIDATES,
     STRATEGY_RESEARCH_MAX_PROVIDER_CALLS,
@@ -85,6 +86,36 @@ class ShadowResearchPolicyPayload(BaseModel):
                 "research_capital_mode conflicts with account evidence requirement"
             )
         return self
+
+
+class PublicationPolicyPreviewPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    allocation_scope: str | None = None
+    strategy_family: Literal["formula"] | None = None
+    max_initial_cash: str | None = None
+    risk_limits: dict[str, Any] | None = None
+    max_publications: int | None = Field(default=None, ge=1)
+    max_final_tests: int | None = Field(default=None, ge=1)
+    total_error_budget: str | None = None
+    min_net_improvement: str | None = None
+    cooldown_days: int | None = Field(default=None, ge=0)
+    incumbent_strategy_id: str | None = None
+    expires_at: str | None = None
+    updated_by: str | None = None
+    statistical_policy: dict[str, Any] | None = None
+
+
+class PublicationPolicyPayload(PublicationPolicyPreviewPayload):
+    enabled: bool
+    expected_generation: str | None = None
+    account_scope_fingerprint: str | None = None
+    deployment_scope_fingerprint: str | None = None
+    statistical_policy_fingerprint: str | None = None
+    entry_board_policy: dict[str, Any] | None = None
+    confirmation: str
+    policy_id: str | None = None
+    schema_version: str | None = None
 
 
 class ShadowResearchPromotionPayload(BaseModel):
@@ -165,6 +196,52 @@ def create_router(
     raise_http: Callable[[Exception], None],
 ) -> APIRouter:
     router = APIRouter(prefix="/api/ai/strategy-research", tags=["ai-research"])
+
+    @router.get("/automatic-publication-policy")
+    async def get_publication_policy() -> dict[str, Any]:
+        from server.dependencies import get_app_state
+
+        service = build_read_service(get_app_state())
+
+        def read() -> dict[str, Any]:
+            with daily_bar_dataset_read_scope():
+                return service.get_publication_policy()
+
+        return await asyncio.to_thread(read)
+
+    @router.post("/automatic-publication-policy/preview")
+    async def preview_publication_policy(
+        payload: PublicationPolicyPreviewPayload,
+    ) -> dict[str, Any]:
+        from server.dependencies import get_app_state
+
+        service = build_read_service(get_app_state())
+        inputs = payload.model_dump(exclude_unset=True)
+
+        def preview() -> dict[str, Any]:
+            with daily_bar_dataset_read_scope():
+                return service.preview_publication_policy(inputs)
+
+        return await asyncio.to_thread(preview)
+
+    @router.put("/automatic-publication-policy")
+    async def update_publication_policy(
+        payload: PublicationPolicyPayload,
+    ) -> dict[str, Any]:
+        from server.dependencies import get_app_state
+
+        try:
+            service = build_write_service(get_app_state())
+            inputs = payload.model_dump(exclude_unset=True)
+
+            def update() -> dict[str, Any]:
+                with daily_bar_dataset_read_scope():
+                    return service.update_publication_policy(inputs)
+
+            return await asyncio.to_thread(update)
+        except (ValueError, PermissionError) as exc:
+            raise_http(exc)
+            raise
 
     @router.get("/shadow-automation")
     async def get_shadow_research_automation() -> dict[str, Any]:

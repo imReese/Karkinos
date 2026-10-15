@@ -1109,7 +1109,7 @@ test('pauses an approved candidate through the canonical lifecycle state', async
   expect(
     (await screen.findByTestId('shadow-research-candidate-inspector'))
       .textContent,
-  ).toContain('Paper/shadow approved');
+  ).toContain('Publication recorded; current source unverified');
   const pauseButton = screen.getByRole('button', {
     name: 'Pause / revoke paper-shadow',
   }) as HTMLButtonElement;
@@ -1173,7 +1173,7 @@ test('pauses an approved candidate through the canonical lifecycle state', async
   expect(
     (await screen.findByTestId('shadow-research-candidate-inspector'))
       .textContent,
-  ).toContain('Paper/shadow approved');
+  ).toContain('Publication recorded; current source unverified');
 });
 
 test('renders critique evolution timeline and strategy lab clone link for candidates', async () => {
@@ -1211,10 +1211,9 @@ test('renders critique evolution timeline and strategy lab clone link for candid
   // Check Critique Evolution Timeline
   const timeline = await screen.findByTestId('critique-evolution-timeline');
   expect(timeline).toBeTruthy();
-  expect(timeline.textContent).toContain(
-    'Critique self-healing & evolution timeline',
-  );
-  expect(timeline.textContent).toContain('Self-healing converged');
+  expect(timeline.textContent).toContain('Recorded critique and iteration');
+  expect(timeline.textContent).not.toContain('Self-healing converged');
+  expect(timeline.textContent).not.toContain('Schema validation passed');
   expect(timeline.textContent).toContain('Sharpe: +0.60');
   expect(timeline.textContent).toContain('Return: +7.0%');
 });

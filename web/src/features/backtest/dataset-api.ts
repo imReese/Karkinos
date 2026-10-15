@@ -18,6 +18,7 @@ export type PublishedDataset = {
   price_basis: string;
   point_in_time_verified: boolean;
   cross_source_verified?: boolean;
+  session_count?: number;
   corporate_action_evidence?: CorporateActionEvidence | null;
 };
 
@@ -30,6 +31,8 @@ export type VerifiedDatasetJob = {
   result_ref: string | null;
   error?: string | null;
   instruments?: ResearchInstrument[];
+  range_start_date?: string;
+  range_end_date?: string;
 };
 
 export type VerifiedDatasetRange = (
@@ -112,7 +115,12 @@ export function useCollectDatasetCorporateActions() {
 
 export function usePrepareVerifiedDatasetJobs() {
   return useMutation({
-    mutationFn: (payload: VerifiedDatasetRange & { reobserve?: boolean }) =>
+    mutationFn: (
+      payload: VerifiedDatasetRange & {
+        reobserve?: boolean;
+        historical_range?: boolean;
+      },
+    ) =>
       postJson<{ jobs: VerifiedDatasetJob[] }>(
         '/api/backtest/datasets/verified-jobs',
         payload,

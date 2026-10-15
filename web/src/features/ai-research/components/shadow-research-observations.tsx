@@ -68,7 +68,13 @@ function CandidateObservations({ sourceResultId }: { sourceResultId: number }) {
   const report = query.data;
 
   if (!query.isError && report?.id === sourceResultId)
-    return <ResearchObservationsPanel key={sourceResultId} report={report} />;
+    return (
+      <ResearchObservationsPanel
+        key={sourceResultId}
+        report={report}
+        continuousStart
+      />
+    );
 
   return (
     <div className="min-w-0 space-y-3">

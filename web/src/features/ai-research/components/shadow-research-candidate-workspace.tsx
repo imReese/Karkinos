@@ -7,6 +7,7 @@ import {
 } from '../api';
 import { SHADOW_RESEARCH_COPY } from './shadow-research-copy';
 import { CandidateCard } from './shadow-research-view';
+import { usePublicationPolicy } from '../publication-policy-api';
 
 export function ShadowResearchCandidateWorkspace({
   approvals,
@@ -47,6 +48,15 @@ export function ShadowResearchCandidateWorkspace({
   verifiedResearchWinnerCandidateIds: Set<string>;
   verifiedWinnerCandidateIds: Set<string>;
 }) {
+  const publication = usePublicationPolicy();
+  const usableSources = publication.isSuccess
+    ? (publication.data.usable_current_sources ?? [])
+    : [];
+  const sourceUsable = (candidate: ShadowResearchCandidate) =>
+    usableSources.some(
+      (source) =>
+        source.strategy_id === `ai_formula_shadow:${candidate.candidate_id}`,
+    );
   const [historyOpen, setHistoryOpen] = useState(false);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(
     null,
@@ -125,7 +135,9 @@ export function ShadowResearchCandidateWorkspace({
     const candidateMetrics = candidate.comparison.candidate;
     const statusLabel =
       candidate.promotion_status === 'paper_shadow_approved'
-        ? copy.approved
+        ? sourceUsable(candidate)
+          ? copy.approved
+          : copy.publicationUnverified
         : candidate.status.replace(/_/g, ' ');
     const rowClassName = [
       'grid w-full min-w-0 gap-1.5 px-2.5 py-1.5 text-left transition-all rounded-[var(--app-radius-control)] sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center',
@@ -227,6 +239,7 @@ export function ShadowResearchCandidateWorkspace({
         )?.stage
       }
       promotionStateLoaded={promotionStates.isSuccess}
+      publicationUsable={sourceUsable(candidate)}
     />
   );
 

@@ -48,6 +48,23 @@ export type ShadowResearchCandidate = {
   created_at: string;
   updated_at: string;
   comparison: {
+    deployment_scope?: {
+      status: string | null;
+      scope_kind: string | null;
+      deployment_scope_fingerprint?: string | null;
+      as_of?: string | null;
+      expected_count?: number | null;
+      evaluated_count?: number | null;
+      excluded_count?: number | null;
+      unresolved_count?: number | null;
+    };
+    deployment_validation?: {
+      status: string | null;
+      checkpoint: string | null;
+      initial_cash: string | null;
+      fee_cost_model_reference: string | null;
+      blockers: string[];
+    };
     economic_hypothesis?: string;
     risk_impact?: string;
     failure_conditions?: string[];
@@ -181,6 +198,13 @@ export type ShadowResearchQualificationCandidate = {
   recommendation: 'paper_shadow_review' | 'keep_researching' | 'reject';
   rank: number;
   created_at: string;
+  deployment_validation?: {
+    status: string | null;
+    checkpoint: string | null;
+    initial_cash: null;
+    fee_cost_model_reference: string | null;
+    blockers: string[] | null;
+  } | null;
 };
 
 export type ShadowResearchQualificationApproval = {
@@ -190,6 +214,8 @@ export type ShadowResearchQualificationApproval = {
   qualification_candidate_id: string;
   target_stage: 'paper_shadow';
   created_at: string;
+  decision_source?: 'human' | 'legacy_ungranted';
+  manual_confirmation_recorded?: boolean;
 };
 
 export type ShadowResearchQualificationAttempt = {

@@ -55,6 +55,10 @@ test('keeps canonical context neutral until persisted queries settle', async () 
       expect(element.className).toContain('text-[var(--app-text)]');
       expect(element.className).not.toContain('text-[var(--app-warning-text)]');
     });
+  expect(screen.queryByText('Gen 5')).toBeNull();
+  expect(screen.queryByText('13 / 13 ALL PASS')).toBeNull();
+  expect(screen.queryByText('Gemini 3.8 Flash')).toBeNull();
+  expect(screen.queryByText('Cutoff #33')).toBeNull();
   expect(screen.queryByText('No saved backtest is available')).toBeNull();
   expect(screen.queryByText('No account strategy is assigned')).toBeNull();
   const loadingTasks = await screen.findAllByText(

@@ -365,6 +365,11 @@ function DailyResearchCollectionPanel({
               {zh ? '上海日期：' : 'Shanghai date: '}
               {budget.shanghai_date}
             </p>
+            <p className="app-muted mt-1 text-xs tabular-nums">
+              {zh ? '下次预算恢复：' : 'Next budget reset: '}
+              {formatTimestamp(budget.reset_at)}
+              {zh ? '（上海零点）' : ' (Shanghai midnight)'}
+            </p>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
               {Object.entries(budget.groups).map(([group, usage]) => (
                 <div

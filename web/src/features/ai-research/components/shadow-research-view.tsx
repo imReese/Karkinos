@@ -2,6 +2,7 @@ import { usePreferences } from '../../../shared/preferences/context';
 import { formatCurrency, formatPercent } from '../../../shared/format';
 import type { ShadowResearchCandidate, ShadowResearchMetricView } from '../api';
 import { ShadowResearchObservations } from './shadow-research-observations';
+import { ResearchCandidateDefinition } from './research-candidate-definition';
 import {
   SHADOW_RESEARCH_COPY,
   type ShadowResearchCopy,
@@ -22,6 +23,7 @@ export function CandidateCard({
   onPause,
   promotionStage,
   promotionStateLoaded,
+  publicationUsable,
   isDailyWinner,
   isResearchWinner,
   pending,
@@ -40,6 +42,7 @@ export function CandidateCard({
   onPause: () => void;
   promotionStage: string | undefined;
   promotionStateLoaded: boolean;
+  publicationUsable: boolean;
   isDailyWinner: boolean;
   isResearchWinner: boolean;
   pending: boolean;
@@ -73,11 +76,13 @@ export function CandidateCard({
         </div>
         <span className="rounded-full border border-[var(--app-divider)] px-2.5 py-1 text-xs font-semibold">
           {candidate.promotion_status === 'paper_shadow_approved'
-            ? promotionStage === 'paper_shadow'
+            ? promotionStage === 'paper_shadow' && publicationUsable
               ? copy.approved
-              : promotionStateLoaded
-                ? copy.paused
-                : candidate.status.replace(/_/g, ' ')
+              : promotionStage === 'paper_shadow'
+                ? copy.publicationUnverified
+                : promotionStateLoaded
+                  ? copy.paused
+                  : candidate.status.replace(/_/g, ' ')
             : candidate.status.replace(/_/g, ' ')}
         </span>
         {isDailyWinner ? (
@@ -146,6 +151,7 @@ export function CandidateCard({
         </p>
       ) : null}
 
+      <ResearchCandidateDefinition candidate={candidate} />
       <CritiqueEvolutionTimeline candidate={candidate} copy={copy} />
 
       {comparison.research_capital_mode === 'normalized_notional' ? (
@@ -411,12 +417,6 @@ export function CritiqueEvolutionTimeline({
           {copy.critiqueTrajectory}
         </div>
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
-          <span className="rounded-full border border-[color-mix(in_srgb,var(--app-success)_40%,transparent)] bg-[color-mix(in_srgb,var(--app-success)_10%,transparent)] px-2 py-0.5 app-type-micro font-medium text-[var(--app-success-text)]">
-            {copy.selfHealingConverged}
-          </span>
-          <span className="rounded-full border border-[var(--app-divider)] px-2 py-0.5 app-type-micro font-medium text-[var(--app-text-secondary)]">
-            {copy.schemaValidationPass}
-          </span>
           {lineage?.sequential_feedback_bound ? (
             <span className="rounded-full border border-[var(--app-divider)] px-2 py-0.5 app-type-micro font-medium text-[var(--app-text-secondary)]">
               {copy.sequentialFeedbackBound}
@@ -424,10 +424,6 @@ export function CritiqueEvolutionTimeline({
           ) : null}
         </div>
       </div>
-
-      <p className="app-muted mt-2 text-xs leading-5">
-        {copy.evolutionCorrectionNotice}
-      </p>
 
       <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
         <div className="rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] p-2.5">
@@ -444,7 +440,7 @@ export function CritiqueEvolutionTimeline({
           <div className="app-muted mt-1 app-type-micro">
             {lineage?.parent_draft_id
               ? `Parent: ${lineage.parent_draft_id}`
-              : 'Initial formula seed'}
+              : 'Parent not recorded'}
           </div>
         </div>
 
@@ -454,11 +450,13 @@ export function CritiqueEvolutionTimeline({
           </div>
           <div className="mt-1 flex flex-wrap gap-1 app-type-micro">
             <span className="text-[var(--app-success-text)]">
-              {critique?.supported_claims?.length ?? 0} claims pass
+              {critique ? (critique.supported_claims?.length ?? 0) : '—'}{' '}
+              supported claims
             </span>
             <span className="text-[var(--app-muted)]">·</span>
             <span className="text-[var(--app-warning-text)]">
-              {critique?.contradicted_claims?.length ?? 0} claims gap
+              {critique ? (critique.contradicted_claims?.length ?? 0) : '—'}{' '}
+              contradicted claims
             </span>
           </div>
           {critique?.uncertainty ? (

@@ -26,6 +26,7 @@ import {
 } from './shadow-research-policy-card';
 import { StatusMetric } from './shadow-research-view';
 import { StrategyChampionSpotlight } from './strategy-champion-spotlight';
+import { AutomaticPublicationPolicy } from './automatic-publication-policy';
 
 function isFiveRoundPolicy(policy: {
   max_provider_calls_per_market_date: number;
@@ -377,6 +378,8 @@ export function ShadowResearchPanel() {
       <div className="mt-2.5">
         <StrategyChampionSpotlight status={status} />
       </div>
+
+      <AutomaticPublicationPolicy updatedBy={policy.updated_by} />
 
       {/* 2. 账户资格复核 (Account Qualification Review) */}
       <div className="mt-3">

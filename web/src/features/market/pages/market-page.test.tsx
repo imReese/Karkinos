@@ -203,6 +203,7 @@ function installMarketFetchMock(
               schema_version: 'karkinos.market_daily_provider_budget.v1',
               scope: 'managed_daily_market_jobs',
               shanghai_date: '2026-06-17',
+              reset_at: '2026-06-17T16:00:00+00:00',
               groups: {
                 baostock: { used: 0, limit: 100, remaining: 100 },
               },
@@ -450,6 +451,7 @@ test('shows managed daily-bar quality, revision rounds, and attempt budget in ma
       schema_version: 'karkinos.market_daily_provider_budget.v1',
       scope: 'managed_daily_market_jobs',
       shanghai_date: '2026-06-17',
+      reset_at: '2026-06-17T16:00:00+00:00',
       groups: {
         baostock: { used: 2, limit: 100, remaining: 98 },
         tencent: { used: 1, limit: 100, remaining: 99 },
@@ -475,6 +477,8 @@ test('shows managed daily-bar quality, revision rounds, and attempt budget in ma
   ).toBeTruthy();
   expect(within(panel).getByText(/Evidence attribution mismatch/)).toBeTruthy();
   expect(within(panel).getByText(/Used 2\/100 · Remaining 98/)).toBeTruthy();
+  expect(within(panel).getByText(/Next budget reset:/)).toBeTruthy();
+  expect(within(panel).getByText(/Shanghai midnight/)).toBeTruthy();
   expect(
     within(panel).getByText(
       /Automatic single-source and explicit two-source managed daily-bar jobs share this budget/,

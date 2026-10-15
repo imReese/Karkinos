@@ -31,12 +31,14 @@ export function VerifiedDatasetPreparation({
   range,
   zh,
   disabled = false,
+  historicalWarmup = false,
   onPublished,
   onPendingChange,
 }: {
   range: VerifiedDatasetRange | null;
   zh: boolean;
   disabled?: boolean;
+  historicalWarmup?: boolean;
   onPublished: (dataset: PublishedDataset) => void;
   onPendingChange?: (pending: boolean) => void;
 }) {
@@ -83,9 +85,11 @@ export function VerifiedDatasetPreparation({
     if (!range) return;
     setError('');
     try {
-      const result = await prepareVerified.mutateAsync(
-        reobserve ? { ...range, reobserve: true } : range,
-      );
+      const result = await prepareVerified.mutateAsync({
+        ...range,
+        ...(reobserve ? { reobserve: true } : {}),
+        ...(historicalWarmup ? { historical_range: true } : {}),
+      });
       setVerification({ key: rangeKey, jobs: result.jobs });
     } catch (failure) {
       if (latestRange.current === rangeKey)
@@ -132,9 +136,13 @@ export function VerifiedDatasetPreparation({
           {zh ? '显式双源核验' : 'Explicit two-source verification'}
         </p>
         <p className="app-muted mt-1 text-xs leading-5">
-          {zh
-            ? '按完整资产篮子和日期为每个已核验交易日提交任务。全部标的和任务成功后手动发布一个区间 Dataset；核验只证明两份日线相符，不证明历史 PIT 可用或总收益口径。'
-            : 'Submit one job per verified trading day for the complete basket and dates above. Publish an interval Dataset after every instrument and job succeeds. Source agreement does not prove historical PIT availability or total return.'}
+          {historicalWarmup
+            ? zh
+              ? '按完整资产篮子的股票分片获取历史区间，并逐日做双源核验。全部标的和任务成功后发布预热 Dataset；今天采回的历史数据不证明历史时点已知或完整总收益。'
+              : 'Collect the historical interval by instrument shard and verify both sources for each session. Publish warmup data after every member and job succeeds. Data collected today do not prove historical availability or total return.'
+            : zh
+              ? '按完整资产篮子和日期为每个已核验交易日提交任务。全部标的和任务成功后手动发布一个区间 Dataset；核验只证明两份日线相符，不证明历史 PIT 可用或总收益口径。'
+              : 'Submit one job per verified trading day for the complete basket and dates above. Publish an interval Dataset after every instrument and job succeeds. Source agreement does not prove historical PIT availability or total return.'}
         </p>
         <p className="app-muted mt-1 text-xs leading-5">
           {zh

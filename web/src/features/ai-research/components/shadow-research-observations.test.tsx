@@ -64,52 +64,117 @@ function reads(url: string) {
 
 afterEach(() => vi.unstubAllGlobals());
 
-test('loads the exact candidate report on disclosure and starts observation in place only after explicit submit', async () => {
-  const observation = savedObservation();
-  observation.lifecycle = 'active';
-  observation.publications = [];
-  observation.outcomes = [];
-  observation.health_decision = null;
-  observation.last_blocker = null;
-  let started = false;
-  const fetchMock = vi.fn(
-    async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === '/api/research-observations' && init?.method === 'POST') {
-        started = true;
-        return json({ id: observation.id });
-      }
-      if (url === `/api/research-observations/${observation.id}`)
-        return json(observation);
-      if (url.includes('/api/research-observations?'))
-        return json(started ? [observation] : []);
-      return reads(url);
-    },
-  );
-  vi.stubGlobal('fetch', fetchMock);
-  mount(<ShadowResearchObservations candidate={normalizedCandidate} />);
-  expect(fetchMock).not.toHaveBeenCalled();
-  open();
-  const start = await screen.findByRole('button', {
-    name: 'Start observation',
-  });
-  await waitFor(() => expect(start).toBeEnabled());
-  expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/backtest/results/8');
-  expect(started).toBe(false);
-  fireEvent.click(start);
-  await screen.findByText('Publishing enabled · saved-ob');
-  const writes = fetchMock.mock.calls.filter(
-    ([, init]) => init?.method === 'POST',
-  );
-  expect(writes).toHaveLength(1);
-  expect(JSON.parse(String(writes[0][1]?.body))).toMatchObject({
-    source_backtest_result_id: 8,
-    horizon_sessions: 5,
-  });
-  expect(
-    fetchMock.mock.calls.some(([url]) => String(url).includes('/results/7')),
-  ).toBe(false);
-});
+test.each(['none', 'book', 'automation'] as const)(
+  'starts observation, book and automation in order, resuming a partial failure (%s)',
+  async (failAt) => {
+    const observation = savedObservation();
+    observation.lifecycle = 'active';
+    observation.publications = [];
+    observation.outcomes = [];
+    observation.health_decision = null;
+    observation.last_blocker = null;
+    let started = false;
+    let bookAttempts = 0;
+    let automationEnabled = false;
+    const book = savedPaperBook();
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url === '/api/research-observations' && init?.method === 'POST') {
+          started = true;
+          return json({ id: observation.id });
+        }
+        if (url.endsWith('/paper-book')) {
+          if (init?.method === 'POST') {
+            bookAttempts += 1;
+            if (failAt === 'book' && bookAttempts === 1)
+              return json(
+                { detail: 'paper_start_temporarily_unavailable' },
+                503,
+              );
+          }
+          return json(book);
+        }
+        if (url.endsWith('/automation') && init?.method === 'PUT') {
+          automationEnabled = true;
+          observation.automation = {
+            observation_id: observation.id,
+            enabled: true,
+            paper_settlement_enabled: true,
+            dataset_preparation_enabled: true,
+            generation: 'committed-generation',
+            status: 'ready',
+            last_checked_at: null,
+            last_attempt_at: null,
+            last_blocker: null,
+            dataset_id: null,
+            decision_session: null,
+          };
+          if (failAt === 'automation')
+            return json({ detail: 'response_lost_after_commit' }, 503);
+          return json({});
+        }
+        if (url === `/api/research-observations/${observation.id}`)
+          return json(observation);
+        if (url.includes('/api/research-observations?'))
+          return json(started ? [observation] : []);
+        return reads(url);
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    mount(<ShadowResearchObservations candidate={normalizedCandidate} />);
+    expect(fetchMock).not.toHaveBeenCalled();
+    open();
+    const start = await screen.findByRole('button', {
+      name: 'Freeze and start forward paper',
+    });
+    expect(start).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole('checkbox', {
+        name: /Authorize data preparation, target publication and settlement/,
+      }),
+    );
+    await waitFor(() => expect(start).toBeEnabled());
+    expect(
+      fetchMock.mock.calls.some(
+        ([url]) => String(url) === '/api/backtest/results/8',
+      ),
+    ).toBe(true);
+    expect(started).toBe(false);
+    fireEvent.click(start);
+    if (failAt !== 'none') {
+      const resume = await screen.findByRole('button', {
+        name: 'Resume paper setup',
+      });
+      expect(automationEnabled).toBe(failAt === 'automation');
+      fireEvent.click(resume);
+    }
+    await waitFor(() => expect(automationEnabled).toBe(true));
+    await screen.findByText('Publishing enabled · saved-ob');
+    const writes = fetchMock.mock.calls.filter(
+      ([, init]) => init?.method === 'POST',
+    );
+    expect(writes).toHaveLength(failAt !== 'none' ? 3 : 2);
+    expect(String(writes[0][0])).toBe('/api/research-observations');
+    expect(String(writes[1][0])).toBe(
+      `/api/research-observations/${observation.id}/paper-book`,
+    );
+    if (failAt !== 'none')
+      expect(JSON.parse(String(writes[1][1]?.body)).request_id).toBe(
+        JSON.parse(String(writes[2][1]?.body)).request_id,
+      );
+    expect(
+      fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT'),
+    ).toHaveLength(1);
+    expect(JSON.parse(String(writes[0][1]?.body))).toMatchObject({
+      source_backtest_result_id: 8,
+      horizon_sessions: 5,
+    });
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url).includes('/results/7')),
+    ).toBe(false);
+  },
+);
 
 test('keeps multiple exact-source histories and shows paper net excess, costs, sample limits and health', async () => {
   const older = savedObservation('older-observation');
@@ -182,7 +247,7 @@ test('switching candidates during a pending source read never mounts the previou
       }}
     />,
   );
-  await screen.findByRole('button', { name: 'Start observation' });
+  await screen.findByRole('button', { name: 'Freeze and start forward paper' });
   await act(async () => {
     resolveFirst(json(sourceReport(8)));
     await first;
@@ -243,13 +308,15 @@ test.each([503, 200])(
       'unavailable or does not match',
     );
     expect(
-      screen.queryByRole('button', { name: 'Start observation' }),
+      screen.queryByRole('button', { name: 'Freeze and start forward paper' }),
     ).not.toBeInTheDocument();
     fireEvent.click(
       screen.getByRole('button', { name: 'Reload source report' }),
     );
     expect(
-      await screen.findByRole('button', { name: 'Start observation' }),
+      await screen.findByRole('button', {
+        name: 'Freeze and start forward paper',
+      }),
     ).toBeVisible();
   },
 );
@@ -281,8 +348,12 @@ test('qualification resolves both source candidate and run without changing appr
   });
   expect(button).toBeDisabled();
   open();
-  await screen.findByRole('button', { name: 'Start observation' });
-  expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/backtest/results/8');
+  await screen.findByRole('button', { name: 'Freeze and start forward paper' });
+  expect(
+    fetchMock.mock.calls.some(
+      ([url]) => String(url) === '/api/backtest/results/8',
+    ),
+  ).toBe(true);
   expect(button).toBeDisabled();
   status.candidates = status.candidates.filter(
     (candidate) => candidate.run_id !== 'normalized-run',

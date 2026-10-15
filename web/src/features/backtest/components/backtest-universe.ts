@@ -26,10 +26,11 @@ export function buildResearchAssets(
 
 function typedInstruments(
   assets?: ResearchAsset[],
+  maximumInstruments = 32,
 ): ResearchInstrument[] | null {
   if (
     !assets?.length ||
-    assets.length > 32 ||
+    assets.length > maximumInstruments ||
     assets.some(
       (asset) =>
         !/^\d{6}$/.test(asset.symbol) ||
@@ -65,8 +66,9 @@ export function researchDatasetRange(
   assets: ResearchAsset[] | undefined,
   startDate: string,
   endDate: string,
+  maximumInstruments = 32,
 ): VerifiedDatasetRange | null {
-  const instruments = typedInstruments(assets);
+  const instruments = typedInstruments(assets, maximumInstruments);
   if (!instruments || !startDate || !endDate || startDate > endDate)
     return null;
   return {
@@ -76,7 +78,11 @@ export function researchDatasetRange(
   };
 }
 
-function sameInstruments(a: ResearchInstrument[], b: ResearchInstrument[]) {
+function sameInstruments(
+  a: ResearchInstrument[],
+  b: ResearchInstrument[],
+  maximumInstruments = 32,
+) {
   const key = (items: ResearchInstrument[]) => {
     if (
       !Array.isArray(items) ||
@@ -88,6 +94,7 @@ function sameInstruments(a: ResearchInstrument[], b: ResearchInstrument[]) {
         symbol: asset.symbol,
         asset_class: asset.instrument_type,
       })),
+      maximumInstruments,
     );
     return typed ? JSON.stringify(typed) : null;
   };
@@ -118,10 +125,30 @@ export function verificationMatchesResearchInputs(
   const instruments = range.instruments ?? [
     { symbol: range.symbol, instrument_type: range.instrument_type },
   ];
-  return jobs.every((job) =>
-    job.instruments
-      ? sameInstruments(job.instruments, instruments)
-      : instruments.length === 1,
+  if (!jobs.length) return false;
+  const ranged = Boolean(jobs[0].range_start_date);
+  const groups = new Map<string, ResearchInstrument[]>();
+  for (const job of jobs) {
+    if (Boolean(job.range_start_date) !== ranged) return false;
+    const start = ranged ? job.range_start_date : job.trade_date;
+    const end = ranged ? job.range_end_date : job.trade_date;
+    if (
+      !start ||
+      !end ||
+      start > end ||
+      start < range.start_date ||
+      end > range.end_date ||
+      (ranged && job.trade_date !== end)
+    )
+      return false;
+    const members =
+      job.instruments ?? (instruments.length === 1 ? instruments : []);
+    if (!members.length) return false;
+    const key = `${start}:${end}`;
+    groups.set(key, [...(groups.get(key) ?? []), ...members]);
+  }
+  return [...groups.values()].every((members) =>
+    sameInstruments(members, instruments, 10_000),
   );
 }
 

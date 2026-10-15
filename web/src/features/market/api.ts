@@ -185,6 +185,7 @@ export type DailyCollectionQualityRun = {
 export type MarketDailyProviderBudget = {
   scope: 'managed_daily_market_jobs';
   shanghai_date: string;
+  reset_at: string;
   groups: Record<string, { used: number; limit: number; remaining: number }>;
 };
 

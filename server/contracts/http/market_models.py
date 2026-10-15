@@ -154,6 +154,7 @@ class MarketDailyProviderBudgetResponse(BaseModel):
     schema_version: str = "karkinos.market_daily_provider_budget.v1"
     scope: Literal["managed_daily_market_jobs"]
     shanghai_date: str
+    reset_at: str
     groups: dict[str, MarketDailyProviderBudgetUsage]
 
 

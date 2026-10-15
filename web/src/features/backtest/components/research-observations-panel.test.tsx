@@ -232,6 +232,7 @@ test('prepares verified warmup and starts an old report as a separate forward ex
     '/api/research-observations',
   ]);
   expect(commands[0].body).toMatchObject({
+    historical_range: true,
     symbol: '600001',
     instrument_type: 'stock',
     start_date: warmup.start_date,

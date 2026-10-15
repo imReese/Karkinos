@@ -25,18 +25,23 @@ export function ObservationForwardInput({
   const [end, setEnd] = useState('');
   const [preparing, setPreparing] = useState(false);
   const instruments = source.data?.instruments;
+  const requiredInstruments = new Set(
+    instruments?.map((item) => `${item.instrument_type}:${item.symbol}`),
+  );
   const matching =
     datasets.data?.datasets?.filter(
       (dataset) =>
         dataset.cross_source_verified === true &&
-        dataset.partition_count >= (source.data?.minimum_bars ?? Infinity) &&
+        (dataset.session_count ?? dataset.partition_count) >=
+          (source.data?.minimum_bars ?? Infinity) &&
         dataset.instruments.length === instruments?.length &&
-        dataset.instruments.every((item) =>
-          instruments.some(
-            (expected) =>
-              item.symbol === expected.symbol &&
-              item.instrument_type === expected.instrument_type,
+        new Set(
+          dataset.instruments.map(
+            (item) => `${item.instrument_type}:${item.symbol}`,
           ),
+        ).size === dataset.instruments.length &&
+        dataset.instruments.every((item) =>
+          requiredInstruments.has(`${item.instrument_type}:${item.symbol}`),
         ),
     ) ?? [];
   const selected = matching.find((dataset) => dataset.dataset_id === datasetId);
@@ -55,6 +60,7 @@ export function ObservationForwardInput({
     })),
     start,
     end,
+    10_000,
   );
 
   return (
@@ -67,15 +73,33 @@ export function ObservationForwardInput({
       {source.isError ? (
         <p role="alert">{observationError(source.error, locale)}</p>
       ) : source.data ? (
-        <p>
-          {source.data.instruments
-            .map((item) => `${item.symbol} (${item.instrument_type})`)
-            .join(', ')}
-          {' · '}
-          {zh
-            ? `每个标的至少 ${source.data.minimum_bars} 个交易日`
-            : `At least ${source.data.minimum_bars} sessions per instrument`}
-        </p>
+        <div>
+          <p>
+            {source.data.instruments.length > 32
+              ? zh
+                ? `${source.data.instruments.length} 个冻结标的`
+                : `${source.data.instruments.length} frozen instruments`
+              : source.data.instruments
+                  .map((item) => `${item.symbol} (${item.instrument_type})`)
+                  .join(', ')}
+            {' · '}
+            {zh
+              ? `每个标的至少 ${source.data.minimum_bars} 个交易日`
+              : `At least ${source.data.minimum_bars} sessions per instrument`}
+          </p>
+          {source.data.instruments.length > 32 ? (
+            <details>
+              <summary className="cursor-pointer">
+                {zh ? '查看完整范围' : 'View complete scope'}
+              </summary>
+              <p className="break-all">
+                {source.data.instruments
+                  .map((item) => `${item.symbol} (${item.instrument_type})`)
+                  .join(', ')}
+              </p>
+            </details>
+          ) : null}
+        </div>
       ) : (
         <p role="status">
           {zh
@@ -99,8 +123,8 @@ export function ObservationForwardInput({
           {matching.map((dataset) => (
             <option key={dataset.dataset_id} value={dataset.dataset_id}>
               {dataset.start_date} → {dataset.end_date} ·{' '}
-              {dataset.partition_count} {zh ? '交易日' : 'sessions'} ·{' '}
-              {dataset.dataset_id.slice(7, 17)}
+              {dataset.session_count ?? dataset.partition_count}{' '}
+              {zh ? '交易日' : 'sessions'} · {dataset.dataset_id.slice(7, 17)}
             </option>
           ))}
         </select>
@@ -155,6 +179,7 @@ export function ObservationForwardInput({
           </label>
         </div>
         <VerifiedDatasetPreparation
+          historicalWarmup
           range={range}
           zh={zh}
           disabled={disabled || source.isError || !source.data}

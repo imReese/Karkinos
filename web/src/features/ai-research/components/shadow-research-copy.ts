@@ -42,7 +42,7 @@ export const SHADOW_RESEARCH_COPY = {
     researchWinnerBadge: 'Formula research winner · non-executable',
     qualificationTitle: 'Account qualification review',
     qualificationDetail:
-      'Provider-free replay evaluates the frozen Formula batch against current canonical account evidence. Only the exact qualified winner can be approved, and approval remains paper/shadow research only.',
+      'Provider-free replay evaluates the frozen Formula batch against current canonical account evidence. An active publication grant can publish a qualified winner automatically after independent validation; no per-candidate confirmation is required.',
     qualificationStatus: {
       running: 'Qualification running',
       completed: 'Qualified winner selected',
@@ -68,7 +68,7 @@ export const SHADOW_RESEARCH_COPY = {
       'I reviewed this exact account-qualified winner and approve it for paper/shadow research only. This grants no order, trade, or capital authority.',
     qualificationApprove: 'Approve qualified winner for paper/shadow only',
     qualificationApproving: 'Recording exact approval…',
-    qualificationApproved: 'Exact paper/shadow approval recorded',
+    qualificationApproved: 'Current account recommendation source verified',
     observationTitle: 'Forward observation and paper results',
     observationBoundary:
       'Start an independent observation from this exact saved candidate and review its paper results here. These observations do not replace independent final evaluation or account qualification, and do not change approval eligibility.',
@@ -177,6 +177,7 @@ export const SHADOW_RESEARCH_COPY = {
     approvalConfirm:
       'I reviewed the baseline comparison, costs, rolling OOS, risks and critique. Approve this candidate for paper/shadow research only.',
     approved: 'Paper/shadow approved',
+    publicationUnverified: 'Publication recorded; current source unverified',
     paused: 'Paper/shadow paused / revoked',
     pause: 'Pause / revoke paper-shadow',
     pausing: 'Recording pause…',
@@ -189,7 +190,7 @@ export const SHADOW_RESEARCH_COPY = {
     openInStrategyLab: 'Open in Strategy Backtest',
     openInStrategyLabDetail:
       'Open this candidate in Strategy Backtest for parameter sweeps and backtesting',
-    critiqueTrajectory: 'Critique self-healing & evolution timeline',
+    critiqueTrajectory: 'Recorded critique and iteration',
     selfHealingConverged: 'Self-healing converged',
     sequentialFeedbackBound: 'Sequential feedback bound',
     schemaValidationPass: 'Schema contract valid',
@@ -238,7 +239,7 @@ export const SHADOW_RESEARCH_COPY = {
     researchWinnerBadge: 'Formula 研究优胜者 · 不可执行',
     qualificationTitle: '账户资格复核',
     qualificationDetail:
-      '系统不调用模型，使用同一冻结 Formula 批次和当前权威账户证据复跑。只有精确的资格优胜者可获人工批准，且批准仅限 paper/shadow 研究。',
+      '系统不调用模型，使用同一冻结 Formula 批次和当前权威账户证据复跑。有效发布授权可在独立验证通过后自动发布资格优胜者，无需逐个候选人工确认。',
     qualificationStatus: {
       running: '资格复核运行中',
       completed: '已选出资格优胜者',
@@ -263,7 +264,7 @@ export const SHADOW_RESEARCH_COPY = {
       '我已复核这个精确的账户资格优胜者，仅批准其进入 paper/shadow 研究；该批准不授予下单、交易或资本权限。',
     qualificationApprove: '仅批准资格优胜者进入 paper/shadow',
     qualificationApproving: '正在记录精确批准…',
-    qualificationApproved: '已记录精确的 paper/shadow 批准',
+    qualificationApproved: '已核验为当前账户建议来源',
     observationTitle: '前向观察与模拟结果',
     observationBoundary:
       '从这个精确的已保存候选启动独立观察，并在此复核模拟结果。这些观察不能替代独立最终检验或账户资格复核，也不改变人工批准条件。',
@@ -363,6 +364,7 @@ export const SHADOW_RESEARCH_COPY = {
     approvalConfirm:
       '我已复核基线对比、成本、rolling OOS、风险与 critique；仅批准该候选进入 paper/shadow 研究。',
     approved: '已批准 paper/shadow',
+    publicationUnverified: '已记录发布；当前建议来源未核验',
     paused: 'paper/shadow 已暂停 / 撤销',
     pause: '暂停 / 撤销 paper-shadow',
     pausing: '正在记录暂停…',
