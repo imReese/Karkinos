@@ -1234,6 +1234,7 @@ function renderBacktestPage(
   options?: Parameters<typeof installBacktestFetchMock>[0] & {
     locale?: 'en' | 'zh';
     navigatorLanguage?: string;
+    viewportWidth?: number;
   },
 ) {
   window.localStorage.clear();
@@ -1245,7 +1246,10 @@ function renderBacktestPage(
     configurable: true,
   });
   window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-    matches: query.includes('prefers-color-scheme: dark'),
+    matches:
+      query === '(min-width: 1280px)'
+        ? (options?.viewportWidth ?? 390) >= 1280
+        : query.includes('prefers-color-scheme: dark'),
     media: query,
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
@@ -1587,87 +1591,111 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-test('renders the backtest workspace and saved report history', async () => {
-  renderBacktestPage();
+const workspaceViewports = [
+  {
+    viewport: 'mobile',
+    viewportWidth: 390,
+    workspace: 'results',
+    setupOpen: false,
+  },
+  {
+    viewport: 'desktop',
+    viewportWidth: 1440,
+    workspace: 'setup',
+    setupOpen: true,
+  },
+] as const;
 
-  expect(await screen.findByText('Strategy Backtest')).toBeTruthy();
-  openBacktestDisclosure('backtest-promotion-evidence-disclosure');
-  const evidenceGateTitle = await screen.findByText(
-    'Strategy validation and review status',
-  );
-  expect(evidenceGateTitle).toBeTruthy();
-  const evidenceGate = evidenceGateTitle.closest('section');
-  expect(evidenceGate).toBeTruthy();
-  expect(
-    await within(evidenceGate!).findByText('Dual Moving Average'),
-  ).toBeTruthy();
-  expect(within(evidenceGate!).getByText('dual_ma')).toBeTruthy();
-  expect(
-    within(evidenceGate!).getByText('Bollinger Mean Reversion'),
-  ).toBeTruthy();
-  expect(within(evidenceGate!).getByText('bollinger')).toBeTruthy();
-  expect(await screen.findAllByText('1/2')).toHaveLength(2);
-  expect(await screen.findByText('Backtest configuration')).toBeTruthy();
-  expect(await screen.findByDisplayValue('Dual Moving Average')).toBeTruthy();
-  expect(
-    await screen.findByLabelText('Short moving-average window'),
-  ).toBeTruthy();
-  expect(await screen.findByText('Run registry')).toBeTruthy();
-  expect(screen.getByTestId('backtest-run-registry')).toBeTruthy();
-  const persistedEvidence = screen.getByTestId('backtest-persisted-evidence');
-  const equityChart = await within(persistedEvidence).findByRole('heading', {
-    name: 'Equity and drawdown',
-  });
-  for (const testId of [
-    'backtest-validation-disclosure',
-    'backtest-dataset-disclosure',
-    'backtest-strategy-evidence-disclosure',
-    'backtest-fills-disclosure',
-  ]) {
-    const disclosure = within(persistedEvidence).getByTestId(testId);
-    expect(disclosure.tagName).toBe('DETAILS');
-    expect(disclosure.hasAttribute('open')).toBe(false);
-  }
-  const metrics = persistedEvidence.querySelector(
-    '[data-backtest-report-section="metrics"]',
-  );
-  expect(metrics).toBeTruthy();
-  const validationEvidence = within(persistedEvidence).getByRole('heading', {
-    name: 'Validation evidence',
-  });
-  const datasetSnapshot = within(persistedEvidence).getByRole('heading', {
-    name: 'Dataset snapshot',
-  });
-  const strategySnapshot = within(persistedEvidence).getByRole('heading', {
-    name: 'Strategy snapshot',
-  });
-  expect(
-    equityChart.compareDocumentPosition(metrics!) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  expect(
-    equityChart.compareDocumentPosition(validationEvidence) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  expect(
-    validationEvidence.compareDocumentPosition(datasetSnapshot) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  expect(
-    datasetSnapshot.compareDocumentPosition(strategySnapshot) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  const tabs = screen.getByTestId('backtest-mobile-workspace-tabs');
-  await waitFor(() => {
-    expect(tabs.getAttribute('data-workspace-view')).toBe('results');
-  });
-  expect(
-    within(tabs).getByRole('tab', { name: 'Results and evidence' }),
-  ).toBeTruthy();
-  expect(screen.getByTestId('backtest-result-panel').className).not.toContain(
-    'hidden xl:block',
-  );
-});
+test.each(workspaceViewports)(
+  'renders saved report evidence with the $viewport workspace state',
+  async ({ viewportWidth, workspace, setupOpen }) => {
+    renderBacktestPage({ viewportWidth });
+
+    expect(await screen.findByText('Strategy Backtest')).toBeTruthy();
+    openBacktestDisclosure('backtest-promotion-evidence-disclosure');
+    const evidenceGateTitle = await screen.findByText(
+      'Strategy validation and review status',
+    );
+    expect(evidenceGateTitle).toBeTruthy();
+    const evidenceGate = evidenceGateTitle.closest('section');
+    expect(evidenceGate).toBeTruthy();
+    expect(
+      await within(evidenceGate!).findByText('Dual Moving Average'),
+    ).toBeTruthy();
+    expect(within(evidenceGate!).getByText('dual_ma')).toBeTruthy();
+    expect(
+      within(evidenceGate!).getByText('Bollinger Mean Reversion'),
+    ).toBeTruthy();
+    expect(within(evidenceGate!).getByText('bollinger')).toBeTruthy();
+    expect(await screen.findAllByText('1/2')).toHaveLength(2);
+    expect(await screen.findByText('Backtest configuration')).toBeTruthy();
+    expect(await screen.findByDisplayValue('Dual Moving Average')).toBeTruthy();
+    expect(
+      await screen.findByLabelText('Short moving-average window'),
+    ).toBeTruthy();
+    expect(await screen.findByText('Run registry')).toBeTruthy();
+    expect(screen.getByTestId('backtest-run-registry')).toBeTruthy();
+    const persistedEvidence = screen.getByTestId('backtest-persisted-evidence');
+    const equityChart = await within(persistedEvidence).findByRole('heading', {
+      name: 'Equity and drawdown',
+    });
+    for (const testId of [
+      'backtest-validation-disclosure',
+      'backtest-dataset-disclosure',
+      'backtest-strategy-evidence-disclosure',
+      'backtest-fills-disclosure',
+    ]) {
+      const disclosure = within(persistedEvidence).getByTestId(testId);
+      expect(disclosure.tagName).toBe('DETAILS');
+      expect(disclosure.hasAttribute('open')).toBe(false);
+    }
+    const metrics = persistedEvidence.querySelector(
+      '[data-backtest-report-section="metrics"]',
+    );
+    expect(metrics).toBeTruthy();
+    const validationEvidence = within(persistedEvidence).getByRole('heading', {
+      name: 'Validation evidence',
+    });
+    const datasetSnapshot = within(persistedEvidence).getByRole('heading', {
+      name: 'Dataset snapshot',
+    });
+    const strategySnapshot = within(persistedEvidence).getByRole('heading', {
+      name: 'Strategy snapshot',
+    });
+    expect(
+      equityChart.compareDocumentPosition(metrics!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      equityChart.compareDocumentPosition(validationEvidence) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      validationEvidence.compareDocumentPosition(datasetSnapshot) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      datasetSnapshot.compareDocumentPosition(strategySnapshot) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    const tabs = screen.getByTestId('backtest-mobile-workspace-tabs');
+    await waitFor(() => {
+      expect(tabs.getAttribute('data-workspace-view')).toBe(workspace);
+    });
+    expect(
+      within(tabs)
+        .getByRole('tab', { selected: true })
+        .getAttribute('aria-controls'),
+    ).toBe(`backtest-mobile-${workspace}`);
+    expect(
+      (
+        screen.getByTestId(
+          'backtest-run-setup-disclosure',
+        ) as HTMLDetailsElement
+      ).open,
+    ).toBe(setupOpen);
+  },
+);
 
 test('keeps the saved report context separate from the next run configuration', async () => {
   renderBacktestPage({
@@ -2639,53 +2667,75 @@ test('localizes built-in parameter labels and descriptions without changing payl
   expect(payload.params).toEqual({ short_period: 3, long_period: 9 });
 });
 
-test('runs a backtest and displays metrics_json and cost_summary_json fields', async () => {
-  const { fetchMock } = renderBacktestPage({ results: [] });
+test.each(workspaceViewports)(
+  'shows completed run evidence with the $viewport workspace state',
+  async ({ viewportWidth, workspace, setupOpen }) => {
+    const { fetchMock } = renderBacktestPage({ results: [], viewportWidth });
 
-  await screen.findByText('Strategy Backtest');
-  fireEvent.change(await screen.findByLabelText('Symbol'), {
-    target: { value: '600002' },
-  });
-  fireEvent.change(
-    await screen.findByLabelText('Short moving-average window'),
-    {
-      target: { value: '3' },
-    },
-  );
-  fireEvent.change(await screen.findByLabelText('Long moving-average window'), {
-    target: { value: '9' },
-  });
-  const runButton = screen.getByRole('button', { name: 'Run backtest' });
-  fireEvent.submit(runButton.closest('form') as HTMLFormElement);
-
-  await waitFor(() => {
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/backtest/run',
-      expect.objectContaining({ method: 'POST' }),
+    await screen.findByText('Strategy Backtest');
+    fireEvent.change(await screen.findByLabelText('Symbol'), {
+      target: { value: '600002' },
+    });
+    fireEvent.change(
+      await screen.findByLabelText('Short moving-average window'),
+      {
+        target: { value: '3' },
+      },
     );
-  });
-  const runCall = fetchMock.mock.calls.find(([url]) =>
-    String(url).includes('/api/backtest/run'),
-  );
-  const payload = JSON.parse(String(runCall?.[1]?.body));
-  expect(payload.strategy).toBe('dual_ma');
-  expect(payload.params).toEqual({ short_period: 3, long_period: 9 });
-  expect(payload.assets).toEqual([{ symbol: '600002', asset_class: 'stock' }]);
-  expect(await screen.findByText('Run output')).toBeTruthy();
-  expect(await screen.findByText('Calmar 3.10')).toBeTruthy();
-  expect(await screen.findByText('3 fills')).toBeTruthy();
-  expect(
-    await screen.findByText(
-      'No equity curve is available for this backtest result.',
-    ),
-  ).toBeTruthy();
-  expect(
-    await screen.findByText(
-      'No fill details are available for this saved result. New runs expose per-fill cost records when the backtest engine returns them.',
-    ),
-  ).toBeTruthy();
-  expect(screen.queryByText('NaN')).toBeNull();
-});
+    fireEvent.change(
+      await screen.findByLabelText('Long moving-average window'),
+      {
+        target: { value: '9' },
+      },
+    );
+    const runButton = screen.getByRole('button', { name: 'Run backtest' });
+    fireEvent.submit(runButton.closest('form') as HTMLFormElement);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/backtest/run',
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+    const runCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).includes('/api/backtest/run'),
+    );
+    const payload = JSON.parse(String(runCall?.[1]?.body));
+    expect(payload.strategy).toBe('dual_ma');
+    expect(payload.params).toEqual({ short_period: 3, long_period: 9 });
+    expect(payload.assets).toEqual([
+      { symbol: '600002', asset_class: 'stock' },
+    ]);
+    expect(await screen.findByText('Run output')).toBeTruthy();
+    expect(await screen.findByText('Calmar 3.10')).toBeTruthy();
+    expect(await screen.findByText('3 fills')).toBeTruthy();
+    expect(
+      await screen.findByText(
+        'No equity curve is available for this backtest result.',
+      ),
+    ).toBeTruthy();
+    expect(
+      await screen.findByText(
+        'No fill details are available for this saved result. New runs expose per-fill cost records when the backtest engine returns them.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText('NaN')).toBeNull();
+    const tabs = screen.getByTestId('backtest-mobile-workspace-tabs');
+    expect(tabs.getAttribute('data-workspace-view')).toBe(workspace);
+    expect(
+      within(tabs)
+        .getByRole('tab', { selected: true })
+        .getAttribute('aria-controls'),
+    ).toBe(`backtest-mobile-${workspace}`);
+    expect(
+      (
+        screen.getByTestId(
+          'backtest-run-setup-disclosure',
+        ) as HTMLDetailsElement
+      ).open,
+    ).toBe(setupOpen);
+  },
+);
 
 test('keeps portfolio handoff context visible beside the run evidence chain', async () => {
   window.history.pushState(

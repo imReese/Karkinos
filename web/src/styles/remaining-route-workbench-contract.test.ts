@@ -685,7 +685,6 @@ describe('remaining route workbench contract', () => {
       'data-testid="backtest-run-setup-disclosure"',
     );
     expect(currentWorkspace).toContain('useBacktestResultsQuery()');
-    expect(currentWorkspace).toContain("setMobileWorkspaceView('results')");
     expect(currentWorkspace).toContain('labels.resultsWorkspaceTab');
     expect(currentWorkspace).toContain(
       'data-testid="backtest-persisted-evidence"',
