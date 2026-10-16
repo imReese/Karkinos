@@ -2799,7 +2799,10 @@ def test_market_quote_fetch_runs_endpoint_lists_recent_runs(monkeypatch, tmp_pat
     assert response[0].trigger == "manual_refresh"
     assert response[0].status == "failed"
     assert response[0].error_message == "provider unavailable"
-    assert response[0].metadata == {"provider_status": "failed"}
+    assert response[0].metadata == {
+        "provider_status": "failed",
+        "quote_ingestion_contract": "staged_until_atomic_quote_publication.v1",
+    }
     assert not hasattr(response[0], "metadata_json")
 
 
@@ -3487,9 +3490,14 @@ def test_market_quote_refresh_partial_batch_fails_closed(monkeypatch, tmp_path):
     run = db.list_quote_fetch_runs(limit=1)[0]
     assert run["status"] == "partial_success"
     publication = db.get_runtime_control_sync("valuation_snapshot_publication")
-    assert publication is not None
-    assert publication["status"] == "failed"
-    assert publication["quote_fetch_run_id"] == run["run_id"]
+    assert publication is None
+    attempt = db.get_runtime_control_sync("valuation_snapshot_publication_attempt")
+    assert attempt == {
+        "status": "not_attempted",
+        "quote_fetch_run_id": run["run_id"],
+        "quote_fetch_run_status": "partial_success",
+        "reason": "quote_acquisition_failed_before_publication",
+    }
 
 
 def test_market_quote_refresh_cache_only_returns_stale_without_fresh_claim(

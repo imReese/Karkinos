@@ -559,7 +559,10 @@ def test_app_database_records_quote_fetch_run_lifecycle(tmp_path):
     assert created["finished_at"] is None
     assert created["status"] == "running"
     assert created["provider"] == "akshare"
-    assert created["metadata_json"] == '{"symbols":["600519","510300"]}'
+    assert json.loads(created["metadata_json"]) == {
+        "symbols": ["600519", "510300"],
+        "quote_ingestion_contract": "staged_until_atomic_quote_publication.v1",
+    }
 
     db.finish_quote_fetch_run(
         run_id="quote-run-1",
@@ -580,7 +583,14 @@ def test_app_database_records_quote_fetch_run_lifecycle(tmp_path):
     assert finished["cache_hit_count"] == 1
     assert finished["status"] == "completed"
     assert finished["error_message"] == "1 symbol timed out"
-    assert finished["metadata_json"] == '{"elapsed_ms":3000}'
+    finished_metadata = json.loads(finished["metadata_json"])
+    assert finished_metadata["elapsed_ms"] == 3000
+    assert finished_metadata["symbols"] == ["600519", "510300"]
+    assert (
+        finished_metadata["quote_ingestion_contract"]
+        == "staged_until_atomic_quote_publication.v1"
+    )
+    assert "quote_publication_completion_fingerprint" in finished_metadata
 
     events = db.list_events_sync(entity_type="task_run", entity_id="quote-run-1")
 
@@ -596,7 +606,7 @@ def test_app_database_records_quote_fetch_run_lifecycle(tmp_path):
         "error_message": "1 symbol timed out",
         "failure_count": 1,
         "finished_at": "2026-05-23T09:30:03+08:00",
-        "metadata": {"elapsed_ms": 3000},
+        "metadata": finished_metadata,
         "provider": "akshare",
         "run_id": "quote-run-1",
         "started_at": "2026-05-23T09:30:00+08:00",
