@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Mapping, Sequence
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -19,8 +20,177 @@ import pandas as pd
 from data.market_daily_store import (
     CANONICAL_STOCK_BAR_UNITS,
     RESEARCH_BAR_NORMALIZATION,
-    verify_market_daily_receipt_on_connection,
+    read_verified_market_daily_receipt_records_on_connection,
 )
+
+VERIFIED_SUPPLEMENT_NORMALIZATION = (
+    "karkinos.receipt_stock_units.verified_supplement.v2"
+)
+
+
+def complete_research_market_binding(
+    root: str | Path,
+    *,
+    binding: Mapping[str, Any],
+    symbols: Sequence[str],
+    start_date: str,
+    end_date: str,
+    as_of: datetime,
+) -> tuple[dict[str, Any], dict[str, pd.DataFrame]]:
+    """Bind real verified history for symbols absent from immutable old receipts.
+
+    Discovery is explicit for new research. Replays use only the resulting
+    stored Dataset IDs, and never replace any already receipt-bound source row.
+    """
+    from data.dataset.catalog import DatasetCatalog
+    from data.dataset.manifest import read_daily_bar_dataset_manifest
+    from data.dataset.reader import read_daily_bar_dataset
+    from data.storage.objects import ContentAddressedObjectStore
+
+    if as_of.utcoffset() is None:
+        raise ValueError("research_market_supplement_as_of_invalid")
+    arguments = dict(symbols=symbols, start_date=start_date, end_date=end_date)
+    frames = load_research_market_frames(root, binding=binding, **arguments)
+    receipt_dates = {str(ref["trade_date"]) for ref in binding["receipts"]}
+    missing_dates = {
+        symbol: receipt_dates
+        - {value.date().isoformat() for value in frames[symbol]["timestamp"]}
+        if symbol in frames
+        else set(receipt_dates)
+        for symbol in symbols
+    }
+    missing = {symbol for symbol, days in missing_dates.items() if days}
+    catalog = DatasetCatalog(Path(root) / "research")
+    if not missing or not catalog.path.exists():
+        return dict(binding), frames
+    objects = ContentAddressedObjectStore(catalog.root / "objects")
+    supplements = list(binding.get("verified_dataset_supplements", []))
+    added = False
+    required_start, required_end = min(receipt_dates), max(receipt_dates)
+    for entry in reversed(catalog.list_daily_bar_datasets()):
+        if (
+            entry.cutoff > as_of
+            or entry.start_date.isoformat() > required_start
+            or entry.end_date.isoformat() < required_end
+        ):
+            continue
+        snapshot = read_daily_bar_dataset_manifest(objects, entry.ref)
+        if (
+            snapshot.cutoff > as_of
+            or snapshot.start_date.isoformat() > required_start
+            or snapshot.end_date.isoformat() < required_end
+        ):
+            continue
+        selected = sorted(
+            key.symbol
+            for key in snapshot.instruments
+            if key.instrument_type.value == "stock" and key.symbol in missing
+        )
+        if not selected or not snapshot.verification_bound:
+            continue
+        verified = read_daily_bar_dataset(objects, entry.ref)
+        selected_set = set(selected)
+        selected_keys = {
+            (bar.session_date.isoformat(), bar.instrument.symbol)
+            for bar in verified.bars
+            if bar.instrument.instrument_type.value == "stock"
+            and bar.instrument.symbol in selected_set
+            and bar.session_date.isoformat() in missing_dates[bar.instrument.symbol]
+        }
+        selected = sorted({symbol for _, symbol in selected_keys})
+        if selected:
+            symbols_by_day, days_by_symbol = {}, {}
+            for day, symbol in selected_keys:
+                symbols_by_day.setdefault(day, []).append(symbol)
+                days_by_symbol.setdefault(symbol, set()).add(day)
+            supplement = {
+                "dataset_id": entry.ref.dataset_id,
+                "symbols": selected,
+                "session_memberships": [
+                    {"trade_date": day, "symbols": sorted(members)}
+                    for day, members in sorted(symbols_by_day.items())
+                ],
+            }
+            supplements.append(supplement)
+            for symbol, supplement_frame in _verified_supplement_frames(
+                verified, selected, start_date, end_date, selected_keys=selected_keys
+            ).items():
+                if symbol in frames:
+                    supplement_frame = (
+                        pd.concat([frames[symbol], supplement_frame], ignore_index=True)
+                        .sort_values("timestamp")
+                        .reset_index(drop=True)
+                    )
+                    supplement_frame.attrs.update(
+                        provider_name="receipt_and_verified_supplement",
+                        adjustment_mode="none",
+                        volume_unit="shares",
+                        amount_unit="CNY",
+                    )
+                frames[symbol] = supplement_frame
+                missing_dates[symbol].difference_update(days_by_symbol[symbol])
+                if not missing_dates[symbol]:
+                    missing.discard(symbol)
+            added = True
+        if not missing:
+            break
+    if not added:
+        return dict(binding), frames
+    completed = {
+        **binding,
+        "normalizer_version": VERIFIED_SUPPLEMENT_NORMALIZATION,
+        "verified_supplement_as_of": as_of.isoformat(),
+        "verified_dataset_supplements": sorted(
+            supplements, key=lambda item: item["dataset_id"]
+        ),
+    }
+    return completed, frames
+
+
+def _verified_supplement_frames(
+    result, symbols, start_date, end_date, *, selected_keys=None
+):
+    selected = set(symbols)
+    records = [
+        {
+            "symbol": bar.instrument.symbol,
+            "timestamp": pd.Timestamp(bar.session_date),
+            "open": float(bar.open),
+            "high": float(bar.high),
+            "low": float(bar.low),
+            "close": float(bar.close),
+            "volume": float(bar.volume),
+            "amount": float(bar.amount),
+        }
+        for bar in result.bars
+        if bar.instrument.instrument_type.value == "stock"
+        and bar.instrument.symbol in selected
+        and start_date <= bar.session_date.isoformat() <= end_date
+        and (
+            selected_keys is None
+            or (bar.session_date.isoformat(), bar.instrument.symbol) in selected_keys
+        )
+    ]
+    if not records:
+        return {}
+    providers = {part.provider for part in result.snapshot.partitions}
+    provider = next(iter(providers)) if len(providers) == 1 else "verified_multi_source"
+    frames = {}
+    for symbol, group in pd.DataFrame.from_records(records).groupby(
+        "symbol", sort=True
+    ):
+        frame = (
+            group.drop(columns="symbol").sort_values("timestamp").reset_index(drop=True)
+        )
+        frame["timestamp"] = frame["timestamp"].astype("datetime64[us]")
+        frame.attrs.update(
+            provider_name=provider,
+            adjustment_mode="none",
+            volume_unit="shares",
+            amount_unit="CNY",
+        )
+        frames[str(symbol)] = frame
+    return frames
 
 
 def resolve_daily_bar_receipts(
@@ -125,7 +295,8 @@ def load_research_market_frames(
     """Verify and normalize exact receipt members in one read-only transaction."""
     refs = binding.get("receipts")
     if (
-        binding.get("normalizer_version") != RESEARCH_BAR_NORMALIZATION
+        binding.get("normalizer_version")
+        not in {RESEARCH_BAR_NORMALIZATION, VERIFIED_SUPPLEMENT_NORMALIZATION}
         or binding.get("units") != CANONICAL_STOCK_BAR_UNITS
         or binding.get("price_basis") != "unadjusted"
         or binding.get("point_in_time_verified") is not False
@@ -140,7 +311,29 @@ def load_research_market_frames(
     ):
         raise ValueError("research_market_receipt_dates_invalid")
     wanted = set(symbols)
+    supplements = binding.get("verified_dataset_supplements", [])
+    if (
+        not isinstance(supplements, list)
+        or (binding["normalizer_version"] == RESEARCH_BAR_NORMALIZATION and supplements)
+        or (
+            binding["normalizer_version"] == VERIFIED_SUPPLEMENT_NORMALIZATION
+            and not supplements
+        )
+    ):
+        raise ValueError("research_market_supplement_binding_invalid")
+    supplement_as_of = None
+    if supplements:
+        try:
+            supplement_as_of = datetime.fromisoformat(
+                binding["verified_supplement_as_of"]
+            )
+            if supplement_as_of.utcoffset() is None:
+                raise ValueError
+        except (KeyError, TypeError, ValueError):
+            raise ValueError("research_market_supplement_as_of_invalid") from None
     parts = []
+    all_receipt_keys = set()
+    all_receipt_symbols = set()
     path = Path(root).expanduser().resolve() / "meta.db"
     conn = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)
     try:
@@ -152,13 +345,18 @@ def load_research_market_frames(
                 (ref.get("trade_date"), ref.get("provider_name")),
             ).fetchone()
             receipt = json.loads(row[0]) if row else None
+            records = (
+                read_verified_market_daily_receipt_records_on_connection(conn, receipt)
+                if isinstance(receipt, dict)
+                else None
+            )
             if (
                 not isinstance(receipt, dict)
                 or any(
                     receipt.get(key) != ref.get(key)
                     for key in ("trade_date", "provider_name", "receipt_fingerprint")
                 )
-                or not verify_market_daily_receipt_on_connection(conn, receipt)
+                or records is None
             ):
                 raise ValueError("research_market_receipt_drift")
             schema = receipt["schema_version"]
@@ -175,20 +373,24 @@ def load_research_market_frames(
                 volume_scale, amount_scale = 100, 1000
             else:
                 raise ValueError("research_market_legacy_units_unknown")
-            legacy = schema == "karkinos.market_daily_ingestion_receipt.v1"
-            cols = {row[1] for row in conn.execute("PRAGMA table_info(market_bars)")}
-            identity = (
-                "instrument_type='stock' AND" if "instrument_type" in cols else ""
-            )
-            frame = pd.read_sql_query(
-                f"""SELECT symbol,timestamp,open,high,low,close,volume,amount
-                    FROM market_bars WHERE {identity} frequency='1d'
-                    AND substr(timestamp,1,10)=? ORDER BY symbol""",
-                conn,
-                params=[receipt["trade_date"]],
-            )
             members = wanted.intersection(receipt["symbols"])
-            frame = frame.loc[frame["symbol"].isin(members)].copy()
+            all_receipt_keys.update(
+                (ref["trade_date"], symbol) for symbol in receipt["symbols"]
+            )
+            all_receipt_symbols.update(receipt["symbols"])
+            frame = pd.DataFrame.from_records(
+                [record for record in records if str(record[0]) in members],
+                columns=(
+                    "symbol",
+                    "timestamp",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "amount",
+                ),
+            )
             for column, scale in (("volume", volume_scale), ("amount", amount_scale)):
                 frame[column] = frame[column].map(
                     lambda value: (
@@ -198,6 +400,114 @@ def load_research_market_frames(
             parts.append(frame)
     finally:
         conn.close()
+    supplement_providers = {}
+    if supplements:
+        from data.dataset.model import DatasetRef
+        from data.dataset.reader import read_daily_bar_dataset
+        from data.storage.objects import ContentAddressedObjectStore
+
+        objects = ContentAddressedObjectStore(Path(root) / "research" / "objects")
+        bound_keys = set()
+        for supplement in supplements:
+            if (
+                not isinstance(supplement, dict)
+                or set(supplement)
+                not in (
+                    {"dataset_id", "symbols"},
+                    {"dataset_id", "symbols", "session_memberships"},
+                )
+                or not isinstance(supplement["dataset_id"], str)
+                or not isinstance(supplement["symbols"], list)
+                or not supplement["symbols"]
+                or any(not isinstance(symbol, str) for symbol in supplement["symbols"])
+                or supplement["symbols"] != sorted(set(supplement["symbols"]))
+            ):
+                raise ValueError("research_market_supplement_binding_invalid")
+            members = set(supplement["symbols"])
+            selected_keys = None
+            if "session_memberships" in supplement:
+                sessions = supplement["session_memberships"]
+                if not isinstance(sessions, list) or not sessions:
+                    raise ValueError("research_market_supplement_binding_invalid")
+                selected_keys = set()
+                days = []
+                for session in sessions:
+                    if (
+                        not isinstance(session, dict)
+                        or set(session) != {"trade_date", "symbols"}
+                        or not isinstance(session["trade_date"], str)
+                        or not isinstance(session["symbols"], list)
+                        or not session["symbols"]
+                        or any(
+                            not isinstance(symbol, str) for symbol in session["symbols"]
+                        )
+                        or session["symbols"] != sorted(set(session["symbols"]))
+                        or not set(session["symbols"]) <= members
+                    ):
+                        raise ValueError("research_market_supplement_binding_invalid")
+                    day = session["trade_date"]
+                    if (
+                        date.fromisoformat(day).isoformat() != day
+                        or not start_date <= day <= end_date
+                    ):
+                        raise ValueError("research_market_supplement_binding_invalid")
+                    days.append(day)
+                    selected_keys.update((day, symbol) for symbol in session["symbols"])
+                if (
+                    days != sorted(set(days))
+                    or {symbol for _, symbol in selected_keys} != members
+                ):
+                    raise ValueError("research_market_supplement_binding_invalid")
+            result = read_daily_bar_dataset(
+                objects, DatasetRef(objects.resolve_ref(supplement["dataset_id"]))
+            )
+            if (
+                result.snapshot.cutoff > supplement_as_of
+                or not result.snapshot.verification_bound
+                or not members
+                <= {
+                    key.symbol
+                    for key in result.snapshot.instruments
+                    if key.instrument_type.value == "stock"
+                }
+            ):
+                raise ValueError("research_market_supplement_unverified")
+            providers = {part.provider for part in result.snapshot.partitions}
+            actual_keys = {
+                (bar.session_date.isoformat(), bar.instrument.symbol)
+                for bar in result.bars
+                if bar.instrument.instrument_type.value == "stock"
+                and bar.instrument.symbol in members
+                and start_date <= bar.session_date.isoformat() <= end_date
+                and (
+                    selected_keys is None
+                    or (bar.session_date.isoformat(), bar.instrument.symbol)
+                    in selected_keys
+                )
+            }
+            if selected_keys is not None and selected_keys != actual_keys:
+                raise ValueError("research_market_supplement_membership_mismatch")
+            if actual_keys & (all_receipt_keys | bound_keys):
+                raise ValueError("research_market_supplement_overlap")
+            bound_keys.update(actual_keys)
+            for symbol in members:
+                supplement_providers[symbol] = (
+                    "receipt_and_verified_supplement"
+                    if symbol in all_receipt_symbols
+                    else (
+                        next(iter(providers))
+                        if len(providers) == 1
+                        else "verified_multi_source"
+                    )
+                )
+            for symbol, frame in _verified_supplement_frames(
+                result,
+                members & wanted,
+                start_date,
+                end_date,
+                selected_keys=selected_keys,
+            ).items():
+                parts.append(frame.assign(symbol=symbol))
     frame = pd.concat(parts, ignore_index=True)
     frame["timestamp"] = pd.to_datetime(frame["timestamp"])
     result = {}
@@ -206,7 +516,9 @@ def load_research_market_frames(
             group.drop(columns="symbol").sort_values("timestamp").reset_index(drop=True)
         )
         bars.attrs.update(
-            provider_name=str(refs[0]["provider_name"]),
+            provider_name=supplement_providers.get(
+                str(symbol), str(refs[0]["provider_name"])
+            ),
             adjustment_mode="none",
             volume_unit="shares",
             amount_unit="CNY",

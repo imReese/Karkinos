@@ -429,7 +429,9 @@ def require_meta_database_ready(database_path: str | Path) -> None:
             raise MetaDatabaseSchemaError("meta_database_market_bars_schema_mismatch")
 
 
-def meta_database_requires_preparation(database_path: str | Path) -> bool:
+def meta_database_requires_preparation(
+    database_path: str | Path, *, verify_integrity: bool = True
+) -> bool:
     """Validate known history/structure before backup or DDL, without creating files."""
     path = Path(database_path)
     if path.is_symlink():
@@ -442,7 +444,9 @@ def meta_database_requires_preparation(database_path: str | Path) -> bool:
         # History, table structure and rows must describe the same WAL snapshot
         # even if another preparer commits while this process waits for ownership.
         connection.execute("BEGIN")
-        if connection.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
+        if verify_integrity and connection.execute("PRAGMA quick_check").fetchall() != [
+            ("ok",)
+        ]:
             raise MetaDatabaseSchemaError("meta_database_integrity_failed")
         if (
             connection.execute(

@@ -6,7 +6,7 @@ import hashlib
 import json
 import sqlite3
 from collections.abc import Mapping, Sequence
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -491,13 +491,33 @@ def verify_market_daily_receipt_on_connection(
     schema: str = "main",
 ) -> bool:
     """Replay a receipt on the caller's existing read or publication transaction."""
+    return (
+        read_verified_market_daily_receipt_records_on_connection(
+            conn, receipt, schema=schema
+        )
+        is not None
+    )
+
+
+def read_verified_market_daily_receipt_records_on_connection(
+    conn: sqlite3.Connection,
+    receipt: dict[str, object],
+    *,
+    schema: str = "main",
+) -> tuple[_MarketDailyRecord, ...] | None:
+    """Read and verify exact source rows once on the caller's transaction."""
     if schema not in {"main", "market_meta"}:
         raise ValueError("market_daily_receipt_schema_invalid")
     if not is_supported_stock_receipt_identity(receipt):
-        return False
+        return None
     symbols = receipt.get("symbols")
     if not isinstance(symbols, list) or not symbols:
-        return False
+        return None
+    try:
+        day = date.fromisoformat(str(receipt.get("trade_date") or ""))
+        following = day + timedelta(days=1)
+    except (ValueError, OverflowError):
+        return None
     cols = {row[1] for row in conn.execute(f"PRAGMA {schema}.table_info(market_bars)")}
     has_typed_bars = "instrument_type" in cols
     storage_table = "market_bars"
@@ -507,25 +527,25 @@ def verify_market_daily_receipt_on_connection(
         SELECT symbol, timestamp, open, high, low, close, volume, amount
         FROM {schema}.{storage_table}
         WHERE {identity_filter} frequency = '1d'
-          AND substr(timestamp, 1, 10) = ?
+          AND timestamp >= ? AND timestamp < ?
         ORDER BY symbol
         """,
-        (str(receipt.get("trade_date") or ""),),
+        (day.isoformat(), following.isoformat()),
     ).fetchall()
     wanted = set(str(symbol) for symbol in symbols)
-    records = [tuple(row) for row in rows if str(row[0]) in wanted]
+    records = tuple(tuple(row) for row in rows if str(row[0]) in wanted)
     if len(records) != len(symbols):
-        return False
+        return None
     expected_dataset_fingerprint = _market_daily_records_fingerprint(
         trade_date=str(receipt.get("trade_date") or ""),
         provider_name=str(receipt.get("provider_name") or ""),
         records=records,
     )
     if receipt.get("dataset_fingerprint") != expected_dataset_fingerprint:
-        return False
+        return None
     core = dict(receipt)
     stored_fingerprint = core.pop("receipt_fingerprint", None)
-    return (
+    valid = (
         stored_fingerprint
         == "sha256:"
         + hashlib.sha256(
@@ -537,6 +557,7 @@ def verify_market_daily_receipt_on_connection(
             ).encode("utf-8")
         ).hexdigest()
     )
+    return records if valid else None
 
 
 def _nullable_float(value) -> float | None:

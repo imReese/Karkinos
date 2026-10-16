@@ -53,6 +53,34 @@ def test_meta_database_rejects_changed_migration_history(tmp_path) -> None:
         prepare_meta_database(store._meta_path)
 
 
+def test_runtime_attach_keeps_schema_checks_without_repeating_full_integrity_scan(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "meta.db"
+    prepare_meta_database(path)
+    statements = []
+    connect = meta_store_schema.connect_meta_sqlite
+
+    def traced_connect(*args, **kwargs):
+        connection = connect(*args, **kwargs)
+        connection.set_trace_callback(statements.append)
+        return connection
+
+    monkeypatch.setattr(meta_store_schema, "connect_meta_sqlite", traced_connect)
+    DataStore(tmp_path)
+    DataStore(tmp_path)
+    assert not any("quick_check" in sql.lower() for sql in statements)
+    prepare_meta_database(path)
+    assert any("quick_check" in sql.lower() for sql in statements)
+
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "UPDATE meta_schema_migrations SET checksum='changed' WHERE version=1"
+        )
+    with pytest.raises(MetaDatabaseSchemaError, match="history_mismatch"):
+        DataStore(tmp_path)
+
+
 def test_meta_database_adopts_legacy_schema_once(tmp_path) -> None:
     path = tmp_path / "meta.db"
     with sqlite3.connect(path) as connection:

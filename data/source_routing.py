@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from core.types import InstrumentType
 from data.market.contracts import DailyBarProvider, DailyBarRequest
 from data.market.reconciliation import (
     BAOSTOCK_TENCENT_DAILY_RECONCILIATION_V1,
+    BAOSTOCK_TUSHARE_AMOUNT_RECONCILIATION_V1,
+    EASTMONEY_TUSHARE_BSE_RECONCILIATION_V1,
     STRICT_DAILY_RECONCILIATION,
     DailyBarReconciliationPolicy,
 )
@@ -170,15 +173,37 @@ def resolve_daily_bar_verification_pairs(
                 == comparison.descriptor.upstream_group
             ):
                 continue
+            bse_pair = {primary_name, comparison_name} == {
+                "akshare",
+                "tushare",
+            } and any(
+                key.instrument_type is InstrumentType.STOCK
+                and key.symbol.startswith(("4", "8", "92"))
+                for key in request.instruments
+            )
+            # Preserve exact TuShare shares for capacity decisions; Eastmoney
+            # independently checks the reported whole-hand resolution.
+            first_name, first = (
+                (comparison_name, comparison)
+                if bse_pair and comparison_name == "tushare"
+                else (primary_name, primary)
+            )
+            second_name, second = (
+                (primary_name, primary)
+                if first is comparison
+                else (comparison_name, comparison)
+            )
             pairs.append(
                 DailyBarVerificationPair(
                     policy_id=policy.policy_id,
                     route=route,
-                    primary_name=primary_name,
-                    comparison_name=comparison_name,
-                    primary=primary,
-                    comparison=comparison,
-                    reconciliation_policy=_daily_bar_reconciliation_policy(
+                    primary_name=first_name,
+                    comparison_name=second_name,
+                    primary=first,
+                    comparison=second,
+                    reconciliation_policy=EASTMONEY_TUSHARE_BSE_RECONCILIATION_V1
+                    if bse_pair
+                    else _daily_bar_reconciliation_policy(
                         primary,
                         comparison,
                     ),
@@ -225,4 +250,6 @@ def _daily_bar_reconciliation_policy(
     )
     if upstreams == frozenset({"baostock", "tencent"}):
         return BAOSTOCK_TENCENT_DAILY_RECONCILIATION_V1
+    if upstreams == frozenset({"baostock", "tushare"}):
+        return BAOSTOCK_TUSHARE_AMOUNT_RECONCILIATION_V1
     return STRICT_DAILY_RECONCILIATION

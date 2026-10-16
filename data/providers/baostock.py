@@ -25,8 +25,8 @@ from data.market.contracts import (
     ProviderDailyBarRow,
 )
 
-BAOSTOCK_DAILY_BAR_ADAPTER_VERSION = "karkinos.baostock.daily_bar.v1"
-BAOSTOCK_DAILY_BAR_PAYLOAD_FORMAT = "baostock.history_k_data_plus.rows.v1"
+BAOSTOCK_DAILY_BAR_ADAPTER_VERSION = "karkinos.baostock.daily_bar.v2"
+BAOSTOCK_DAILY_BAR_PAYLOAD_FORMAT = "baostock.history_k_data_plus.rows.v2"
 BAOSTOCK_DAILY_BAR_DESCRIPTOR = MarketDataProviderDescriptor(
     provider="baostock",
     upstream_group="baostock",
@@ -76,6 +76,17 @@ class BaoStockDailyBarRequestError(BaoStockDailyBarError):
 
 class BaoStockDailyBarResponseError(BaoStockDailyBarError):
     """BaoStock returned data that cannot be represented safely."""
+
+    captured_batch: ProviderDailyBarBatch | None = None
+
+    @property
+    def public_error_code(self) -> str:
+        code = str(self).split(":", 1)[0]
+        return (
+            code
+            if code.startswith("baostock_response_")
+            else "baostock_response_invalid"
+        )
 
 
 class _Result(Protocol):
@@ -134,6 +145,7 @@ class BaoStockDailyBarProvider:
         client = self._resolve_client()
         rows: list[ProviderDailyBarRow] = []
         calls: list[dict[str, object]] = []
+        failure = None
 
         # BaoStock's SDK owns one module-global socket/session.  Serialize the
         # complete login/query/logout lifecycle inside one process so concurrent
@@ -149,15 +161,6 @@ class BaoStockDailyBarProvider:
                         end_session=request.end_date,
                     )
                     raw_rows = _consume_result(result)
-                    parsed = _rows_from_result(
-                        raw_rows,
-                        fields=tuple(result.fields),
-                        instrument=instrument,
-                        expected_code=code,
-                        expected_session=request.start_date,
-                        expected_end=request.end_date,
-                    )
-                    rows.extend(parsed)
                     calls.append(
                         {
                             "code": code,
@@ -165,6 +168,19 @@ class BaoStockDailyBarProvider:
                             "rows": raw_rows,
                         }
                     )
+                    try:
+                        parsed = _rows_from_result(
+                            raw_rows,
+                            fields=tuple(result.fields),
+                            instrument=instrument,
+                            expected_code=code,
+                            expected_session=request.start_date,
+                            expected_end=request.end_date,
+                        )
+                    except BaoStockDailyBarResponseError as exc:
+                        failure = exc
+                        break
+                    rows.extend(parsed)
             finally:
                 _logout(client)
 
@@ -190,7 +206,7 @@ class BaoStockDailyBarProvider:
             allow_nan=False,
         ).encode("utf-8")
 
-        return ProviderDailyBarBatch(
+        batch = ProviderDailyBarBatch(
             provider="baostock",
             adapter_version=BAOSTOCK_DAILY_BAR_ADAPTER_VERSION,
             payload_format=BAOSTOCK_DAILY_BAR_PAYLOAD_FORMAT,
@@ -207,6 +223,10 @@ class BaoStockDailyBarProvider:
                 )
             ),
         )
+        if failure is not None:
+            failure.captured_batch = batch
+            raise failure
+        return batch
 
     def _resolve_client(self) -> _BaoStockClient:
         if self._client is not None:
@@ -315,6 +335,13 @@ def _rows_from_result(
                 f"baostock_response_session_mismatch:{session.isoformat()}"
             )
 
+        # A source-declared halted session is a status fact, not a traded-price
+        # observation. Bao may retain previous OHLC while leaving volume blank.
+        # Its entire raw row remains captured. Missing planned bars still block
+        # the unchanged membership quality check; no last price is fabricated.
+        if row["tradestatus"] == "0":
+            continue
+
         result.append(
             ProviderDailyBarRow(
                 instrument=instrument,
@@ -355,7 +382,7 @@ def _provider_code(instrument: InstrumentKey) -> str:
     if instrument.instrument_type is InstrumentType.STOCK:
         if symbol.startswith(("600", "601", "603", "605", "688", "689")):
             exchange = "sh"
-        elif symbol.startswith(("000", "001", "002", "003", "300", "301")):
+        elif symbol.startswith(("000", "001", "002", "003", "300", "301", "302")):
             exchange = "sz"
         elif symbol.startswith(("4", "8", "920")):
             raise BaoStockDailyBarRequestError(

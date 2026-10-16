@@ -9,10 +9,13 @@ import pytest
 from core.types import AssetClass, CommissionType, InstrumentType, Settlement
 from domain.instrument import (
     Instrument,
+    a_share_identity,
+    entry_board_symbols,
     make_bond,
     make_etf,
     make_gold_spot,
     make_open_end_fund,
+    make_research_stock,
     make_stock,
 )
 
@@ -37,6 +40,12 @@ class TestMakeStock:
         """3 开头为创业板，涨跌幅 20%。"""
         inst = make_stock("300750", "宁德时代")
         assert inst.limit_pct == Decimal("0.20")
+
+    def test_official_302_chinext_listing_keeps_identity_and_entry_rules(self):
+        assert a_share_identity("302132") == {"exchange": "SZSE", "board": "chinext"}
+        assert make_research_stock("302132", "中航成飞").limit_pct == Decimal("0.20")
+        assert entry_board_symbols(["main"], ["302132"]) == set()
+        assert entry_board_symbols(["chinext"], ["302132"]) == {"302132"}
 
     def test_star_board_defaults(self):
         """68 开头为科创板，涨跌幅 20%。"""

@@ -10,7 +10,8 @@ import math
 import re
 from collections.abc import Callable
 from datetime import date, datetime, time, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
+from importlib.metadata import version as distribution_version
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
@@ -29,9 +30,13 @@ from data.market.contracts import (
 from data.providers.akshare_sdk import provider_network_env
 from data.source import DataSource, ProviderQuote
 
-AKSHARE_TENCENT_DAILY_BAR_ADAPTER_VERSION = "karkinos.akshare_tencent.daily_bar.v1"
+AKSHARE_TENCENT_DAILY_BAR_ADAPTER_VERSION = "karkinos.akshare_tencent.daily_bar.v3"
 AKSHARE_TENCENT_DAILY_BAR_PAYLOAD_FORMAT = (
-    "akshare.tencent.stock_zh_a_hist_tx.dataframe.v1"
+    "akshare.tencent.stock_zh_a_hist_tx.dataframe.v3"
+)
+_REVIEWED_AKSHARE_VERSION = "1.18.97"
+_AMOUNT_FLOAT_NORMALIZATION = (
+    "karkinos.akshare.1.18.97.tencent.amount_10000_one_binary_ulp.v1"
 )
 AKSHARE_TENCENT_DAILY_BAR_DESCRIPTOR = MarketDataProviderDescriptor(
     provider="akshare_tencent",
@@ -120,6 +125,13 @@ class AkshareTencentDailyBarProvider:
             )
 
         client = self._resolve_client()
+        sdk_version = str(
+            getattr(client, "__version__", None) or distribution_version("akshare")
+        )
+        volume_scales = {
+            instrument: _sdk_volume_scale(instrument, sdk_version)
+            for instrument, _ in targets
+        }
         rows: list[ProviderDailyBarRow] = []
         calls: list[dict[str, object]] = []
 
@@ -133,14 +145,17 @@ class AkshareTencentDailyBarProvider:
             try:
                 # AKShare wraps this endpoint with tqdm.  Do not leak progress
                 # bars into a long-running worker's stdout/stderr.
-                with contextlib.redirect_stdout(io.StringIO()):
-                    with contextlib.redirect_stderr(io.StringIO()):
-                        frame = client.stock_zh_a_hist_tx(
-                            symbol=kwargs["symbol"],
-                            start_date=kwargs["start_date"],
-                            end_date=kwargs["end_date"],
-                            adjust=kwargs["adjust"],
-                        )
+                with (
+                    provider_network_env(),
+                    contextlib.redirect_stdout(io.StringIO()),
+                    contextlib.redirect_stderr(io.StringIO()),
+                ):
+                    frame = client.stock_zh_a_hist_tx(
+                        symbol=kwargs["symbol"],
+                        start_date=kwargs["start_date"],
+                        end_date=kwargs["end_date"],
+                        adjust=kwargs["adjust"],
+                    )
             except Exception as exc:
                 raise AkshareTencentDailyBarUnavailableError(
                     f"akshare_tencent_history_failed:{symbol}"
@@ -156,6 +171,9 @@ class AkshareTencentDailyBarProvider:
                 instrument=instrument,
                 expected_session=request.start_date,
                 expected_end=request.end_date,
+                volume_scale=volume_scales[instrument],
+                sdk_version=sdk_version,
+                adapter_version=AKSHARE_TENCENT_DAILY_BAR_ADAPTER_VERSION,
             )
             rows.extend(parsed_rows)
             calls.append(
@@ -163,6 +181,12 @@ class AkshareTencentDailyBarProvider:
                     "symbol": symbol,
                     "request": kwargs,
                     "frame": _serialize_dataframe(frame),
+                    "volume_scale_to_shares": str(volume_scales[instrument]),
+                    "amount_normalization": (
+                        _AMOUNT_FLOAT_NORMALIZATION
+                        if sdk_version == _REVIEWED_AKSHARE_VERSION
+                        else None
+                    ),
                 }
             )
 
@@ -177,6 +201,7 @@ class AkshareTencentDailyBarProvider:
         raw_payload = json.dumps(
             {
                 "schema": AKSHARE_TENCENT_DAILY_BAR_PAYLOAD_FORMAT,
+                "sdk_version": sdk_version,
                 "calls": calls,
             },
             sort_keys=True,
@@ -232,7 +257,7 @@ def _provider_symbol(instrument: InstrumentKey) -> str:
     if instrument.instrument_type is InstrumentType.STOCK:
         if symbol.startswith(("600", "601", "603", "605", "688", "689")):
             exchange = "sh"
-        elif symbol.startswith(("000", "001", "002", "003", "300", "301")):
+        elif symbol.startswith(("000", "001", "002", "003", "300", "301", "302")):
             exchange = "sz"
         elif symbol.startswith(("4", "8", "920")):
             raise AkshareTencentDailyBarRequestError(
@@ -261,6 +286,9 @@ def _rows_from_frame(
     instrument: InstrumentKey,
     expected_session: date,
     expected_end: date | None = None,
+    volume_scale: Decimal = Decimal("1"),
+    sdk_version: str | None = None,
+    adapter_version: str = "karkinos.akshare_tencent.daily_bar.v2",
 ) -> list[ProviderDailyBarRow]:
     if frame.empty:
         return []
@@ -290,10 +318,12 @@ def _rows_from_frame(
                 high_value=_decimal(item["high"], field="high"),
                 low_value=_decimal(item["low"], field="low"),
                 close_value=_decimal(item["close"], field="close"),
-                # AKShare normalizes Tencent's source units before returning:
-                # volume -> shares, amount -> CNY.
-                volume=_decimal(item["volume"], field="volume"),
-                amount=_decimal(item["amount"], field="amount"),
+                volume=_decimal(item["volume"], field="volume") * volume_scale,
+                amount=_normalized_amount(
+                    item["amount"],
+                    sdk_version=sdk_version,
+                    adapter_version=adapter_version,
+                ),
                 suspended=False,
             )
         )
@@ -303,6 +333,49 @@ def _rows_from_frame(
             f"akshare_tencent_response_duplicate_session:{expected_session.isoformat()}"
         )
     return result
+
+
+def _normalized_amount(
+    value: object, *, sdk_version: str | None, adapter_version: str
+) -> Decimal:
+    amount = _decimal(value, field="amount")
+    if hasattr(value, "item") and not isinstance(value, (str, bytes, Decimal)):
+        value = value.item()
+    if (
+        adapter_version != "karkinos.akshare_tencent.daily_bar.v3"
+        or sdk_version != _REVIEWED_AKSHARE_VERSION
+        or not isinstance(value, float)
+    ):
+        return amount
+    # This exact SDK converts Tencent's 0.01-wanyuan amount grid to CNY
+    # through float * 10000. Only a unique 100-CNY grid point within one
+    # binary ULP can be recovered. Exact source decimals and larger differences
+    # retain their original value and the canonical storage precision gate.
+    grid = (amount / 100).to_integral_value() * 100
+    ulp = Decimal.from_float(math.ulp(value))
+    with localcontext() as context:
+        context.prec = 80
+        if grid > 0 and ulp < 50 and abs(Decimal.from_float(value) - grid) <= ulp:
+            return grid
+    return amount
+
+
+def _sdk_volume_scale(instrument: InstrumentKey, sdk_version: str) -> Decimal:
+    # AKShare 1.18.97 stock_hist_tx excludes every sz000 symbol from its lot
+    # conversion, although those typed STOCK keys are main-board stocks, not
+    # indices. Its returned volume therefore remains in lots for this prefix.
+    # Bind the reviewed correction to the captured SDK version; a later SDK
+    # may repair this bug and must not receive another multiplication.
+    if (
+        instrument.instrument_type is InstrumentType.STOCK
+        and instrument.symbol.startswith("000")
+    ):
+        if sdk_version != _REVIEWED_AKSHARE_VERSION:
+            raise AkshareTencentDailyBarRequestError(
+                "akshare_tencent_stock_volume_units_unreviewed_sdk"
+            )
+        return Decimal("100")
+    return Decimal("1")
 
 
 def _trade_date(value: object) -> date:
@@ -403,8 +476,8 @@ logger = logging.getLogger(__name__)
 
 _CHINA_MARKET_TZ = ZoneInfo("Asia/Shanghai")
 
-TENCENT_DAILY_BAR_ADAPTER_VERSION = "karkinos.tencent.daily_bar.v1"
-TENCENT_DAILY_BAR_PAYLOAD_FORMAT = "tencent.stock_zh_a_hist_tx.dataframe.v1"
+TENCENT_DAILY_BAR_ADAPTER_VERSION = "karkinos.tencent.daily_bar.v2"
+TENCENT_DAILY_BAR_PAYLOAD_FORMAT = "tencent.stock_zh_a_hist_tx.dataframe.v2"
 TENCENT_DAILY_BAR_DESCRIPTOR = MarketDataProviderDescriptor(
     provider="tencent",
     upstream_group="tencent",

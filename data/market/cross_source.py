@@ -119,6 +119,7 @@ def ingest_cross_source_daily_bars(
     reconciliation_policy: DailyBarReconciliationPolicy = STRICT_DAILY_RECONCILIATION,
     checked_at: datetime | None = None,
     before_fetch: Callable[[MarketDataProviderDescriptor], None] | None = None,
+    ingestion_cache: dict[tuple[object, ...], DailyBarIngestionResult] | None = None,
 ) -> CrossSourceDailyBarResult:
     """Capture, normalize, quality-check, reconcile, and persist two sources."""
     if not isinstance(store, ContentAddressedObjectStore):
@@ -151,6 +152,7 @@ def ingest_cross_source_daily_bars(
         normalizer_version=normalizer_version,
         checked_at=quality_checked_at,
         before_fetch=before_fetch,
+        ingestion_cache=ingestion_cache,
     )
     _validate_ingestion_identity(primary, primary_descriptor)
     primary_quality = publish_market_quality_evidence(store, primary.quality)
@@ -163,6 +165,7 @@ def ingest_cross_source_daily_bars(
         normalizer_version=normalizer_version,
         checked_at=quality_checked_at,
         before_fetch=before_fetch,
+        ingestion_cache=ingestion_cache,
     )
     _validate_ingestion_identity(comparison, comparison_descriptor)
     comparison_quality = publish_market_quality_evidence(store, comparison.quality)
@@ -220,9 +223,22 @@ def _ingest_provider(
     normalizer_version: str,
     checked_at: datetime | None,
     before_fetch: Callable[[MarketDataProviderDescriptor], None] | None,
+    ingestion_cache: dict[tuple[object, ...], DailyBarIngestionResult] | None,
 ) -> DailyBarIngestionResult:
+    key = (
+        store.root,
+        provider.descriptor,
+        request,
+        quality_policy,
+        normalizer_version,
+        checked_at,
+    )
+    if ingestion_cache is not None and key in ingestion_cache:
+        result = ingestion_cache[key]
+        _validate_ingestion_identity(result, provider.descriptor)
+        return result
     try:
-        return ingest_daily_bars(
+        result = ingest_daily_bars(
             provider,
             store,
             request=request,
@@ -241,6 +257,10 @@ def _ingest_provider(
             provider.descriptor.provider,
             "provider_unavailable",
         ) from exc
+    _validate_ingestion_identity(result, provider.descriptor)
+    if ingestion_cache is not None:
+        ingestion_cache[key] = result
+    return result
 
 
 def _validate_provider_roles(
@@ -302,6 +322,8 @@ def ingest_cross_source_daily_bars_range(
     reconciliation_policy: DailyBarReconciliationPolicy = STRICT_DAILY_RECONCILIATION,
     checked_at: datetime | None = None,
     before_fetch: Callable[[MarketDataProviderDescriptor], None] | None = None,
+    ingestion_cache: dict[tuple[object, ...], tuple[DailyBarIngestionResult, ...]]
+    | None = None,
 ) -> tuple[CrossSourceDailyBarResult, ...]:
     """One real range capture per independent source, existing verification/day.
 
@@ -321,17 +343,29 @@ def ingest_cross_source_daily_bars_range(
     quality_checked_at = _checked_at(checked_at) if checked_at is not None else None
     sources = []
     for provider in (primary_provider, comparison_provider):
+        key = (
+            store.root,
+            provider.descriptor,
+            request,
+            quality_policy,
+            normalizer_version,
+            quality_checked_at,
+            tuple(sorted(expected_sessions.items())),
+        )
         try:
-            source = ingest_daily_bars_range(
-                provider,
-                store,
-                request=request,
-                expected_sessions=expected_sessions,
-                quality_policy=quality_policy,
-                normalizer_version=normalizer_version,
-                checked_at=quality_checked_at,
-                before_fetch=before_fetch,
-            )
+            if ingestion_cache is not None and key in ingestion_cache:
+                source = ingestion_cache[key]
+            else:
+                source = ingest_daily_bars_range(
+                    provider,
+                    store,
+                    request=request,
+                    expected_sessions=expected_sessions,
+                    quality_policy=quality_policy,
+                    normalizer_version=normalizer_version,
+                    checked_at=quality_checked_at,
+                    before_fetch=before_fetch,
+                )
         except DailyBarIngestionNoData as exc:
             raise CrossSourceDailyBarUnavailableError(
                 provider.descriptor.provider, "no_data"
@@ -342,6 +376,8 @@ def ingest_cross_source_daily_bars_range(
             ) from exc
         for item in source:
             _validate_ingestion_identity(item, provider.descriptor)
+        if ingestion_cache is not None:
+            ingestion_cache[key] = source
         sources.append(source)
     results = []
     for primary, comparison in zip(*sources, strict=True):
@@ -385,3 +421,141 @@ def ingest_cross_source_daily_bars_range(
             )
         )
     return tuple(results)
+
+
+def reverify_captured_daily_bar_evidence(
+    store: ContentAddressedObjectStore,
+    *,
+    verification_ids: tuple[str, ...],
+    request: DailyBarRequest,
+    expected_sessions: Mapping[date, tuple[InstrumentKey, ...]],
+    primary_descriptor: MarketDataProviderDescriptor,
+    comparison_descriptor: MarketDataProviderDescriptor,
+    reconciliation_policy: DailyBarReconciliationPolicy,
+    checked_at: datetime,
+) -> tuple[CrossSourceDailyBarResult, ...]:
+    """Reprocess actual immutable captures without claiming a fresh fetch.
+
+    Original source bytes, capture identities and availability times stay exact.
+    Only the newly evaluated verification has today's decision time/policy.
+    """
+    import json
+    from dataclasses import replace
+
+    from data.market.capture import read_provider_capture
+    from data.market.quality import RESEARCH_STRICT_DAILY
+    from data.market.quality_evidence import read_market_quality_evidence
+    from data.market.reconciliation import (
+        reconcile_daily_bar_revisions_with_bars,
+        reconcile_daily_bars,
+    )
+    from data.market.revision import (
+        read_market_revision,
+        read_market_revision_materialization,
+    )
+    from data.market.verification_evidence import read_market_verification_evidence
+
+    _validate_provider_roles(
+        request,
+        primary_descriptor=primary_descriptor,
+        comparison_descriptor=comparison_descriptor,
+    )
+    now = _checked_at(checked_at)
+    if not verification_ids or len(set(verification_ids)) != len(verification_ids):
+        raise ValueError("captured_reverification_evidence_invalid")
+    results = {}
+    for identity in verification_ids:
+        original = read_market_verification_evidence(store, store.resolve_ref(identity))
+        if original.policy != STRICT_DAILY_RECONCILIATION or original.checked_at > now:
+            raise ValueError("captured_reverification_original_policy_or_time_invalid")
+        sides, qualities, descriptors = [], [], []
+        for prefix, descriptor in (
+            ("primary", primary_descriptor),
+            ("comparison", comparison_descriptor),
+        ):
+            quality = read_market_quality_evidence(
+                store, store.resolve_ref(getattr(original, prefix + "_quality_id"))
+            )
+            materialization = read_market_revision_materialization(
+                store,
+                store.resolve_ref(getattr(original, prefix + "_materialization_id")),
+            )
+            revision = read_market_revision(store, materialization.revision_ref)
+            capture = read_provider_capture(store, materialization.capture_ref)
+            adapter = getattr(original, prefix + "_adapter_version")
+            reviewed = {
+                "baostock": {
+                    "karkinos.baostock.daily_bar.v1",
+                    "karkinos.baostock.daily_bar.v2",
+                },
+                "tushare": {
+                    "karkinos.tushare.daily_bar.v1",
+                    "karkinos.tushare.daily_bar.v2",
+                },
+            }
+            if (
+                capture.provider != descriptor.provider
+                or adapter not in reviewed.get(descriptor.provider, set())
+                or getattr(original, prefix + "_upstream_group")
+                != descriptor.upstream_group
+                or capture.adapter_version != adapter
+                or capture.completed_at > now
+                or json.loads(capture.request_json) != request.to_capture_request()
+                or quality.report.status is not MarketQualityStatus.PASS
+                or quality.report.policy_id != RESEARCH_STRICT_DAILY.policy_id
+                or quality.report.revision_id != revision.ref.revision_id
+                or quality.report.materialization_id
+                != materialization.materialization_id
+            ):
+                raise ValueError("captured_reverification_source_mismatch")
+            sides.append(
+                DailyBarIngestionResult(
+                    capture, revision, materialization, quality.report
+                )
+            )
+            qualities.append(quality)
+            descriptors.append(replace(descriptor, adapter_version=adapter))
+        primary, comparison = sides
+        report, primary_bars, comparison_bars = reconcile_daily_bar_revisions_with_bars(
+            store,
+            primary_revision=primary.revision,
+            primary_materialization=primary.materialization,
+            comparison_revision=comparison.revision,
+            comparison_materialization=comparison.materialization,
+            policy=reconciliation_policy,
+        )
+        replayed_original = reconcile_daily_bars(
+            primary_bars,
+            comparison_bars,
+            primary_revision_id=primary.revision.ref.revision_id,
+            comparison_revision_id=comparison.revision.ref.revision_id,
+            primary_provider=primary.revision.provider,
+            comparison_provider=comparison.revision.provider,
+            policy=original.policy,
+        )
+        day = primary.revision.partition_date
+        if (
+            replayed_original != original.report
+            or day in results
+            or day not in expected_sessions
+            or {bar.instrument for bar in primary_bars} != set(expected_sessions[day])
+            or {bar.instrument for bar in comparison_bars}
+            != set(expected_sessions[day])
+        ):
+            raise ValueError("captured_reverification_partition_mismatch")
+        verification = publish_market_verification_evidence(
+            store,
+            report=report,
+            primary_quality=qualities[0],
+            comparison_quality=qualities[1],
+            primary_descriptor=descriptors[0],
+            comparison_descriptor=descriptors[1],
+            policy=reconciliation_policy,
+            checked_at=now,
+        )
+        results[day] = CrossSourceDailyBarResult(
+            primary, comparison, qualities[0], qualities[1], verification
+        )
+    if set(results) != set(expected_sessions):
+        raise ValueError("captured_reverification_session_coverage_mismatch")
+    return tuple(results[day] for day in sorted(results))

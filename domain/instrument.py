@@ -54,7 +54,7 @@ def a_share_identity(symbol: str) -> dict[str, str] | None:
         return {"exchange": "SSE", "board": "star"}
     if symbol.startswith(("000", "001", "002", "003")):
         return {"exchange": "SZSE", "board": "szse_main"}
-    if symbol.startswith(("300", "301")):
+    if symbol.startswith(("300", "301", "302")):
         return {"exchange": "SZSE", "board": "chinext"}
     if symbol.startswith(("4", "8", "92")):
         return {"exchange": "BSE", "board": "beijing"}

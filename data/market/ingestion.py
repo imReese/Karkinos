@@ -92,8 +92,11 @@ class DailyBarIngestionNoData(DailyBarIngestionError):
 class DailyBarIngestionCapturedFailure(DailyBarIngestionError):
     """Processing failed after its immutable Provider Capture was persisted."""
 
-    def __init__(self, capture: ProviderCapture) -> None:
+    def __init__(
+        self, capture: ProviderCapture, *, public_error_code: str | None = None
+    ) -> None:
         self.capture = capture
+        self.public_error_code = public_error_code
         super().__init__("daily_bar_ingestion_failed_after_capture")
 
 
@@ -145,7 +148,7 @@ def ingest_daily_bars(
     if before_fetch is not None:
         before_fetch(provider.descriptor)
     try:
-        batch = provider.fetch_daily_bars(request)
+        batch = _fetch_captured_daily_bars(provider, store, request)
     except Exception:
         # ingestion 是 Provider I/O 的业务边界。
         # Provider 内部不应重复记录同一个最终失败。
@@ -253,6 +256,29 @@ def _capture_batch(
     )
 
 
+def _fetch_captured_daily_bars(provider, store, request):
+    try:
+        return provider.fetch_daily_bars(request)
+    except Exception as exc:
+        batch = getattr(exc, "captured_batch", None)
+        if isinstance(batch, ProviderDailyBarBatch):
+            capture = _capture_batch(store, request=request, batch=batch)
+            code = getattr(exc, "public_error_code", None)
+            # No SDK/free-form message is promoted to an operational code.
+            if (
+                not isinstance(code, str)
+                or not code.startswith("baostock_response_")
+                or any(
+                    character not in "abcdefghijklmnopqrstuvwxyz_" for character in code
+                )
+            ):
+                code = None
+            raise DailyBarIngestionCapturedFailure(
+                capture, public_error_code=code
+            ) from exc
+        raise
+
+
 def _normalize_batch(
     batch: ProviderDailyBarBatch,
 ):
@@ -338,7 +364,7 @@ def ingest_daily_bars_range(
             raise ValueError("daily_bar_range_sessions_invalid")
     if before_fetch is not None:
         before_fetch(provider.descriptor)
-    batch = provider.fetch_daily_bars(request)
+    batch = _fetch_captured_daily_bars(provider, store, request)
     capture = _capture_batch(store, request=request, batch=batch)
     if not batch.rows:
         raise DailyBarIngestionNoData(capture)

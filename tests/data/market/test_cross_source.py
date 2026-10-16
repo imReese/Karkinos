@@ -15,6 +15,7 @@ from data.dataset.resolver import (
 )
 from data.market.contracts import (
     DailyBarProvider,
+    DailyBarProviderUnavailableError,
     DailyBarRequest,
     MarketDataProviderDescriptor,
     ProviderDailyBarBatch,
@@ -96,6 +97,55 @@ class FakeProvider:
             ).encode(),
             rows=rows,
         )
+
+
+def test_pair_fallback_reuses_successful_capture_only_for_identical_inputs(tmp_path):
+    from types import SimpleNamespace
+
+    primary = FakeProvider(TDX_PROVIDER_DESCRIPTOR)
+    comparison = FakeProvider(TUSHARE_DAILY_BAR_DESCRIPTOR)
+    cache = {}
+    objects = ContentAddressedObjectStore(tmp_path)
+    fetched = []
+
+    def unavailable(request):
+        raise DailyBarProviderUnavailableError("fixture_unavailable")
+
+    offline = SimpleNamespace(
+        descriptor=replace(
+            TUSHARE_DAILY_BAR_DESCRIPTOR, provider="offline", upstream_group="offline"
+        ),
+        fetch_daily_bars=unavailable,
+    )
+    kwargs = dict(
+        request=REQUEST,
+        quality_policy=RESEARCH_STRICT_DAILY,
+        normalizer_version="fixture.v1",
+        checked_at=CHECKED,
+        before_fetch=lambda descriptor: fetched.append(descriptor.provider),
+        ingestion_cache=cache,
+    )
+    with pytest.raises(CrossSourceDailyBarUnavailableError):
+        ingest_cross_source_daily_bars(primary, offline, objects, **kwargs)
+    captured = next(iter(cache.values())).capture
+    result = ingest_cross_source_daily_bars(primary, comparison, objects, **kwargs)
+    assert result.eligible_for_verified_dataset
+    assert result.primary.capture == captured
+    assert primary.calls == comparison.calls == 1
+    assert fetched == [
+        primary.descriptor.provider,
+        "offline",
+        comparison.descriptor.provider,
+    ]
+
+    changed = DailyBarRequest(
+        (InstrumentKey("600001", InstrumentType.STOCK),), DAY, DAY
+    )
+    result = ingest_cross_source_daily_bars(
+        primary, comparison, objects, **{**kwargs, "request": changed}
+    )
+    assert not result.eligible_for_verified_dataset
+    assert primary.calls == comparison.calls == 2
 
 
 def _run(

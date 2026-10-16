@@ -18,8 +18,9 @@ from data.dataset.model import (
 )
 from data.dataset.reader import DatasetReaderIntegrityError, read_daily_bar_dataset
 from data.market.capture import read_provider_raw_payload
-from data.market.contracts import DailyBarRequest
+from data.market.contracts import DailyBarProviderUnavailableError, DailyBarRequest
 from data.market.cross_source import (
+    CrossSourceDailyBarUnavailableError,
     ingest_cross_source_daily_bars,
     ingest_cross_source_daily_bars_range,
 )
@@ -116,6 +117,54 @@ def ingest(store, primary, comparison, expected=None, *, request=None, calls=Non
         if calls is not None
         else None,
     )
+
+
+def test_range_fallback_reuses_captured_primary_without_repeating_provider_budget(
+    tmp_path,
+):
+    bao, _, primary, comparison = providers()
+    objects = ContentAddressedObjectStore(tmp_path)
+    cache, fetched = {}, []
+
+    def unavailable(request):
+        raise DailyBarProviderUnavailableError("fixture_unavailable")
+
+    offline = SimpleNamespace(
+        descriptor=replace(
+            comparison.descriptor, provider="offline", upstream_group="offline"
+        ),
+        fetch_daily_bars=unavailable,
+    )
+    kwargs = dict(
+        request=DailyBarRequest(KEYS, DAYS[0], DAYS[-1]),
+        expected_sessions={day: KEYS for day in DAYS},
+        quality_policy=RESEARCH_STRICT_DAILY,
+        normalizer_version="fixture.v1",
+        checked_at=NOW,
+        before_fetch=lambda descriptor: fetched.append(descriptor.provider),
+        ingestion_cache=cache,
+    )
+    with pytest.raises(CrossSourceDailyBarUnavailableError):
+        ingest_cross_source_daily_bars_range(primary, offline, objects, **kwargs)
+    captured = next(iter(cache.values()))[0].capture
+    results = ingest_cross_source_daily_bars_range(
+        primary, comparison, objects, **kwargs
+    )
+    assert len(results) == len(DAYS)
+    assert all(
+        row.primary.capture == captured and row.eligible_for_verified_dataset
+        for row in results
+    )
+    assert len(bao.query_calls) == len(KEYS)
+    assert fetched == ["baostock", "offline", "akshare_tencent"]
+
+    changed = {day: KEYS[:1] if day == DAYS[0] else KEYS for day in DAYS}
+    fresh_bao, _, _, _ = providers()
+    bao.results = fresh_bao.results
+    ingest_cross_source_daily_bars_range(
+        primary, comparison, objects, **{**kwargs, "expected_sessions": changed}
+    )
+    assert len(bao.query_calls) == 2 * len(KEYS)
 
 
 def manifest(store, results, expected):

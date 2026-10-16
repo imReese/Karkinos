@@ -24,8 +24,9 @@ from data.market.contracts import (
     ProviderDailyBarRow,
 )
 
-TUSHARE_DAILY_BAR_ADAPTER_VERSION = "karkinos.tushare.daily_bar.v1"
+TUSHARE_DAILY_BAR_ADAPTER_VERSION = "karkinos.tushare.daily_bar.v2"
 TUSHARE_DAILY_BAR_PAYLOAD_FORMAT = "tushare.pro.daily_bar.dataframe.v1"
+TUSHARE_MARKET_DAILY_PAYLOAD_FORMAT = "tushare.pro.market_daily.dataframe.v2"
 TUSHARE_DAILY_BAR_DESCRIPTOR = MarketDataProviderDescriptor(
     provider="tushare",
     upstream_group="tushare",
@@ -101,7 +102,29 @@ def fetch_tushare_pro_market_daily(client: Any, *, trade_date: str) -> pd.DataFr
 
 
 def fetch_tushare_pro_stock_basic(client: Any) -> pd.DataFrame:
-    return client.stock_basic(exchange="", list_status="L")
+    # Listing status is not among every SDK response's default fields. Ask for
+    # the source facts explicitly instead of inferring active status from an
+    # arbitrary stock-name/quote table.
+    frame = client.stock_basic(
+        exchange="",
+        list_status="L",
+        fields="ts_code,symbol,name,exchange,market,list_status,list_date,delist_date",
+    )
+    if not isinstance(frame, pd.DataFrame) or not {
+        "ts_code",
+        "name",
+        "list_status",
+        "list_date",
+        "delist_date",
+    }.issubset(frame.columns):
+        raise TushareDailyBarResponseError("tushare_stock_master_schema_invalid")
+    # The official endpoint caps one response at 6,000 rows. Reaching that
+    # bound cannot establish complete active membership.
+    if len(frame) >= 6000:
+        raise TushareDailyBarResponseError("tushare_stock_master_truncation_possible")
+    if not frame.empty and not frame["list_status"].eq("L").all():
+        raise TushareDailyBarResponseError("tushare_stock_master_status_mismatch")
+    return frame
 
 
 def fetch_tushare_pro_fund_nav(
@@ -146,7 +169,50 @@ class TushareDailyBarProvider:
         client = self._resolve_client()
         rows: list[ProviderDailyBarRow] = []
         captures: list[dict[str, object]] = []
-        for instrument in request.instruments:
+        market_batch = (
+            request.start_date == request.end_date
+            and len(request.instruments) > 1
+            and all(
+                key.instrument_type is InstrumentType.STOCK
+                for key in request.instruments
+            )
+        )
+        if market_batch:
+            targets = {_request_target(key)[1]: key for key in request.instruments}
+            trade_date = request.start_date.strftime("%Y%m%d")
+            try:
+                frame = fetch_tushare_pro_market_daily(client, trade_date=trade_date)
+            except Exception as exc:
+                raise TushareDailyBarUnavailableError(
+                    "tushare_market_daily_failed"
+                ) from exc
+            if not isinstance(frame, pd.DataFrame):
+                raise TushareDailyBarResponseError(
+                    "tushare_response_must_be_dataframe:daily"
+                )
+            if not frame.empty:
+                if "ts_code" not in frame.columns:
+                    raise TushareDailyBarResponseError(
+                        "tushare_response_columns_missing:daily:ts_code"
+                    )
+                selected = frame.loc[frame["ts_code"].isin(targets)]
+                for ts_code, group in selected.groupby("ts_code", sort=False):
+                    rows.extend(
+                        _rows_from_frame(
+                            group,
+                            instrument=targets[str(ts_code)],
+                            expected_session=request.start_date,
+                            endpoint="daily",
+                        )
+                    )
+            captures.append(
+                {
+                    "endpoint": "daily",
+                    "request": {"trade_date": trade_date},
+                    "frame": _serialize_dataframe(frame),
+                }
+            )
+        for instrument in () if market_batch else request.instruments:
             endpoint, ts_code = _request_target(instrument)
             method = getattr(client, endpoint)
             try:
@@ -183,9 +249,14 @@ class TushareDailyBarProvider:
         if completed_at < started_at:
             raise TushareDailyBarError("tushare_provider_clock_moved_backwards")
 
+        payload_format = (
+            TUSHARE_MARKET_DAILY_PAYLOAD_FORMAT
+            if market_batch
+            else TUSHARE_DAILY_BAR_PAYLOAD_FORMAT
+        )
         payload = json.dumps(
             {
-                "schema": TUSHARE_DAILY_BAR_PAYLOAD_FORMAT,
+                "schema": payload_format,
                 "calls": captures,
             },
             sort_keys=True,
@@ -196,7 +267,7 @@ class TushareDailyBarProvider:
         return ProviderDailyBarBatch(
             provider="tushare",
             adapter_version=TUSHARE_DAILY_BAR_ADAPTER_VERSION,
-            payload_format=TUSHARE_DAILY_BAR_PAYLOAD_FORMAT,
+            payload_format=payload_format,
             started_at=started_at,
             completed_at=completed_at,
             raw_payload=payload,
@@ -261,7 +332,7 @@ def _request_target(instrument: InstrumentKey) -> tuple[str, str]:
 def _stock_exchange(symbol: str) -> str:
     if symbol.startswith(("600", "601", "603", "605", "688", "689")):
         return "SH"
-    if symbol.startswith(("000", "001", "002", "003", "300", "301")):
+    if symbol.startswith(("000", "001", "002", "003", "300", "301", "302")):
         return "SZ"
     if symbol.startswith(("4", "8", "920")):
         return "BJ"
@@ -583,6 +654,7 @@ class TushareSource(DataSource):
                     "display_name": _clean_stock_master_text(row.get("name")),
                     "list_date": _clean_stock_master_text(row.get("list_date")),
                     "list_status": _clean_stock_master_text(row.get("list_status")),
+                    "delist_date": _clean_stock_master_text(row.get("delist_date")),
                     "provider_symbol": provider_symbol,
                     "exchange": exchange,
                     "provider_name": "tushare",

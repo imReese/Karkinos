@@ -18,6 +18,8 @@ from data.market.quality import (
 )
 from data.market.reconciliation import (
     BAOSTOCK_TENCENT_DAILY_RECONCILIATION_V1,
+    BAOSTOCK_TUSHARE_AMOUNT_RECONCILIATION_V1,
+    EASTMONEY_TUSHARE_BSE_RECONCILIATION_V1,
     DailyBarReconciliationPolicy,
     ReconciliationDifferenceKind,
     reconcile_daily_bar_revisions,
@@ -61,6 +63,185 @@ _CAPTURED_AT = datetime(
     3,
     tzinfo=timezone.utc,
 )
+
+
+@pytest.mark.parametrize(
+    "difference,matched",
+    [(7, True), (-28, True), (99, True), (-99, True), (100, False), (-100, False)],
+)
+@pytest.mark.parametrize("reverse", [False, True])
+def test_bse_whole_hand_precision_replays_actual_raw_and_preserves_exact_primary(
+    tmp_path, difference, matched, reverse
+):
+    import json
+
+    import pandas as pd
+
+    from data.market.contracts import DailyBarRequest
+    from data.market.cross_source import ingest_cross_source_daily_bars
+    from data.market.quality import RESEARCH_STRICT_DAILY
+    from data.market.verification_evidence import read_market_verification_evidence
+    from data.providers.eastmoney import AkshareDailyBarProvider
+    from data.providers.tushare import TushareDailyBarProvider
+
+    class Eastmoney:
+        __version__ = "1.18.97"
+
+        def stock_zh_a_hist(self, **kwargs):
+            return pd.DataFrame(
+                {
+                    "日期": ["2026-09-15"],
+                    "开盘": [10],
+                    "最高": [11],
+                    "最低": [9],
+                    "收盘": [10],
+                    "成交量": [100],
+                    "成交额": [100000],
+                }
+            )
+
+    class Tushare:
+        def daily(self, **kwargs):
+            return pd.DataFrame(
+                {
+                    "trade_date": ["20260915"],
+                    "open": [10],
+                    "high": [11],
+                    "low": [9],
+                    "close": [10],
+                    "vol": [Decimal(10000 + difference) / 100],
+                    "amount": [100],
+                }
+            )
+
+    when = datetime(2026, 9, 15, 8, tzinfo=timezone.utc)
+    providers = (
+        TushareDailyBarProvider(Tushare(), clock=lambda: when),
+        AkshareDailyBarProvider(Eastmoney(), clock=lambda: when),
+    )
+    if reverse:
+        providers = tuple(reversed(providers))
+    objects = ContentAddressedObjectStore(tmp_path / "objects")
+    result = ingest_cross_source_daily_bars(
+        *providers,
+        objects,
+        request=DailyBarRequest((_instrument("920001"),), _SESSION_DATE, _SESSION_DATE),
+        quality_policy=RESEARCH_STRICT_DAILY,
+        normalizer_version="karkinos.market.normalize.v1",
+        reconciliation_policy=EASTMONEY_TUSHARE_BSE_RECONCILIATION_V1,
+        checked_at=when,
+    )
+    assert result.eligible_for_verified_dataset is matched
+    verification = read_market_verification_evidence(objects, result.verification.ref)
+    assert verification.policy == EASTMONEY_TUSHARE_BSE_RECONCILIATION_V1
+    assert (
+        json.loads(objects.read_bytes(verification.ref))["policy"][
+            "source_precision_policy"
+        ]
+        == "karkinos.eastmoney.bse.whole_hand_resolution.v1"
+    )
+    replay = reconcile_daily_bar_revisions(
+        objects,
+        primary_revision=result.primary.revision,
+        primary_materialization=result.primary.materialization,
+        comparison_revision=result.comparison.revision,
+        comparison_materialization=result.comparison.materialization,
+        policy=verification.policy,
+    )
+    assert replay == verification.report
+    exact = result.comparison if reverse else result.primary
+    from data.market.revision import validate_daily_bar_materialization
+
+    assert (
+        validate_daily_bar_materialization(
+            objects, revision=exact.revision, materialization=exact.materialization
+        )[0].volume
+        == 10000 + difference
+    )
+    if difference == 7 and not reverse:
+        from data.market.capture import read_provider_capture, read_provider_raw_payload
+
+        original_capture = read_provider_capture(
+            objects, result.comparison.materialization.capture_ref
+        )
+        original_payload = json.loads(
+            read_provider_raw_payload(objects, original_capture)
+        )
+        for field, value in (
+            ("sdk_version", "unknown"),
+            ("volume_precision", "unknown"),
+            ("raw_volume", "100.01"),
+        ):
+            changed = json.loads(json.dumps(original_payload))
+            if field == "sdk_version":
+                changed[field] = value
+            elif field == "volume_precision":
+                changed["calls"][0][field] = value
+            else:
+                call = changed["calls"][0]["frame"]
+                call["data"][0][call["columns"].index("成交量")] = value
+            capture = capture_provider_payload(
+                objects,
+                provider=original_capture.provider,
+                operation=original_capture.operation,
+                request=json.loads(original_capture.request_json),
+                raw_payload=json.dumps(changed).encode(),
+                payload_format=original_capture.payload_format,
+                adapter_version=original_capture.adapter_version,
+                started_at=original_capture.started_at,
+                completed_at=original_capture.completed_at,
+                record_count=1,
+            )
+            bars = validate_daily_bar_materialization(
+                objects,
+                revision=result.comparison.revision,
+                materialization=result.comparison.materialization,
+            )
+            revision, materialization = publish_daily_bar_revision(
+                objects,
+                capture=capture,
+                bars=bars,
+                normalizer_version="karkinos.market.normalize.v1",
+            )
+            with pytest.raises(ValueError, match="source_precision_evidence_invalid"):
+                reconcile_daily_bar_revisions(
+                    objects,
+                    primary_revision=result.primary.revision,
+                    primary_materialization=result.primary.materialization,
+                    comparison_revision=revision,
+                    comparison_materialization=materialization,
+                    policy=verification.policy,
+                )
+
+
+def test_source_precision_does_not_apply_to_other_pair_or_other_venue():
+    policy = EASTMONEY_TUSHARE_BSE_RECONCILIATION_V1
+    arguments = dict(
+        primary_revision_id="primary",
+        comparison_revision_id="comparison",
+        primary_provider="akshare",
+        comparison_provider="tushare",
+        policy=policy,
+    )
+    assert not reconcile_daily_bars(
+        (_bar("600000", volume="10000"),),
+        (_bar("600000", volume="10007"),),
+        **arguments,
+    ).matched
+    arguments["comparison_provider"] = "baostock"
+    with pytest.raises(ValueError, match="precision_pair_invalid"):
+        reconcile_daily_bars(
+            (_bar("920001", volume="10000"),),
+            (_bar("920001", volume="10007"),),
+            **arguments,
+        )
+    arguments["comparison_provider"] = "tushare"
+    with pytest.raises(ValueError, match="precision_volume_invalid"):
+        reconcile_daily_bars(
+            (_bar("920001", volume="10001"),),
+            (_bar("920001", volume="10007"),),
+            **arguments,
+        )
 
 
 def _instrument(
@@ -901,3 +1082,41 @@ def test_baostock_tencent_policy_only_tolerates_reviewed_source_precision() -> N
     )
     assert amount_outside.matched is False
     assert amount_outside.differences[0].field == "amount"
+
+
+@pytest.mark.parametrize(
+    "difference,matched", [("0.99", True), ("-0.99", True), ("1", False), ("-1", False)]
+)
+@pytest.mark.parametrize("reverse", [False, True])
+def test_baostock_tushare_amount_resolution_stays_sub_cny_and_pair_only(
+    difference, matched, reverse
+):
+    providers = ("tushare", "baostock") if reverse else ("baostock", "tushare")
+    args = dict(
+        primary_revision_id="primary",
+        comparison_revision_id="comparison",
+        primary_provider=providers[0],
+        comparison_provider=providers[1],
+        policy=BAOSTOCK_TUSHARE_AMOUNT_RECONCILIATION_V1,
+    )
+    primary = _bar("600000", amount="100000")
+    comparison = _bar("600000", amount=str(Decimal("100000") + Decimal(difference)))
+    report = reconcile_daily_bars((primary,), (comparison,), **args)
+    assert report.matched is matched
+    assert [item.field for item in report.differences] == (
+        [] if matched else ["amount"]
+    )
+    with pytest.raises(ValueError, match="source_precision_pair_invalid"):
+        reconcile_daily_bars(
+            (primary,), (comparison,), **{**args, "comparison_provider": "tdx"}
+        )
+    for change, field in (
+        ({"volume": "123457"}, "volume"),
+        ({"close": "10.49"}, "close"),
+        ({"event_time": _EVENT_TIME + timedelta(seconds=1)}, "event_time"),
+    ):
+        exact = reconcile_daily_bars(
+            (primary,), (_bar("600000", amount="100000", **change),), **args
+        )
+        assert not exact.matched
+        assert exact.differences[0].field == field

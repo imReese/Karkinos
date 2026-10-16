@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from core.types import AssetClass, BarFrequency, Symbol
-from data.providers.tushare import TushareSource
+from data.providers.tushare import TushareDailyBarResponseError, TushareSource
 
 
 def test_tushare_bars_capability_is_stock_daily_only():
@@ -20,16 +20,19 @@ def test_tushare_bars_capability_is_stock_daily_only():
 
 
 def test_tushare_stock_master_preserves_names_with_symbols(monkeypatch):
-    calls: list[tuple[str, str]] = []
+    calls: list[tuple[str, str, str]] = []
 
     class FakePro:
-        def stock_basic(self, *, exchange, list_status):
-            calls.append((exchange, list_status))
+        def stock_basic(self, *, exchange, list_status, fields):
+            calls.append((exchange, list_status, fields))
             return pd.DataFrame(
                 {
                     "ts_code": ["600001.SH", "000001.SZ", "920001.BJ"],
                     "name": ["示例能源", "示例银行", "示例北交所"],
                     "exchange": ["SSE", "SZSE", "BSE"],
+                    "list_status": ["L"] * 3,
+                    "list_date": ["20000101", "19910101", "20250101"],
+                    "delist_date": [None] * 3,
                 }
             )
 
@@ -37,7 +40,13 @@ def test_tushare_stock_master_preserves_names_with_symbols(monkeypatch):
 
     rows = TushareSource(token="token-1234").list_symbol_metadata()
 
-    assert calls == [("", "L")]
+    assert calls == [
+        (
+            "",
+            "L",
+            "ts_code,symbol,name,exchange,market,list_status,list_date,delist_date",
+        )
+    ]
     assert [(row["symbol"], row["display_name"]) for row in rows] == [
         ("600001", "示例能源"),
         ("000001", "示例银行"),
@@ -49,6 +58,39 @@ def test_tushare_stock_master_preserves_names_with_symbols(monkeypatch):
         "920001.BJ",
     ]
     assert [row["exchange"] for row in rows] == ["SSE", "SZSE", "BSE"]
+    assert [row["list_status"] for row in rows] == ["L"] * 3
+    assert [row["list_date"] for row in rows] == [
+        "20000101",
+        "19910101",
+        "20250101",
+    ]
+
+
+@pytest.mark.parametrize("fault", ["missing_status", "status_mismatch", "truncated"])
+def test_tushare_stock_master_rejects_unproven_active_membership(monkeypatch, fault):
+    frame = pd.DataFrame(
+        {
+            "ts_code": ["600001.SH"],
+            "name": ["示例能源"],
+            "list_status": ["L"],
+            "list_date": ["20000101"],
+            "delist_date": [None],
+        }
+    )
+    if fault == "missing_status":
+        frame = frame.drop(columns="list_status")
+    elif fault == "status_mismatch":
+        frame["list_status"] = "D"
+    else:
+        frame = pd.concat([frame] * 6000, ignore_index=True)
+
+    class FakePro:
+        def stock_basic(self, **kwargs):
+            return frame
+
+    monkeypatch.setattr(TushareSource, "_get_pro", lambda self: FakePro())
+    with pytest.raises(TushareDailyBarResponseError, match="stock_master_"):
+        TushareSource(token="token-1234").list_symbol_metadata()
 
 
 def test_tushare_fetches_one_full_market_daily_cross_section(monkeypatch):

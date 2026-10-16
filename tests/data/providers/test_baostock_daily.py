@@ -197,14 +197,14 @@ def test_baostock_preserves_stable_sdk_rows_as_raw_evidence() -> None:
     ).fetch_daily_bars(_request(InstrumentKey("600000", InstrumentType.STOCK)))
 
     payload = json.loads(result.raw_payload)
-    assert payload["schema"] == "baostock.history_k_data_plus.rows.v1"
+    assert payload["schema"] == "baostock.history_k_data_plus.rows.v2"
     assert payload["request"]["adjustflag"] == "3"
     assert payload["request"]["frequency"] == "d"
     assert payload["calls"][0]["code"] == "sh.600000"
     assert payload["calls"][0]["rows"] == [_row("sh.600000")]
 
 
-def test_baostock_explicit_trading_status_maps_to_suspended() -> None:
+def test_baostock_explicit_nontrading_status_keeps_raw_without_a_traded_bar() -> None:
     client = FakeBaoStock()
     client.results["sh.600000"] = FakeResult(
         [
@@ -221,9 +221,8 @@ def test_baostock_explicit_trading_status_maps_to_suspended() -> None:
         client, clock=lambda: AFTER_CLOSE
     ).fetch_daily_bars(_request(InstrumentKey("600000", InstrumentType.STOCK)))
 
-    assert result.rows[0].suspended is True
-    assert result.rows[0].volume == Decimal("0")
-    assert result.rows[0].amount == Decimal("0")
+    assert result.rows == ()
+    assert json.loads(result.raw_payload)["calls"][0]["rows"][0][-1] == "0"
 
 
 def test_baostock_empty_success_is_preserved_as_empty_batch() -> None:
@@ -308,3 +307,73 @@ def test_baostock_rejects_ambiguous_or_invalid_rows(mutator, code) -> None:
             _request(InstrumentKey("600000", InstrumentType.STOCK))
         )
     assert client.logout_calls == 1
+
+
+def test_invalid_bao_row_keeps_actual_partial_capture_and_stops_later_queries(tmp_path):
+    from data.market.capture import read_provider_raw_payload
+    from data.market.ingestion import (
+        DailyBarIngestionCapturedFailure,
+        ingest_daily_bars,
+    )
+    from data.market.quality import RESEARCH_STRICT_DAILY
+    from data.storage.objects import ContentAddressedObjectStore
+
+    client = FakeBaoStock()
+    client.results["sh.600000"] = FakeResult([_row("sh.600000", close="nan")])
+    objects = ContentAddressedObjectStore(tmp_path / "objects")
+    with pytest.raises(DailyBarIngestionCapturedFailure) as failure:
+        ingest_daily_bars(
+            BaoStockDailyBarProvider(client, clock=lambda: AFTER_CLOSE),
+            objects,
+            request=_request(
+                InstrumentKey("600000", InstrumentType.STOCK),
+                InstrumentKey("600001", InstrumentType.STOCK),
+            ),
+            quality_policy=RESEARCH_STRICT_DAILY,
+            normalizer_version="karkinos.market.normalize.v1",
+            checked_at=AFTER_CLOSE,
+        )
+    assert failure.value.public_error_code == "baostock_response_number_invalid"
+    assert [call["code"] for call in client.query_calls] == ["sh.600000"]
+    assert client.logout_calls == 1
+    payload = json.loads(read_provider_raw_payload(objects, failure.value.capture))
+    assert payload["calls"][0]["rows"][0][5] == "nan"
+    assert failure.value.capture.completed_at == AFTER_CLOSE
+
+
+def test_explicit_halted_empty_ohlc_is_raw_status_without_synthetic_bar():
+    client = FakeBaoStock()
+    row = _row("sh.600000", tradestatus="0")
+    row[2:8] = [""] * 6
+    client.results["sh.600000"] = FakeResult([row])
+    batch = BaoStockDailyBarProvider(
+        client, clock=lambda: AFTER_CLOSE
+    ).fetch_daily_bars(_request(InstrumentKey("600000", InstrumentType.STOCK)))
+    assert batch.rows == ()
+    assert json.loads(batch.raw_payload)["calls"][0]["rows"] == [row]
+    row[9] = "1"
+    client.results["sh.600000"] = FakeResult([row])
+    with pytest.raises(BaoStockDailyBarResponseError, match="number_missing"):
+        BaoStockDailyBarProvider(client, clock=lambda: AFTER_CLOSE).fetch_daily_bars(
+            _request(InstrumentKey("600000", InstrumentType.STOCK))
+        )
+
+
+def test_halted_source_ohlc_with_blank_volume_never_becomes_a_planned_bar(tmp_path):
+    from data.market.ingestion import DailyBarIngestionNoData, ingest_daily_bars
+    from data.market.quality import RESEARCH_STRICT_DAILY
+    from data.storage.objects import ContentAddressedObjectStore
+
+    client = FakeBaoStock()
+    client.results["sh.600000"] = FakeResult(
+        [_row("sh.600000", volume="", amount="", tradestatus="0")]
+    )
+    with pytest.raises(DailyBarIngestionNoData):
+        ingest_daily_bars(
+            BaoStockDailyBarProvider(client, clock=lambda: AFTER_CLOSE),
+            ContentAddressedObjectStore(tmp_path / "objects"),
+            request=_request(InstrumentKey("600000", InstrumentType.STOCK)),
+            quality_policy=RESEARCH_STRICT_DAILY,
+            normalizer_version="karkinos.market.normalize.v1",
+            checked_at=AFTER_CLOSE,
+        )

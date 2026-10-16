@@ -91,7 +91,8 @@ def test_akshare_daily_provider_preserves_stable_sdk_response_evidence() -> None
         FakeAkshare(), clock=lambda: AFTER_CLOSE
     ).fetch_daily_bars(_request(InstrumentKey("600000", InstrumentType.STOCK)))
     payload = json.loads(result.raw_payload)
-    assert payload["schema"] == "akshare.eastmoney.daily_bar.dataframe.v1"
+    assert payload["schema"] == "akshare.eastmoney.daily_bar.dataframe.v2"
+    assert payload["sdk_version"]
     assert payload["calls"][0]["endpoint"] == "stock_zh_a_hist"
     assert payload["calls"][0]["request"]["adjust"] == ""
     assert payload["calls"][0]["frame"]["columns"] == [
@@ -103,6 +104,24 @@ def test_akshare_daily_provider_preserves_stable_sdk_response_evidence() -> None
         "成交量",
         "成交额",
     ]
+
+
+def test_bse_requires_reviewed_sdk_and_actual_integer_hand_response():
+    class Bse(FakeAkshare):
+        __version__ = "unknown"
+
+    client = Bse()
+    provider = AkshareDailyBarProvider(client, clock=lambda: AFTER_CLOSE)
+    with pytest.raises(AkshareDailyBarRequestError, match="sdk_unreviewed"):
+        provider.fetch_daily_bars(
+            _request(InstrumentKey("920001", InstrumentType.STOCK))
+        )
+    assert not client.calls
+    client.__version__ = "1.18.97"
+    with pytest.raises(AkshareDailyBarResponseError, match="not_whole_hands"):
+        provider.fetch_daily_bars(
+            _request(InstrumentKey("920001", InstrumentType.STOCK))
+        )
 
 
 def test_akshare_daily_provider_keeps_empty_result_as_empty_batch() -> None:

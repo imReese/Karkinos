@@ -125,8 +125,14 @@ def test_beijing_preflight_excludes_unsupported_sources_before_provider_io():
         request,
     )
     assert [(pair.primary_name, pair.comparison_name) for pair in pairs] == [
-        ("akshare", "tushare")
+        ("tushare", "akshare")
     ]
+    assert (
+        pairs[0].reconciliation_policy.source_precision_policy
+        == "karkinos.eastmoney.bse.whole_hand_resolution.v1"
+    )
+    assert pairs[0].reconciliation_policy.price_tolerance == 0
+    assert pairs[0].reconciliation_policy.amount_tolerance == 0
 
 
 def test_free_policy_pair_supports_etf_unadjusted_daily_bars() -> None:

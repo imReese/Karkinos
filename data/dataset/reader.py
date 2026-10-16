@@ -790,12 +790,27 @@ def _validate_dataset_result(
         raise DatasetReaderIntegrityError("dataset_reader_partition_coverage_mismatch")
 
 
-def _validate_membership_evidence(store, snapshot: DailyBarDatasetSnapshot) -> None:
+def dataset_session_nontrading_instruments(
+    store, snapshot: DailyBarDatasetSnapshot | None, *, session_date: date | None = None
+) -> dict[date, tuple[InstrumentKey, ...]]:
+    """Replay dated raw status proof; this does not replace the full bar reader."""
+    if snapshot is None:
+        return {}
+    return _validate_membership_evidence(store, snapshot, session_date=session_date)
+
+
+def _validate_membership_evidence(
+    store, snapshot: DailyBarDatasetSnapshot, *, session_date: date | None = None
+) -> dict[date, tuple[InstrumentKey, ...]]:
     """Verify actual source bytes/times, without inferring historical membership."""
-    for membership in snapshot.session_memberships:
+    nontrading = {}
+    for membership in getattr(snapshot, "session_memberships", ()):
+        if session_date is not None and membership.partition_date != session_date:
+            continue
         if not membership.source_observation_ids:
             continue
         members: set[InstrumentKey] = set()
+        session_nontrading: set[InstrumentKey] = set()
         availability = []
         try:
             for identity in membership.source_observation_ids:
@@ -822,6 +837,18 @@ def _validate_membership_evidence(store, snapshot: DailyBarDatasetSnapshot) -> N
                     or not started <= completed == available
                 ):
                     raise ValueError("invalid_membership_source_time")
+                if "source_capture_ids" in source:
+                    from data.store import (
+                        require_stock_master_capture_evidence,
+                        stock_master_nontrading_instruments,
+                    )
+
+                    require_stock_master_capture_evidence(store, source)
+                    session_nontrading.update(
+                        stock_master_nontrading_instruments(
+                            source, session_date=membership.partition_date
+                        )
+                    )
                 availability.append(available)
                 for row in source["members"]:
                     members.add(InstrumentKey(str(row["symbol"]), InstrumentType.STOCK))
@@ -830,7 +857,15 @@ def _validate_membership_evidence(store, snapshot: DailyBarDatasetSnapshot) -> N
                 or not set(membership.instruments) <= members
             ):
                 raise ValueError("membership_source_mismatch")
+            if session_nontrading:
+                nontrading[membership.partition_date] = tuple(
+                    sorted(
+                        session_nontrading,
+                        key=lambda key: (key.instrument_type.value, key.symbol),
+                    )
+                )
         except (ObjectStoreError, ValueError, TypeError, KeyError) as exc:
             raise DatasetReaderIntegrityError(
                 "dataset_membership_evidence_invalid"
             ) from exc
+    return nontrading

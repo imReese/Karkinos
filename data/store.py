@@ -22,7 +22,10 @@ from data.market_daily_store import metadata_value as _metadata_value
 from data.market_daily_store import nullable_float as _nullable_float
 from data.market_daily_store import parse_diagnostics as _parse_diagnostics
 from data.meta_store_connection import connect_meta_sqlite
-from data.meta_store_schema import prepare_meta_database
+from data.meta_store_schema import (
+    meta_database_requires_preparation,
+    prepare_meta_database,
+)
 
 build_bar_diagnostics = _build_bar_diagnostics
 
@@ -41,28 +44,85 @@ def normalize_stock_master_metadata(
             continue
         name = row.get("display_name")
         name = name.strip() if isinstance(name, str) and name.strip() else None
-        listing = row.get("list_date")
-        if listing:
-            value = str(listing)
-            listing = (
-                datetime.strptime(value, "%Y%m%d").date().isoformat()
-                if len(value) == 8
-                else date.fromisoformat(value).isoformat()
-            )
-        else:
-            listing = None
         status = row.get("list_status")
         status = status.strip() if isinstance(status, str) and status.strip() else None
         fact = {
             "symbol": symbol,
             "display_name": name,
-            "list_date": listing,
             "list_status": status,
         }
+        for field in ("list_date", "delist_date"):
+            # Old v3 observations never contained delist_date. Omission keeps
+            # those exact canonical bytes and identities unchanged.
+            if field == "delist_date" and field not in row:
+                continue
+            value = row.get(field)
+            fact[field] = (
+                datetime.strptime(str(value), "%Y%m%d").date().isoformat()
+                if value and len(str(value)) == 8
+                else date.fromisoformat(str(value)).isoformat()
+                if value
+                else None
+            )
+        status_fields = {"trade_status", "status_session_date", "status_capture_id"}
+        if status_fields.intersection(row):
+            if not status_fields <= row.keys() or row["trade_status"] not in {"0", "1"}:
+                raise ValueError("market_universe_session_status_invalid")
+            fact.update(
+                trade_status=row["trade_status"],
+                status_session_date=date.fromisoformat(
+                    str(row["status_session_date"])
+                ).isoformat(),
+                status_capture_id=str(row["status_capture_id"]),
+            )
         if symbol in result and result[symbol] != fact:
             raise ValueError("market_universe_metadata_conflict")
         result[symbol] = fact
     return [result[symbol] for symbol in sorted(result)]
+
+
+def require_stock_master_capture_evidence(objects, snapshot):
+    """Replay optional official raw sources with the writer's exact projection."""
+    from data.providers.eastmoney import read_official_stock_master_captures
+
+    identities = snapshot["source_capture_ids"]
+    if (
+        not isinstance(identities, list)
+        or not identities
+        or identities != sorted(set(identities))
+    ):
+        raise ValueError("market_universe_source_captures_invalid")
+    rows, started, completed = read_official_stock_master_captures(
+        objects, identities, trade_date=snapshot["trade_date"]
+    )
+    members = snapshot["members"]
+    if (
+        len(members) != len(rows)
+        or {str(row["symbol"]) for row in rows}
+        != {str(row["symbol"]) for row in members}
+        or snapshot["member_metadata"] != normalize_stock_master_metadata(rows, members)
+        or datetime.fromisoformat(snapshot["capture_started_at"]) != started
+        or datetime.fromisoformat(snapshot["capture_completed_at"]) != completed
+        or datetime.fromisoformat(snapshot["available_at"]) != completed
+    ):
+        raise ValueError("market_universe_source_projection_mismatch")
+
+
+def stock_master_nontrading_instruments(snapshot, *, session_date):
+    """Derive explicitly dated status facts after their raw sources are verified."""
+    refs = set(snapshot.get("source_capture_ids") or ())
+    return tuple(
+        sorted(
+            (
+                InstrumentKey.from_values(row["symbol"], "stock")
+                for row in snapshot.get("member_metadata", ())
+                if row.get("trade_status") == "0"
+                and row.get("status_session_date") == str(session_date)
+                and row.get("status_capture_id") in refs
+            ),
+            key=lambda key: (key.instrument_type.value, key.symbol),
+        )
+    )
 
 
 def _market_universe_utc(value: datetime, *, field: str) -> str:
@@ -171,7 +231,14 @@ class DataStore(MarketDailyIngestionMixin):
         self._root = Path(root)
         self._root.mkdir(parents=True, exist_ok=True)
         self._meta_path = self._root / "meta.db"
-        prepare_meta_database(self._meta_path)
+        # Runtime consumers attach to the prepared schema. Whole-file integrity
+        # checks belong to explicit preparation before API/workers start; doing
+        # them for every DataStore read blocks startup and each request as the
+        # market cache grows. History, structure and observation-time constraints
+        # are still verified here, and each financial/research reader verifies
+        # the actual evidence it consumes.
+        if meta_database_requires_preparation(self._meta_path, verify_integrity=False):
+            prepare_meta_database(self._meta_path)
 
     # ---------- 行情数据 ----------
 
@@ -490,6 +557,7 @@ class DataStore(MarketDailyIngestionMixin):
         capture_started_at: datetime | None = None,
         capture_completed_at: datetime | None = None,
         source_metadata: Sequence[Mapping[str, Any]] | None = None,
+        source_capture_ids: Sequence[str] | None = None,
     ) -> dict[str, object]:
         """Append an adapter observation, or preserve a time-unknown legacy snapshot.
 
@@ -518,6 +586,8 @@ class DataStore(MarketDailyIngestionMixin):
         )
         if source_metadata is not None and not capture:
             raise ValueError("market_universe_metadata_capture_required")
+        if source_capture_ids is not None and (not source_metadata or not capture):
+            raise ValueError("market_universe_source_capture_metadata_required")
         core = {
             "schema_version": "karkinos.market_universe_snapshot.v3"
             if source_metadata is not None
@@ -539,6 +609,13 @@ class DataStore(MarketDailyIngestionMixin):
         if source_metadata is not None:
             core["member_metadata"] = normalize_stock_master_metadata(
                 source_metadata, normalized_members
+            )
+        if source_capture_ids is not None:
+            from data.storage.objects import ContentAddressedObjectStore
+
+            core["source_capture_ids"] = sorted(set(source_capture_ids))
+            require_stock_master_capture_evidence(
+                ContentAddressedObjectStore(self._root / "research" / "objects"), core
             )
         snapshot_id = _market_universe_snapshot_id(core)
         payload = {**core, "snapshot_id": snapshot_id}

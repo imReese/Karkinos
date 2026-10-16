@@ -281,6 +281,11 @@ def _serialize(evidence: MarketVerificationEvidence) -> bytes:
             "price_tolerance": _decimal_text(evidence.policy.price_tolerance),
             "volume_tolerance": _decimal_text(evidence.policy.volume_tolerance),
             "amount_tolerance": _decimal_text(evidence.policy.amount_tolerance),
+            **(
+                {"source_precision_policy": evidence.policy.source_precision_policy}
+                if evidence.policy.source_precision_policy is not None
+                else {}
+            ),
         },
         "primary": {
             "provider": evidence.report.primary_provider,
@@ -358,7 +363,12 @@ def _from_payload(ref: ObjectRef, value: object) -> MarketVerificationEvidence:
     policy_raw = _object(payload["policy"], field="policy")
     _exact_keys(
         policy_raw,
-        {"price_tolerance", "volume_tolerance", "amount_tolerance"},
+        {"price_tolerance", "volume_tolerance", "amount_tolerance"}
+        | (
+            {"source_precision_policy"}
+            if "source_precision_policy" in policy_raw
+            else set()
+        ),
         field="policy",
     )
     policy = DailyBarReconciliationPolicy(
@@ -371,6 +381,7 @@ def _from_payload(ref: ObjectRef, value: object) -> MarketVerificationEvidence:
         amount_tolerance=_decimal(
             policy_raw["amount_tolerance"], field="amount_tolerance"
         ),
+        source_precision_policy=policy_raw.get("source_precision_policy"),
     )
     differences = payload["differences"]
     if not isinstance(differences, list):

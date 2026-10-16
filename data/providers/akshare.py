@@ -825,6 +825,12 @@ class AKShareSource(OpenEndFundMixin, DataSource):
             )
         return rows
 
+    def capture_symbol_metadata(self, store, *, trade_date):
+        """Return complete official active rosters with replayable raw captures."""
+        return eastmoney_upstream.capture_official_stock_master(
+            store, trade_date=trade_date
+        )
+
     @staticmethod
     def _latest_completed_index_daily_row(
         ak,

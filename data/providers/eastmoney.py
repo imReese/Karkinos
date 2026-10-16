@@ -9,6 +9,7 @@ import re
 from collections.abc import Callable
 from datetime import date, datetime, time, timezone
 from decimal import Decimal, InvalidOperation
+from importlib.metadata import version as distribution_version
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
@@ -25,8 +26,10 @@ from data.market.contracts import (
 )
 from data.providers.akshare_sdk import provider_network_env
 
-AKSHARE_DAILY_BAR_ADAPTER_VERSION = "karkinos.akshare.daily_bar.v1"
-AKSHARE_DAILY_BAR_PAYLOAD_FORMAT = "akshare.eastmoney.daily_bar.dataframe.v1"
+AKSHARE_DAILY_BAR_ADAPTER_VERSION = "karkinos.akshare.daily_bar.v2"
+AKSHARE_DAILY_BAR_PAYLOAD_FORMAT = "akshare.eastmoney.daily_bar.dataframe.v2"
+EASTMONEY_BSE_VOLUME_PRECISION_V1 = "karkinos.eastmoney.bse.whole_hand_resolution.v1"
+_REVIEWED_AKSHARE_VERSION = "1.18.97"
 AKSHARE_DAILY_BAR_DESCRIPTOR = MarketDataProviderDescriptor(
     provider="akshare",
     upstream_group="eastmoney",
@@ -99,6 +102,16 @@ class AkshareDailyBarProvider:
             raise AkshareDailyBarRequestError("akshare_daily_bar_session_not_closed")
 
         client = self._resolve_client()
+        sdk_version = str(
+            getattr(client, "__version__", None) or distribution_version("akshare")
+        )
+        if (
+            any(_is_bse_stock(key) for key in request.instruments)
+            and sdk_version != _REVIEWED_AKSHARE_VERSION
+        ):
+            raise AkshareDailyBarRequestError(
+                "akshare_bse_volume_precision_sdk_unreviewed"
+            )
         rows: list[ProviderDailyBarRow] = []
         captures: list[dict[str, object]] = []
         for instrument in request.instruments:
@@ -112,7 +125,8 @@ class AkshareDailyBarProvider:
                 "adjust": "",
             }
             try:
-                frame = method(**kwargs)
+                with provider_network_env():
+                    frame = method(**kwargs)
             except Exception as exc:
                 raise AkshareDailyBarUnavailableError(
                     f"akshare_{endpoint}_failed:{instrument.symbol}"
@@ -128,12 +142,22 @@ class AkshareDailyBarProvider:
                 expected_end=request.end_date,
                 endpoint=endpoint,
             )
+            if _is_bse_stock(instrument) and any(
+                _decimal(row.volume, field="成交量") % _LOT_TO_SHARES
+                for row in parsed_rows
+            ):
+                raise AkshareDailyBarResponseError("akshare_bse_volume_not_whole_hands")
             captures.append(
                 {
                     "endpoint": endpoint,
                     "symbol": instrument.symbol,
                     "request": kwargs,
                     "frame": _serialize_dataframe(frame),
+                    **(
+                        {"volume_precision": EASTMONEY_BSE_VOLUME_PRECISION_V1}
+                        if _is_bse_stock(instrument)
+                        else {}
+                    ),
                 }
             )
             rows.extend(parsed_rows)
@@ -145,6 +169,7 @@ class AkshareDailyBarProvider:
         payload = json.dumps(
             {
                 "schema": AKSHARE_DAILY_BAR_PAYLOAD_FORMAT,
+                "sdk_version": sdk_version,
                 "calls": captures,
             },
             sort_keys=True,
@@ -191,6 +216,13 @@ def _endpoint_for(instrument: InstrumentKey) -> str:
         "stock_zh_a_hist"
         if instrument.instrument_type is InstrumentType.STOCK
         else "fund_etf_hist_em"
+    )
+
+
+def _is_bse_stock(instrument: InstrumentKey) -> bool:
+    return (
+        instrument.instrument_type is InstrumentType.STOCK
+        and instrument.symbol.startswith(("4", "8", "92"))
     )
 
 
@@ -540,3 +572,313 @@ def _format_quote_timestamp(trade_date: str | None, time_value: Any) -> str | No
     if not formatted_time:
         return trade_date
     return f"{trade_date}T{formatted_time}"
+
+
+_OFFICIAL_MASTER_URLS = {
+    "sse": "https://query.sse.com.cn/sseQuery/commonQuery.do",
+    "szse": "https://www.szse.cn/api/report/ShowReport",
+    "bse": "https://www.bse.cn/nqxxController/nqxxCnzq.do",
+}
+
+
+def read_official_stock_master_captures(store, capture_ids, *, trade_date=None):
+    """Replay the complete official rosters and any explicitly dated halt facts.
+
+    Writer and Dataset reader use this same projection. A reference to an
+    unrelated successful request cannot justify omitted stocks or false halts.
+    """
+    from io import BytesIO
+
+    from data.market.capture import read_provider_capture, read_provider_raw_payload
+    from domain.instrument import a_share_identity
+
+    captures = [
+        read_provider_capture(store, store.resolve_ref(ref)) for ref in capture_ids
+    ]
+    if len({item.capture_id for item in captures}) != len(captures):
+        raise ValueError("stock_master_capture_duplicate")
+    boards = {}
+    bse_pages = {}
+    statuses = []
+    for capture in captures:
+        request = json.loads(capture.request_json)
+        body = read_provider_raw_payload(store, capture)
+        if capture.provider == "baostock" and capture.operation == "query_all_stock":
+            day = str(request.get("day") or "")
+            date.fromisoformat(day)
+            if trade_date is not None and day != str(trade_date):
+                raise ValueError("stock_master_status_session_mismatch")
+            payload = json.loads(body)
+            if not {"code", "tradeStatus"} <= set(payload["fields"]):
+                raise ValueError("stock_master_status_schema_invalid")
+            statuses.append((capture.capture_id, day, payload["rows"]))
+            continue
+        if capture.operation != "official_active_stock_list" or request.get(
+            "url"
+        ) != _OFFICIAL_MASTER_URLS.get(capture.provider):
+            raise ValueError("stock_master_capture_source_invalid")
+        params = request["params"]
+        if capture.provider == "sse":
+            if (
+                request["method"] != "GET"
+                or params.get("sqlId") != "COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L"
+                or str(params.get("STOCK_TYPE")) not in {"1", "8"}
+            ):
+                raise ValueError("stock_master_sse_request_invalid")
+            payload = json.loads(body)
+            rows = payload["result"]
+            if not rows or len(rows) != int(payload["pageHelp"]["total"]):
+                raise ValueError("stock_master_sse_incomplete")
+            key = "sse_" + str(params["STOCK_TYPE"])
+            parsed = [
+                (
+                    row["A_STOCK_CODE"],
+                    row["SEC_NAME_CN"],
+                    row["LIST_DATE"],
+                    row.get("DELIST_DATE"),
+                )
+                for row in rows
+            ]
+        elif capture.provider == "szse":
+            if request["method"] != "GET" or params.get("TABKEY") != "tab1":
+                raise ValueError("stock_master_szse_request_invalid")
+            frame = pd.read_excel(BytesIO(body))
+            if (
+                not {"A股代码", "A股简称", "A股上市日期"} <= set(frame.columns)
+                or frame.empty
+            ):
+                raise ValueError("stock_master_szse_incomplete")
+            key = "szse"
+            parsed = [
+                (row["A股代码"], row["A股简称"], row["A股上市日期"], None)
+                for _, row in frame.iterrows()
+            ]
+        else:
+            if (
+                request["method"] != "POST"
+                or params.get("typejb") != "T"
+                or params.get("xxfcbj[]") != "2"
+            ):
+                raise ValueError("stock_master_bse_request_invalid")
+            text = body.decode("utf-8")
+            payload = json.JSONDecoder().raw_decode(text[text.find("[") :])[0][0]
+            page = int(params["page"])
+            if page in bse_pages or page != int(payload["number"]):
+                raise ValueError("stock_master_bse_page_invalid")
+            bse_pages[page] = payload
+            continue
+        if key in boards:
+            raise ValueError("stock_master_board_duplicate")
+        boards[key] = parsed
+    if bse_pages:
+        first = bse_pages.get(0, {})
+        pages = int(first.get("totalPages", 0))
+        if not 1 <= pages <= 30 or set(bse_pages) != set(range(pages)):
+            raise ValueError("stock_master_bse_incomplete")
+        rows = []
+        total = int(first["totalElements"])
+        for page in range(pages):
+            item = bse_pages[page]
+            if int(item["totalPages"]) != pages or int(item["totalElements"]) != total:
+                raise ValueError("stock_master_bse_pagination_changed")
+            rows.extend(item["content"])
+        if not rows or len(rows) != total:
+            raise ValueError("stock_master_bse_incomplete")
+        boards["bse"] = [
+            (row["xxzqdm"], row["xxzqjc"], row["fxssrq"], None) for row in rows
+        ]
+    if set(boards) != {"sse_1", "sse_8", "szse", "bse"}:
+        raise ValueError("stock_master_official_board_coverage_incomplete")
+    metadata = {}
+    for board, rows in boards.items():
+        for code, name, listed, delisted in rows:
+            symbol = str(code).split(".", maxsplit=1)[0].zfill(6)
+            if symbol in metadata or not _SIX_DIGIT_SYMBOL.fullmatch(symbol):
+                raise ValueError("stock_master_official_symbol_duplicate_or_invalid")
+            identity = a_share_identity(symbol)
+            if identity is None or identity["exchange"].lower() != board.split("_")[0]:
+                raise ValueError("stock_master_official_instrument_invalid")
+            metadata[symbol] = {
+                "symbol": symbol,
+                "asset_class": "stock",
+                "display_name": str(name).strip(),
+                "list_date": _official_master_date(listed),
+                "delist_date": _official_master_date(delisted),
+                "list_status": "L",
+                "provider_symbol": symbol,
+                "provider_name": "akshare",
+                "market": "cn",
+                "source": "official_stock_master",
+            }
+    if len(statuses) > 1:
+        raise ValueError("stock_master_status_observation_duplicate")
+    for source_capture_id, day, rows in statuses:
+        seen = set()
+        for row in rows:
+            code = str(row["code"])
+            if code in seen or row["tradeStatus"] not in {"0", "1"}:
+                raise ValueError("stock_master_status_row_invalid")
+            seen.add(code)
+            symbol = code.rsplit(".", maxsplit=1)[-1]
+            if symbol in metadata and row["tradeStatus"] == "0":
+                instrument_identity = a_share_identity(symbol)
+                if instrument_identity is None or (
+                    code
+                    != {"SSE": "sh.", "SZSE": "sz."}.get(
+                        instrument_identity["exchange"], ""
+                    )
+                    + symbol
+                ):
+                    raise ValueError("stock_master_status_instrument_invalid")
+                metadata[symbol].update(
+                    trade_status="0",
+                    status_session_date=day,
+                    status_capture_id=source_capture_id,
+                )
+    return (
+        [metadata[symbol] for symbol in sorted(metadata)],
+        min(item.started_at for item in captures),
+        max(item.completed_at for item in captures),
+    )
+
+
+def _official_master_date(value):
+    if value is None or pd.isna(value) or str(value).strip() in {"", "-"}:
+        return None
+    text = str(value).strip()
+    return (
+        datetime.strptime(text, "%Y%m%d").date().isoformat()
+        if len(text) == 8
+        else pd.Timestamp(value).date().isoformat()
+    )
+
+
+def capture_official_stock_master(
+    store, *, trade_date, request_fn=None, clock=None, bao_client=None
+):
+    """Capture four complete exchange lists plus one bounded Bao daily status read."""
+    import contextlib
+    import io
+
+    import requests
+
+    from data.market.capture import capture_provider_payload
+    from data.providers.baostock import _SESSION_LOCK, _login, _logout
+
+    now = clock or (lambda: datetime.now(timezone.utc))
+    request_fn = request_fn or requests.request
+    captures = []
+
+    def fetch(provider, method, params):
+        url = _OFFICIAL_MASTER_URLS[provider]
+        started = now()
+        referer = {
+            "sse": "https://www.sse.com.cn/assortment/stock/list/share/",
+            "szse": "https://www.szse.cn/market/product/stock/list/index.html",
+            "bse": "https://www.bse.cn/nq/listedcompany.html",
+        }[provider]
+        with provider_network_env():
+            response = request_fn(
+                method,
+                url,
+                params=params if method == "GET" else None,
+                data=params if method == "POST" else None,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                    "Referer": referer,
+                    "Accept": "*/*",
+                    "Accept-Language": "zh-CN,zh;q=0.9",
+                },
+                timeout=25,
+            )
+        completed = now()
+        capture = capture_provider_payload(
+            store,
+            provider=provider,
+            operation="official_active_stock_list",
+            request={"method": method, "url": url, "params": params},
+            raw_payload=response.content,
+            payload_format="http.response.body.v1",
+            adapter_version="karkinos.official_stock_master.v1",
+            started_at=started,
+            completed_at=completed,
+        )
+        captures.append(capture.capture_id)
+        response.raise_for_status()
+        return response.content
+
+    for board in ("1", "8"):
+        fetch(
+            "sse",
+            "GET",
+            {
+                "STOCK_TYPE": board,
+                "REG_PROVINCE": "",
+                "CSRC_CODE": "",
+                "STOCK_CODE": "",
+                "sqlId": "COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L",
+                "COMPANY_STATUS": "2,4,5,7,8",
+                "type": "inParams",
+                "isPagination": "true",
+                "pageHelp.pageSize": "10000",
+                "pageHelp.pageNo": "1",
+            },
+        )
+    fetch("szse", "GET", {"SHOWTYPE": "xlsx", "CATALOGID": "1110", "TABKEY": "tab1"})
+    base = {
+        "page": "0",
+        "typejb": "T",
+        "xxfcbj[]": "2",
+        "xxzqdm": "",
+        "sortfield": "xxzqdm",
+        "sorttype": "asc",
+    }
+    body = fetch("bse", "POST", base).decode("utf-8")
+    first = json.JSONDecoder().raw_decode(body[body.find("[") :])[0][0]
+    pages = int(first["totalPages"])
+    if not 1 <= pages <= 30:
+        raise ValueError("stock_master_bse_page_budget_exceeded")
+    for page in range(1, pages):
+        fetch("bse", "POST", {**base, "page": str(page)})
+    client = bao_client or importlib.import_module("baostock")
+    started = now()
+    with _SESSION_LOCK:
+        _login(client)
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                result = client.query_all_stock(day=str(trade_date))
+                fields = list(result.fields)
+                rows = []
+                if str(result.error_code) != "0":
+                    raise ValueError("stock_master_status_unavailable")
+                while result.next():
+                    rows.append(dict(zip(fields, result.get_row_data(), strict=True)))
+                    if len(rows) > 20000:
+                        raise ValueError("stock_master_status_resource_limit")
+                if str(result.error_code) != "0":
+                    raise ValueError("stock_master_status_pagination_unavailable")
+        finally:
+            _logout(client)
+    completed = now()
+    capture = capture_provider_payload(
+        store,
+        provider="baostock",
+        operation="query_all_stock",
+        request={"day": str(trade_date)},
+        raw_payload=json.dumps(
+            {"fields": fields, "rows": rows},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode(),
+        payload_format="baostock.daily_roster.public_response.v1",
+        adapter_version="karkinos.official_stock_master.v1",
+        started_at=started,
+        completed_at=completed,
+        record_count=len(rows),
+    )
+    captures.append(capture.capture_id)
+    metadata, started, completed = read_official_stock_master_captures(
+        store, captures, trade_date=trade_date
+    )
+    return metadata, tuple(sorted(captures)), started, completed
