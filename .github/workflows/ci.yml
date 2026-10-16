@@ -215,8 +215,11 @@ jobs:
           --cov --cov-append --cov-report= --cov-fail-under=0
       - name: Python product smoke
         if: ${{ !cancelled() }}
+        env:
+          PYTHONUNBUFFERED: "1"
         run: >-
-          uv run --locked python -m pytest -m product_smoke
+          uv run --locked python -m pytest -m product_smoke -vv
+          --durations=20
           --cov --cov-append --cov-report= --cov-fail-under=0
       - name: Check Python coverage
         if: ${{ !cancelled() && needs.plan.outputs.has_backend_changes == 'true' }}

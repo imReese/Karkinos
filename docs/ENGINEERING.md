@@ -130,6 +130,8 @@ trading-safety marker. The small browser safety smoke remains a separate job.
 The backend job allows 90 minutes for coverage and the real 60-session forward
 book, independent evaluation, account qualification and recommendation publication
 journey, alongside the other Python groups.
+Product smoke prints each test name and reports the slowest tests so long replays
+can be located without weakening the checks or extending the job limit.
 
 Full-scope supply tests also exercise a continuous trading week with real SQLite
 provider-budget reservations and next-opening deadlines. They include the maximum
