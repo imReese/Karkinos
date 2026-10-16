@@ -2173,6 +2173,76 @@ test('keeps prior-day signals in the journal but out of the current action queue
   expect(within(queue).queryByTestId('signal-action-card-99')).toBeNull();
 });
 
+test.each(['en', 'zh'] as const)(
+  'keeps blocked account gates ahead of an empty signal queue without inventing approval in %s',
+  async (locale) => {
+    const blockedToday: DecisionResponse = {
+      ...dailyDecision,
+      decision: 'no_action',
+      requires_manual_confirmation: false,
+      candidates: [],
+      summary: {
+        ...dailyDecision.summary,
+        candidate_count: 0,
+        ready_for_manual_confirmation_count: 0,
+        workflow_tasks: [
+          {
+            id: 'account_truth',
+            priority: 20,
+            status: 'blocked',
+            title: 'Account truth',
+            description: 'Broker evidence is required before decision review.',
+            required_actions: ['import_and_reconcile_broker_evidence'],
+            blocking_reasons: ['account_truth_score_unavailable'],
+            evidence: { gate_status: 'blocked', score: null },
+          },
+        ],
+      },
+    };
+    renderDecisionCockpit({
+      todayResponse: blockedToday,
+      signalActionsResponse: [],
+      locale,
+    });
+
+    const queue = await screen.findByTestId('decision-signal-queue-register');
+    expect(
+      await within(queue).findByText(
+        locale === 'zh'
+          ? '当前没有待处理的信号动作。'
+          : 'No pending signal actions are available.',
+      ),
+    ).toBeTruthy();
+    const gates = screen.getByTestId('decision-gate-matrix');
+    const accountGate = within(gates).getByRole('row', {
+      name: locale === 'zh' ? /账户事实/ : /Account truth/,
+    });
+    expect(accountGate.textContent).toContain(
+      locale === 'zh' ? '阻断' : 'Blocked',
+    );
+    const guide = screen.getByTestId('decision-next-action-guide');
+    expect(within(guide).getByRole('link').getAttribute('href')).toBe(
+      '/account-truth',
+    );
+    for (const prioritySurface of [gates, guide]) {
+      expect(
+        prioritySurface.compareDocumentPosition(queue) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    }
+    for (const inventedState of [
+      '风控通过 · 无待办',
+      'Risk Passed · Clear',
+      '0 项阻断',
+      '0 blocked',
+      '人工确认 · 券商离线',
+      'Manual only · Offline',
+    ]) {
+      expect(queue.textContent).not.toContain(inventedState);
+    }
+  },
+);
+
 test('localizes signal journal audit events without exposing dotted event keys', async () => {
   renderDecisionCockpit();
 

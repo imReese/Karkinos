@@ -59,65 +59,6 @@ export function PageHeader({
   );
 }
 
-function OperatingPostureCard({
-  locale,
-  signalCount,
-}: {
-  locale: Locale;
-  signalCount: number;
-}) {
-  return (
-    <div className="rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-3.5 space-y-3">
-      <div className="flex items-center justify-between">
-        <span className="app-type-micro font-semibold text-[var(--app-text-tertiary)] uppercase tracking-wider">
-          {locale === 'zh'
-            ? '今日决策姿态与约束检查'
-            : 'Operating Posture & Controls'}
-        </span>
-        <StatusBadge tone="success">
-          {locale === 'zh' ? '风控通过 · 无待办' : 'Risk Passed · Clear'}
-        </StatusBadge>
-      </div>
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs">
-        <div className="min-w-0">
-          <dt className="text-[var(--app-text-secondary)]">
-            {locale === 'zh' ? '策略信号流水' : 'Recorded Signals'}
-          </dt>
-          <dd className="mt-0.5 font-medium text-[var(--app-text)] font-mono tabular-nums">
-            {locale === 'zh'
-              ? `${signalCount} 条已入库`
-              : `${signalCount} recorded`}
-          </dd>
-        </div>
-        <div className="min-w-0">
-          <dt className="text-[var(--app-text-secondary)]">
-            {locale === 'zh' ? '前置风控拦截' : 'Risk Interceptions'}
-          </dt>
-          <dd className="mt-0.5 font-medium text-[var(--app-text)] font-mono tabular-nums">
-            {locale === 'zh' ? '0 项阻断' : '0 blocked'}
-          </dd>
-        </div>
-        <div className="min-w-0">
-          <dt className="text-[var(--app-text-secondary)]">
-            {locale === 'zh' ? '执行授权模式' : 'Execution Authority'}
-          </dt>
-          <dd className="mt-0.5 font-medium text-[var(--app-text)]">
-            {locale === 'zh' ? '人工确认 · 券商离线' : 'Manual only · Offline'}
-          </dd>
-        </div>
-        <div className="min-w-0">
-          <dt className="text-[var(--app-text-secondary)]">
-            {locale === 'zh' ? '动作准备状态' : 'Action Readiness'}
-          </dt>
-          <dd className="mt-0.5 font-medium text-[var(--app-text)]">
-            {locale === 'zh' ? '暂无待确认订单' : 'No pending orders'}
-          </dd>
-        </div>
-      </dl>
-    </div>
-  );
-}
-
 function SignalJournalCard({
   entry,
   locale,
@@ -353,18 +294,12 @@ export function SignalQueuePanel({
           >
             <div className="grid min-w-0 max-h-[36rem] gap-3 overflow-y-auto pr-1">
               {actions.length === 0 ? (
-                <div className="space-y-3">
-                  <EvidenceState
-                    kind="empty"
-                    statusLabel={labels.signalQueue}
-                    title={labels.noSignalActions}
-                    description={labels.signalQueueDetail}
-                  />
-                  <OperatingPostureCard
-                    locale={locale}
-                    signalCount={latestJournal.length}
-                  />
-                </div>
+                <EvidenceState
+                  kind="empty"
+                  statusLabel={labels.signalQueue}
+                  title={labels.noSignalActions}
+                  description={labels.signalQueueDetail}
+                />
               ) : (
                 actions.slice(0, 4).map((action) => {
                   const instrumentLabel = formatInstrumentDisplayLabel(action);

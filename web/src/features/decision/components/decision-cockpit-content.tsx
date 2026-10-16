@@ -156,15 +156,6 @@ export function DecisionCockpitContent({
         </div>
       ) : null}
 
-      <SignalQueuePanel
-        actions={currentSignalActions}
-        journal={signalJournal.data ?? []}
-        dailyGeneration={today.data?.generation}
-        decisionDate={today.data?.decision_date}
-        loading={signalActions.isLoading || signalJournal.isLoading}
-        error={signalActions.isError || signalJournal.isError}
-      />
-
       <div
         className={
           Boolean(decisionNextActionGuide(lanes, labels, locale))
@@ -182,6 +173,15 @@ export function DecisionCockpitContent({
 
         <DecisionNextActionGuidePanel lanes={lanes} />
       </div>
+
+      <SignalQueuePanel
+        actions={currentSignalActions}
+        journal={signalJournal.data ?? []}
+        dailyGeneration={today.data?.generation}
+        decisionDate={today.data?.decision_date}
+        loading={signalActions.isLoading || signalJournal.isLoading}
+        error={signalActions.isError || signalJournal.isError}
+      />
 
       <details
         className="group min-w-0 rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] px-3 sm:px-4"
