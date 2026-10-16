@@ -119,6 +119,7 @@ export const sharedCopy = {
       missingHistoricalPrices: 'Missing historical prices',
       timelineEmpty: 'No daily attribution available yet.',
       currentPositionPnl: 'Current position PnL',
+      currentPositionTotalPnl: 'Current holdings total PnL',
       returnCalendarWarmingUp: 'Return calendar is warming up',
       returnCalendarEmptyDetail:
         'Once Karkinos has continuous valuations and activity history, this area will switch to daily, monthly, and annual return views. For now it shows current holding PnL.',
@@ -296,6 +297,7 @@ export const sharedCopy = {
       missingHistoricalPrices: '缺少历史价格',
       timelineEmpty: '暂无按日归因数据。',
       currentPositionPnl: '当前持仓收益',
+      currentPositionTotalPnl: '当前持仓总盈亏',
       returnCalendarWarmingUp: '收益日历正在积累数据',
       returnCalendarEmptyDetail:
         '当 Karkinos 积累到连续估值和流水记录后，这里会切换为日、月、年的收益日历。现在先展示当前持仓收益。',

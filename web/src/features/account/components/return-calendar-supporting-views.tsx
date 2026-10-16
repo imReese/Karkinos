@@ -66,7 +66,7 @@ export function ReturnCalendarEmptyState({
         </div>
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
           <CalendarFallbackMetric
-            label={copy.explainability.netChange}
+            label={copy.explainability.currentPositionTotalPnl}
             value={formatReturnCurrency(totalPnl)}
           />
           <CalendarFallbackMetric

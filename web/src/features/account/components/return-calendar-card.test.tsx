@@ -667,20 +667,58 @@ test('supports a compact cockpit layout for the overview page', async () => {
   expect(januaryCellValue.className).toContain('app-type-micro');
 });
 
-test('shows a current-position fallback when daily attribution is not available', async () => {
-  render(
-    <PreferencesProvider>
-      <ReturnCalendarCard timeline={[]} positions={positionSnapshot} compact />
-    </PreferencesProvider>,
-  );
+test.each([
+  {
+    locale: 'en',
+    heading: 'Current position PnL',
+    totalLabel: 'Current holdings total PnL',
+    dailyLabel: 'Net change',
+    emptyLabel: 'Return calendar is warming up',
+    activityLabel: 'Add activity',
+    dataLabel: 'Check data source',
+  },
+  {
+    locale: 'zh',
+    heading: '当前持仓收益',
+    totalLabel: '当前持仓总盈亏',
+    dailyLabel: '当日变化',
+    emptyLabel: '收益日历正在积累数据',
+    activityLabel: '补充流水',
+    dataLabel: '检查数据源',
+  },
+])(
+  'labels the current-holdings fallback without implying a session return ($locale)',
+  async ({
+    locale,
+    heading,
+    totalLabel,
+    dailyLabel,
+    emptyLabel,
+    activityLabel,
+    dataLabel,
+  }) => {
+    window.localStorage.setItem('karkinos.locale', locale);
+    render(
+      <PreferencesProvider>
+        <ReturnCalendarCard
+          timeline={[]}
+          positions={positionSnapshot}
+          compact
+        />
+      </PreferencesProvider>,
+    );
 
-  expect(await screen.findByText('Current position PnL')).toBeTruthy();
-  expect(screen.getByText('Return calendar is warming up')).toBeTruthy();
-  expect(screen.getAllByText('¥80.78').length).toBeGreaterThan(0);
-  expect(screen.getByText('Rongtong Tech Growth Fund C')).toBeTruthy();
-  expect(screen.getByText('029999')).toBeTruthy();
-  expect(screen.getByText('Putailai')).toBeTruthy();
-  expect(screen.getByText('600002')).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Add activity' })).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Check data source' })).toBeTruthy();
-});
+    expect(await screen.findByText(heading)).toBeTruthy();
+    expect(screen.getByText(emptyLabel)).toBeTruthy();
+    const totalMetric = screen.getByText(totalLabel).parentElement!;
+    expect(within(totalMetric).getByText('¥80.78')).toBeTruthy();
+    expect(screen.queryByText(dailyLabel, { exact: true })).toBeNull();
+    expect(screen.getAllByText('¥80.78').length).toBeGreaterThan(0);
+    expect(screen.getByText('Rongtong Tech Growth Fund C')).toBeTruthy();
+    expect(screen.getByText('029999')).toBeTruthy();
+    expect(screen.getByText('Putailai')).toBeTruthy();
+    expect(screen.getByText('600002')).toBeTruthy();
+    expect(screen.getByRole('link', { name: activityLabel })).toBeTruthy();
+    expect(screen.getByRole('link', { name: dataLabel })).toBeTruthy();
+  },
+);
