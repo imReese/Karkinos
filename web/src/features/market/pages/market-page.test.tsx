@@ -292,6 +292,19 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+test('does not present the empty valuation sentinel as a market evidence date', async () => {
+  renderMarketPage({
+    marketEvidenceReview: {
+      ...currentHoldingMarketEvidenceReview,
+      valuation_as_of: '1970-01-01T08:00:00+08:00',
+    },
+  });
+  expect(
+    (await screen.findAllByText(/No valid valuation time/)).length,
+  ).toBeGreaterThan(0);
+  expect(screen.queryByText(/01\/01.*08:00/)).toBeNull();
+});
+
 test('preserves the market master-detail composition while persisted evidence loads', async () => {
   let resolveBoard!: (response: Response) => void;
   const boardResponse = new Promise<Response>((resolve) => {

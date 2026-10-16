@@ -6,7 +6,10 @@ import {
   StatusBadge,
 } from '../../../shared/ui/workbench';
 import { usePreferences } from '../../../shared/preferences/context';
-import { formatCurrency, formatTimestamp } from '../../../shared/format';
+import {
+  formatCurrency,
+  formatValuationTimestamp,
+} from '../../../shared/format';
 import {
   formatInstrumentDisplayLabelsBySymbol,
   type InstrumentDisplayRecord,
@@ -147,7 +150,7 @@ export function StrategyContributionGateCard({
                 },
                 {
                   label: copy.common.valuationAsOf,
-                  value: formatTimestamp(report.valuation_as_of),
+                  value: formatValuationTimestamp(report.valuation_as_of),
                   mono: true,
                 },
                 {

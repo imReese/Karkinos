@@ -1,6 +1,9 @@
 import { createLazyRoute } from '@tanstack/react-router';
 
-import { formatTimestamp } from '../../../shared/format';
+import {
+  formatValuationTimestamp,
+  selectValuationTimestamp,
+} from '../../../shared/format';
 import { formatPublicStatus } from '../../../shared/public-labels';
 import { EvidenceState, WorkspaceHeader } from '../../../shared/ui/workbench';
 import { RiskLoadingWorkspace } from '../components/risk-loading-workspace';
@@ -24,9 +27,8 @@ export function RiskPage() {
         context={
           state.data
             ? copy.common.valuationEvidenceAsOf(
-                formatTimestamp(
-                  state.data.summary.valuation_as_of ??
-                    state.data.summary.valuation_timestamp,
+                formatValuationTimestamp(
+                  selectValuationTimestamp(state.data.summary),
                 ),
                 formatPublicStatus(
                   state.data.summary.valuation_status ??

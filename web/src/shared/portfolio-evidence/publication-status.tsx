@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 import { visiblePersistedProjectionRefetchInterval } from '../api/query-policy';
-import { formatTimestamp } from '../format';
+import { formatTimestamp, formatValuationTimestamp } from '../format';
 import { useCopy } from '../i18n/context';
 
 interface Readiness {
@@ -65,7 +65,7 @@ export function PublicationStatus({
     <aside role="status" className={containerClasses}>
       <p className="font-medium">
         {copy.valuationAsOf}:{' '}
-        <span className="font-mono">{formatTimestamp(asOf)}</span>
+        <span className="font-mono">{formatValuationTimestamp(asOf)}</span>
       </p>
       {isClosedSession ? (
         <span

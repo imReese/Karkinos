@@ -2,6 +2,8 @@ import {
   formatCurrency,
   formatPercent,
   formatTimestamp,
+  formatValuationTimestamp,
+  selectValuationTimestamp,
 } from '../../../shared/format';
 import {
   ControlledActionZone,
@@ -363,7 +365,9 @@ export function HoldingEvidencePanel({
             />
             <InfoRow
               label={labels.valuationTimestamp}
-              value={formatTimestamp(overview.data?.valuation_timestamp)}
+              value={formatValuationTimestamp(
+                selectValuationTimestamp(overview.data),
+              )}
             />
             <InfoRow label={labels.refreshPolicy} value={refreshPolicyLabel} />
             <InfoRow

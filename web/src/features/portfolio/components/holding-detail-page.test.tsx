@@ -80,6 +80,7 @@ function installHoldingFetchMock({
   liveItemOverride = {},
   healthQuoteOverride = {},
   marketHealthOverride = {},
+  overviewOverride = {},
   closedPosition,
   ledgerEntriesOverride,
   klineBarsOverride,
@@ -170,6 +171,7 @@ function installHoldingFetchMock({
   liveItemOverride?: Record<string, unknown>;
   healthQuoteOverride?: Record<string, unknown>;
   marketHealthOverride?: Record<string, unknown>;
+  overviewOverride?: Record<string, unknown>;
   closedPosition?: Record<string, unknown>;
   ledgerEntriesOverride?: Array<Record<string, unknown>>;
   klineBarsOverride?: Array<Record<string, unknown>>;
@@ -294,6 +296,7 @@ function installHoldingFetchMock({
         realized_pnl: 1200,
         cash_ratio: 0.0103,
         valuation_timestamp: '2026-05-16T22:40:00+08:00',
+        ...overviewOverride,
         quote_status: 'stale',
         quote_age_seconds: 2_246_400,
         stale_reason: 'market_closed_cache_only',
@@ -431,6 +434,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
+
+test.each([null, '1970-01-01T08:00:00+08:00'])(
+  'keeps the read clock out of holding valuation evidence for canonical as-of %s',
+  async (asOf) => {
+    renderHoldingDetail({ overviewOverride: { valuation_as_of: asOf } });
+    const evidence = await screen.findByTestId('holding-quote-status-panel');
+    expect(within(evidence).getByText('No valid valuation time')).toBeTruthy();
+    expect(within(evidence).queryByText(/05\/16.*22:40/)).toBeNull();
+  },
+);
 
 test('renders holding detail with cached quote status and ledger trace', async () => {
   const user = userEvent.setup();

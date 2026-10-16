@@ -1,4 +1,9 @@
-import { formatCurrency, formatTimestamp } from '../../../shared/format';
+import {
+  formatCurrency,
+  formatTimestamp,
+  formatValuationTimestamp,
+  selectValuationTimestamp,
+} from '../../../shared/format';
 import type { useCopy } from '../../../shared/i18n/context';
 import type { Locale } from '../../../shared/preferences/context';
 import {
@@ -65,8 +70,9 @@ export function buildSettingsMarketModel(inputs: SettingsModelInputs) {
   const refreshPolicyLabel = marketHealth.data?.refresh_policy
     ? formatPublicStatus(normalizedRefreshPolicy, locale)
     : copy.shell.statusUnknown;
-  const valuationTime = overview.data?.valuation_timestamp
-    ? formatTimestamp(overview.data.valuation_timestamp)
+  const valuationAsOf = selectValuationTimestamp(overview.data);
+  const valuationTime = valuationAsOf
+    ? formatValuationTimestamp(valuationAsOf)
     : copy.settings.noValuationTime;
   const refreshPolicyNeedsReview = isUnconfirmedMarketDataStatus(
     normalizedRefreshPolicy,

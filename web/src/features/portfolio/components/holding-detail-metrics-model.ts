@@ -5,6 +5,7 @@ import {
   formatQuantity,
   formatReturnPercent,
   formatTimestamp,
+  formatValuationTimestamp,
 } from '../../../shared/format';
 import { formatLedgerCostBasisMethodLabel } from '../../../shared/ledger-format';
 import type { LedgerEntry } from '../portfolio-feature-boundary';
@@ -191,7 +192,7 @@ export function buildHoldingMetricsModel(
     },
     {
       label: labels.valuationTimestamp,
-      value: formatTimestamp(snapshot.data?.valuation_as_of),
+      value: formatValuationTimestamp(snapshot.data?.valuation_as_of),
     },
     {
       label: labels.quoteTimestamp,

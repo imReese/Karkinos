@@ -1,4 +1,7 @@
-import { formatTimestamp } from '../../../shared/format';
+import {
+  formatValuationTimestamp,
+  selectValuationTimestamp,
+} from '../../../shared/format';
 import { formatPublicStatus } from '../../../shared/public-labels';
 import {
   EvidenceIdentityDisclosure,
@@ -76,9 +79,8 @@ export function RiskCommandWorkspace({
             },
             {
               label: copy.common.valuationAsOf,
-              value: formatTimestamp(
-                state.data.summary.valuation_as_of ??
-                  state.data.summary.valuation_timestamp,
+              value: formatValuationTimestamp(
+                selectValuationTimestamp(state.data.summary),
               ),
               mono: true,
             },

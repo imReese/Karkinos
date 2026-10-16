@@ -245,6 +245,7 @@ function installRiskFetchMock({
   batchRiskResponse,
   explainabilityResponse = explainability,
   workspaceResponse = riskWorkspace,
+  valuationAsOf,
 }: {
   manualOrders?: unknown[];
   riskAlertsResponse?: unknown[];
@@ -252,6 +253,7 @@ function installRiskFetchMock({
   batchRiskResponse?: unknown;
   explainabilityResponse?: unknown;
   workspaceResponse?: unknown;
+  valuationAsOf?: string | null;
 } = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url =
@@ -283,6 +285,12 @@ function installRiskFetchMock({
     if (url.includes('/api/portfolio/state')) {
       return jsonResponse({
         ...accountState,
+        summary: {
+          ...accountState.summary,
+          ...(valuationAsOf === undefined
+            ? {}
+            : { valuation_as_of: valuationAsOf }),
+        },
         risks: riskAlertsResponse,
       });
     }
@@ -322,6 +330,7 @@ function renderRiskPage(options?: {
   batchRiskResponse?: unknown;
   explainabilityResponse?: unknown;
   workspaceResponse?: unknown;
+  valuationAsOf?: string | null;
 }) {
   window.localStorage.clear();
   if (options?.locale) {
@@ -334,6 +343,7 @@ function renderRiskPage(options?: {
     batchRiskResponse: options?.batchRiskResponse,
     explainabilityResponse: options?.explainabilityResponse,
     workspaceResponse: options?.workspaceResponse,
+    valuationAsOf: options?.valuationAsOf,
   });
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -351,6 +361,41 @@ function renderRiskPage(options?: {
   );
   return { fetchMock, queryClient };
 }
+
+test.each([null, '1970-01-01T08:00:00+08:00'])(
+  'shows inapplicable ratios without warnings or a fabricated time for canonical as-of %s',
+  async (asOf) => {
+    renderRiskPage({
+      locale: 'en',
+      riskAlertsResponse: [],
+      valuationAsOf: asOf,
+      workspaceResponse: {
+        ...riskWorkspace,
+        metrics: [
+          {
+            key: 'cash_ratio',
+            label: 'Cash ratio',
+            value: null,
+            display_value: '--',
+            level: 'not_applicable',
+            detail: 'Immediate liquidity buffer.',
+          },
+        ],
+      },
+    });
+    const table = await screen.findByTestId('risk-threshold-table');
+    expect(within(table).getByText('--')).toBeTruthy();
+    expect(within(table).getByText('Not applicable')).toBeTruthy();
+    expect(
+      within(table).getByText('This ratio requires positive portfolio equity.'),
+    ).toBeTruthy();
+    const warnings = screen.getByTestId('risk-blocking-register');
+    expect(within(warnings).queryByText('Cash ratio')).toBeNull();
+    expect(screen.getByText(/No valid valuation time/)).toBeTruthy();
+    expect(screen.queryByText(/01\/01.*08:00/)).toBeNull();
+    expect(screen.queryByText(/06\/12.*15:00/)).toBeNull();
+  },
+);
 
 test('preserves exposure when historical drawdown evidence is unavailable', async () => {
   renderRiskPage({

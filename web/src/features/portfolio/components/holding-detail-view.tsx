@@ -1,4 +1,8 @@
-import { formatQuantity, formatTimestamp } from '../../../shared/format';
+import {
+  formatQuantity,
+  formatTimestamp,
+  formatValuationTimestamp,
+} from '../../../shared/format';
 import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import {
   EvidenceIdentityDisclosure,
@@ -54,7 +58,7 @@ export function HoldingDetailView({
           description={`${model.market.assetClassDisplay} · ${labels.quantity} ${formatQuantity(
             position.quantity,
           )}`}
-          context={`${copy.common.valuationAsOf} ${formatTimestamp(
+          context={`${copy.common.valuationAsOf} ${formatValuationTimestamp(
             snapshot.data?.valuation_as_of,
           )}`}
           actions={
@@ -88,7 +92,9 @@ export function HoldingDetailView({
                     },
                     {
                       label: copy.common.valuationAsOf,
-                      value: formatTimestamp(snapshot.data.valuation_as_of),
+                      value: formatValuationTimestamp(
+                        snapshot.data.valuation_as_of,
+                      ),
                       mono: true,
                     },
                     {
@@ -124,7 +130,7 @@ export function HoldingDetailView({
               ? labels.closedNoCurrentExposure
               : nextManualStep
           }
-          evidence={`${labels.valuationTimestamp} ${formatTimestamp(
+          evidence={`${labels.valuationTimestamp} ${formatValuationTimestamp(
             snapshot.data?.valuation_as_of,
           )} · ${labels.quoteTimestamp} ${formatTimestamp(quoteTimestamp)}`}
           className="order-2 xl:order-none xl:col-start-2 xl:row-start-1"

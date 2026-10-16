@@ -1,6 +1,6 @@
 import type { useCopy } from '../../../shared/i18n/context';
 import type { Locale } from '../../../shared/preferences/context';
-import { formatTimestamp } from '../../../shared/format';
+import { formatValuationTimestamp } from '../../../shared/format';
 import type {
   useAccountStrategyContributionQuery,
   useDailyTradingPlanQuery,
@@ -105,7 +105,7 @@ export function buildPortfolioPageModel(source: PortfolioPageModelSource) {
     ),
     closedPositions: snapshot.data?.closed_positions ?? [],
     portfolioIdentity: snapshot.data
-      ? `${copy.common.valuationAsOf} ${formatTimestamp(
+      ? `${copy.common.valuationAsOf} ${formatValuationTimestamp(
           snapshot.data.valuation_as_of,
         )}`
       : undefined,

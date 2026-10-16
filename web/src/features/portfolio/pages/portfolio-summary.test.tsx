@@ -73,7 +73,10 @@ beforeEach(() => {
   };
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 function renderSummary() {
   render(
@@ -110,4 +113,35 @@ test('does not reconstruct missing canonical totals from partial position facts'
   expect(valueFor(summary, 'Session P&L').textContent).toBe('--');
   expect(valueFor(summary, 'Unrealized PnL').textContent).toBe('--');
   expect(valueFor(summary, 'Cash').textContent).toContain('100.00');
+});
+
+test('shows missing valuation time without changing the snapshot identity', async () => {
+  snapshot.valuation_as_of = '1970-01-01T08:00:00+08:00';
+  snapshot.valuation_snapshot_id = 'empty-valuation-identity';
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            valuation_snapshot_id: snapshot.valuation_snapshot_id,
+            subsystems: {
+              valuation_read: {
+                status: 'blocked',
+                as_of: snapshot.valuation_as_of,
+                latest_attempt: null,
+                blockers: [],
+              },
+            },
+          }),
+          { headers: { 'Content-Type': 'application/json' } },
+        ),
+    ),
+  );
+  renderSummary();
+  expect(screen.getAllByText(/No valid valuation time/).length).toBeGreaterThan(
+    0,
+  );
+  expect(screen.queryByText(/01\/01.*08:00/)).toBeNull();
+  expect(snapshot.valuation_snapshot_id).toBe('empty-valuation-identity');
 });

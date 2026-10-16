@@ -1,4 +1,8 @@
 import { isUnconfirmedMarketDataStatus } from '../../shared/market-data-status';
+import {
+  hasValidValuationTimestamp,
+  selectValuationTimestamp,
+} from '../../shared/format';
 import { formatPublicStatus } from '../../shared/public-labels';
 import type { Locale } from '../../shared/preferences/context';
 import type { AppCopy } from '../copy';
@@ -8,6 +12,7 @@ export type ToolbarPopoverKey = 'valuation' | 'market' | null;
 export type ToolbarStatusIndicator = 'dot' | 'syncing';
 
 type AccountOverviewStatusSource = {
+  valuation_as_of?: string | null;
   valuation_timestamp?: string | null;
   quote_status?: string | null;
   valuation_status?: string | null;
@@ -68,8 +73,9 @@ export function deriveToolbarStatusModel({
   now,
 }: ToolbarStatusModelInput): ToolbarStatusModel {
   const overview = accountOverview.data;
+  const valuationAsOf = selectValuationTimestamp(overview);
   const valuationTimestamp = formatToolbarTimestamp(
-    overview?.valuation_timestamp,
+    hasValidValuationTimestamp(valuationAsOf) ? valuationAsOf : null,
     locale,
     now,
   );
@@ -81,7 +87,8 @@ export function deriveToolbarStatusModel({
     );
   const isValuationMissing =
     overview?.valuation_status === 'missing' ||
-    overview?.valuation_status === 'error';
+    overview?.valuation_status === 'error' ||
+    overview?.valuation_status === 'blocked';
 
   const quoteStatus = overview?.quote_status
     ? formatPublicStatus(overview.quote_status, locale)
@@ -109,7 +116,7 @@ export function deriveToolbarStatusModel({
       : isValuationDegraded ||
           (overview?.valuation_status === undefined && isQuoteStale)
         ? status(copy.shell.valuationStale, 'warning')
-        : overview
+        : overview && valuationTimestamp
           ? status(copy.shell.valuationMode, 'success')
           : status(copy.shell.statusUnknown, 'warning');
 

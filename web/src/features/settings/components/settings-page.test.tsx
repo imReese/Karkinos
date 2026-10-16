@@ -742,6 +742,27 @@ test('handles missing backend status without crashing', async () => {
   ).toBeTruthy();
 });
 
+test.each([null, '1970-01-01T08:00:00+08:00'])(
+  'does not display the overview read clock when canonical valuation as-of is %s',
+  async (asOf) => {
+    renderSettingsPage({
+      overview: {
+        ...defaultOverview,
+        valuation_as_of: asOf,
+      },
+    });
+    expect(
+      (
+        await screen.findAllByText(
+          asOf ? 'No valid valuation time' : 'No valuation timestamp',
+        )
+      ).length,
+    ).toBeGreaterThan(0);
+    const valuationMetric = screen.getByText('Valuation time').closest('div')!;
+    expect(within(valuationMetric).queryByText(/05\/16.*22:40/)).toBeNull();
+  },
+);
+
 test('disables notification tests when environment credentials are missing', async () => {
   renderSettingsPage({
     settings: {

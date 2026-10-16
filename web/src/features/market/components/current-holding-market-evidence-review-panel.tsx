@@ -7,7 +7,11 @@ import {
   type ExceptionItem,
 } from '../../../shared/ui/workbench';
 import { usePreferences } from '../../../shared/preferences/context';
-import { formatQuantity, formatTimestamp } from '../../../shared/format';
+import {
+  formatQuantity,
+  formatTimestamp,
+  formatValuationTimestamp,
+} from '../../../shared/format';
 import { resolveMarketEvidenceRefreshTargets } from '../../../shared/portfolio-evidence/market-evidence-lanes';
 import {
   formatPublicCode,
@@ -105,7 +109,7 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
                       )}
                     </span>
                     <span className="mt-0.5 block font-mono tabular-nums">
-                      {formatTimestamp(report.valuation_as_of)}
+                      {formatValuationTimestamp(report.valuation_as_of)}
                     </span>
                   </>
                 ),
@@ -215,7 +219,7 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
                   },
                   {
                     label: copy.common.valuationAsOf,
-                    value: formatTimestamp(report.valuation_as_of),
+                    value: formatValuationTimestamp(report.valuation_as_of),
                     mono: true,
                   },
                   {
@@ -276,7 +280,7 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
           <span>
             {report.confirmed_holding_count}/{report.current_holding_count}
           </span>
-          <span>{formatTimestamp(report.valuation_as_of)}</span>
+          <span>{formatValuationTimestamp(report.valuation_as_of)}</span>
         </div>
       ) : report && showReviewWorkspace ? (
         compact ? (
@@ -357,7 +361,7 @@ export function CurrentHoldingMarketEvidenceReviewPanel({
                 {
                   id: 'valuation-as-of',
                   label: copy.common.valuationAsOf,
-                  value: formatTimestamp(report.valuation_as_of),
+                  value: formatValuationTimestamp(report.valuation_as_of),
                 },
               ]}
             />

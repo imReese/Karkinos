@@ -112,6 +112,34 @@ export function formatTimestamp(value: string | null | undefined) {
   }).format(date);
 }
 
+export function hasValidValuationTimestamp(value: string | null | undefined) {
+  const timestamp = value ? new Date(value).getTime() : NaN;
+  // An empty valuation retains epoch as a stable content identity, not an as-of.
+  return Number.isFinite(timestamp) && timestamp !== 0;
+}
+
+export function selectValuationTimestamp(
+  source:
+    | { valuation_as_of?: string | null; valuation_timestamp?: string | null }
+    | null
+    | undefined,
+) {
+  // The legacy timestamp is a projection read clock. An explicitly empty
+  // canonical as-of must never fall back to that newer time.
+  return source && 'valuation_as_of' in source
+    ? source.valuation_as_of
+    : source?.valuation_timestamp;
+}
+
+export function formatValuationTimestamp(value: string | null | undefined) {
+  if (!hasValidValuationTimestamp(value)) {
+    return resolveLocale() === 'zh-CN'
+      ? '尚无有效估值时间'
+      : 'No valid valuation time';
+  }
+  return formatTimestamp(value);
+}
+
 export function formatDate(value: string | null | undefined) {
   if (!value) {
     return '--';

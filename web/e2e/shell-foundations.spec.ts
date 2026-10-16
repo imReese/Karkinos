@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { installOverviewFixture } from './overview-fixture';
 
 test('mobile navigation keeps keyboard focus inside and releases the workspace at desktop size', async ({
   page,
@@ -316,6 +317,7 @@ test('desktop keyboard order reaches a named command with a visible focus ring',
 test('desktop utility controls align and overview holdings avoid partial columns', async ({
   page,
 }) => {
+  await installOverviewFixture(page);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.addInitScript(() => {
     window.localStorage.setItem('karkinos.locale', 'zh');

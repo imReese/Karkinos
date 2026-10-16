@@ -1,7 +1,7 @@
 import {
   formatCurrency as formatCurrencyValue,
   formatPercent,
-  formatTimestamp,
+  formatValuationTimestamp,
 } from '../../../shared/format';
 import { PublicationStatus } from '../../../shared/portfolio-evidence/publication-status';
 import { formatPublicStatus } from '../../../shared/public-labels';
@@ -70,7 +70,9 @@ export function PortfolioPageView({
                 },
                 {
                   label: copy.common.valuationAsOf,
-                  value: formatTimestamp(snapshot.data.valuation_as_of),
+                  value: formatValuationTimestamp(
+                    snapshot.data.valuation_as_of,
+                  ),
                   mono: true,
                 },
                 {

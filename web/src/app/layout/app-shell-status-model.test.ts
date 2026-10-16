@@ -72,6 +72,93 @@ describe('formatToolbarTimestamp', () => {
 describe('deriveToolbarStatusModel', () => {
   const referenceDate = new Date('2026-09-22T12:00:00+08:00');
 
+  it('does not present an epoch valuation identity as an actual valuation time', () => {
+    const model = deriveToolbarStatusModel({
+      accountOverview: {
+        data: {
+          valuation_timestamp: '1970-01-01T08:00:00+08:00',
+          quote_status: 'missing',
+          valuation_status: 'missing',
+        },
+        isError: false,
+        isLoading: false,
+      },
+      marketHealth: { data: undefined, isError: false, isLoading: false },
+      locale: 'zh',
+      copy: copy.zh,
+      now: referenceDate,
+    });
+    expect(model.valuationTimestamp).toBeNull();
+    expect(model.valuationMeta).toBeUndefined();
+  });
+
+  it.each([null, undefined, '', 'invalid', '1970-01-01T08:00:00+08:00'])(
+    'does not replace an explicitly unavailable canonical as-of with the read clock: %s',
+    (asOf) => {
+      const model = deriveToolbarStatusModel({
+        accountOverview: {
+          data: {
+            valuation_as_of: asOf,
+            valuation_timestamp: '2026-09-22T12:00:00+08:00',
+            valuation_status: 'complete',
+            quote_status: 'live',
+          },
+          isError: false,
+          isLoading: false,
+        },
+        marketHealth: { data: undefined, isError: false, isLoading: false },
+        locale: 'zh',
+        copy: copy.zh,
+        now: referenceDate,
+      });
+      expect(model.valuationTimestamp).toBeNull();
+      expect(model.valuationMeta).toBeUndefined();
+      expect(model.valuationStatus.tone).toBe('warning');
+      expect(model.valuationStatus.value).toBe('状态未知');
+    },
+  );
+
+  it('uses canonical valuation evidence instead of a newer projection read clock', () => {
+    const model = deriveToolbarStatusModel({
+      accountOverview: {
+        data: {
+          valuation_as_of: '2026-09-21T15:00:00+08:00',
+          valuation_timestamp: '2026-09-22T12:00:00+08:00',
+          valuation_status: 'complete',
+          quote_status: 'live',
+        },
+        isError: false,
+        isLoading: false,
+      },
+      marketHealth: { data: undefined, isError: false, isLoading: false },
+      locale: 'zh',
+      copy: copy.zh,
+      now: referenceDate,
+    });
+    expect(model.valuationTimestamp).toBe('09-21 15:00');
+    expect(model.valuationStatus.tone).toBe('success');
+  });
+
+  it('does not show a blocked valuation as available even with a valid as-of', () => {
+    const model = deriveToolbarStatusModel({
+      accountOverview: {
+        data: {
+          valuation_as_of: '2026-09-22T11:55:00+08:00',
+          valuation_status: 'blocked',
+          quote_status: 'live',
+        },
+        isError: false,
+        isLoading: false,
+      },
+      marketHealth: { data: undefined, isError: false, isLoading: false },
+      locale: 'zh',
+      copy: copy.zh,
+      now: referenceDate,
+    });
+    expect(model.valuationStatus.tone).toBe('danger');
+    expect(model.valuationStatus.value).toBe('估值异常');
+  });
+
   it('formats same-day valuation and market timestamps compactly', () => {
     const model = deriveToolbarStatusModel({
       accountOverview: {
