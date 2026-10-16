@@ -169,7 +169,7 @@ jobs:
     name: Python tests
     needs: plan
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 45
     steps:
       - name: Checkout exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -211,14 +211,16 @@ jobs:
       - name: Trading safety invariants
         if: ${{ !cancelled() }}
         run: >-
-          uv run --locked python -m pytest -m trading_safety
+          uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0
+          -m trading_safety
           --cov --cov-append --cov-report= --cov-fail-under=0
       - name: Python product smoke
         if: ${{ !cancelled() }}
         env:
           PYTHONUNBUFFERED: "1"
         run: >-
-          uv run --locked python -m pytest -m product_smoke -vv
+          uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0
+          -m product_smoke -vv
           --durations=20
           --cov --cov-append --cov-report= --cov-fail-under=0
       - name: Check Python coverage

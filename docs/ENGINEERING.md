@@ -127,7 +127,7 @@ Each test runs once. The job accumulates coverage locally and enforces the exist
 groups and still fails the job. Dedicated smoke tests must not also carry the
 trading-safety marker. The small browser safety smoke remains a separate job.
 
-The backend job allows 90 minutes for coverage and the real 60-session forward
+The backend job allows 45 minutes for coverage and the real 60-session forward
 book, independent evaluation, account qualification and recommendation publication
 journey, alongside the other Python groups.
 Product smoke prints each test name and reports the slowest tests so long replays

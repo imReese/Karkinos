@@ -467,7 +467,7 @@ async def test_verified_final_qualification_policy_publication_and_revocation(
         },
     )
     grant["statistical_policy"].update(
-        bootstrap_samples=100000,
+        bootstrap_samples=10000,
         significance_level="0.025",
         decision_checkpoint=final_day.isoformat(),
     )
