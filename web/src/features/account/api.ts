@@ -236,7 +236,7 @@ export type RiskWorkspaceResponse = {
   metrics: Array<{
     key: string;
     label: string;
-    value: number;
+    value: number | null;
     display_value: string;
     level: string;
     detail: string;

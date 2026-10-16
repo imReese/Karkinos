@@ -26,8 +26,8 @@ class _BucketState:
             self.symbols = []
 
 
-def _format_percent(value: float) -> str:
-    return f"{value * 100:.1f}%"
+def _format_percent(value: float | None) -> str:
+    return "--" if value is None else f"{value * 100:.1f}%"
 
 
 def _build_drawdown_summary(
@@ -131,18 +131,15 @@ def build_risk_workspace(
 
     total_equity = snapshot.total_equity or 0.0
     gross_exposure = (
-        0.0 if total_equity <= 0 else (total_equity - snapshot.cash) / total_equity
+        None if total_equity <= 0 else (total_equity - snapshot.cash) / total_equity
     )
-    cash_ratio = 0.0 if total_equity <= 0 else snapshot.cash / total_equity
-    largest_weight = max(
-        (item.weight for item in snapshot.allocation if item.asset_class != "cash"),
-        default=0.0,
-    )
-    top3_weight = sum(
-        sorted(
-            (item.weight for item in snapshot.allocation if item.asset_class != "cash"),
-            reverse=True,
-        )[:3]
+    cash_ratio = None if total_equity <= 0 else snapshot.cash / total_equity
+    position_weights = [
+        item.weight for item in snapshot.allocation if item.asset_class != "cash"
+    ]
+    largest_weight = max(position_weights, default=0.0) if total_equity > 0 else None
+    top3_weight = (
+        sum(sorted(position_weights, reverse=True)[:3]) if total_equity > 0 else None
     )
 
     metrics = (
@@ -162,7 +159,7 @@ def build_risk_workspace(
                 label="Max drawdown",
                 value=drawdown_summary.max_drawdown,
                 display_value=_format_percent(drawdown_summary.max_drawdown),
-                level="high" if drawdown_summary.max_drawdown >= 0.15 else "medium",
+                level="high" if drawdown_summary.max_drawdown >= 0.15 else "low",
                 detail="Largest observed peak-to-trough loss across the equity curve.",
             ),
         ]
@@ -173,7 +170,13 @@ def build_risk_workspace(
             label="Gross exposure",
             value=gross_exposure,
             display_value=_format_percent(gross_exposure),
-            level="high" if gross_exposure >= 0.85 else "low",
+            level=(
+                "not_applicable"
+                if gross_exposure is None
+                else "high"
+                if gross_exposure >= 0.85
+                else "low"
+            ),
             detail="Capital currently deployed in non-cash positions.",
         ),
         RiskMetricItem(
@@ -181,7 +184,13 @@ def build_risk_workspace(
             label="Cash ratio",
             value=cash_ratio,
             display_value=_format_percent(cash_ratio),
-            level="medium" if cash_ratio <= 0.15 else "low",
+            level=(
+                "not_applicable"
+                if cash_ratio is None
+                else "medium"
+                if cash_ratio <= 0.15
+                else "low"
+            ),
             detail="Immediate liquidity buffer for rebalance or defense.",
         ),
         RiskMetricItem(
@@ -189,7 +198,13 @@ def build_risk_workspace(
             label="Largest position",
             value=largest_weight,
             display_value=_format_percent(largest_weight),
-            level="high" if largest_weight >= 0.2 else "low",
+            level=(
+                "not_applicable"
+                if largest_weight is None
+                else "high"
+                if largest_weight >= 0.2
+                else "low"
+            ),
             detail="Single-name concentration of the biggest live holding.",
         ),
         RiskMetricItem(
@@ -197,7 +212,13 @@ def build_risk_workspace(
             label="Top 3 concentration",
             value=top3_weight,
             display_value=_format_percent(top3_weight),
-            level="high" if top3_weight >= 0.55 else "medium",
+            level=(
+                "not_applicable"
+                if top3_weight is None
+                else "high"
+                if top3_weight >= 0.55
+                else "low"
+            ),
             detail="Aggregate concentration across the three largest holdings.",
         ),
     ]
@@ -257,13 +278,13 @@ def build_risk_workspace(
         if value.positions_count > 0
     ]
 
-    if not exposure_buckets:
+    if not exposure_buckets and total_equity > 0:
         exposure_buckets.append(
             RiskExposureBucket(
                 bucket="cash",
                 label="Cash reserve",
                 value=snapshot.cash,
-                weight=cash_ratio,
+                weight=cash_ratio or 0.0,
                 positions_count=0,
                 symbols=[],
             )

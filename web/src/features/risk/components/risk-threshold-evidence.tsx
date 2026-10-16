@@ -78,7 +78,11 @@ export function RiskThresholdEvidence({
                   </StatusBadge>
                 </td>
                 <td className="px-3 py-2.5 text-[var(--app-text-secondary)]">
-                  {getRiskMetricDetail(copy, metric.key)}
+                  {metric.level === 'not_applicable'
+                    ? locale === 'zh'
+                      ? '当前净资产不为正，该比例不适用。'
+                      : 'This ratio requires positive portfolio equity.'
+                    : getRiskMetricDetail(copy, metric.key)}
                 </td>
               </tr>
             ))}

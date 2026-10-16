@@ -195,6 +195,9 @@ export function formatRiskNextStep(value: string, locale: Locale) {
 
 export function formatRiskAlertLevel(level: string, locale: Locale) {
   const normalized = level.trim().toLowerCase();
+  if (normalized === 'not_applicable') {
+    return locale === 'zh' ? '不适用' : 'Not applicable';
+  }
   if (normalized === 'medium') {
     return formatPublicStatus('warning', locale);
   }

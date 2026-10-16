@@ -488,7 +488,7 @@ class ExplainabilityResponse(BaseModel):
 class RiskMetricItem(BaseModel):
     key: str
     label: str
-    value: float
+    value: float | None
     display_value: str
     level: str = "low"
     detail: str
