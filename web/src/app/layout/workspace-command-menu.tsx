@@ -5,6 +5,7 @@ import { Link } from '@tanstack/react-router';
 import { useMotionPresence } from '../../shared/motion';
 import type { Locale } from '../../shared/preferences/context';
 import type { AppCopy } from '../copy';
+import { shellCopy } from '../shell-copy';
 import { MarketNavIcon, SearchIcon } from './app-shell-icons';
 import {
   isNavigationItemActive,
@@ -96,9 +97,12 @@ export function WorkspaceCommandMenu({
       label: group.label[locale],
       items: group.items
         .filter((item) =>
-          copy.shell.nav[item.key]
-            .toLocaleLowerCase()
-            .includes(normalizedQuery),
+          [
+            shellCopy.en.shell.nav[item.key],
+            shellCopy.zh.shell.nav[item.key],
+            item.key,
+            item.to,
+          ].some((term) => term.toLocaleLowerCase().includes(normalizedQuery)),
         )
         .map((item) => ({
           key: item.to,

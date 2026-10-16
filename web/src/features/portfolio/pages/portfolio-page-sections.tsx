@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 
 import { formatCurrency } from '../../../shared/format';
+import { usePreferences } from '../../../shared/preferences/context';
 import { handleClientNavigation } from '../../../shared/routing/client-navigate';
 import {
   Button,
@@ -31,6 +32,7 @@ export function PortfolioCurrentHoldingsSection({
   model: PortfolioPageModel;
 }) {
   const { copy, snapshot, state } = model.source;
+  const { locale } = usePreferences();
   return (
     <section
       className="min-w-0 space-y-2"
@@ -51,27 +53,29 @@ export function PortfolioCurrentHoldingsSection({
           evidence={copy.portfolio.table.quoteState}
         />
       ) : null}
-      <WorkspaceToolbar
-        search={model.source.search}
-        onSearchChange={actions.onSearchChange}
-        assetClassFilter={model.source.assetClassFilter}
-        onAssetClassFilterChange={actions.onAssetClassFilterChange}
-        pnlFilter={model.source.pnlFilter}
-        onPnlFilterChange={actions.onPnlFilterChange}
-        assetClasses={model.assetClasses}
-        quoteFilter={state.quoteFilter}
-        onQuoteFilterChange={actions.onQuoteFilterChange}
-        evidenceFilter={state.evidenceFilter}
-        onEvidenceFilterChange={actions.onEvidenceFilterChange}
-        sortBy={state.sortBy}
-        sortDirection={state.sortDirection}
-        onSortByChange={actions.onSortByChange}
-        summary={`${copy.portfolio.currentHoldingsCount(
-          model.portfolioPositions.length,
-        )} · ${copy.portfolio.filteredHoldingsCount(
-          model.filteredPositions.length,
-        )}`}
-      />
+      {model.portfolioPositions.length > 0 ? (
+        <WorkspaceToolbar
+          search={model.source.search}
+          onSearchChange={actions.onSearchChange}
+          assetClassFilter={model.source.assetClassFilter}
+          onAssetClassFilterChange={actions.onAssetClassFilterChange}
+          pnlFilter={model.source.pnlFilter}
+          onPnlFilterChange={actions.onPnlFilterChange}
+          assetClasses={model.assetClasses}
+          quoteFilter={state.quoteFilter}
+          onQuoteFilterChange={actions.onQuoteFilterChange}
+          evidenceFilter={state.evidenceFilter}
+          onEvidenceFilterChange={actions.onEvidenceFilterChange}
+          sortBy={state.sortBy}
+          sortDirection={state.sortDirection}
+          onSortByChange={actions.onSortByChange}
+          summary={`${copy.portfolio.currentHoldingsCount(
+            model.portfolioPositions.length,
+          )} · ${copy.portfolio.filteredHoldingsCount(
+            model.filteredPositions.length,
+          )}`}
+        />
+      ) : null}
 
       <div data-testid="portfolio-current-holdings-count" className="sr-only">
         {copy.portfolio.currentHoldingsCount(model.portfolioPositions.length)} ·{' '}
@@ -108,7 +112,15 @@ export function PortfolioCurrentHoldingsSection({
               <Button variant="secondary" onClick={actions.onClearFilters}>
                 {copy.portfolio.clearFilters}
               </Button>
-            ) : undefined
+            ) : (
+              <a
+                href="/activity"
+                onClick={(event) => handleClientNavigation(event, '/activity')}
+                className="app-button app-button-primary app-button-sm"
+              >
+                {locale === 'zh' ? '录入首笔流水' : 'Record first activity'}
+              </a>
+            )
           }
         />
       ) : (
@@ -138,12 +150,12 @@ export function PortfolioAnalysisSection({
   actions: PortfolioPageActions;
   model: PortfolioPageModel;
 }) {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState<boolean>();
   const { cockpit, copy, liveHoldings, snapshot, state, strategyContribution } =
     model.source;
   return (
     <details
-      open={isOpen}
+      open={isOpen ?? model.portfolioPositions.length > 0}
       onToggle={(e) => setIsOpen(e.currentTarget.open)}
       className="group min-w-0 border-t border-[var(--app-divider)]"
       data-testid="portfolio-analysis"
@@ -297,12 +309,12 @@ export function PortfolioHistorySection({
   actions: PortfolioPageActions;
   model: PortfolioPageModel;
 }) {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState<boolean>();
   const { copy, snapshot } = model.source;
   const realizedTotal = snapshot.data?.realized_pnl_total;
   return (
     <details
-      open={isOpen}
+      open={isOpen ?? model.closedPositions.length > 0}
       onToggle={(e) => setIsOpen(e.currentTarget.open)}
       className="group min-w-0 border-t border-[var(--app-divider)]"
       data-testid="portfolio-history"

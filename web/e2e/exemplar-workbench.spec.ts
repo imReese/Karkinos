@@ -791,7 +791,7 @@ test('backtest preserves result-first evidence and complete metrics across all a
   }
 });
 
-test('AI research keeps frozen evidence ahead of human capture across all acceptance viewports', async ({
+test('AI research keeps candidates and saved evidence ahead of task drafts across all acceptance viewports', async ({
   page,
 }) => {
   test.setTimeout(60_000);
@@ -813,9 +813,7 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
     exact: true,
   });
   const boundaryBadges = page.locator('.app-ai-research-boundary-badges');
-  const emptyState = page.getByRole('heading', {
-    name: 'No frozen research task',
-  });
+  const candidateWorkspace = page.getByTestId('shadow-research-panel');
   const collapseWorkspace = page.getByRole('button', {
     name: 'Collapse research workspace',
     exact: true,
@@ -841,6 +839,10 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
 
   for (const viewport of overviewAcceptanceViewports) {
     await page.setViewportSize(viewport);
+    await page.evaluate(() => {
+      window.scrollTo(0, 0);
+      document.querySelector('.app-shell-content')?.scrollTo(0, 0);
+    });
     const primaryCanvasBox = (await primaryCanvas.boundingBox())!;
     const contextMetricsBox = (await contextMetrics.boundingBox())!;
     if (viewport.width >= 1280) {
@@ -855,11 +857,11 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
         contextMetricsBox.width,
       );
     } else {
-      expect(contextMetricsBox.y, JSON.stringify(viewport)).toBeLessThan(
-        primaryCanvasBox.y,
+      expect(primaryCanvasBox.y, JSON.stringify(viewport)).toBeLessThan(
+        contextMetricsBox.y,
       );
       const evidenceToCanvasGap =
-        primaryCanvasBox.y - (contextMetricsBox.y + contextMetricsBox.height);
+        contextMetricsBox.y - (primaryCanvasBox.y + primaryCanvasBox.height);
       expect(
         evidenceToCanvasGap,
         JSON.stringify(viewport),
@@ -879,7 +881,7 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
       }
     }
     expect(
-      (await emptyState.boundingBox())!.y,
+      (await candidateWorkspace.boundingBox())!.y,
       JSON.stringify(viewport),
     ).toBeLessThan(viewport.height);
     const openComposer = page.getByRole('button', {
@@ -913,11 +915,12 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
     expect(
       openComposerBox.x,
       `queue action ${JSON.stringify(viewport)}`,
-    ).toBeLessThan(queueTitleBox.x + queueTitleBox.width / 2);
+    ).toBeLessThan(primaryCanvasBox.x + primaryCanvasBox.width / 2);
     expect(
-      openComposerBox.y,
-      `queue action ${JSON.stringify(viewport)}`,
-    ).toBeGreaterThan(queueTitleBox.y + queueTitleBox.height);
+      openComposerBox.x >= queueTitleBox.x + queueTitleBox.width ||
+        openComposerBox.y >= queueTitleBox.y + queueTitleBox.height,
+      `queue action does not overlap its title ${JSON.stringify(viewport)}`,
+    ).toBe(true);
     for (const [name, target] of Object.entries({
       openComposer,
       collapseWorkspace,
@@ -947,7 +950,18 @@ test('AI research keeps frozen evidence ahead of human capture across all accept
 
     expect(geometry.documentOverflow, JSON.stringify(viewport)).toBe(0);
     expect(geometry.contentOverflow, JSON.stringify(viewport)).toBe(0);
-    expect(queueBox.y, JSON.stringify(viewport)).toBeLessThan(1100);
+    expect(
+      await candidateWorkspace.evaluate((candidate) => {
+        const tasks = document.querySelector(
+          'section[aria-labelledby="ai-research-queue-title"]',
+        )!;
+        return Boolean(
+          candidate.compareDocumentPosition(tasks) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+        );
+      }),
+      'saved candidate evidence precedes task drafting',
+    ).toBe(true);
     if (viewport.width >= 1280) {
       expect(queueBox.x, JSON.stringify(viewport)).toBeLessThan(composerBox.x);
     } else {
@@ -1128,6 +1142,10 @@ test('activity keeps immutable history in the first reading path across all acce
 test('portfolio keeps filtering ordered above a compact holdings projection', async ({
   page,
 }) => {
+  await installOverviewFixture(page);
+  await page.route('**/api/portfolio', (route) =>
+    route.fulfill({ json: overviewFixture().snapshot }),
+  );
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/portfolio');
 
@@ -1182,12 +1200,32 @@ test('portfolio keeps filtering ordered above a compact holdings projection', as
       'Symbol',
       'Market Value',
       'Weight',
-      'Today PnL',
-      'Unrealized',
+      'Day’s P&L%¥',
+      'Floating P&L%¥',
       'Realized PnL',
       'Quote State',
     ]);
   }
+});
+
+test('empty portfolio offers first activity before secondary analysis', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/portfolio');
+  const holdings = page.getByTestId('portfolio-current-holdings');
+  await expect(
+    holdings.getByRole('link', { name: 'Record first activity' }),
+  ).toHaveAttribute('href', '/activity');
+  await expect(
+    holdings.locator('[data-workbench-primitive="filter-bar"]'),
+  ).toHaveCount(0);
+  await expect(page.getByTestId('portfolio-analysis')).not.toHaveAttribute(
+    'open',
+  );
+  await expect(page.getByTestId('portfolio-history')).not.toHaveAttribute(
+    'open',
+  );
 });
 
 test('portfolio initial load preserves the holdings hierarchy without fabricated values', async ({
@@ -1277,6 +1315,7 @@ test('portfolio initial load preserves the holdings hierarchy without fabricated
   expect(analysisRequestCount.cockpit).toBe(0);
   expect(analysisRequestCount.strategyContribution).toBe(0);
 
+  await page.getByTestId('portfolio-analysis').locator('summary').click();
   await page.getByRole('button', { name: /Strategy|策略/ }).click();
   await expect.poll(() => analysisRequestCount.cockpit).toBe(1);
   await expect.poll(() => analysisRequestCount.strategyContribution).toBe(1);
@@ -1577,6 +1616,10 @@ test('risk initial load preserves priorities, metrics, and controlled-action hie
 test('portfolio mobile keeps holdings or an explicit empty state below disclosed filters', async ({
   page,
 }) => {
+  await installOverviewFixture(page);
+  await page.route('**/api/portfolio', (route) =>
+    route.fulfill({ json: overviewFixture().snapshot }),
+  );
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/portfolio');
 
@@ -1882,6 +1925,10 @@ test('portfolio account and strategy evidence stay flat across themes and target
         `${theme} ${viewport.width}`,
       ).toBeLessThanOrEqual(0);
 
+      const analysis = page.getByTestId('portfolio-analysis');
+      if ((await analysis.getAttribute('open')) === null) {
+        await analysis.locator('summary').click();
+      }
       await page.getByRole('button', { name: /Strategy|策略/ }).click();
       const contribution = page.getByTestId('strategy-contribution-gate-card');
       await expect(contribution).toBeVisible();

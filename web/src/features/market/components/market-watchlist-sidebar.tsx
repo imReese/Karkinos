@@ -8,7 +8,6 @@ import {
   usePreferences,
   type Locale,
 } from '../../../shared/preferences/context';
-import { EvidenceState } from '../../../shared/ui/workbench';
 import type { MarketHealthQuote, ResearchBoardItem } from '../api';
 import {
   formatMarketQuoteLabel,
@@ -747,14 +746,7 @@ export function MarketWatchlistSidebar({
             />
           ))}
         </ul>
-      ) : (
-        <EvidenceState
-          className="border-0"
-          kind="empty"
-          title={labels.noSelection}
-          description={labels.scopeBoundary}
-        />
-      )}
+      ) : null}
     </aside>
   );
 }

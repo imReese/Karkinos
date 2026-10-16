@@ -97,7 +97,9 @@ function MarketResolvedWorkspace({
     <div className="min-w-0 max-w-full space-y-4 sm:space-y-5">
       <MarketBenchmarkRibbon controller={controller} />
       <MarketInstrumentSelection controller={controller} />
-      <MarketResearchNotesWorkspace controller={controller} />
+      {controller.selectedItem ? (
+        <MarketResearchNotesWorkspace controller={controller} />
+      ) : null}
       <MarketHoldingEvidenceReview controller={controller} />
       <MarketGlobalDataEvidence controller={controller} />
     </div>
@@ -155,6 +157,7 @@ function MarketInstrumentSelection({
       }}
       watchlistEditor={
         <details
+          open={items.length === 0 ? true : undefined}
           className="group border-b border-[var(--app-divider)]"
           data-testid="market-watchlist-editor"
         >

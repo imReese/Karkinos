@@ -22,12 +22,12 @@ export const publicHomeCopy = {
       explore: 'Explore the workflow',
       pillars: [
         {
-          title: '100% Local Execution',
-          detail: 'Zero cloud dependencies · Local assets',
+          title: 'Local-first Research',
+          detail: 'Core workflows run locally',
         },
         {
-          title: 'Strict PIT Alignment',
-          detail: 'Time-locked data · No look-ahead',
+          title: 'Explicit Data Timing',
+          detail: 'Availability, capture, and verification status',
         },
         {
           title: 'Default-Off Authority',
@@ -226,12 +226,12 @@ export const publicHomeCopy = {
       explore: '了解能力流程',
       pillars: [
         {
-          title: '100% 本地物理驻留',
-          detail: '资产策略本地执行 · 零云端依赖',
+          title: '本地优先的研究工作台',
+          detail: '核心研究与账户流程在本地运行',
         },
         {
-          title: '严格 PIT 时态对齐',
-          detail: '发布捕获时钟锁定 · 杜绝未来函数',
+          title: '显式的数据时态与来源',
+          detail: '区分可用时间、捕获时间与验证状态',
         },
         {
           title: '默认只读权限防线',

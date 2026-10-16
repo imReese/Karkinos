@@ -1678,16 +1678,18 @@ test('prioritizes blocked evidence readiness over a passing reconciliation score
   expect(screen.getByText('Reconciliation score')).toBeTruthy();
   expect(screen.getByText('Reconciliation gate: Pass')).toBeTruthy();
 
-  const disclosure = document.getElementById(
-    'account-truth-evidence-readiness-disclosure',
-  ) as HTMLDetailsElement;
+  const target = screen.getByTestId('account-truth-evidence-scope-review-form');
+  const disclosure = target.closest('details')!;
   disclosure.open = false;
-  await user.click(
-    within(priority).getByRole('link', {
-      name: 'Review evidence requirements',
-    }),
+  const nextStep = within(priority).getByRole('link', {
+    name: 'Bind the evidence to a reviewed account scope',
+  });
+  expect(nextStep.getAttribute('href')).toBe(
+    '#account-truth-evidence-scope-review',
   );
+  await user.click(nextStep);
   expect(disclosure.open).toBe(true);
+  expect(target.closest('details:not([open])')).toBeNull();
   expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(
     false,
   );

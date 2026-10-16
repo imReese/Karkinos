@@ -6,7 +6,10 @@ import {
   WorkspaceHeader,
 } from '../../../shared/ui/workbench';
 import { AccountTruthEvidenceSections } from './account-truth-evidence-sections';
-import { openAccountTruthReadinessTarget } from './account-truth-evidence-readiness';
+import {
+  accountTruthReadinessActionTarget,
+  openAccountTruthReadinessTarget,
+} from './account-truth-evidence-readiness';
 import { accountTruthReviewLabels as labels } from './account-truth-review-labels';
 import { formatCode } from './account-truth-review-format';
 import { AccountTruthReconciliationWorkspace } from './account-truth-reconciliation-workspace';
@@ -83,6 +86,11 @@ function AccountTruthReadinessPriority({
   const readiness = state.readiness.data;
   if (!readiness) return null;
   const text = labels[locale];
+  const nextTarget = accountTruthReadinessActionTarget(
+    readiness.next_manual_action,
+    Boolean(readiness.account_truth_import_run_id),
+  );
+  const target = nextTarget ?? 'account-truth-evidence-readiness-disclosure';
   return (
     <div data-testid="account-truth-readiness-priority">
       <EvidenceState
@@ -117,16 +125,14 @@ function AccountTruthReadinessPriority({
         }
         action={
           <a
-            aria-controls="account-truth-evidence-readiness-disclosure"
+            aria-controls={target}
             className="app-button-secondary inline-flex min-h-10 items-center rounded-[var(--app-radius-control)] px-3 text-xs font-semibold"
-            href="#account-truth-evidence-readiness-disclosure"
-            onClick={() =>
-              openAccountTruthReadinessTarget(
-                'account-truth-evidence-readiness-disclosure',
-              )
-            }
+            href={`#${target}`}
+            onClick={() => openAccountTruthReadinessTarget(target)}
           >
-            {text.readinessPriorityAction}
+            {nextTarget
+              ? formatCode(readiness.next_manual_action, locale, 'code')
+              : text.readinessPriorityAction}
           </a>
         }
       />

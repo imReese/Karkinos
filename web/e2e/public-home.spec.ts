@@ -286,8 +286,10 @@ test('public home preserves its composition across the seven visual acceptance v
       await boundary.scrollIntoViewIfNeeded();
       await expect(boundary).toBeVisible();
       const boundaryBounds = (await boundary.boundingBox())!;
+      // Chromium scroll offsets are integral here while DOMRects retain
+      // fractions; compare the resulting CSS pixel, not subpixel scroll residue.
       expect(
-        boundaryBounds.y + boundaryBounds.height,
+        Math.round(boundaryBounds.y + boundaryBounds.height),
         JSON.stringify(viewport),
       ).toBeLessThanOrEqual(viewport.height);
     }
@@ -410,7 +412,11 @@ test('public home keeps tablet evidence aligned and fully reachable by scrolling
   await expect(boundary).toBeVisible();
   const boundaryBounds = (await boundary.boundingBox())!;
   expect(boundaryBounds.y).toBeGreaterThanOrEqual(56);
-  expect(boundaryBounds.y + boundaryBounds.height).toBeLessThanOrEqual(1112);
+  // Match the integral scroll position to the fractional DOMRect at CSS-pixel
+  // precision; a clipped CSS pixel still fails the viewport boundary assertion.
+  expect(
+    Math.round(boundaryBounds.y + boundaryBounds.height),
+  ).toBeLessThanOrEqual(1112);
   await expect(
     boundary.getByText('Read and review only', { exact: true }),
   ).toBeVisible();

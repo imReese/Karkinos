@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import { formatTimestamp } from '../../../shared/format';
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
@@ -15,6 +17,7 @@ import { useTradingPageController } from './use-trading-page-controller';
 
 export function TradingWorkspace() {
   const labels = useCopy().trading.page;
+  const [rotationActivated, setRotationActivated] = useState(false);
   const { locale } = usePreferences();
   const controller = useTradingPageController();
   const {
@@ -75,9 +78,6 @@ export function TradingWorkspace() {
         <TradingSafetyRail controller={controller} locale={locale} />
       </div>
 
-      {/* 量化轮动策略收益看板与调仓试算 */}
-      <EtfRotationTradingCard />
-
       <ExecutionAuditPanel
         orders={orderFacts.data ?? []}
         fills={fillFacts.data ?? []}
@@ -97,6 +97,25 @@ export function TradingWorkspace() {
       />
 
       <TradingHistory controller={controller} />
+      <details
+        onToggle={(event) => {
+          if (event.currentTarget.open) setRotationActivated(true);
+        }}
+        className="group min-w-0 border-t border-[var(--app-divider)]"
+        data-testid="trading-rotation-reference"
+      >
+        <summary className="min-h-12 cursor-pointer py-3 text-sm font-semibold text-[var(--app-text-secondary)]">
+          {locale === 'zh'
+            ? 'ETF 轮动研究与调仓试算'
+            : 'ETF rotation research and rebalance preview'}
+          <span className="mt-1 block text-xs font-normal text-[var(--app-text-tertiary)]">
+            {locale === 'zh'
+              ? '展开查看数据来源、离线参考与模拟计划'
+              : 'Expand for data sources, offline references, and simulated plans'}
+          </span>
+        </summary>
+        {rotationActivated ? <EtfRotationTradingCard /> : null}
+      </details>
     </section>
   );
 }

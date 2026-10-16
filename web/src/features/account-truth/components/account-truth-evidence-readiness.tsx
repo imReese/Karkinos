@@ -91,7 +91,7 @@ const accountTruthReconciliationActions = new Set([
   'resolve_account_truth_blockers',
 ]);
 
-function accountTruthReadinessActionTarget(
+export function accountTruthReadinessActionTarget(
   action: string,
   hasCanonicalImport: boolean,
 ) {
@@ -110,9 +110,10 @@ function accountTruthReadinessActionTarget(
 }
 
 export function openAccountTruthReadinessTarget(targetId: string) {
-  const target = document.getElementById(targetId);
-  if (target instanceof HTMLDetailsElement) {
-    target.open = true;
+  let target = document.getElementById(targetId);
+  while (target) {
+    if (target instanceof HTMLDetailsElement) target.open = true;
+    target = target.parentElement;
   }
 }
 

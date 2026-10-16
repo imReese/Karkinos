@@ -563,6 +563,32 @@ test('opens a keyboard-accessible route command menu', async () => {
   );
 });
 
+test.each([
+  { locale: 'zh' as const, query: 'risk', label: '风控', ticker: 'AAPL' },
+  { locale: 'en' as const, query: '风控', label: 'Risk', ticker: '600519' },
+])(
+  'matches route labels across languages in $locale',
+  async ({ locale, query, label, ticker }) => {
+    renderShell({ locale });
+    const user = userEvent.setup();
+    await user.keyboard('{Control>}k{/Control}');
+    const dialog = await screen.findByRole('dialog');
+    const search = within(dialog).getByRole('textbox');
+    await user.type(search, query);
+    expect(
+      within(dialog).getByRole('link', { name: label }).getAttribute('href'),
+    ).toBe('/risk');
+    expect(within(dialog).getAllByRole('link')).toHaveLength(1);
+    await user.clear(search);
+    await user.type(search, ticker);
+    expect(within(dialog).getAllByRole('link')).toHaveLength(1);
+    expect(within(dialog).getByRole('link').getAttribute('href')).toContain(
+      '/market',
+    );
+    expect(within(dialog).getByRole('link').textContent).toContain(ticker);
+  },
+);
+
 test('supports slash shortcut and keyboard arrow navigation in command menu', async () => {
   renderShell();
   const user = userEvent.setup();

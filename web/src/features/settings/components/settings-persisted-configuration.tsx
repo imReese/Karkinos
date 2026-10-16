@@ -25,10 +25,18 @@ export function SettingsPersistedConfiguration({
         title={copy.settings.backendSettings}
         detail={copy.settings.persistedSettingsDetail}
       >
-        <SettingsConfigurationGuide controller={controller} />
         <SettingsOperationsRegister controller={controller} />
         <SettingsConfigurationEditor controller={controller} />
         <SettingsMetadataReadiness controller={controller} />
+        <details
+          className="group border-t border-[var(--app-divider)] pt-3"
+          data-testid="settings-configuration-guide"
+        >
+          <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold text-[var(--app-text-secondary)]">
+            {copy.settings.configGuideTitle}
+          </summary>
+          <SettingsConfigurationGuide controller={controller} />
+        </details>
       </SettingsSection>
     </div>
   );
