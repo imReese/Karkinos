@@ -12,7 +12,9 @@ from core.types import BarFrequency, InstrumentType
 from data.store import DataStore
 from server.db import AppDatabase
 from server.services.market_universe_automation import (
+    MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION,
     MarketUniverseAutomationService,
+    validate_market_universe_automation_payload,
     verified_trading_dates,
 )
 from server.services.market_universe_truth import (
@@ -419,7 +421,8 @@ def test_market_universe_routes_security_master_and_daily_bars_separately(
     assert len(receipts) == 80
 
     payload = json.loads(result["payload_json"])
-    assert payload["schema_version"] == "karkinos.market_universe_automation.v6"
+    validate_market_universe_automation_payload(payload)
+    assert payload["schema_version"] == MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION
     assert payload["security_master_provider"] == "akshare"
     assert payload["daily_bar_provider"] == "tushare"
     assert payload["market_universe_snapshot_id"] == snapshot["snapshot_id"]

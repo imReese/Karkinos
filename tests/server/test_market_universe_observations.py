@@ -13,7 +13,11 @@ from data.store import DataStore
 from server.contracts.ai_shadow_research_automation import ShadowResearchRejected
 from server.db import AppDatabase
 from server.services.ai_shadow_research_baseline import _load_baseline_universe
-from server.services.market_universe_automation import MarketUniverseAutomationService
+from server.services.market_universe_automation import (
+    MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION,
+    MarketUniverseAutomationService,
+    validate_market_universe_automation_payload,
+)
 from server.services.market_universe_truth import (
     MarketUniversePolicy,
     MarketUniverseRejected,
@@ -105,7 +109,8 @@ def test_delayed_adapter_observation_keeps_legacy_and_actual_capture_time(tmp_pa
 
     assert run["status"] == "completed"
     payload = json.loads(run["payload_json"])
-    assert payload["schema_version"] == "karkinos.market_universe_automation.v6"
+    validate_market_universe_automation_payload(payload)
+    assert payload["schema_version"] == MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION
     observed = store.get_market_universe_snapshot(
         snapshot_id=payload["market_universe_snapshot_id"]
     )

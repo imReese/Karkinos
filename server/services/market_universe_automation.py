@@ -39,6 +39,27 @@ MARKET_UNIVERSE_AUTOMATION_RUN_TYPE = "market_universe_sync"
 MARKET_UNIVERSE_AUTOMATION_INTERVAL_SECONDS = 60 * 60
 
 
+def validate_market_universe_automation_payload(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Validate that an automation run payload conforms to the market universe contract."""
+    if not isinstance(payload, Mapping):
+        raise ValueError("market_universe_automation_payload_missing")
+    schema = payload.get("schema_version")
+    if not schema or not str(schema).startswith("karkinos.market_universe_automation."):
+        raise ValueError(f"market_universe_automation_schema_invalid: {schema}")
+    for required in (
+        "trigger",
+        "security_master_provider",
+        "daily_bar_provider",
+        "policy",
+        "asset_scope",
+    ):
+        if required not in payload:
+            raise ValueError(f"market_universe_automation_payload_missing_{required}")
+    return dict(payload)
+
+
 class MarketUniverseAutomationService:
     """Refresh and freeze the stock master plus full-market bar history."""
 
