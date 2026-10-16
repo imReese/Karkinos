@@ -178,6 +178,96 @@ def test_changed_market_input_cannot_publish_a_plan_for_older_bars(
     assert client.get("/api/trading/etf-rebalance/plan").status_code == 503
 
 
+def test_empty_wal_created_by_bar_reads_does_not_abort_evaluation(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    from data.store import DataStore
+
+    monkeypatch.setenv("KARKINOS_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        EtfRotationAutomationService,
+        "resolve_account_capital_and_holdings",
+        lambda self: (Decimal("200000"), Decimal("200000"), {}, True),
+    )
+    wal = tmp_path / "meta.db-wal"
+    initialize = DataStore.__init__
+    load_bars = DataStore.load_bars
+
+    def prepare_without_empty_wal(self, *args, **kwargs):
+        initialize(self, *args, **kwargs)
+        if wal.exists() and wal.stat().st_size == 0:
+            wal.unlink()
+
+    def read_and_create_empty_wal(self, *args, **kwargs):
+        bars = load_bars(self, *args, **kwargs)
+        wal.touch(exist_ok=True)
+        assert wal.stat().st_size == 0
+        return bars
+
+    monkeypatch.setattr(DataStore, "__init__", prepare_without_empty_wal)
+    monkeypatch.setattr(DataStore, "load_bars", read_and_create_empty_wal)
+    response = client.post("/api/trading/etf-rebalance/run", json={})
+    assert response.status_code == 200
+    dashboard = client.get("/api/trading/etf-rebalance/dashboard").json()
+    assert dashboard["rebalance"]["plan_id"] == response.json()["plan_id"]
+    assert dashboard["can_execute"] is True
+
+
+def test_empty_wal_lifecycle_does_not_invalidate_an_existing_plan(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    monkeypatch.setenv("KARKINOS_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        EtfRotationAutomationService,
+        "resolve_account_capital_and_holdings",
+        lambda self: (Decimal("200000"), Decimal("200000"), {}, True),
+    )
+    response = client.post("/api/trading/etf-rebalance/run", json={})
+    assert response.status_code == 200
+    wal = tmp_path / "meta.db-wal"
+    wal.touch(exist_ok=True)
+    assert wal.stat().st_size == 0
+    assert (
+        client.get("/api/trading/etf-rebalance/dashboard").json()["can_execute"] is True
+    )
+    wal.unlink()
+    assert client.get("/api/trading/etf-rebalance/plan").json() == response.json()
+    assert (
+        client.get("/api/trading/etf-rebalance/dashboard").json()["can_execute"] is True
+    )
+
+
+def test_nonempty_wal_changes_still_invalidate_cached_plans(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    from contextlib import closing
+
+    from data.meta_store_connection import connect_meta_sqlite
+    from data.store import DataStore
+
+    monkeypatch.setenv("KARKINOS_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        EtfRotationAutomationService,
+        "resolve_account_capital_and_holdings",
+        lambda self: (Decimal("200000"), Decimal("200000"), {}, True),
+    )
+    DataStore(tmp_path)
+    with closing(connect_meta_sqlite(tmp_path / "meta.db")) as connection:
+        connection.execute("CREATE TABLE wal_change_fixture (value INTEGER)")
+        connection.execute("INSERT INTO wal_change_fixture VALUES (1)")
+        connection.commit()
+        assert (tmp_path / "meta.db-wal").stat().st_size > 0
+        response = client.post("/api/trading/etf-rebalance/run", json={})
+        assert response.status_code == 200
+        connection.execute("UPDATE wal_change_fixture SET value = 2")
+        connection.commit()
+        assert (tmp_path / "meta.db-wal").stat().st_size > 0
+        assert client.get("/api/trading/etf-rebalance/plan").status_code == 503
+        dashboard = client.get("/api/trading/etf-rebalance/dashboard").json()
+        assert dashboard["can_execute"] is False
+        assert dashboard["rebalance"] is None
+
+
 def test_default_market_directory_uses_selected_runtime_not_cwd(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):

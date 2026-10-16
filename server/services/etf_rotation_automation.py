@@ -136,7 +136,13 @@ class EtfRotationAutomationService:
         for path in paths:
             try:
                 stat = path.stat()
-                result.append((str(path), stat.st_ino, stat.st_size, stat.st_mtime_ns))
+                # SQLite can create/remove an empty WAL while only reading.
+                if path.name.endswith("-wal") and stat.st_size == 0:
+                    result.append((str(path), 0, 0, 0))
+                else:
+                    result.append(
+                        (str(path), stat.st_ino, stat.st_size, stat.st_mtime_ns)
+                    )
             except FileNotFoundError:
                 result.append((str(path), 0, 0, 0))
         return tuple(result)
