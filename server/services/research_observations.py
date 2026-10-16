@@ -31,6 +31,7 @@ from analytics.forward_target_outcomes import (
     evaluate_forward_target_outcome,
 )
 from core.types import InstrumentKey, Symbol
+from data.dataset.reader import daily_bar_dataset_read_scope
 from data.storage.objects import ContentAddressedObjectStore
 from domain.research_targets import (
     FORMULA_PORTFOLIO_POLICY_ID,
@@ -314,6 +315,7 @@ class ResearchObservationService:
             max_active_observations=20,
         )
 
+    @daily_bar_dataset_read_scope(join_existing=True)
     def advance(
         self,
         observation_id: str,
@@ -393,7 +395,7 @@ class ResearchObservationService:
                 raise ValueError("observation_dataset_budget_exceeded")
             if "forward_input" in source:
                 require_observation_dataset_prefix(
-                    self.objects, source, result.snapshot
+                    self.objects, source, result.snapshot, verified_parent=result
                 )
             decision_session = market_as_of
             outcomes = self._outcomes(

@@ -35,6 +35,7 @@ from core.types import (
 )
 from data.dataset.reader import (
     DatasetReaderError,
+    daily_bar_dataset_read_scope,
     read_dataset_corporate_action_evidence,
 )
 from domain.instrument import Instrument, make_etf, make_research_stock, make_stock
@@ -721,6 +722,7 @@ class ResearchPaperBookService:
             computation_not_before=now,
         )
 
+    @daily_bar_dataset_read_scope(join_existing=True)
     def settle(
         self,
         observation_id,
@@ -774,7 +776,10 @@ class ResearchPaperBookService:
         if not new_sessions:
             raise ValueError("paper_book_no_new_sessions")
 
+        verified_source = None
+
         def read(identity, captured, rows, *, verified_parent=None):
+            nonlocal verified_source
             result = read_research_observation_dataset(
                 self.observations.objects,
                 identity,
@@ -795,11 +800,12 @@ class ResearchPaperBookService:
                 verified_parent=verified_parent,
             )
             if "forward_input" in book["source"]:
-                require_observation_dataset_prefix(
+                verified_source = require_observation_dataset_prefix(
                     self.observations.objects,
                     book["source"],
                     result.snapshot,
                     verified_parent=verified_parent or result,
+                    verified_source=verified_source,
                 )
             if len(result.bars) > book["policy"]["max_dataset_rows"]:
                 raise ValueError("paper_book_dataset_budget_exceeded")

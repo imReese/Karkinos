@@ -308,7 +308,8 @@ def require_observation_dataset_prefix(
     snapshot: DailyBarDatasetSnapshot,
     *,
     verified_parent: DailyBarDatasetReadResult | None = None,
-) -> None:
+    verified_source: DailyBarDatasetReadResult | None = None,
+) -> DailyBarDatasetReadResult:
     """Preserve frozen daily inputs while allowing newly captured action reports.
 
     A refreshed action binding creates another immutable Dataset. Paper replay
@@ -319,7 +320,12 @@ def require_observation_dataset_prefix(
         raise ResearchObservationInputError(
             "observation_data_preparation_verified_source_required"
         )
-    original = _read(objects, identity, verified_parent=verified_parent).snapshot
+    if verified_source is not None and verified_source.ref.dataset_id != identity:
+        raise ResearchObservationInputError("observation_dataset_frozen_prefix_changed")
+    original_result = verified_source or _read(
+        objects, identity, verified_parent=verified_parent
+    )
+    original = original_result.snapshot
     if (
         not original.verification_bound
         or (
@@ -337,6 +343,7 @@ def require_observation_dataset_prefix(
         or original.partitions != snapshot.partitions[: len(original.partitions)]
     ):
         raise ResearchObservationInputError("observation_dataset_frozen_prefix_changed")
+    return original_result
 
 
 def latest_closed_session(

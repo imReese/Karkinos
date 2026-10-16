@@ -126,6 +126,15 @@ _CALL_VERIFIED_DATASETS: ContextVar[
     dict[tuple[str, DatasetRef], DailyBarDatasetReadResult] | None
 ] = ContextVar("call_verified_daily_bar_datasets", default=None)
 
+_BarsBySession = dict[date, dict[InstrumentKey, DailyBarObservation]]
+_CALL_PARENT_BAR_INDEXES: ContextVar[
+    dict[
+        tuple[str, DatasetRef],
+        tuple[tuple[DailyBarObservation, ...], _BarsBySession],
+    ]
+    | None
+] = ContextVar("call_verified_parent_bar_indexes", default=None)
+
 
 @contextmanager
 def daily_bar_dataset_read_scope(*, join_existing: bool = False) -> Iterator[None]:
@@ -134,9 +143,11 @@ def daily_bar_dataset_read_scope(*, join_existing: bool = False) -> Iterator[Non
         yield
         return
     token = _CALL_VERIFIED_DATASETS.set({})
+    index_token = _CALL_PARENT_BAR_INDEXES.set({})
     try:
         yield
     finally:
+        _CALL_PARENT_BAR_INDEXES.reset(index_token)
         _CALL_VERIFIED_DATASETS.reset(token)
 
 
@@ -237,6 +248,25 @@ def _read_daily_bar_dataset(
     return result
 
 
+def _parent_bars_by_session(
+    store: ContentAddressedObjectStore,
+    parent: DailyBarDatasetReadResult,
+) -> _BarsBySession:
+    """Index the actual verified parent once; never retain old prefix results."""
+    indexes = _CALL_PARENT_BAR_INDEXES.get()
+    key = (str(store.root.resolve()), parent.ref)
+    if indexes is not None:
+        previous = indexes.get(key)
+        if previous is not None and previous[0] is parent.bars:
+            return previous[1]
+    grouped: _BarsBySession = {}
+    for bar in parent.bars:
+        grouped.setdefault(bar.session_date, {})[bar.instrument] = bar
+    if indexes is not None:
+        indexes[key] = (parent.bars, grouped)
+    return grouped
+
+
 def read_daily_bar_dataset_prefix(
     store: ContentAddressedObjectStore,
     ref: DatasetRef,
@@ -272,13 +302,13 @@ def read_daily_bar_dataset_prefix(
         or snapshot.session_memberships
         != parent.session_memberships[: len(snapshot.session_memberships)]
     ):
-        return read_daily_bar_dataset(store, ref)
+        # A call may replay many independently frozen historical revisions.
+        # Validate a different lineage cold without retaining each full history
+        # in the operation's current-Dataset cache.
+        return _read_daily_bar_dataset(store, ref)
     _validate_membership_evidence(store, snapshot)
     memberships = {item.partition_date: item for item in snapshot.session_memberships}
-    grouped: dict[date, dict[InstrumentKey, DailyBarObservation]] = {}
-    for bar in verified_parent.bars:
-        if bar.session_date <= snapshot.end_date:
-            grouped.setdefault(bar.session_date, {})[bar.instrument] = bar
+    grouped = _parent_bars_by_session(store, verified_parent)
     bars: list[DailyBarObservation] = []
     for partition in snapshot.partitions:
         if partition.verification_id is not None:

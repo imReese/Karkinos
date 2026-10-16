@@ -18,6 +18,7 @@ from data.dataset.manifest import (
     DatasetManifestError,
     read_daily_bar_dataset_manifest,
 )
+from data.dataset.reader import daily_bar_dataset_read_scope
 from data.storage.objects import ObjectStoreError
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.recommendation_publication import read_publication_grant
@@ -624,177 +625,187 @@ def run_research_observation_automation_once(
         identity = policy.get("observation_id") if isinstance(policy, dict) else None
         if not observation_automation_policy_valid(policy, identity):
             continue
-        observation = service.repository.get(identity)
-        if observation is None:
-            continue
-        if policy.get("paper_settlement_enabled", False):
-            paper_report = _settle_opted_paper(service, observation, policy, stopped)
-            if paper_report is not None and not policy["enabled"]:
-                reports.append({**paper_report, "scope": "independent_paper"})
-        if not policy["enabled"] or observation["lifecycle"] != "active":
-            continue
-        now = _now(service)
-        decision_session = None
-        dataset_id = None
-        attempted = False
-        unreadable_candidate_dataset_ids = None
-        try:
-            if observation["code_binding"] != observation_code_binding():
-                raise ValueError("observation_code_changed")
-            calendar = service._calendar(
-                date.fromisoformat(
-                    observation_input_binding(observation["source"])["start_date"]
-                ),
-                now,
-            )
-            decision_session = latest_closed_session(calendar, now=now)
-            # Automatic publication belongs to the just-closed session's window,
-            # never to a missed session recovered after its next opening.
-            anchor = datetime.combine(decision_session, time(16), _SHANGHAI)
-            if now < anchor:
-                raise ValueError("observation_automation_waiting_after_close")
+        with daily_bar_dataset_read_scope():
+            observation = service.repository.get(identity)
+            if observation is None:
+                continue
+            if policy.get("paper_settlement_enabled", False):
+                paper_report = _settle_opted_paper(
+                    service, observation, policy, stopped
+                )
+                if paper_report is not None and not policy["enabled"]:
+                    reports.append({**paper_report, "scope": "independent_paper"})
+            if not policy["enabled"] or observation["lifecycle"] != "active":
+                continue
+            now = _now(service)
+            decision_session = None
+            dataset_id = None
+            attempted = False
+            unreadable_candidate_dataset_ids = None
             try:
-                reference, _ = observation_outcome_sessions(
-                    calendar,
-                    published_at=anchor,
-                    horizon_sessions=observation["policy"]["horizon_sessions"],
-                    now=now,
-                )
-            except ValueError as exc:
-                if str(exc) != "observation_calendar_horizon_missing":
-                    raise
-                row = service.db.get_market_calendar_snapshot_sync(
-                    exchange="SSE", year=now.astimezone(_SHANGHAI).year + 1
-                )
-                if row is None:
-                    raise
-                calendar.append(row)
-                reference, _ = observation_outcome_sessions(
-                    calendar,
-                    published_at=anchor,
-                    horizon_sessions=observation["policy"]["horizon_sessions"],
-                    now=now,
-                )
-            publication_deadline = datetime.combine(reference, time(9, 30), _SHANGHAI)
-            if now >= publication_deadline:
-                raise ValueError("observation_automation_publication_window_missed")
-            published = any(
-                item["decision_session"] == decision_session.isoformat()
-                for item in observation["publications"]
-            )
-            measured = {item["publication_id"] for item in observation["outcomes"]}
-            due_outcomes = any(
-                item["id"] not in measured
-                and date.fromisoformat(item["payload"]["end_session"])
-                <= decision_session
-                for item in observation["publications"]
-            )
-            if published and not due_outcomes:
-                status, blocker = "completed", None
-            else:
-                unreadable_candidate_dataset_ids = []
-                entry, snapshot = _select_dataset(
-                    service,
-                    observation,
-                    now,
-                    decision_session,
-                    unreadable_candidate_dataset_ids=unreadable_candidate_dataset_ids,
-                )
-                # Bind the identified matching candidate before reading evidence:
-                # validation failure must expose this ID and never try an older
-                # matching Dataset. Catalog metadata alone cannot admit it.
-                dataset_id = entry.ref.dataset_id
-                if policy.get("dataset_preparation_enabled", False):
-                    require_observation_dataset_prefix(
-                        service.objects, observation["source"], snapshot
-                    )
-                if (snapshot.start_date, snapshot.end_date, snapshot.cutoff) != (
+                if observation["code_binding"] != observation_code_binding():
+                    raise ValueError("observation_code_changed")
+                calendar = service._calendar(
                     date.fromisoformat(
                         observation_input_binding(observation["source"])["start_date"]
                     ),
-                    decision_session,
-                    entry.cutoff,
-                ):
-                    raise ValueError("observation_automation_catalog_mismatch")
-                result = read_research_observation_dataset(
-                    service.objects,
-                    dataset_id,
-                    instruments=snapshot.instruments,
-                    start_date=snapshot.start_date,
-                    now=now,
-                    calendar_rows=calendar,
-                    minimum_bars=observation["source"]["minimum_bars"],
-                    deployment_scope=observation_deployment_scope(
-                        observation["source"]
-                    ),
-                    membership_after=date.fromisoformat(
-                        observation_input_binding(observation["source"])["end_date"]
-                    ),
+                    now,
                 )
-                if len(result.bars) > observation["policy"]["max_dataset_rows"]:
-                    raise ValueError("observation_dataset_budget_exceeded")
-                if published and not service._outcomes(
-                    observation, result, dataset_id, now, decision_session
-                ):
-                    raise ValueError("observation_automation_outcome_unavailable")
-                if stopped():
-                    break
-                request_id = str(
-                    uuid5(
-                        NAMESPACE_URL,
-                        content_fingerprint(
-                            {
-                                "observation_id": identity,
-                                "decision_session": decision_session.isoformat(),
-                                "dataset_id": dataset_id,
-                                "expected_version": observation["version"],
-                                "automation_generation": policy["generation"],
-                            }
+                decision_session = latest_closed_session(calendar, now=now)
+                # Automatic publication belongs to the just-closed session's window,
+                # never to a missed session recovered after its next opening.
+                anchor = datetime.combine(decision_session, time(16), _SHANGHAI)
+                if now < anchor:
+                    raise ValueError("observation_automation_waiting_after_close")
+                try:
+                    reference, _ = observation_outcome_sessions(
+                        calendar,
+                        published_at=anchor,
+                        horizon_sessions=observation["policy"]["horizon_sessions"],
+                        now=now,
+                    )
+                except ValueError as exc:
+                    if str(exc) != "observation_calendar_horizon_missing":
+                        raise
+                    row = service.db.get_market_calendar_snapshot_sync(
+                        exchange="SSE", year=now.astimezone(_SHANGHAI).year + 1
+                    )
+                    if row is None:
+                        raise
+                    calendar.append(row)
+                    reference, _ = observation_outcome_sessions(
+                        calendar,
+                        published_at=anchor,
+                        horizon_sessions=observation["policy"]["horizon_sessions"],
+                        now=now,
+                    )
+                publication_deadline = datetime.combine(
+                    reference, time(9, 30), _SHANGHAI
+                )
+                if now >= publication_deadline:
+                    raise ValueError("observation_automation_publication_window_missed")
+                published = any(
+                    item["decision_session"] == decision_session.isoformat()
+                    for item in observation["publications"]
+                )
+                measured = {item["publication_id"] for item in observation["outcomes"]}
+                due_outcomes = any(
+                    item["id"] not in measured
+                    and date.fromisoformat(item["payload"]["end_session"])
+                    <= decision_session
+                    for item in observation["publications"]
+                )
+                if published and not due_outcomes:
+                    status, blocker = "completed", None
+                else:
+                    unreadable_candidate_dataset_ids = []
+                    entry, snapshot = _select_dataset(
+                        service,
+                        observation,
+                        now,
+                        decision_session,
+                        unreadable_candidate_dataset_ids=unreadable_candidate_dataset_ids,
+                    )
+                    # Bind the identified matching candidate before reading evidence:
+                    # validation failure must expose this ID and never try an older
+                    # matching Dataset. Catalog metadata alone cannot admit it.
+                    dataset_id = entry.ref.dataset_id
+                    if policy.get("dataset_preparation_enabled", False):
+                        require_observation_dataset_prefix(
+                            service.objects, observation["source"], snapshot
+                        )
+                    if (snapshot.start_date, snapshot.end_date, snapshot.cutoff) != (
+                        date.fromisoformat(
+                            observation_input_binding(observation["source"])[
+                                "start_date"
+                            ]
+                        ),
+                        decision_session,
+                        entry.cutoff,
+                    ):
+                        raise ValueError("observation_automation_catalog_mismatch")
+                    result = read_research_observation_dataset(
+                        service.objects,
+                        dataset_id,
+                        instruments=snapshot.instruments,
+                        start_date=snapshot.start_date,
+                        now=now,
+                        calendar_rows=calendar,
+                        minimum_bars=observation["source"]["minimum_bars"],
+                        deployment_scope=observation_deployment_scope(
+                            observation["source"]
+                        ),
+                        membership_after=date.fromisoformat(
+                            observation_input_binding(observation["source"])["end_date"]
                         ),
                     )
-                )
-                attempted = True
-                result = service.advance(
-                    identity,
-                    request_id=request_id,
-                    expected_version=observation["version"],
-                    dataset_id=dataset_id,
-                    automation_generation=policy["generation"],
-                    automation_stop_requested=stopped,
-                    automation_publication_deadline=publication_deadline,
-                )
-                blocker = (result.get("last_blocker") or {}).get("code")
-                status = (
-                    "paused"
-                    if result["lifecycle"] == "paused"
-                    else (
-                        "completed"
-                        if blocker in (None, "observation_session_already_published")
-                        else "waiting"
+                    if len(result.bars) > observation["policy"]["max_dataset_rows"]:
+                        raise ValueError("observation_dataset_budget_exceeded")
+                    if published and not service._outcomes(
+                        observation, result, dataset_id, now, decision_session
+                    ):
+                        raise ValueError("observation_automation_outcome_unavailable")
+                    if stopped():
+                        break
+                    request_id = str(
+                        uuid5(
+                            NAMESPACE_URL,
+                            content_fingerprint(
+                                {
+                                    "observation_id": identity,
+                                    "decision_session": decision_session.isoformat(),
+                                    "dataset_id": dataset_id,
+                                    "expected_version": observation["version"],
+                                    "automation_generation": policy["generation"],
+                                }
+                            ),
+                        )
                     )
+                    attempted = True
+                    result = service.advance(
+                        identity,
+                        request_id=request_id,
+                        expected_version=observation["version"],
+                        dataset_id=dataset_id,
+                        automation_generation=policy["generation"],
+                        automation_stop_requested=stopped,
+                        automation_publication_deadline=publication_deadline,
+                    )
+                    blocker = (result.get("last_blocker") or {}).get("code")
+                    status = (
+                        "paused"
+                        if result["lifecycle"] == "paused"
+                        else (
+                            "completed"
+                            if blocker
+                            in (None, "observation_session_already_published")
+                            else "waiting"
+                        )
+                    )
+            except ValueError as exc:
+                blocker = str(exc)
+                status = (
+                    "blocked" if blocker == "observation_code_changed" else "waiting"
                 )
-        except ValueError as exc:
-            blocker = str(exc)
-            status = "blocked" if blocker == "observation_code_changed" else "waiting"
-        except Exception:
-            logger.exception("Local research observation scheduling failed")
-            status, blocker = "blocked", "observation_automation_failed"
-        if not stopped():
-            report = _record_status(
-                service,
-                observation,
-                policy,
-                now=now,
-                status=status,
-                stop_requested=stopped,
-                blocker=blocker,
-                dataset_id=dataset_id,
-                decision_session=decision_session,
-                attempted=attempted,
-                unreadable_candidate_dataset_ids=unreadable_candidate_dataset_ids,
-            )
-            if report is not None:
-                reports.append(report)
+            except Exception:
+                logger.exception("Local research observation scheduling failed")
+                status, blocker = "blocked", "observation_automation_failed"
+            if not stopped():
+                report = _record_status(
+                    service,
+                    observation,
+                    policy,
+                    now=now,
+                    status=status,
+                    stop_requested=stopped,
+                    blocker=blocker,
+                    dataset_id=dataset_id,
+                    decision_session=decision_session,
+                    attempted=attempted,
+                    unreadable_candidate_dataset_ids=unreadable_candidate_dataset_ids,
+                )
+                if report is not None:
+                    reports.append(report)
     return reports
 
 
