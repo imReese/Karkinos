@@ -13,6 +13,7 @@ import { formatCurrency, formatQuantity } from '../../../shared/format';
 import {
   useEtfRotationDashboardQuery,
   useExecuteEtfRotationOrdersMutation,
+  useEvaluateEtfRotationPlanMutation,
   type EtfPaperBookSummary,
   type EtfRebalanceOrder,
   type EtfRotationDashboardResponse,
@@ -33,6 +34,7 @@ export function EtfRotationTradingCard({
   const error = propData ? null : query.error;
   const refetch = query.refetch;
   const executeMutation = useExecuteEtfRotationOrdersMutation();
+  const evaluatePlan = useEvaluateEtfRotationPlanMutation();
 
   if (isLoading) {
     return (
@@ -197,7 +199,24 @@ export function EtfRotationTradingCard({
         {!data.rebalance || execution_status === 'unavailable' ? (
           <div className="rounded-xl border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]/20 p-6 text-center text-sm text-[var(--app-warning-text)]">
             <AlertCircle className="h-5 w-5 mx-auto mb-2 text-[var(--app-warning-text)]" />
-            调仓计划不可用或测算失败，请检查行情数据或账本连接状态。
+            <p>
+              尚无可用调仓计划。手动计算会读取本地行情与当前账本，不会向券商报单。
+            </p>
+            <button
+              type="button"
+              disabled={evaluatePlan.isPending}
+              onClick={() => evaluatePlan.mutate()}
+              className="app-button app-button-secondary mt-3 min-h-10 px-3 disabled:opacity-50"
+            >
+              {evaluatePlan.isPending ? '正在计算调仓计划…' : '计算调仓计划'}
+            </button>
+            {evaluatePlan.isError ? (
+              <p role="alert" className="mt-2 text-xs">
+                {evaluatePlan.error instanceof Error
+                  ? evaluatePlan.error.message
+                  : '计算失败，请检查本地行情与账本状态。'}
+              </p>
+            ) : null}
           </div>
         ) : orders.length === 0 ? (
           <div className="rounded-xl border border-dashed border-[var(--app-divider)] p-6 text-center text-sm text-[var(--app-text-secondary)]">
@@ -280,7 +299,11 @@ export function EtfRotationTradingCard({
         <div className="flex items-center gap-3">
           <button
             type="button"
-            disabled={!can_execute || executeMutation.isPending}
+            disabled={
+              !can_execute ||
+              executeMutation.isPending ||
+              evaluatePlan.isPending
+            }
             onClick={handleExecute}
             className={`inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold transition-all shadow-sm ${
               !can_execute

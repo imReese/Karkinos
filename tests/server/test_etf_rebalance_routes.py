@@ -64,7 +64,181 @@ def client():
     return TestClient(app)
 
 
+def test_cold_reads_do_not_calculate_or_initialize_market_data(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    from data.store import DataStore
+
+    selected = tmp_path / "selected-data"
+    monkeypatch.setenv("KARKINOS_DATA_DIR", str(selected))
+    monkeypatch.setattr(EtfRotationAutomationService, "default_data_dir", None)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("An ordinary read must not load, calculate, or prepare market data")
+
+    monkeypatch.setattr(DataStore, "__init__", forbidden)
+    monkeypatch.setattr(EtfRotationAutomationService, "evaluate_rebalance", forbidden)
+    monkeypatch.setattr(
+        EtfRotationAutomationService, "load_aligned_market_data", forbidden
+    )
+    for _ in range(2):
+        dashboard = client.get("/api/trading/etf-rebalance/dashboard")
+        assert dashboard.status_code == 200
+        assert dashboard.json()["execution_status"] == "unavailable"
+        assert dashboard.json()["can_execute"] is False
+        for resource in ("plan", "csv", "script"):
+            response = client.get(f"/api/trading/etf-rebalance/{resource}")
+            assert response.status_code == 503
+            assert response.json()["detail"] == "rebalance_plan_unavailable"
+    assert not selected.exists()
+
+
+def test_explicit_run_is_readable_without_reloading_market_data(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    from data.store import DataStore
+
+    monkeypatch.setattr(
+        EtfRotationAutomationService,
+        "resolve_account_capital_and_holdings",
+        lambda self: (Decimal("200000"), Decimal("200000"), {}, True),
+    )
+    result = client.post("/api/trading/etf-rebalance/run", json={})
+    assert result.status_code == 200
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Reading an existing plan must not reload or recalculate it")
+
+    monkeypatch.setattr(DataStore, "__init__", forbidden)
+    monkeypatch.setattr(EtfRotationAutomationService, "evaluate_rebalance", forbidden)
+    monkeypatch.setattr(
+        EtfRotationAutomationService, "load_aligned_market_data", forbidden
+    )
+    for resource in ("dashboard", "plan", "csv", "script"):
+        assert client.get(f"/api/trading/etf-rebalance/{resource}").status_code == 200
+    assert client.get("/api/trading/etf-rebalance/plan").json() == result.json()
+
+
+@pytest.mark.parametrize("change_at", ["during_read", "after_read", "before_publish"])
+def test_changed_market_input_cannot_publish_a_plan_for_older_bars(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, change_at: str
+):
+    from execution.rebalance_order_generator import RebalancePlan
+
+    monkeypatch.setattr(
+        EtfRotationAutomationService,
+        "resolve_account_capital_and_holdings",
+        lambda self: (Decimal("200000"), Decimal("200000"), {}, True),
+    )
+    price_file = tmp_path / "real_etfs" / "513100.csv"
+    read_csv = pd.read_csv
+
+    def update_price():
+        frame = read_csv(price_file)
+        frame.loc[frame.index[-1], "close"] *= 2
+        frame.to_csv(price_file, index=False)
+
+    if change_at == "during_read":
+
+        def change_while_reading(path, *args, **kwargs):
+            frame = read_csv(path, *args, **kwargs)
+            if Path(path) == price_file:
+                update_price()
+            return frame
+
+        monkeypatch.setattr(pd, "read_csv", change_while_reading)
+    elif change_at == "after_read":
+        load = EtfRotationAutomationService.load_aligned_market_data
+
+        def change_after_read(self):
+            loaded = load(self)
+            update_price()
+            return loaded
+
+        monkeypatch.setattr(
+            EtfRotationAutomationService, "load_aligned_market_data", change_after_read
+        )
+    else:
+        to_csv = RebalancePlan.to_csv
+
+        def change_before_publish(self):
+            result = to_csv(self)
+            update_price()
+            return result
+
+        monkeypatch.setattr(RebalancePlan, "to_csv", change_before_publish)
+
+    response = client.post("/api/trading/etf-rebalance/run", json={})
+    assert response.status_code == 500
+    assert "etf_market_data_changed_during_evaluation" in response.json()["detail"]
+    dashboard = client.get("/api/trading/etf-rebalance/dashboard").json()
+    assert dashboard["execution_status"] == "unavailable"
+    assert dashboard["can_execute"] is False
+    assert dashboard["rebalance"] is None
+    assert client.get("/api/trading/etf-rebalance/plan").status_code == 503
+
+
+def test_default_market_directory_uses_selected_runtime_not_cwd(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    selected = tmp_path / "selected-data"
+    other_cwd = tmp_path / "unrelated-cwd"
+    other_cwd.mkdir()
+    monkeypatch.chdir(other_cwd)
+    monkeypatch.setenv("KARKINOS_DATA_DIR", str(selected))
+    monkeypatch.setattr(EtfRotationAutomationService, "default_data_dir", None)
+    service = EtfRotationAutomationService()
+    assert service.data_dir == selected / "real_etfs"
+    assert not selected.exists()
+    with pytest.raises(FileNotFoundError):
+        service.load_aligned_market_data()
+    assert (selected / "meta.db").exists()
+    assert not (other_cwd / "data").exists()
+    explicit = tmp_path / "explicit-data"
+    assert EtfRotationAutomationService(explicit).data_dir == explicit
+
+
+@pytest.mark.parametrize("change", ["session_advanced", "calendar_unverified"])
+def test_cached_plan_fails_closed_when_session_changes(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, change: str
+):
+    from server.services import market_calendar_dates
+
+    monkeypatch.setenv("KARKINOS_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(EtfRotationAutomationService, "default_data_dir", None)
+    monkeypatch.setattr(
+        EtfRotationAutomationService,
+        "resolve_account_capital_and_holdings",
+        lambda self: (Decimal("200000"), Decimal("200000"), {}, True),
+    )
+    session = {"calendar_verified": True, "latest_completed_trade_date": "2026-01-05"}
+    monkeypatch.setattr(
+        market_calendar_dates, "project_market_session", lambda db: session
+    )
+    result = client.post("/api/trading/etf-rebalance/run", json={})
+    assert result.status_code == 200
+    assert (
+        client.get("/api/trading/etf-rebalance/dashboard").json()["can_execute"] is True
+    )
+    if change == "session_advanced":
+        session["latest_completed_trade_date"] = "2099-01-01"
+    else:
+        session["calendar_verified"] = False
+    monkeypatch.setattr(
+        EtfRotationAutomationService,
+        "evaluate_rebalance",
+        lambda self, **kwargs: pytest.fail(
+            "Session drift must not cause GET computation"
+        ),
+    )
+    dashboard = client.get("/api/trading/etf-rebalance/dashboard").json()
+    assert dashboard["execution_status"] == "unavailable"
+    assert dashboard["can_execute"] is False
+    assert client.get("/api/trading/etf-rebalance/script").status_code == 503
+
+
 def test_get_etf_rebalance_plan_returns_structured_payload(client: TestClient):
+    assert client.post("/api/trading/etf-rebalance/run", json={}).status_code == 200
     response = client.get("/api/trading/etf-rebalance/plan")
     assert response.status_code == 200
     data = response.json()
@@ -138,6 +312,7 @@ def test_export_etf_rebalance_csv_and_script(
     )
     EtfRotationAutomationService.reset_state()
 
+    assert client.post("/api/trading/etf-rebalance/run", json={}).status_code == 200
     # CSV export
     csv_resp = client.get("/api/trading/etf-rebalance/csv")
     assert csv_resp.status_code == 200
@@ -163,6 +338,7 @@ def test_export_etf_rebalance_csv_and_script(
 def test_get_etf_rebalance_dashboard_provides_strategy_returns_and_orders(
     client: TestClient,
 ):
+    assert client.post("/api/trading/etf-rebalance/run", json={}).status_code == 200
     resp = client.get("/api/trading/etf-rebalance/dashboard")
     assert resp.status_code == 200
     data = resp.json()
@@ -194,6 +370,7 @@ def test_demo_mode_quarantined_when_account_has_no_cash_or_unavailable(
     )
     EtfRotationAutomationService.reset_state()
 
+    assert client.post("/api/trading/etf-rebalance/run", json={}).status_code == 200
     dash_resp = client.get("/api/trading/etf-rebalance/dashboard")
     assert dash_resp.status_code == 200
     dash_data = dash_resp.json()
@@ -300,6 +477,7 @@ def test_unavailable_status_when_data_fails(
 
 
 def test_etf_rebalance_target_weights_and_cash_budget_bounds(client: TestClient):
+    assert client.post("/api/trading/etf-rebalance/run", json={}).status_code == 200
     resp = client.get("/api/trading/etf-rebalance/dashboard")
     assert resp.status_code == 200
     data = resp.json()
@@ -323,46 +501,55 @@ def test_etf_rebalance_target_weights_and_cash_budget_bounds(client: TestClient)
     assert "513100" in buy_symbols
 
 
+@pytest.mark.parametrize("change", ["cash", "holdings", "unavailable"])
 def test_stale_plan_cache_invalidated_when_cash_or_holdings_change(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, change: str
 ):
     """P1: Verify cache does not serve stale plan when cash drops to 0 or holdings change."""
     # 1. Start with 200k cash
     current_cash = Decimal("200000")
     current_holdings = {}
+    account_available = True
 
     monkeypatch.setattr(
         EtfRotationAutomationService,
         "resolve_account_capital_and_holdings",
-        lambda self: (current_cash, current_cash, current_holdings, True),
+        lambda self: (current_cash, current_cash, current_holdings, account_available),
     )
     EtfRotationAutomationService.reset_state()
 
+    assert client.post("/api/trading/etf-rebalance/run", json={}).status_code == 200
     resp1 = client.get("/api/trading/etf-rebalance/dashboard")
     assert resp1.status_code == 200
     data1 = resp1.json()
     assert data1["rebalance"]["total_equity"] == 200000.0
     assert data1["can_execute"] is True
     assert data1["is_demo"] is False
-    plan_id_1 = data1["rebalance"]["plan_id"]
-
-    # 2. Simulate cash dropping to 0
-    current_cash = Decimal("0")
-    # Call dashboard without force_refresh - it should detect staleness, recompute, and quarantine to demo
+    if change == "cash":
+        current_cash = Decimal("0")
+    elif change == "holdings":
+        current_holdings = {"510300": 100}
+    else:
+        account_available = False
+    monkeypatch.setattr(
+        EtfRotationAutomationService,
+        "evaluate_rebalance",
+        lambda self, **kwargs: pytest.fail("GET must not recalculate a stale plan"),
+    )
     resp2 = client.get("/api/trading/etf-rebalance/dashboard")
     assert resp2.status_code == 200
     data2 = resp2.json()
-    assert data2["is_demo"] is True
+    assert data2["execution_status"] == "unavailable"
     assert data2["can_execute"] is False
-    assert data2["rebalance"]["capital_source"] == "fallback_demo"
-    assert data2["rebalance"]["plan_id"] != plan_id_1
+    assert data2["rebalance"] is None
+    assert client.get("/api/trading/etf-rebalance/plan").status_code == 503
 
 
 def test_stale_plan_cache_invalidated_when_market_data_advances(
     client: TestClient, tmp_path: Path
 ):
     """P1: Verify cache does not serve old date when market data advances."""
-    # Run dashboard to populate cache
+    assert client.post("/api/trading/etf-rebalance/run", json={}).status_code == 200
     resp1 = client.get("/api/trading/etf-rebalance/dashboard")
     assert resp1.status_code == 200
     data1 = resp1.json()
@@ -370,6 +557,7 @@ def test_stale_plan_cache_invalidated_when_market_data_advances(
 
     # Append a new date row to all ETF CSV files in the data dir
     data_dir = EtfRotationAutomationService.default_data_dir
+    assert data_dir is not None
     new_date_str = "2026-05-15"
     for p in data_dir.glob("*.csv"):
         df = pd.read_csv(p)
@@ -378,12 +566,16 @@ def test_stale_plan_cache_invalidated_when_market_data_advances(
         new_df = pd.concat([df, pd.DataFrame([last_row])], ignore_index=True)
         new_df.to_csv(p, index=False)
 
-    # Next dashboard request should detect that market data date advanced and return new date
+    # A read invalidates the stale plan; only an explicit command may replace it.
     resp2 = client.get("/api/trading/etf-rebalance/dashboard")
     assert resp2.status_code == 200
     data2 = resp2.json()
-    assert data2["rebalance"]["as_of_date"] == new_date_str
-    assert data2["rebalance"]["as_of_date"] != old_date
+    assert data2["rebalance"] is None
+    assert data2["can_execute"] is False
+    assert client.post("/api/trading/etf-rebalance/run", json={}).status_code == 200
+    refreshed = client.get("/api/trading/etf-rebalance/dashboard").json()
+    assert refreshed["rebalance"]["as_of_date"] == new_date_str
+    assert refreshed["rebalance"]["as_of_date"] != old_date
 
 
 def test_plan_id_incorporates_prices_and_unblocks_execution_on_price_change(
@@ -410,12 +602,17 @@ def test_plan_id_incorporates_prices_and_unblocks_execution_on_price_change(
 
     # 2. Modify one ETF price slightly (e.g. from 10.0 to 10.001) in CSV file
     data_dir = EtfRotationAutomationService.default_data_dir
+    assert data_dir is not None
     csv_513100 = data_dir / "513100.csv"
     df = pd.read_csv(csv_513100)
     df.loc[df.index[-1], "close"] = float(df.loc[df.index[-1], "close"]) + 0.05
     df.to_csv(csv_513100, index=False)
 
-    # 3. Next dashboard call should detect price change, produce new plan_id, and unblock execution
+    # The changed price invalidates the read; explicit evaluation produces a new ID.
+    stale = client.get("/api/trading/etf-rebalance/dashboard").json()
+    assert stale["rebalance"] is None
+    assert stale["can_execute"] is False
+    assert client.post("/api/trading/etf-rebalance/run", json={}).status_code == 200
     dash_2 = client.get("/api/trading/etf-rebalance/dashboard").json()
     plan_id_2 = dash_2["rebalance"]["plan_id"]
     assert plan_id_2 != plan_id_1

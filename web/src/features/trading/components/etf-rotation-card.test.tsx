@@ -304,3 +304,39 @@ test('overview panel displays forward paper book strip when paper_book is presen
   expect(strip.textContent).toContain('+2.10%');
   expect(strip.textContent).toContain('8日结算');
 });
+
+test('requires explicit plan calculation for a cold dashboard and keeps execution closed', async () => {
+  const requests: Array<{ url: string; body: string | undefined }> = [];
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    requests.push({
+      url: String(input),
+      body: init?.body as string | undefined,
+    });
+    return new Response(
+      JSON.stringify({ detail: 'Local market data is unavailable' }),
+      { status: 503 },
+    );
+  });
+  renderWithClient(
+    <EtfRotationTradingCard
+      data={makeFixtureData({
+        status: 'unavailable',
+        rebalance: null,
+        orders: [],
+        execution_status: 'unavailable',
+        can_execute: false,
+      })}
+    />,
+  );
+  expect(requests).toHaveLength(0);
+  const execute = screen.getByRole('button', {
+    name: '策略数据不可用',
+  }) as HTMLButtonElement;
+  expect(execute.disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: '计算调仓计划' }));
+  await screen.findByRole('alert');
+  expect(requests).toEqual([
+    { url: '/api/trading/etf-rebalance/run', body: '{}' },
+  ]);
+  expect(execute.disabled).toBe(true);
+});

@@ -159,6 +159,19 @@ export function useEtfRotationDashboardQuery(enabled?: boolean) {
   });
 }
 
+export function useEvaluateEtfRotationPlanMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      postJson<EtfRebalancePlanSummary>('/api/trading/etf-rebalance/run', {}),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ['trading', 'etf-rotation-dashboard'],
+      });
+    },
+  });
+}
+
 export function useExecuteEtfRotationOrdersMutation() {
   const queryClient = useQueryClient();
 

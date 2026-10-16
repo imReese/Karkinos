@@ -40,12 +40,12 @@ def create_router(
     svc = service or EtfRotationAutomationService()
 
     @router.get("/dashboard")
-    async def get_dashboard() -> dict[str, Any]:
+    def get_dashboard() -> dict[str, Any]:
         """Get full strategy backtest performance, today's actionable orders, and execution status."""
         return svc.get_dashboard_view()
 
     @router.post("/execute")
-    async def execute_rebalance_orders(
+    def execute_rebalance_orders(
         request: ExecuteOrdersRequest | None = None,
     ) -> dict[str, Any]:
         """Perform actual order placement based on the verified strategy yield and recommendations."""
@@ -57,20 +57,15 @@ def create_router(
         )
 
     @router.get("/plan")
-    async def get_rebalance_plan() -> dict[str, Any]:
+    def get_rebalance_plan() -> dict[str, Any]:
         """Get the latest actionable ETF rebalance plan with Chinese names and order details."""
         summary = svc.get_latest_plan_summary()
         if summary is None:
-            try:
-                summary = svc.evaluate_rebalance()
-            except Exception as exc:
-                raise HTTPException(
-                    status_code=500, detail=f"Failed to evaluate ETF rebalance: {exc}"
-                ) from exc
+            raise HTTPException(status_code=503, detail="rebalance_plan_unavailable")
         return summary
 
     @router.post("/run")
-    async def run_rebalance_evaluation(
+    def run_rebalance_evaluation(
         request: RebalanceEvaluationRequest | None = None,
     ) -> dict[str, Any]:
         """Trigger an on-demand rebalance calculation and update the active rebalance plan."""
@@ -87,16 +82,11 @@ def create_router(
             ) from exc
 
     @router.get("/csv", response_class=PlainTextResponse)
-    async def export_rebalance_csv() -> PlainTextResponse:
+    def export_rebalance_csv() -> PlainTextResponse:
         """Download review-only CSV (证券代码, 证券名称, 买卖方向, 委托数量, 委托价格, 预估金额, 调仓说明)."""
         summary = svc.get_latest_plan_summary()
         if summary is None:
-            try:
-                summary = svc.evaluate_rebalance()
-            except Exception as exc:
-                raise HTTPException(
-                    status_code=503, detail=f"调仓计划不可用或测算失败: {exc}"
-                ) from exc
+            raise HTTPException(status_code=503, detail="rebalance_plan_unavailable")
         csv_text = summary.get("csv_content", "")
         if summary.get("is_demo"):
             filename = "demo_etf_rebalance_review.csv"
@@ -111,16 +101,11 @@ def create_router(
         )
 
     @router.get("/script", response_class=PlainTextResponse)
-    async def export_miniqmt_script() -> PlainTextResponse:
+    def export_miniqmt_script() -> PlainTextResponse:
         """Download standalone MiniQMT (xtquant) Python draft reference script."""
         summary = svc.get_latest_plan_summary()
         if summary is None:
-            try:
-                summary = svc.evaluate_rebalance()
-            except Exception as exc:
-                raise HTTPException(
-                    status_code=503, detail=f"调仓计划不可用或测算失败: {exc}"
-                ) from exc
+            raise HTTPException(status_code=503, detail="rebalance_plan_unavailable")
         if summary.get("is_demo"):
             raise HTTPException(
                 status_code=400,

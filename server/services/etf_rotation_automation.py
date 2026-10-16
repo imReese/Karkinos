@@ -20,11 +20,12 @@ import pandas as pd
 
 from core.event_bus import EventBus
 from core.events import MarketEvent, SignalEvent
-from core.types import OrderSide, Symbol
+from core.types import BarFrequency, InstrumentType, OrderSide, Symbol
 from execution.rebalance_order_generator import (
     RebalancePlan,
     generate_rebalance_plan,
 )
+from server.runtime_paths import resolve_data_dir
 from strategy.builtins.etf_rotation import EtfRotationStrategy
 
 logger = logging.getLogger(__name__)
@@ -98,7 +99,7 @@ VERIFIED_BACKTEST_METRICS = VERIFIED_BACKTEST_METRICS_5Y
 class EtfRotationAutomationService:
     """Manages scheduled and automated ETF rotation rebalance evaluation."""
 
-    default_data_dir: Path = Path("data/store/real_etfs")
+    default_data_dir: Path | None = None
 
     _cached_plan: RebalancePlan | None = None
     _cached_summary: dict[str, Any] | None = None
@@ -106,9 +107,39 @@ class EtfRotationAutomationService:
     _last_execution_receipt: dict[str, Any] | None = None
     _bound_backtest_result_id: int | None = None
     _database_path: Path | None = None
+    _cached_market_files: tuple[tuple[str, int, int, int], ...] | None = None
 
     def __init__(self, data_dir: Path | None = None) -> None:
-        self.data_dir = data_dir or self.default_data_dir
+        self.data_dir = (
+            data_dir or self.default_data_dir or Path(resolve_data_dir()) / "real_etfs"
+        )
+
+    def _market_file_state(self) -> tuple[tuple[str, int, int, int], ...]:
+        """Detect changed cache inputs without opening or preparing the market store."""
+        root = (
+            self.data_dir.parent if self.data_dir.name == "real_etfs" else self.data_dir
+        )
+        paths = [root / "meta.db", root / "meta.db-wal"]
+        for symbol in ETF_METADATA:
+            paths.extend(
+                (
+                    self.data_dir / f"{symbol}.csv",
+                    self.data_dir / f"{symbol}.parquet",
+                    root
+                    / "bars"
+                    / BarFrequency.DAILY.value
+                    / InstrumentType.ETF.value
+                    / f"{symbol}.parquet",
+                )
+            )
+        result = []
+        for path in paths:
+            try:
+                stat = path.stat()
+                result.append((str(path), stat.st_ino, stat.st_size, stat.st_mtime_ns))
+            except FileNotFoundError:
+                result.append((str(path), 0, 0, 0))
+        return tuple(result)
 
     @classmethod
     def reset_state(cls) -> None:
@@ -119,6 +150,7 @@ class EtfRotationAutomationService:
         cls._last_execution_receipt = None
         cls._bound_backtest_result_id = None
         cls._database_path = None
+        cls._cached_market_files = None
 
     @classmethod
     def bind_backtest_result(cls, result_id: int | None) -> None:
@@ -130,30 +162,37 @@ class EtfRotationAutomationService:
         """Override database path for resolution and testing."""
         cls._database_path = Path(db_path) if db_path is not None else None
 
-    def load_aligned_market_data(self) -> dict[Symbol, pd.DataFrame]:
-        """Load and align daily bars for the core ETF rotation universe from canonical store with fallback."""
+    def load_aligned_market_data(
+        self,
+    ) -> tuple[dict[Symbol, pd.DataFrame], tuple[tuple[str, int, int, int], ...]]:
+        """Load aligned bars with their input state captured before the first read."""
+        from data.store import DataStore
+
+        store_root = (
+            self.data_dir.parent if self.data_dir.name == "real_etfs" else self.data_dir
+        )
+        store = None
+        try:
+            store = DataStore(store_root)
+        except Exception as exc:
+            logger.debug("Canonical DataStore preparation bypassed: %s", exc)
+        market_files = self._market_file_state()
         raw_dfs: dict[Symbol, pd.DataFrame] = {}
         for sym in ETF_METADATA:
             df: pd.DataFrame | None = None
-            try:
-                from core.types import BarFrequency, InstrumentType
-                from data.store import DataStore
-
-                store_root = (
-                    self.data_dir.parent
-                    if self.data_dir.name == "real_etfs"
-                    else self.data_dir
-                )
-                store = DataStore(store_root)
-                loaded = store.load_bars(
-                    sym,
-                    frequency=BarFrequency.DAILY,
-                    instrument_type=InstrumentType.ETF,
-                )
-                if loaded is not None and not loaded.empty:
-                    df = loaded.copy()
-            except Exception as exc:
-                logger.debug("Canonical DataStore lookup bypassed for %s: %s", sym, exc)
+            if store is not None:
+                try:
+                    loaded = store.load_bars(
+                        sym,
+                        frequency=BarFrequency.DAILY,
+                        instrument_type=InstrumentType.ETF,
+                    )
+                    if loaded is not None and not loaded.empty:
+                        df = loaded.copy()
+                except Exception as exc:
+                    logger.debug(
+                        "Canonical DataStore lookup bypassed for %s: %s", sym, exc
+                    )
 
             if df is None or df.empty:
                 p_parquet = self.data_dir / f"{sym}.parquet"
@@ -198,26 +237,7 @@ class EtfRotationAutomationService:
             )
             aligned_dfs[sym] = sub
 
-        return aligned_dfs
-
-    def get_latest_market_snapshot(self) -> tuple[str, dict[str, float]] | None:
-        """Return the latest common trading date and closing prices across universe datasets."""
-        try:
-            aligned_dfs = self.load_aligned_market_data()
-            if not aligned_dfs:
-                return None
-            sym0 = next(iter(aligned_dfs))
-            latest_date_str = (
-                aligned_dfs[sym0]["timestamp"].iloc[-1].strftime("%Y-%m-%d")
-            )
-            latest_prices = {
-                str(sym): float(round(aligned_dfs[sym]["close"].iloc[-1], 3))
-                for sym in aligned_dfs
-            }
-            return latest_date_str, latest_prices
-        except Exception as exc:
-            logger.debug("Failed to inspect latest market snapshot: %s", exc)
-            return None
+        return aligned_dfs, market_files
 
     def resolve_account_capital_and_holdings(
         self,
@@ -249,7 +269,9 @@ class EtfRotationAutomationService:
     ) -> dict[str, Any]:
         """Execute automated evaluation and generate actionable rebalance plan."""
         try:
-            aligned_dfs = self.load_aligned_market_data()
+            aligned_dfs, market_files = self.load_aligned_market_data()
+            if self._market_file_state() != market_files:
+                raise ValueError("etf_market_data_changed_during_evaluation")
             symbols = list(aligned_dfs.keys())
 
             params = dict(DEFAULT_STRATEGY_PARAMS)
@@ -438,7 +460,10 @@ class EtfRotationAutomationService:
                 ),
             }
 
+            if self._market_file_state() != market_files:
+                raise ValueError("etf_market_data_changed_during_evaluation")
             EtfRotationAutomationService._cached_plan = plan
+            EtfRotationAutomationService._cached_market_files = market_files
             EtfRotationAutomationService._cached_summary = summary
             EtfRotationAutomationService._last_evaluated_at = now
 
@@ -457,40 +482,36 @@ class EtfRotationAutomationService:
             # On failure, clear cached plan so stale state is never returned
             EtfRotationAutomationService._cached_plan = None
             EtfRotationAutomationService._cached_summary = None
+            EtfRotationAutomationService._cached_market_files = None
             raise
 
     @classmethod
     def get_latest_plan_summary(
-        cls, *, auto_compute: bool = True, force_refresh: bool = False
+        cls, *, auto_compute: bool = False, force_refresh: bool = False
     ) -> dict[str, Any] | None:
-        """Return the latest evaluated plan summary. If not evaluated yet, force_refresh=True, or stale, evaluate automatically."""
-        is_stale = False
-        if cls._cached_summary is not None and not force_refresh:
-            # 1. Verify market data date and prices haven't drifted
-            mkt_snapshot = cls().get_latest_market_snapshot()
-            if mkt_snapshot is None:
+        """Read a still-valid cached plan; calculation requires explicit authorization."""
+        summary = cls._cached_summary
+        is_stale = force_refresh
+        if summary is not None and not is_stale:
+            try:
+                is_stale = cls()._market_file_state() != cls._cached_market_files
+            except OSError:
                 is_stale = True
-            else:
-                latest_mkt_date, latest_mkt_prices = mkt_snapshot
-                if latest_mkt_date != cls._cached_summary.get("as_of_date"):
-                    is_stale = True
-                elif latest_mkt_prices != cls._cached_summary.get("_source_prices"):
-                    is_stale = True
-
-            # 2. If cached summary is not a custom simulation, verify ledger capital and holdings haven't drifted
-            if not is_stale and not cls._cached_summary.get("is_custom_simulation"):
+            if not is_stale and not summary.get("is_custom_simulation"):
                 acct_cash, _, acct_holdings, acct_available = (
                     cls().resolve_account_capital_and_holdings()
                 )
                 curr_holdings_dict = {str(k): int(v) for k, v in acct_holdings.items()}
                 if (
-                    acct_available != cls._cached_summary.get("account_available")
-                    or float(acct_cash) != cls._cached_summary.get("_source_cash")
-                    or curr_holdings_dict != cls._cached_summary.get("_source_holdings")
+                    acct_available != summary.get("account_available")
+                    or float(acct_cash) != summary.get("_source_cash")
+                    or curr_holdings_dict != summary.get("_source_holdings")
                 ):
                     is_stale = True
+            if not is_stale:
+                is_stale = cls._plan_session_is_stale(summary)
 
-        if cls._cached_summary is None or force_refresh or is_stale:
+        if summary is None or is_stale:
             if auto_compute:
                 try:
                     return cls().evaluate_rebalance()
@@ -498,12 +519,34 @@ class EtfRotationAutomationService:
                     logger.error("Auto-evaluation of ETF rotation failed: %s", e)
                     cls._cached_plan = None
                     cls._cached_summary = None
+                    cls._cached_market_files = None
                     return None
-            else:
+            elif cls._cached_summary is summary:
                 cls._cached_plan = None
                 cls._cached_summary = None
-                return None
-        return cls._cached_summary
+                cls._cached_market_files = None
+            return None
+        return summary if cls._cached_summary is summary else None
+
+    @classmethod
+    def _plan_session_is_stale(cls, summary: dict[str, Any]) -> bool:
+        if cls.default_data_dir is not None:
+            return False
+        try:
+            from server.db import AppDatabase
+            from server.services.market_calendar_dates import project_market_session
+
+            session = project_market_session(AppDatabase(cls._database_path))
+            latest = session.get("latest_completed_trade_date")
+            as_of = summary.get("as_of_date")
+            return not (
+                session.get("calendar_verified")
+                and latest
+                and as_of
+                and as_of >= latest
+            )
+        except Exception:
+            return True
 
     @classmethod
     def get_latest_plan(cls, *, force_refresh: bool = False) -> RebalancePlan | None:
@@ -522,13 +565,12 @@ class EtfRotationAutomationService:
             "from_2025": VERIFIED_BACKTEST_METRICS_2025,
         }
         try:
-            from server.db import AppDatabase
             from server.persistence.backtest_results import resolve_etf_backtest_record
 
             resolved_path = (
                 Path(db_path)
                 if db_path is not None
-                else (cls._database_path or AppDatabase().path)
+                else (cls._database_path or Path(resolve_data_dir()) / "app.db")
             )
             row_dict, paper_book_summary = resolve_etf_backtest_record(
                 resolved_path,
@@ -566,8 +608,6 @@ class EtfRotationAutomationService:
                     if resolved_path:
                         possible_roots.append(resolved_path.parent / "research")
                         possible_roots.append(resolved_path.parent)
-                    possible_roots.append(Path("data/store/research"))
-                    possible_roots.append(Path("data/research"))
 
                     for root in possible_roots:
                         cat = DatasetCatalog(root)
@@ -697,9 +737,9 @@ class EtfRotationAutomationService:
 
     @classmethod
     def get_dashboard_view(cls, *, force_refresh: bool = False) -> dict[str, Any]:
-        """Provide a complete zero-ops dashboard view: verified backtest returns + today's ready orders + execution state."""
+        """Project saved reports and a valid cached plan without calculating one."""
         summary = cls.get_latest_plan_summary(
-            auto_compute=True, force_refresh=force_refresh
+            auto_compute=False, force_refresh=force_refresh
         )
         strategy, strategy_periods, paper_book = cls.resolve_strategy_and_paper_book()
         if summary is None:
@@ -731,24 +771,7 @@ class EtfRotationAutomationService:
             and last_exec.get("plan_id") == summary.get("plan_id")
         )
 
-        is_stale_bars = False
-        try:
-            from server.db import AppDatabase
-            from server.services.market_calendar_dates import project_market_session
-
-            resolved_db = AppDatabase(cls._database_path)
-            session = project_market_session(resolved_db)
-            latest_trade_date = session.get("latest_completed_trade_date")
-            as_of_date = summary.get("as_of_date")
-            if (
-                cls.default_data_dir == Path("data/store/real_etfs")
-                and latest_trade_date
-                and as_of_date
-                and as_of_date < latest_trade_date
-            ):
-                is_stale_bars = True
-        except Exception:
-            is_stale_bars = False
+        is_stale_bars = cls._plan_session_is_stale(summary)
 
         if is_stale_bars:
             status = "unavailable"
@@ -826,24 +849,7 @@ class EtfRotationAutomationService:
                 "executed_orders": [],
             }
 
-        is_stale_bars = False
-        try:
-            from server.db import AppDatabase
-            from server.services.market_calendar_dates import project_market_session
-
-            resolved_db = AppDatabase(cls._database_path)
-            session = project_market_session(resolved_db)
-            latest_trade_date = session.get("latest_completed_trade_date")
-            as_of_date = summary.get("as_of_date")
-            if (
-                cls.default_data_dir == Path("data/store/real_etfs")
-                and latest_trade_date
-                and as_of_date
-                and as_of_date < latest_trade_date
-            ):
-                is_stale_bars = True
-        except Exception:
-            is_stale_bars = False
+        is_stale_bars = cls._plan_session_is_stale(summary)
 
         if is_stale_bars:
             return {
