@@ -1,5 +1,3 @@
-import { ChevronDown } from 'lucide-react';
-
 import { StatusBadge } from '../../../shared/ui/workbench';
 import { formatStrategyDisplayName as strategyDisplayName } from '../../../shared/strategy-display';
 import {
@@ -21,6 +19,7 @@ import { ParameterSweepPanel } from './parameter-sweep-panel';
 import { StrategyCatalogPanel } from './strategy-catalog-panel';
 import { ResearchUniverseEditor } from './research-universe-editor';
 import { datasetMatchesResearchInputs } from './backtest-universe';
+import { BacktestDraftContext } from './backtest-page-header';
 
 function BacktestSetupForm() {
   const {
@@ -258,7 +257,6 @@ export function BacktestRunSetupPanel() {
     selectedStrategy,
     setAdvancedToolsOpen,
     setMobileWorkspaceTouched,
-    setMobileWorkspaceView,
     setStrategy,
     startDate,
     strategy,
@@ -284,39 +282,22 @@ export function BacktestRunSetupPanel() {
         ? backtestCostCopy[locale].invalid
         : undefined);
   return (
-    <details
-      className={`group min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] ${
-        mobileWorkspaceView === 'setup' ? '' : 'hidden xl:block'
-      }`}
+    <section
+      className="min-w-0 space-y-6"
+      hidden={mobileWorkspaceView !== 'setup'}
       data-testid="backtest-run-setup-disclosure"
       id="backtest-mobile-setup"
       aria-labelledby="backtest-tab-setup"
-      open={mobileWorkspaceView === 'setup'}
-      onToggle={(event) => {
-        const nextView = event.currentTarget.open ? 'setup' : 'results';
-        if (nextView !== mobileWorkspaceView) {
-          setMobileWorkspaceTouched(true);
-          setMobileWorkspaceView(nextView);
-        }
-      }}
       role="tabpanel"
     >
-      <summary className="flex min-h-11 cursor-pointer list-none items-start justify-between gap-4 border-b border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-3 text-left transition-colors hover:bg-[color-mix(in_srgb,var(--app-surface-overlay)_40%,transparent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
-        <span className="min-w-0">
-          <span className="block text-sm font-semibold text-[var(--app-text)]">
-            {labels.formTitle}
-          </span>
-          <span className="sr-only">{labels.formDetail}</span>
-        </span>
-        <span
-          aria-hidden="true"
-          className="mt-1 inline-flex size-6 shrink-0 items-center justify-center text-[var(--app-text-secondary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
-        >
-          <ChevronDown className="size-4" strokeWidth={1.75} />
-        </span>
-      </summary>
-
-      <div className="space-y-3 p-3">
+      <BacktestDraftContext />
+      <header>
+        <h2 className="app-type-section-title text-[var(--app-text)]">
+          {labels.formTitle}
+        </h2>
+        <p className="app-muted mt-2 text-sm">{labels.formDetail}</p>
+      </header>
+      <div className="space-y-6">
         <div className="scroll-mt-24" id="backtest-strategy-catalog">
           <StrategyCatalogPanel
             strategyCatalog={strategyCatalog}
@@ -409,6 +390,6 @@ export function BacktestRunSetupPanel() {
           </div>
         </section>
       </div>
-    </details>
+    </section>
   );
 }

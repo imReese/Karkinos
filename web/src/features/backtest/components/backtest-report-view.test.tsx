@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 
@@ -48,6 +48,7 @@ function renderReportView() {
 
 afterEach(() => {
   window.localStorage.clear();
+  window.history.replaceState({}, '', '/backtest');
   vi.unstubAllGlobals();
 });
 
@@ -110,7 +111,8 @@ test('moves listbox focus with arrows and selects a run with Enter or Space', as
     'backtest-selected-report-context',
   );
 
-  await user.tab();
+  fireEvent.click(screen.getByText('Change saved report'));
+  options[0].focus();
   expect(options[0]).toHaveFocus();
   await user.keyboard('{ArrowUp}');
   expect(options[0]).toHaveFocus();
@@ -209,4 +211,31 @@ test('auto-selects the report requested by the url query parameter', async () =>
     'backtest-selected-report-context',
   );
   expect(selectedContext).toHaveTextContent('Selected report #8');
+});
+
+test('allows choosing another saved report from a deep link and restores the URL selection on navigation', async () => {
+  window.history.replaceState({}, '', '/backtest?id=8');
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/api/backtest/results')) {
+        return jsonResponse([summary, { ...summary, id: 8 }]);
+      }
+      return new Promise<Response>(() => undefined);
+    }),
+  );
+  renderReportView();
+  const context = await screen.findByTestId('backtest-selected-report-context');
+  expect(context).toHaveTextContent('Selected report #8');
+  fireEvent.click(screen.getByText('Change saved report'));
+  const options = await screen.findAllByRole('option');
+  fireEvent.click(options[0]);
+  expect(context).toHaveTextContent('Selected report #7');
+  expect(window.location.search).toBe('?id=7');
+  expect(
+    screen.getByRole('link', { name: 'Open report link' }),
+  ).toHaveAttribute('href', '/backtest?id=7');
+  window.history.pushState({}, '', '/backtest?id=8');
+  fireEvent(window, new PopStateEvent('popstate'));
+  expect(context).toHaveTextContent('Selected report #8');
 });

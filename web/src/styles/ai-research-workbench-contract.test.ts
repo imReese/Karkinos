@@ -29,7 +29,6 @@ describe('AI research workbench contract', () => {
     expect(WORKSPACE).toContain(
       'data-testid="shadow-research-candidate-inspector"',
     );
-    expect(WORKSPACE).toContain('data-testid="shadow-research-candidate-row"');
     expect(WORKSPACE).not.toContain('current.map(renderCandidate)');
     expect(WORKSPACE).not.toContain('historical.map(renderCandidate)');
     expect(VIEW).toContain('data-testid="shadow-research-candidate"');

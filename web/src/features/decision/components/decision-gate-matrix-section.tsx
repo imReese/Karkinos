@@ -1,99 +1,84 @@
+import { ChevronDown } from 'lucide-react';
 import {
   GateMatrix,
   StatusBadge,
   type GateMatrixItem,
+  type StatusTone,
 } from '../../../shared/ui/workbench';
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
+
+const gateTones: Record<GateMatrixItem['state'], StatusTone> = {
+  pass: 'success',
+  warning: 'warning',
+  block: 'danger',
+  unknown: 'neutral',
+};
 
 export function DecisionGateMatrixSection({
   gateItems,
   allDecisionGatesPass,
   decisionGateAttentionCount,
-  healthyGateMatrixExpanded,
+  expanded,
   onToggle,
 }: {
   gateItems: GateMatrixItem[];
   allDecisionGatesPass: boolean;
   decisionGateAttentionCount: number;
-  healthyGateMatrixExpanded: boolean;
+  expanded: boolean;
   onToggle: () => void;
 }) {
   const labels = useCopy().decision;
   const { locale } = usePreferences();
-  const setHealthyGateMatrixExpanded = onToggle;
   return (
-    <section className="min-w-0 space-y-2" data-testid="decision-gate-matrix">
+    <section className="min-w-0" data-testid="decision-gate-matrix">
       <div className="min-w-0" data-testid="decision-gate-disclosure">
         <button
           aria-controls="decision-gate-matrix-content"
-          aria-expanded={!allDecisionGatesPass || healthyGateMatrixExpanded}
-          className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-3 border-y border-[var(--app-divider)] py-2.5 text-left text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
-          onClick={setHealthyGateMatrixExpanded}
+          aria-expanded={expanded}
+          className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-3 border-b border-[var(--app-divider)] py-2.5 text-left text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+          onClick={onToggle}
           type="button"
         >
-          <span className="min-w-0">
-            <span className="block">{labels.workflowTitle}</span>
+          <span className="min-w-0">{labels.workflowTitle}</span>
+          <span className="flex shrink-0 items-center gap-2">
+            <StatusBadge tone={allDecisionGatesPass ? 'success' : 'warning'}>
+              {allDecisionGatesPass
+                ? locale === 'zh'
+                  ? `${gateItems.length}/${gateItems.length} 已通过`
+                  : `${gateItems.length}/${gateItems.length} passed`
+                : locale === 'zh'
+                  ? `${decisionGateAttentionCount} 项待复核`
+                  : `${decisionGateAttentionCount} need review`}
+            </StatusBadge>
+            <ChevronDown
+              className={`size-4 text-[var(--app-text-tertiary)] transition-transform ${expanded ? 'rotate-180' : ''}`}
+              aria-hidden="true"
+            />
           </span>
-          <StatusBadge tone={allDecisionGatesPass ? 'success' : 'warning'}>
-            {allDecisionGatesPass
-              ? locale === 'zh'
-                ? `${gateItems.length}/${gateItems.length} 已通过`
-                : `${gateItems.length}/${gateItems.length} passed`
-              : locale === 'zh'
-                ? `${decisionGateAttentionCount} 项待复核`
-                : `${decisionGateAttentionCount} need review`}
-          </StatusBadge>
         </button>
-        {allDecisionGatesPass ? (
-          <ol
-            aria-label={labels.workflowTitle}
-            className="app-decision-gate-track"
-            data-testid="decision-gate-track"
-          >
-            {gateItems.map((item, index) => (
-              <li
-                key={item.id}
-                className="app-decision-gate-step rounded-[var(--app-radius-surface)] p-2 transition-colors hover:bg-[var(--app-surface-raised)]"
-                data-gate-state={item.state}
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="app-decision-gate-index" aria-hidden="true">
-                    {String(index + 1).padStart(2, '0')}
-                  </span>
-                  <span
-                    className="app-decision-gate-connector"
-                    aria-hidden="true"
-                  />
-                </div>
-                <div className="mt-1 flex items-baseline justify-between gap-1">
-                  <span className="app-decision-gate-label font-medium text-xs text-[var(--app-text)]">
-                    {item.gate}
-                  </span>
-                  <span className="app-type-micro font-mono text-[var(--app-success-text)]">
-                    ✓ {locale === 'zh' ? '已通过' : 'Passed'}
-                  </span>
-                </div>
-                {item.reason ? (
-                  <p
-                    className="app-type-micro mt-0.5 line-clamp-1 text-[var(--app-text-secondary)]"
-                    title={
-                      typeof item.reason === 'string' ? item.reason : undefined
-                    }
-                  >
-                    {item.reason}
-                  </p>
-                ) : null}
-              </li>
-            ))}
-          </ol>
-        ) : null}
+        <ol
+          aria-label={labels.workflowTitle}
+          className="app-decision-gate-track"
+          data-testid="decision-gate-track"
+        >
+          {gateItems.map((item) => (
+            <li
+              key={item.id}
+              className="app-decision-gate-step flex min-w-0 flex-wrap items-center justify-between gap-2 py-2"
+              data-gate-state={item.state}
+            >
+              <span className="app-decision-gate-label font-medium">
+                {item.gate}
+              </span>
+              <StatusBadge tone={gateTones[item.state]}>
+                {item.stateLabel ?? item.state}
+              </StatusBadge>
+            </li>
+          ))}
+        </ol>
         <div
-          className={`${
-            !allDecisionGatesPass || healthyGateMatrixExpanded
-              ? 'block'
-              : 'hidden'
-          } pt-2`}
+          className={`${expanded ? 'block' : 'hidden'} pt-2`}
           id="decision-gate-matrix-content"
         >
           <GateMatrix

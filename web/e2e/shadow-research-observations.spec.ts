@@ -93,7 +93,7 @@ for (const width of [390, 1280]) {
     });
     await page.goto('/ai-research');
     const panel = page.getByTestId('automatic-publication-policy');
-    await expect(panel).toContainText('Current grant: active');
+    await expect(panel).toContainText('Current grant: Active');
     await expect(panel).toContainText(
       'No per-candidate confirmation is required',
     );
@@ -105,6 +105,12 @@ for (const width of [390, 1280]) {
       .getByRole('button', { name: 'Verify authorization bounds' })
       .click();
     await expect(panel).toContainText(
+      'Reviewed stock transaction cost limits are missing',
+    );
+    await expect(
+      panel.getByText('Reviewed stock transaction cost limits are missing'),
+    ).toHaveAttribute(
+      'title',
       'publication_preview_stock_fee_envelope_missing',
     );
     await expect(
@@ -134,7 +140,7 @@ for (const width of [390, 1280]) {
         name: 'Revoke grant and suspend its recommendation sources',
       })
       .click();
-    await expect(panel).toContainText('Current grant: disabled');
+    await expect(panel).toContainText('Current grant: Disabled');
     expect(writes).toHaveLength(2);
     expect(writes.map((body) => body.enabled)).toEqual([true, false]);
     await panel.scrollIntoViewIfNeeded();
@@ -274,11 +280,10 @@ for (const width of [390, 1280]) {
     await expect(candidate).toContainText(
       'Synthetic normalized trend candidate',
     );
-    expect(reportReads).toHaveLength(0);
+    await expect.poll(() => reportReads.length).toBe(1);
+    expect(reportReads).toEqual(['/api/backtest/results/8']);
     const evidence = candidate.getByTestId('shadow-research-observations');
-    await evidence
-      .getByText('Forward observation and paper results', { exact: true })
-      .click();
+    await expect(evidence).toHaveAttribute('open', '');
     await expect(
       evidence
         .getByLabel('Saved observations for this report')
@@ -288,6 +293,9 @@ for (const width of [390, 1280]) {
     await expect(evidence).toContainText(
       'do not replace independent final evaluation or account qualification',
     );
+    const setup = evidence.getByTestId('observation-start-disclosure');
+    await expect(setup).not.toHaveAttribute('open', '');
+    await setup.locator(':scope > summary').click();
     const start = evidence.getByRole('button', {
       name: 'Freeze and start forward paper',
       exact: true,
@@ -296,7 +304,7 @@ for (const width of [390, 1280]) {
     expect(writes).toEqual([]);
 
     const paper = evidence.getByTestId('research-paper-book-panel');
-    await paper.locator(':scope > summary').click();
+    await expect(paper).toHaveAttribute('open', '');
     await expect(paper).toContainText('Modeled net excess');
     await expect(paper).toContainText('-0.7%');
     await expect(paper).toContainText(

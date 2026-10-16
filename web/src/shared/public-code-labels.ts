@@ -4,6 +4,16 @@ type LabelMap = Record<string, string>;
 
 export const CODE_LABELS: Record<Locale, LabelMap> = {
   en: {
+    publication_account_evidence_missing: 'Account evidence is missing',
+    publication_preview_current_valuation_incomplete:
+      'Current account valuation is incomplete',
+    publication_preview_account_context_unavailable:
+      'Current account context is unavailable',
+    publication_preview_reviewed_account_scope_unavailable:
+      'A verified account scope and active fee review are required',
+    publication_preview_stock_fee_envelope_missing:
+      'Reviewed stock transaction cost limits are missing',
+    independent_final_missing: 'Independent final validation is missing',
     canonical_broker_evidence: 'Canonical broker evidence',
     current_cash_snapshot: 'Current cash snapshot',
     current_position_snapshot: 'Current position snapshot',
@@ -374,6 +384,14 @@ export const CODE_LABELS: Record<Locale, LabelMap> = {
       'No candidate passed account qualification',
   },
   zh: {
+    publication_account_evidence_missing: '缺少账户证据',
+    publication_preview_current_valuation_incomplete: '当前账户估值尚不完整',
+    publication_preview_account_context_unavailable: '当前账户上下文不可用',
+    publication_preview_reviewed_account_scope_unavailable:
+      '缺少已核验的账户范围或有效费用复核',
+    publication_preview_stock_fee_envelope_missing:
+      '缺少已复核的股票交易成本限额',
+    independent_final_missing: '缺少独立最终验证',
     canonical_broker_evidence: '权威券商凭证',
     current_cash_snapshot: '当前资金快照',
     current_position_snapshot: '当前持仓快照',

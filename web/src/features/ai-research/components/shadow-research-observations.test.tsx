@@ -54,6 +54,10 @@ function open(element = screen.getByTestId('shadow-research-observations')) {
   fireEvent(element, new Event('toggle'));
 }
 
+async function openForwardSetup() {
+  open(await screen.findByTestId('observation-start-disclosure'));
+}
+
 function reads(url: string) {
   if (url.startsWith('/api/backtest/results/'))
     return json(sourceReport(Number(url.split('/').pop())));
@@ -125,6 +129,7 @@ test.each(['none', 'book', 'automation'] as const)(
     mount(<ShadowResearchObservations candidate={normalizedCandidate} />);
     expect(fetchMock).not.toHaveBeenCalled();
     open();
+    await openForwardSetup();
     const start = await screen.findByRole('button', {
       name: 'Freeze and start forward paper',
     });
@@ -194,14 +199,30 @@ test('keeps multiple exact-source histories and shows paper net excess, costs, s
       return reads(url);
     }),
   );
-  mount(<ShadowResearchObservations candidate={normalizedCandidate} />);
-  open();
+  mount(
+    <ShadowResearchObservations candidate={normalizedCandidate} defaultOpen />,
+  );
   const select = await screen.findByLabelText(
     'Saved observations for this report',
   );
   await waitFor(() =>
     expect(select.querySelectorAll('option')).toHaveLength(2),
   );
+  expect(
+    (screen.getByTestId('observation-start-disclosure') as HTMLDetailsElement)
+      .open,
+  ).toBe(false);
+  expect(
+    (
+      screen.getByTestId(
+        'observation-maintenance-disclosure',
+      ) as HTMLDetailsElement
+    ).open,
+  ).toBe(false);
+  expect(
+    (screen.getByTestId('observation-health-disclosure') as HTMLDetailsElement)
+      .open,
+  ).toBe(false);
   expect(select).not.toHaveTextContent('wrong-report');
   open(await screen.findByTestId('research-paper-book-panel'));
   expect(await screen.findByText('-0.7%')).toBeVisible();
@@ -247,11 +268,12 @@ test('switching candidates during a pending source read never mounts the previou
       }}
     />,
   );
-  await screen.findByRole('button', { name: 'Freeze and start forward paper' });
+  await screen.findByLabelText('Saved observations for this report');
   await act(async () => {
     resolveFirst(json(sourceReport(8)));
     await first;
   });
+  open(screen.getByTestId('research-observation-source-binding'));
   expect(screen.getByText('#9')).toBeVisible();
   expect(screen.queryByText('#8')).not.toBeInTheDocument();
   expect(
@@ -313,6 +335,7 @@ test.each([503, 200])(
     fireEvent.click(
       screen.getByRole('button', { name: 'Reload source report' }),
     );
+    await openForwardSetup();
     expect(
       await screen.findByRole('button', {
         name: 'Freeze and start forward paper',

@@ -174,7 +174,13 @@ for (const width of [390, 1280]) {
       .toBeLessThanOrEqual(1);
 
     await page.reload();
+    await expect(
+      page.getByTestId('backtest-selected-report-context'),
+    ).toContainText('#201');
+    const history = page.getByTestId('backtest-report-selector-disclosure');
+    await history.locator('summary').click();
     await expect(page.locator('[data-result-id="201"]')).toBeVisible();
+    await history.locator('summary').click();
     await expect(evidence).toBeVisible();
     await expect(evidence).toContainText('12.5');
     await expect(evidence).toContainText(
@@ -189,9 +195,14 @@ for (const width of [390, 1280]) {
         ),
       )
       .toBeLessThanOrEqual(1);
+    await expect(
+      page.getByTestId('backtest-run-setup-disclosure'),
+    ).toBeHidden();
+    await page.getByRole('tab', { name: 'New backtest' }).click();
+    const setup = page.getByTestId('backtest-run-setup-disclosure');
+    await expect(setup).toBeVisible();
+    await setup.getByLabel('Symbol', { exact: true }).fill('600001');
     if (width >= 1280) {
-      // A saved report uses a narrower setup pane; inputs must fit that pane.
-      const setup = page.getByTestId('backtest-run-setup-disclosure');
       const start = setup.getByLabel('Start date', { exact: true });
       const end = setup.getByLabel('End date', { exact: true });
       const symbol = setup.getByLabel('Symbol', { exact: true });
@@ -202,6 +213,13 @@ for (const width of [390, 1280]) {
       expect(startBox.x + startBox.width).toBeLessThanOrEqual(endBox.x);
       expect((await symbol.boundingBox())!.width).toBeGreaterThanOrEqual(140);
     }
+    await page.getByRole('tab', { name: 'Results and evidence' }).click();
+    await expect(evidence).toContainText('12.5');
+    await page.getByRole('tab', { name: 'New backtest' }).click();
+    await expect(setup.getByLabel('Symbol', { exact: true })).toHaveValue(
+      '600001',
+    );
+    await page.getByRole('tab', { name: 'Results and evidence' }).click();
     await evidence.scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath(`costs-${width}.png`) });
   });

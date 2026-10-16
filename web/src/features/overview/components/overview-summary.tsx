@@ -1,7 +1,6 @@
 import { formatCurrency, formatPercent } from '../../../shared/format';
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
-import { MetricStrip } from '../../../shared/ui/workbench';
 import type { AccountOverview } from '../overview-feature-boundary';
 import { overviewPresentation, pnlTone } from '../model/overview-presentation';
 
@@ -29,7 +28,6 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
       key: 'latest',
       label: labels.latestPnl,
       value: financialValue(summary.today_pnl, labels.pendingValuation),
-      isPending: summary.today_pnl == null,
       returnValue: null,
       tone:
         summary.today_pnl == null
@@ -41,7 +39,6 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
       key: 'cumulative',
       label: copy.overview.cards.cumulativePnl,
       value: financialValue(summary.cumulative_pnl, labels.pendingValuation),
-      isPending: false,
       returnValue:
         summary.cumulative_return == null
           ? null
@@ -85,82 +82,82 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
     <section
       data-testid="overview-summary"
       aria-label={copy.overview.cards.totalAssets}
-      className="overview-hero min-w-0 border-b border-[var(--app-divider)] pb-6"
+      className="overview-hero min-w-0 border-b border-[var(--app-divider)] pb-4"
     >
-      <div className="flex flex-col gap-5 py-2">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-baseline sm:justify-between">
-          <div className="space-y-1">
-            <div className="app-type-label font-semibold uppercase tracking-wider text-[var(--app-text-secondary)]">
-              {copy.overview.cards.totalAssets}
-            </div>
-            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
-              <span
-                data-testid="overview-total-value"
-                className="app-type-overview-hero whitespace-nowrap tabular-nums text-[var(--app-text)] font-extrabold tracking-tight"
-              >
-                {financialValue(
-                  showIndicativeTotal
-                    ? summary.indicative_total_equity
-                    : summary.total_equity,
-                  labels.pendingValuation,
-                )}
-              </span>
-              {showIndicativeTotal ? (
-                <span
-                  data-testid="overview-total-value-note"
-                  className="app-type-micro text-[var(--app-warning-text)]"
-                >
-                  {summary.indicative_fund_nav_date
-                    ? `${labels.indicativeValue} · ${labels.fundNavAsOf} ${summary.indicative_fund_nav_date}`
-                    : `${labels.indicativeValue} · ${labels.referenceQuotePending}`}
-                </span>
-              ) : null}
-              <div className="flex flex-wrap items-center gap-2">
-                {headlineMetrics.map((metric) => (
-                  <div
-                    key={metric.key}
-                    data-testid={metric.testId}
-                    className={
-                      'inline-flex min-w-0 items-center gap-1.5 tabular-nums ' +
-                      metric.tone
-                    }
-                  >
-                    {metric.isPending ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--app-warning-text)]">
-                        <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-warning-indicator)]" />
-                        {metric.value}
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/70 px-2.5 py-0.5 text-xs font-semibold text-[var(--app-text)]">
-                        <span className="text-[var(--app-text-secondary)]">
-                          {metric.label}
-                        </span>
-                        <span className={metric.tone}>{metric.value}</span>
-                        {metric.returnValue ? (
-                          <span className="text-[var(--app-text-tertiary)]">
-                            {metric.returnValue}
-                          </span>
-                        ) : null}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+      <dl className="grid min-w-0 gap-4 py-4 sm:grid-cols-[minmax(0,1.4fr)_repeat(2,minmax(0,1fr))] sm:items-end sm:gap-6">
+        <div className="min-w-0">
+          <dt className="text-xs font-medium text-[var(--app-text-secondary)]">
+            {copy.overview.cards.totalAssets}
+          </dt>
+          <dd
+            data-testid="overview-total-value"
+            className="mt-1 break-words app-type-overview-hero tabular-nums text-[var(--app-text)]"
+          >
+            {financialValue(
+              showIndicativeTotal
+                ? summary.indicative_total_equity
+                : summary.total_equity,
+              labels.pendingValuation,
+            )}
+          </dd>
+          {showIndicativeTotal ? (
+            <p
+              data-testid="overview-total-value-note"
+              className="mt-1 text-xs leading-5 text-[var(--app-warning-text)]"
+            >
+              {summary.indicative_fund_nav_date
+                ? `${labels.indicativeValue} · ${labels.fundNavAsOf} ${summary.indicative_fund_nav_date}`
+                : `${labels.indicativeValue} · ${labels.referenceQuotePending}`}
+            </p>
+          ) : null}
         </div>
-
-        <MetricStrip
-          ariaLabel={copy.overview.cards.supportingMetrics}
-          className="overview-hero-support rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 divide-x divide-[var(--app-divider)] overflow-hidden"
-          items={supportMetrics.map((metric) => ({
-            id: metric.key,
-            label: metric.label,
-            value: metric.value,
-            tone: metric.tone,
-          }))}
-        />
-      </div>
+        <div className="grid grid-cols-2 gap-4 sm:contents">
+          {headlineMetrics.map((metric) => (
+            <div
+              key={metric.key}
+              data-testid={metric.testId}
+              className="min-w-0 sm:border-l sm:border-[var(--app-divider)] sm:pl-6"
+            >
+              <dt className="text-xs text-[var(--app-text-secondary)]">
+                {metric.label}
+              </dt>
+              <dd
+                className={`mt-1 break-words app-type-overview-headline tabular-nums ${metric.tone}`}
+              >
+                {metric.value}
+                {metric.returnValue ? (
+                  <span className="ml-2 text-sm">{metric.returnValue}</span>
+                ) : null}
+              </dd>
+              {metric.key === 'latest' && summary.latest_session_date ? (
+                <p className="mt-1 text-xs tabular-nums text-[var(--app-text-tertiary)]">
+                  {summary.latest_session_date}
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </dl>
+      <dl
+        aria-label={copy.overview.cards.supportingMetrics}
+        className="overview-hero-support grid min-w-0 grid-cols-2 gap-x-6 gap-y-2 border-t border-[var(--app-divider)] pt-3 sm:grid-cols-4"
+      >
+        {supportMetrics.map((metric) => (
+          <div
+            key={metric.key}
+            className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1"
+          >
+            <dt className="text-xs text-[var(--app-text-secondary)]">
+              {metric.label}
+            </dt>
+            <dd
+              className={`break-words text-sm font-medium tabular-nums ${metric.tone === 'pnl-positive' ? 'text-[var(--app-pnl-positive)]' : metric.tone === 'pnl-negative' ? 'text-[var(--app-pnl-negative)]' : 'text-[var(--app-text)]'}`}
+            >
+              {metric.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
     </section>
   );
 }

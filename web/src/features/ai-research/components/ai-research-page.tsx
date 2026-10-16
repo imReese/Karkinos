@@ -20,12 +20,11 @@ export function AiResearchPage() {
 
   return (
     <section
-      className="app-workbench-route flex flex-col gap-2.5 pb-4 sm:gap-3"
+      className="app-workbench-route min-w-0 space-y-8 pb-8"
       data-workbench-route="ai-research"
       data-workbench-width="wide"
     >
       <WorkspaceHeader
-        className="app-ai-research-header"
         eyebrow={labels.kicker}
         title={labels.title}
         description={labels.subtitle}
@@ -40,12 +39,9 @@ export function AiResearchPage() {
         }
       />
 
-      <div
-        className="app-ai-research-command-grid min-w-0"
-        data-testid="ai-research-command-grid"
-      >
+      <div className="min-w-0 space-y-8" data-testid="ai-research-command-grid">
         <div
-          className="grid min-w-0 gap-3"
+          className="min-w-0 space-y-8"
           data-testid="ai-research-primary-canvas"
         >
           <ShadowResearchPanel />
@@ -56,22 +52,22 @@ export function AiResearchPage() {
             strategyId={currentStrategy?.strategy_id ?? null}
           />
         </div>
-        <section
+        <details
           aria-labelledby="ai-research-context-title"
-          className="min-w-0 border-t border-[var(--app-divider)] pt-2 xl:sticky xl:top-3 xl:self-start xl:max-h-[calc(100vh-1.5rem)] xl:overflow-y-auto"
+          className="min-w-0 border-t border-[var(--app-divider)] py-4"
           data-testid="ai-research-context-metrics"
         >
-          <div className="mb-2 min-w-0">
+          <summary className="min-h-11 cursor-pointer py-2">
             <h2
-              className="app-type-section-title text-[var(--app-text)]"
+              className="inline text-sm font-semibold text-[var(--app-text)]"
               id="ai-research-context-title"
             >
               {labels.contextTitle}
             </h2>
-          </div>
+          </summary>
           <MetricStrip
             ariaLabel={labels.contextTitle}
-            className="app-ai-research-context-strip"
+            className="mt-4"
             items={[
               {
                 id: 'backtest-context',
@@ -130,7 +126,7 @@ export function AiResearchPage() {
               {copy.states.retry}
             </button>
           ) : null}
-        </section>
+        </details>
       </div>
     </section>
   );

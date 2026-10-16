@@ -126,6 +126,11 @@ function open() {
   fireEvent(details, new Event('toggle'));
 }
 async function chooseDataset() {
+  const maintenance = (await screen.findByTestId(
+    'paper-book-maintenance-disclosure',
+  )) as HTMLDetailsElement;
+  maintenance.open = true;
+  fireEvent(maintenance, new Event('toggle'));
   const select = await screen.findByLabelText(
     'Formal Dataset for paper settlement',
   );
@@ -275,6 +280,13 @@ test('opening only reads; creation needs explicit positive cash and freezes opti
   });
   expect(fetchMock).not.toHaveBeenCalled();
   open();
+  const setup = (await screen.findByTestId(
+    'paper-book-start-disclosure',
+  )) as HTMLDetailsElement;
+  expect(setup.open).toBe(false);
+  expect(writes).toEqual([]);
+  setup.open = true;
+  fireEvent(setup, new Event('toggle'));
   const create = await screen.findByRole('button', {
     name: 'Create independent paper book',
   });
@@ -311,6 +323,9 @@ test('opening only reads; creation needs explicit positive cash and freezes opti
   );
   expect(
     screen.queryByRole('button', { name: 'Create independent paper book' }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByTestId('paper-book-start-disclosure'),
   ).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Refresh paper book' }));
   await waitFor(() =>

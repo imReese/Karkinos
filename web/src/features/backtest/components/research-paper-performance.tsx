@@ -129,16 +129,20 @@ export function ResearchPaperPerformance({
         <p className="app-muted text-xs">{labels.waiting}</p>
       ) : (
         <>
-          <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <dl className="grid grid-cols-2 gap-4 border-y border-[var(--app-divider)] py-4 lg:grid-cols-4">
             {[
               [labels.net, percent(performance.net_return)],
               [labels.excess, percent(performance.modeled_net_excess_return)],
               [labels.drawdown, percent(performance.max_drawdown)],
               [labels.cash, percent(performance.cash_weight)],
-            ].map(([label, value]) => (
+            ].map(([label, value], index) => (
               <div key={label}>
                 <dt className="app-muted text-xs">{label}</dt>
-                <dd className="text-lg font-semibold tabular-nums">{value}</dd>
+                <dd
+                  className={`mt-2 font-mono font-semibold tabular-nums ${index < 2 ? 'text-2xl' : 'text-lg'}`}
+                >
+                  {value}
+                </dd>
               </div>
             ))}
           </dl>

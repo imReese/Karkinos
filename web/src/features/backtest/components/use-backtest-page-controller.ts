@@ -95,7 +95,7 @@ export function useBacktestPageController() {
   const runAssets = buildResearchAssets(symbol, assetClass, additionalAssets);
   const universeError = researchUniverseError(runAssets, locale === 'zh');
   const [mobileWorkspaceView, setMobileWorkspaceView] = useState<
-    'setup' | 'results'
+    'setup' | 'results' | 'observations'
   >('setup');
   const [mobileWorkspaceTouched, setMobileWorkspaceTouched] = useState(false);
   const [advancedToolsOpen, setAdvancedToolsOpen] = useState(false);
@@ -203,12 +203,14 @@ export function useBacktestPageController() {
   }, [strategy, parameterSchema]);
 
   useEffect(() => {
-    if (!mobileWorkspaceTouched && savedResults.data?.length) {
-      setMobileWorkspaceView(
-        window.matchMedia('(min-width: 1280px)').matches ? 'setup' : 'results',
-      );
+    if (
+      !mobileWorkspaceTouched &&
+      savedResults.data?.length &&
+      !searchDefaults.hasHandoffContext
+    ) {
+      setMobileWorkspaceView('results');
     }
-  }, [mobileWorkspaceTouched, savedResults.data]);
+  }, [mobileWorkspaceTouched, savedResults.data, searchDefaults]);
 
   const submitRun = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -258,9 +260,7 @@ export function useBacktestPageController() {
       const report = await runBacktest.mutateAsync(payload);
       setLatestReport(report);
       setMobileWorkspaceTouched(true);
-      setMobileWorkspaceView(
-        window.matchMedia('(min-width: 1280px)').matches ? 'setup' : 'results',
-      );
+      setMobileWorkspaceView('results');
       signalPreview.reset();
       riskPreview.reset();
       paperShadowPreview.reset();

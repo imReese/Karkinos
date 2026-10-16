@@ -62,9 +62,7 @@ test('does not infer an account source or permission from missing evidence', asy
   );
   vi.stubGlobal('fetch', fetchMock);
   mount();
-  expect(
-    await screen.findByText('publication_account_evidence_missing'),
-  ).toBeVisible();
+  expect(await screen.findByText('Account evidence is missing')).toBeVisible();
   expect(screen.getByTestId('publication-policy-settings')).not.toHaveAttribute(
     'open',
   );
@@ -208,7 +206,9 @@ test('shows a rejected preview without offering authorization', async () => {
     screen.getByRole('button', { name: 'Verify authorization bounds' }),
   );
   expect(
-    await screen.findByText('publication_preview_stock_fee_envelope_missing'),
+    await screen.findByText(
+      'Reviewed stock transaction cost limits are missing',
+    ),
   ).toBeVisible();
   expect(screen.queryByTestId('publication-grant-preview')).toBeNull();
   expect(
@@ -342,7 +342,7 @@ test.each(['status', 'preview'])(
         });
       });
       release();
-      await screen.findByText('Current grant: disabled');
+      await screen.findByText('Current grant: Disabled');
       await waitFor(() =>
         expect(screen.queryByTestId('publication-grant-preview')).toBeNull(),
       );

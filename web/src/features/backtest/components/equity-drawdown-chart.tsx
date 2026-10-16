@@ -16,7 +16,6 @@ import {
   ResponsiveChartFrame,
 } from '../../../shared/ui/workbench';
 import {
-  formatCompactNumber,
   formatCurrency,
   formatPercent,
   formatPrice,
@@ -59,7 +58,9 @@ function formatDate(timestampMs: number) {
 }
 
 function formatAxisCurrency(value: number) {
-  return formatCompactNumber(value);
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(
+    value,
+  );
 }
 
 function nearestEquity(points: ChartPoint[], timestampMs: number) {
@@ -315,10 +316,12 @@ export function EquityDrawdownChart({
                 fontSize={12}
               />
               <YAxis
+                domain={['auto', 'auto']}
+                padding={{ top: 16, bottom: 16 }}
                 tickFormatter={formatAxisCurrency}
                 tickLine={false}
                 axisLine={false}
-                width={56}
+                width={72}
                 stroke="var(--app-chart-label)"
                 fontSize={12}
               />

@@ -23,7 +23,6 @@ import {
 import type { DecisionCockpitWorkspaceModel } from './use-decision-cockpit-workspace';
 import { DecisionGateMatrixSection } from './decision-gate-matrix-section';
 import { DailyDecisionReportPanel } from './daily-decision-report-panel';
-import { decisionNextActionGuide } from './decision-workflow-model';
 
 const generationLabels = {
   zh: {
@@ -70,8 +69,8 @@ export function DecisionCockpitContent({
     signalJournal,
     summaryExpanded,
     setSummaryExpanded,
-    healthyGateMatrixExpanded,
-    setHealthyGateMatrixExpanded,
+    gateMatrixExpanded,
+    setGateMatrixExpanded,
     lanes,
     denseCandidateCount,
     collapseDecisionEvidence,
@@ -156,23 +155,15 @@ export function DecisionCockpitContent({
         </div>
       ) : null}
 
-      <div
-        className={
-          Boolean(decisionNextActionGuide(lanes, labels, locale))
-            ? 'grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] xl:items-start'
-            : 'min-w-0'
-        }
-      >
-        <DecisionGateMatrixSection
-          gateItems={gateItems}
-          allDecisionGatesPass={allDecisionGatesPass}
-          decisionGateAttentionCount={decisionGateAttentionCount}
-          healthyGateMatrixExpanded={healthyGateMatrixExpanded}
-          onToggle={() => setHealthyGateMatrixExpanded((current) => !current)}
-        />
+      <DecisionNextActionGuidePanel lanes={lanes} />
 
-        <DecisionNextActionGuidePanel lanes={lanes} />
-      </div>
+      <DecisionGateMatrixSection
+        gateItems={gateItems}
+        allDecisionGatesPass={allDecisionGatesPass}
+        decisionGateAttentionCount={decisionGateAttentionCount}
+        expanded={gateMatrixExpanded}
+        onToggle={() => setGateMatrixExpanded((current) => !current)}
+      />
 
       <SignalQueuePanel
         actions={currentSignalActions}
@@ -182,44 +173,6 @@ export function DecisionCockpitContent({
         loading={signalActions.isLoading || signalJournal.isLoading}
         error={signalActions.isError || signalJournal.isError}
       />
-
-      <details
-        className="group min-w-0 rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] px-3 sm:px-4"
-        data-testid="decision-quality-disclosure"
-      >
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
-          <span>
-            {locale === 'zh' ? '决策证据登记' : 'Decision evidence register'}
-          </span>
-          <ChevronDown
-            aria-hidden="true"
-            className="h-4 w-4 text-[var(--app-text-secondary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
-          />
-        </summary>
-        <div className="border-t border-[var(--app-divider)] py-4">
-          <DecisionQualityPanel />
-        </div>
-      </details>
-
-      <details
-        className="group min-w-0 rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] px-3 sm:px-4"
-        data-testid="decision-daily-reports-disclosure"
-      >
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
-          <span>
-            {locale === 'zh'
-              ? '每日决策记录与复盘'
-              : 'Daily decision history and review'}
-          </span>
-          <ChevronDown
-            aria-hidden="true"
-            className="h-4 w-4 text-[var(--app-text-secondary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
-          />
-        </summary>
-        <div className="border-t border-[var(--app-divider)] py-4">
-          <DailyDecisionReportPanel locale={locale} />
-        </div>
-      </details>
 
       {idleTradingPlan ? (
         <details
@@ -261,6 +214,44 @@ export function DecisionCockpitContent({
       ) : (
         tradingPlanPanel
       )}
+
+      <details
+        className="group min-w-0 rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] px-3 sm:px-4"
+        data-testid="decision-quality-disclosure"
+      >
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
+          <span>
+            {locale === 'zh' ? '决策证据登记' : 'Decision evidence register'}
+          </span>
+          <ChevronDown
+            aria-hidden="true"
+            className="h-4 w-4 text-[var(--app-text-secondary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
+          />
+        </summary>
+        <div className="border-t border-[var(--app-divider)] py-4">
+          <DecisionQualityPanel />
+        </div>
+      </details>
+
+      <details
+        className="group min-w-0 rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] bg-[var(--app-surface)] px-3 sm:px-4"
+        data-testid="decision-daily-reports-disclosure"
+      >
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 py-2.5 text-sm font-semibold text-[var(--app-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
+          <span>
+            {locale === 'zh'
+              ? '每日决策记录与复盘'
+              : 'Daily decision history and review'}
+          </span>
+          <ChevronDown
+            aria-hidden="true"
+            className="h-4 w-4 text-[var(--app-text-secondary)] transition-transform duration-[var(--app-motion-fast)] ease-[var(--app-ease-standard)] group-open:rotate-180 motion-reduce:transition-none"
+          />
+        </summary>
+        <div className="border-t border-[var(--app-divider)] py-4">
+          <DailyDecisionReportPanel locale={locale} />
+        </div>
+      </details>
 
       <DecisionAutomationDisclosure model={model} />
 

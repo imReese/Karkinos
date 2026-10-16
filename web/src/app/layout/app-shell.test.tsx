@@ -281,9 +281,13 @@ test('renders portfolio workspace navigation', async () => {
   expect(await within(navigation).findByText('Decision')).toBeTruthy();
   expect(await within(navigation).findByText('Operations')).toBeTruthy();
   expect(await within(navigation).findByText('Execution')).toBeTruthy();
-  expect(await within(navigation).findByText('Monitor')).toBeTruthy();
-  expect(await within(navigation).findByText('Decide')).toBeTruthy();
-  expect(await within(navigation).findByText('Execute')).toBeTruthy();
+  expect(await within(navigation).findByText('Investment')).toBeTruthy();
+  expect(
+    await within(navigation).findByText('Research & validation'),
+  ).toBeTruthy();
+  expect(
+    await within(navigation).findByText('Execution & records'),
+  ).toBeTruthy();
   expect(await within(navigation).findByText('System')).toBeTruthy();
   expect(await screen.findByText('Overview page')).toBeTruthy();
   expect(screen.queryByText('Workspace toolbar')).toBeNull();
@@ -300,14 +304,14 @@ test('renders portfolio workspace navigation', async () => {
   expect(navOrder).toEqual([
     'sidebar-nav-overview',
     'sidebar-nav-portfolio',
-    'sidebar-nav-market',
     'sidebar-nav-decision',
     'sidebar-nav-risk',
     'sidebar-nav-aiResearch',
     'sidebar-nav-backtest',
+    'sidebar-nav-market',
     'sidebar-nav-trading',
-    'sidebar-nav-operations',
     'sidebar-nav-activity',
+    'sidebar-nav-operations',
     'sidebar-nav-settings',
   ]);
 });
@@ -424,9 +428,9 @@ test('switches interface language from english to chinese', async () => {
   expect(await within(navigation).findByText('决策')).toBeTruthy();
   expect(await within(navigation).findByText('运营')).toBeTruthy();
   expect(await within(navigation).findByText('执行')).toBeTruthy();
-  expect(await within(navigation).findByText('监控')).toBeTruthy();
-  expect(await within(navigation).findByText('研判')).toBeTruthy();
-  expect(await within(navigation).findByText('执行与审计')).toBeTruthy();
+  expect(await within(navigation).findByText('投资工作台')).toBeTruthy();
+  expect(await within(navigation).findByText('研究与验证')).toBeTruthy();
+  expect(await within(navigation).findByText('执行与记录')).toBeTruthy();
   expect(await within(navigation).findByText('系统')).toBeTruthy();
   expect(screen.queryByText('全局工具栏')).toBeNull();
   expect(window.localStorage.getItem('karkinos.locale')).toBe('zh');
@@ -440,7 +444,7 @@ test('localizes grouped navigation without decorative workspace copy', async () 
   await user.click(await screen.findByRole('menuitemradio', { name: '中文' }));
 
   const navigation = await screen.findByLabelText('导航');
-  const groupTitle = await within(navigation).findByText('监控');
+  const groupTitle = await within(navigation).findByText('投资工作台');
   const overviewNav = await screen.findByTestId('sidebar-nav-overview');
 
   expect(groupTitle.className).toContain('uppercase');
@@ -743,6 +747,9 @@ test('offers primary mobile tasks without shrinking the complete drawer', async 
   ).toBeTruthy();
   expect(
     within(primaryNavigation).getByRole('link', { name: 'Decision' }),
+  ).toBeTruthy();
+  expect(
+    within(primaryNavigation).getByRole('link', { name: 'Research' }),
   ).toBeTruthy();
   const moreButton = within(primaryNavigation).getByRole('button', {
     name: 'More',

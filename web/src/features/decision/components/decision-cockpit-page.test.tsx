@@ -2214,6 +2214,14 @@ test.each(['en', 'zh'] as const)(
       ),
     ).toBeTruthy();
     const gates = screen.getByTestId('decision-gate-matrix');
+    const gateToggle = within(
+      screen.getByTestId('decision-gate-disclosure'),
+    ).getByRole('button');
+    expect(gateToggle.getAttribute('aria-expanded')).toBe('false');
+    expect(
+      within(gates).getByTestId('decision-gate-track').textContent,
+    ).toContain(locale === 'zh' ? '阻断' : 'Blocked');
+    fireEvent.click(gateToggle);
     const accountGate = within(gates).getByRole('row', {
       name: locale === 'zh' ? /账户事实/ : /Account truth/,
     });
@@ -2224,6 +2232,9 @@ test.each(['en', 'zh'] as const)(
     expect(within(guide).getByRole('link').getAttribute('href')).toBe(
       '/account-truth',
     );
+    expect(
+      guide.compareDocumentPosition(gates) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     for (const prioritySurface of [gates, guide]) {
       expect(
         prioritySurface.compareDocumentPosition(queue) &
@@ -5217,11 +5228,12 @@ test('surfaces degraded and blocked account-truth gates in decision summaries', 
   await expandDecisionCandidates();
 
   const gateMatrix = await screen.findByTestId('decision-gate-matrix');
-  expect(
-    within(screen.getByTestId('decision-gate-disclosure'))
-      .getByRole('button')
-      .getAttribute('aria-expanded'),
-  ).toBe('true');
+  const gateToggle = within(
+    screen.getByTestId('decision-gate-disclosure'),
+  ).getByRole('button');
+  expect(gateToggle.getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(gateToggle);
+  expect(gateToggle.getAttribute('aria-expanded')).toBe('true');
   expect(gateMatrix.textContent).toContain('Account truth');
   expect(gateMatrix.textContent).toContain('Degraded');
   expect(gateMatrix.textContent).toContain('Review position difference');

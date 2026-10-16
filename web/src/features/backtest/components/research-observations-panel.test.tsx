@@ -122,6 +122,68 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+test('keeps current automation blockers visible while maintenance controls stay collapsed', async () => {
+  const blocker = { code: 'observation_automation_dataset_missing' };
+  const automated = {
+    ...initial,
+    automation: {
+      observation_id: initial.id,
+      enabled: true,
+      generation: 'saved-generation',
+      status: 'blocked',
+      last_checked_at: null,
+      last_attempt_at: null,
+      last_blocker: blocker,
+      dataset_id: null,
+      decision_session: null,
+      dataset_preparation: {
+        enabled: true,
+        status: 'blocked',
+        last_checked_at: null,
+        through_session: null,
+        last_blocker: blocker,
+        dataset_id: null,
+        job_ids: [],
+      },
+      paper_settlement: {
+        enabled: true,
+        status: 'blocked',
+        last_checked_at: null,
+        last_settled_session: null,
+        last_blocker: blocker,
+        dataset_id: null,
+      },
+    },
+  };
+  const fetchMock = vi.fn(
+    async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/backtest/datasets') return json({ datasets: [] });
+      if (url.endsWith('/paper-book')) return json(null);
+      return json([automated]);
+    },
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  mount();
+  const summary = await screen.findByTestId('observation-automation-summary');
+  expect(within(summary).getByText('Automatic advance blocked')).toBeVisible();
+  for (const item of within(summary).getAllByTitle(blocker.code))
+    expect(item).toBeVisible();
+  expect(within(summary).getAllByTitle(blocker.code)).toHaveLength(3);
+  expect(
+    (
+      screen.getByTestId(
+        'observation-maintenance-disclosure',
+      ) as HTMLDetailsElement
+    ).open,
+  ).toBe(false);
+  expect(
+    fetchMock.mock.calls.every(
+      ([, init]) => !init?.method || init.method === 'GET',
+    ),
+  ).toBe(true);
+});
+
 test('prepares verified warmup and starts an old report as a separate forward experiment', async () => {
   const oldReport = {
     ...report,
@@ -425,6 +487,12 @@ test('starts, publishes, reloads persisted evidence, measures future data and pa
     }),
   );
   await screen.findByText('Measured price response · 2.5%');
+  const history = screen.getByTestId(
+    'observation-history-disclosure',
+  ) as HTMLDetailsElement;
+  expect(history.open).toBe(false);
+  history.open = true;
+  fireEvent(history, new Event('toggle'));
   const publicationDetail = screen
     .getByText('Measured price response · 2.5%')
     .closest('details')!;
@@ -458,6 +526,12 @@ test('starts, publishes, reloads persisted evidence, measures future data and pa
     ),
   ).toBe(true);
   expect(saved!.publications).toHaveLength(1);
+  const health = screen.getByTestId(
+    'observation-health-disclosure',
+  ) as HTMLDetailsElement;
+  expect(health.open).toBe(false);
+  health.open = true;
+  fireEvent(health, new Event('toggle'));
   expect(screen.getByText('Health rule not configured')).toBeVisible();
   fireEvent.click(
     screen.getByRole('button', { name: 'Measure existing publications' }),
@@ -706,8 +780,10 @@ test('a saved health pause disables new publications while preserving measuremen
   mount();
   await screen.findByText('Configured threshold breached');
   expect(
-    screen.getAllByText(/saved rule paused new publications/),
-  ).toHaveLength(1);
+    within(screen.getByTestId('observation-health-summary')).getByText(
+      /saved rule paused new publications/,
+    ),
+  ).toBeVisible();
   expect(
     screen.getByRole('button', { name: 'Pause new publications' }),
   ).toBeDisabled();

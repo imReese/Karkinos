@@ -1,9 +1,8 @@
 import { useRef, useState } from 'react';
 
-import { formatPercent, formatTimestamp } from '../../../shared/format';
+import { formatTimestamp } from '../../../shared/format';
 import { usePreferences } from '../../../shared/preferences/context';
 import type { BacktestReport } from '../api';
-import { usePublishedDatasets } from '../dataset-api';
 import { observationCopy, observationError } from '../copy-observations';
 import {
   useConfigureObservationAutomation,
@@ -14,11 +13,8 @@ import type {
   ObservationCommand,
   ResearchObservation,
 } from '../observation-contracts';
-import { ResearchObservationHistory } from './research-observation-history';
-import { ResearchObservationHealth } from './research-observation-health';
-import { ObservationAutomationControls } from './observation-automation';
-import { ResearchPaperBookPanel } from './research-paper-book-panel';
 import { usePaperBookCommand } from '../paper-book-api';
+import { ResearchObservationDetail } from './research-observation-detail';
 import { ObservationForwardInput } from './observation-forward-input';
 import {
   configuredHealthPolicy,
@@ -177,13 +173,6 @@ function ObservationPanel({
         {labels.title}
       </summary>
       <div className="mt-3 min-w-0 space-y-4">
-        <p className="app-muted text-xs leading-5">
-          {continuousStart
-            ? locale === 'zh'
-              ? '冻结已保存候选，先创建独立模拟账本，再连续准备已核验数据、发布目标并结算。'
-              : 'Freeze the saved candidate, create its independent paper book, then prepare verified data, publish targets and settle continuously.'
-            : labels.detail}
-        </p>
         <p className="text-xs leading-5 text-[var(--app-text-secondary)]">
           {continuousStart
             ? locale === 'zh'
@@ -248,7 +237,7 @@ function ObservationPanel({
           </p>
         ) : null}
         {observation ? (
-          <ObservationDetail
+          <ResearchObservationDetail
             key={observation.id}
             observation={observation}
             busy={mutation.isPending}
@@ -285,38 +274,65 @@ function ObservationPanel({
             }}
           />
         ) : null}
-        <ObservationStartForm
-          report={report}
-          continuousStart={continuousStart}
-          saving={mutation.isPending || starting}
-          busy={
-            mutation.isPending ||
-            starting ||
-            incompleteStart ||
-            query.isLoading ||
-            query.isError
-          }
-          onStart={(payload, setup) => {
-            const command: Extract<ObservationCommand, { kind: 'start' }> = {
-              kind: 'start',
-              payload: {
-                ...payload,
-                request_id: requestId(`start:${JSON.stringify(payload)}`),
-              },
-            };
-            if (continuousStart && setup?.authorized) {
-              sequence.current = {
-                command,
-                setup,
-                bookRequestId: crypto.randomUUID(),
-                costs: report.config.cost_assumptions
-                  ? { ...report.config.cost_assumptions }
-                  : null,
-              };
-              void finishContinuousStart();
-            } else void submit(command);
-          }}
-        />
+        <details
+          className="border-t border-[var(--app-divider)] py-4"
+          data-testid="observation-start-disclosure"
+        >
+          <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">
+            {locale === 'zh'
+              ? '创建新的前向观察或模拟'
+              : 'Start a new forward observation or paper experiment'}
+          </summary>
+          <div className="mt-4">
+            <ObservationStartForm
+              report={report}
+              continuousStart={continuousStart}
+              saving={mutation.isPending || starting}
+              busy={
+                mutation.isPending ||
+                starting ||
+                incompleteStart ||
+                query.isLoading ||
+                query.isError
+              }
+              onStart={(payload, setup) => {
+                const command: Extract<ObservationCommand, { kind: 'start' }> =
+                  {
+                    kind: 'start',
+                    payload: {
+                      ...payload,
+                      request_id: requestId(`start:${JSON.stringify(payload)}`),
+                    },
+                  };
+                if (continuousStart && setup?.authorized) {
+                  sequence.current = {
+                    command,
+                    setup,
+                    bookRequestId: crypto.randomUUID(),
+                    costs: report.config.cost_assumptions
+                      ? { ...report.config.cost_assumptions }
+                      : null,
+                  };
+                  void finishContinuousStart();
+                } else void submit(command);
+              }}
+            />
+          </div>
+        </details>
+        <details className="border-t border-[var(--app-divider)] py-4">
+          <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">
+            {locale === 'zh'
+              ? '模拟方法与权限边界'
+              : 'Simulation method and authority boundaries'}
+          </summary>
+          <p className="app-muted mt-4 text-xs leading-5">
+            {continuousStart
+              ? locale === 'zh'
+                ? '冻结已保存候选，先创建独立模拟账本，再连续准备已核验数据、发布目标并结算。'
+                : 'Freeze the saved candidate, create its independent paper book, then prepare verified data, publish targets and settle continuously.'
+              : labels.detail}
+          </p>
+        </details>
         {incompleteStart ? (
           <div role="status" className="space-y-2 text-xs">
             <p>
@@ -549,173 +565,5 @@ function ObservationStartForm({
         </button>
       </fieldset>
     </form>
-  );
-}
-
-function ObservationDetail({
-  observation,
-  busy,
-  readBusy,
-  readFailed,
-  onRefresh,
-  onCommand,
-}: {
-  observation: ResearchObservation;
-  busy: boolean;
-  readBusy: boolean;
-  readFailed: boolean;
-  onRefresh: () => Promise<boolean>;
-  onCommand: (kind: 'advance' | 'pause', datasetId?: string) => void;
-}) {
-  const { locale } = usePreferences();
-  const labels = observationCopy[locale];
-  const datasets = usePublishedDatasets(true);
-  const [datasetId, setDatasetId] = useState('');
-  const matching =
-    datasets.data?.datasets.filter(
-      (item) =>
-        item.cross_source_verified === true &&
-        /^sha256:[0-9a-f]{64}$/.test(item.dataset_id) &&
-        item.start_date ===
-          (observation.source.forward_input?.start_date ??
-            observation.source.start_date) &&
-        item.instruments.length === observation.universe.length &&
-        new Set(
-          item.instruments.map(
-            (asset) => `${asset.instrument_type}:${asset.symbol}`,
-          ),
-        ).size === observation.universe.length &&
-        item.instruments.every((asset) =>
-          observation.universe.some(
-            (target) =>
-              target.symbol === asset.symbol &&
-              target.instrument_type === asset.instrument_type,
-          ),
-        ),
-    ) ?? [];
-  const selected = matching.find((item) => item.dataset_id === datasetId);
-  const paused = observation.lifecycle === 'paused';
-  return (
-    <div className="min-w-0 space-y-3 border-t border-[var(--app-divider)] pt-4">
-      <p className="text-sm font-semibold">
-        {paused ? labels.paused : labels.active} · {observation.id.slice(0, 8)}
-      </p>
-      <p className="app-muted text-xs">
-        {labels.started} · {formatTimestamp(observation.started_at)}
-      </p>
-      <p className="app-muted text-xs leading-5">
-        {labels.horizon}: {observation.policy.horizon_sessions} ·{' '}
-        {labels.symbolCap}:{' '}
-        {formatPercent(Number(observation.policy.max_symbol_weight))} ·{' '}
-        {labels.grossCap}:{' '}
-        {formatPercent(Number(observation.policy.max_gross_weight))}
-      </p>
-      {observation.source.forward_input ? (
-        <p className="app-muted break-all text-xs leading-5">
-          {locale === 'zh'
-            ? '本次观察的预热区间'
-            : 'Warmup history for this observation'}
-          : {observation.source.forward_input.start_date} →{' '}
-          {observation.source.forward_input.end_date}
-          {' · '}
-          {observation.source.forward_input.dataset_id}
-        </p>
-      ) : null}
-      {!observation.source.source_code_verified ? (
-        <p className="app-muted text-xs leading-5">{labels.sourceUnknown}</p>
-      ) : null}
-      {!observation.source.source_historical_pit_verified ? (
-        <p className="app-muted text-xs leading-5">{labels.pitUnknown}</p>
-      ) : null}
-      {observation.last_blocker &&
-      !(
-        observation.last_blocker.code === 'observation_health_rule_paused' &&
-        observation.health_decision?.action === 'pause_observation'
-      ) ? (
-        <p role="status" className="text-xs leading-5">
-          {observationError(observation.last_blocker.code, locale)}
-        </p>
-      ) : null}
-      <ResearchObservationHealth observation={observation} />
-      <ResearchObservationHistory observation={observation} />
-      <ResearchPaperBookPanel observation={observation} busy={busy} />
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="grid min-w-0 flex-1 basis-64 gap-2 text-xs">
-          {labels.dataset}
-          <select
-            className={fieldClass}
-            value={selected?.dataset_id ?? ''}
-            disabled={busy || datasets.isLoading}
-            onChange={(event) => setDatasetId(event.target.value)}
-          >
-            <option value="">{labels.choose}</option>
-            {matching.map((item) => (
-              <option key={item.dataset_id} value={item.dataset_id}>
-                {item.start_date} → {item.end_date} ·{' '}
-                {item.dataset_id.slice(7, 17)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          className={buttonClass}
-          type="button"
-          disabled={busy || datasets.isFetching}
-          onClick={() => void datasets.refetch()}
-        >
-          {labels.refresh}
-        </button>
-      </div>
-      <p className="app-muted text-xs leading-5">{labels.datasetHint}</p>
-      {datasets.isError ? (
-        <p role="alert" className="text-xs">
-          {labels.datasetFailed}
-        </p>
-      ) : !datasets.isLoading && !matching.length ? (
-        <p className="app-muted text-xs">{labels.noDatasets}</p>
-      ) : null}
-      {selected ? (
-        <p
-          className="break-all font-mono text-xs"
-          data-testid="observation-dataset-id"
-        >
-          {selected.dataset_id}
-        </p>
-      ) : null}
-      <div className="flex flex-wrap gap-2">
-        <button
-          className={buttonClass}
-          type="button"
-          disabled={busy || !selected}
-          onClick={() => onCommand('advance', selected?.dataset_id)}
-        >
-          {busy ? labels.busy : paused ? labels.measure : labels.advance}
-        </button>
-        <button
-          className={buttonClass}
-          type="button"
-          disabled={busy || paused}
-          onClick={() => onCommand('pause')}
-        >
-          {labels.pause}
-        </button>
-      </div>
-      <p className="app-muted text-xs leading-5">{labels.pauseDetail}</p>
-      <ObservationAutomationControls
-        observation={observation}
-        busy={busy}
-        readBusy={readBusy}
-        readFailed={readFailed}
-        onRefresh={onRefresh}
-      />
-      <details className="min-w-0 text-xs">
-        <summary className="cursor-pointer text-[var(--app-text-secondary)]">
-          {labels.sourceDataset}
-        </summary>
-        <p className="mt-2 break-all font-mono">
-          {observation.source.dataset_id}
-        </p>
-      </details>
-    </div>
   );
 }

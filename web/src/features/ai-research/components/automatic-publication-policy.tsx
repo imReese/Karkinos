@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react';
 import { usePreferences } from '../../../shared/preferences/context';
 import { formatTimestamp } from '../../../shared/format';
 import {
+  formatPublicCode,
+  formatPublicStatus,
+} from '../../../shared/public-labels';
+import {
   usePublicationPolicy,
   usePreviewPublicationPolicy,
   useWritePublicationPolicy,
@@ -103,33 +107,37 @@ export function AutomaticPublicationPolicy({
     Number.isFinite(Date.parse(draft.expires_at));
   return (
     <section
-      className="mt-3 min-w-0 space-y-2 border-y border-[var(--app-divider)] py-3 text-xs"
+      className="min-w-0 space-y-4 border-t border-[var(--app-divider)] py-6 text-xs"
       data-testid="automatic-publication-policy"
     >
-      <h3 className="text-sm font-semibold">
-        {zh
-          ? '自动上岗：账户建议发布授权'
-          : 'Automatic account recommendation publication'}
-      </h3>
-      <p role="status">
-        {zh ? '当前授权' : 'Current grant'}:{' '}
-        {query.isLoading
-          ? zh
-            ? '读取中'
-            : 'Loading'
-          : query.isError || !state?.status
+      <div className="flex flex-wrap items-baseline justify-between gap-4">
+        <h3 className="text-sm font-semibold">
+          {zh
+            ? '自动上岗：账户建议发布授权'
+            : 'Automatic account recommendation publication'}
+        </h3>
+        <p role="status">
+          {zh ? '当前授权' : 'Current grant'}:{' '}
+          {query.isLoading
             ? zh
-              ? '未知'
-              : 'Unknown'
-            : state.status}
-      </p>
+              ? '读取中'
+              : 'Loading'
+            : query.isError || !state?.status
+              ? zh
+                ? '未知'
+                : 'Unknown'
+              : formatPublicStatus(state.status, locale)}
+        </p>
+      </div>
       {blockers.length ? (
         <ul
           className="list-disc space-y-1 pl-4"
           aria-label={zh ? '授权阻断' : 'Publication blockers'}
         >
           {blockers.map((blocker) => (
-            <li key={blocker}>{blocker}</li>
+            <li key={blocker} title={blocker}>
+              {formatPublicCode(blocker, locale)}
+            </li>
           ))}
         </ul>
       ) : null}

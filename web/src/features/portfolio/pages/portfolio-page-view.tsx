@@ -9,10 +9,8 @@ import {
   Button,
   EvidenceIdentityDisclosure,
   EvidenceState,
-  MetricStrip,
   WorkspaceHeader,
 } from '../../../shared/ui/workbench';
-import { PortfolioAllocationBar } from '../components/allocation-card';
 import { RebalanceAlertBanner } from '../components/rebalance-alert-banner';
 import { PortfolioEvidenceReviewPanel } from './portfolio-evidence-review-panel';
 import { PortfolioPageLoadingView } from './portfolio-page-loading-view';
@@ -46,7 +44,6 @@ export function PortfolioPageView({
       <WorkspaceHeader
         eyebrow={copy.portfolio.kicker}
         title={copy.portfolio.title}
-        description={copy.portfolio.subtitle}
         context={model.portfolioIdentity}
         actions={
           snapshot.data ? (
@@ -91,105 +88,103 @@ export function PortfolioPageView({
       <PublicationStatus
         snapshotId={snapshot.data?.valuation_snapshot_id}
         asOf={snapshot.data?.valuation_as_of}
+        showAsOf={false}
       />
       <div data-testid="portfolio-summary-strip">
         {snapshot.data ? (
-          <MetricStrip
-            ariaLabel={copy.portfolio.summary.ariaLabel}
-            items={[
-              {
-                id: 'total-equity',
-                label: copy.portfolio.summary.totalEquity,
-                value: (
-                  <span className="font-mono">
-                    {formatCurrencyValue(snapshot.data.total_equity)}
-                  </span>
-                ),
-                detail: copy.portfolio.summary.totalEquityDetail,
-              },
-              {
-                id: 'market-value',
-                label: copy.portfolio.summary.marketValue,
-                value: (
-                  <span className="font-mono">
-                    {formatCurrencyValue(model.totalMarketValue)}
-                  </span>
-                ),
-                detail: copy.portfolio.summary.marketValueDetail,
-              },
-              {
-                id: 'cash',
-                label: copy.portfolio.summary.cash,
-                value: (
-                  <span className="font-mono">
-                    {formatCurrencyValue(snapshot.data.cash)}
-                  </span>
-                ),
-                detail: copy.portfolio.summary.cashDetail,
-              },
-              {
-                id: 'today-pnl',
-                label: copy.portfolio.summary.todayPnl,
-                value: (
-                  <span className="font-mono">
-                    {formatCurrencyValue(model.totalTodayChange)}
-                  </span>
-                ),
-                detail: snapshot.data.performance_session_date
-                  ? `${copy.portfolio.summary.todayPnlDetail} · ${snapshot.data.performance_session_date}`
-                  : copy.portfolio.summary.todayPnlDetail,
-                tone:
-                  model.totalTodayChange != null && model.totalTodayChange !== 0
-                    ? model.totalTodayChange > 0
-                      ? 'pnl-positive'
-                      : 'pnl-negative'
-                    : undefined,
-              },
-              {
-                id: 'unrealized-pnl',
-                label: copy.portfolio.summary.unrealizedPnl,
-                value: (
-                  <span className="font-mono">
-                    {formatCurrencyValue(model.totalUnrealizedPnl)}
-                    {model.totalUnrealizedPnlPct != null ? (
-                      <span className="ml-1 text-xs opacity-80">
-                        (
+          <div
+            className="min-w-0 border-b border-[var(--app-divider)] pb-4"
+            aria-label={copy.portfolio.summary.ariaLabel}
+          >
+            <dl className="grid min-w-0 grid-cols-2 gap-4 py-2 md:grid-cols-[minmax(0,1.3fr)_repeat(3,minmax(0,1fr))] md:items-end md:gap-6">
+              <div className="min-w-0">
+                <dt className="text-xs text-[var(--app-text-secondary)]">
+                  {copy.portfolio.summary.totalEquity}
+                </dt>
+                <dd className="mt-1 break-words app-type-primary-metric tabular-nums text-[var(--app-text)]">
+                  {formatCurrencyValue(snapshot.data.total_equity)}
+                </dd>
+                <p className="sr-only">
+                  {copy.portfolio.summary.totalEquityDetail}
+                </p>
+              </div>
+              {[
+                {
+                  id: 'cash',
+                  label: copy.portfolio.summary.cash,
+                  value: snapshot.data.cash,
+                  detail: copy.portfolio.summary.cashDetail,
+                },
+                {
+                  id: 'today-pnl',
+                  label: copy.portfolio.summary.todayPnl,
+                  value: model.totalTodayChange,
+                  detail: copy.portfolio.summary.todayPnlDetail,
+                },
+                {
+                  id: 'unrealized-pnl',
+                  label: copy.portfolio.summary.unrealizedPnl,
+                  value: model.totalUnrealizedPnl,
+                  detail: copy.portfolio.summary.unrealizedPnlDetail,
+                },
+              ].map((metric) => (
+                <div
+                  key={metric.id}
+                  className="min-w-0 md:border-l md:border-[var(--app-divider)] md:pl-6"
+                >
+                  <dt className="text-xs text-[var(--app-text-secondary)]">
+                    {metric.label}
+                  </dt>
+                  <dd
+                    className={`mt-1 break-words text-xl font-semibold tabular-nums ${metric.id !== 'cash' && metric.value != null && metric.value !== 0 ? (metric.value > 0 ? 'text-[var(--app-pnl-positive)]' : 'text-[var(--app-pnl-negative)]') : 'text-[var(--app-text)]'}`}
+                  >
+                    {formatCurrencyValue(metric.value)}
+                    {metric.id === 'unrealized-pnl' &&
+                    model.totalUnrealizedPnlPct != null ? (
+                      <span className="ml-2 whitespace-nowrap text-xs">
                         {formatPercent(model.totalUnrealizedPnlPct, {
                           signDisplay: 'always',
                         })}
-                        )
                       </span>
                     ) : null}
-                  </span>
-                ),
-                detail: copy.portfolio.summary.unrealizedPnlDetail,
-                tone:
-                  model.totalUnrealizedPnl != null &&
-                  model.totalUnrealizedPnl !== 0
-                    ? model.totalUnrealizedPnl > 0
-                      ? 'pnl-positive'
-                      : 'pnl-negative'
-                    : undefined,
-              },
-              {
-                id: 'realized-pnl',
-                label: copy.portfolio.summary.realizedPnl,
-                value: (
-                  <span className="font-mono">
-                    {formatCurrencyValue(snapshot.data.realized_pnl_total)}
-                  </span>
-                ),
-                detail: copy.portfolio.summary.realizedPnlDetail,
-                tone:
-                  typeof snapshot.data.realized_pnl_total === 'number' &&
-                  snapshot.data.realized_pnl_total !== 0
-                    ? snapshot.data.realized_pnl_total > 0
-                      ? 'pnl-positive'
-                      : 'pnl-negative'
-                    : undefined,
-              },
-            ]}
-          />
+                  </dd>
+                  {metric.id === 'today-pnl' &&
+                  snapshot.data.performance_session_date ? (
+                    <p className="mt-1 text-xs tabular-nums text-[var(--app-text-tertiary)]">
+                      {snapshot.data.performance_session_date}
+                    </p>
+                  ) : null}
+                  <p className="sr-only">{metric.detail}</p>
+                </div>
+              ))}
+            </dl>
+            <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-2 border-t border-[var(--app-divider)] pt-3 text-xs">
+              <div className="flex flex-wrap items-baseline gap-2">
+                <dt className="text-[var(--app-text-secondary)]">
+                  {copy.portfolio.summary.marketValue}
+                </dt>
+                <dd className="font-mono tabular-nums text-[var(--app-text)]">
+                  {formatCurrencyValue(model.totalMarketValue)}
+                </dd>
+                <p className="sr-only">
+                  {copy.portfolio.summary.marketValueDetail}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-baseline gap-2">
+                <dt className="text-[var(--app-text-secondary)]">
+                  {copy.portfolio.summary.realizedPnl}
+                </dt>
+                <dd
+                  className={`font-mono tabular-nums ${snapshot.data.realized_pnl_total != null && snapshot.data.realized_pnl_total !== 0 ? (snapshot.data.realized_pnl_total > 0 ? 'text-[var(--app-pnl-positive)]' : 'text-[var(--app-pnl-negative)]') : 'text-[var(--app-text)]'}`}
+                >
+                  {formatCurrencyValue(snapshot.data.realized_pnl_total)}
+                </dd>
+                <p className="sr-only">
+                  {copy.portfolio.summary.realizedPnlDetail}
+                </p>
+              </div>
+            </dl>
+          </div>
         ) : (
           <EvidenceState
             kind={
@@ -230,25 +225,6 @@ export function PortfolioPageView({
           />
         )}
       </div>
-
-      {snapshot.data?.allocation && snapshot.data.allocation.length > 0 ? (
-        <section
-          aria-label={copy.portfolio.allocation.title}
-          className="rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-3"
-          data-testid="portfolio-exposed-allocation"
-        >
-          <div className="mb-2 flex items-center justify-between">
-            <span className="app-type-label font-medium text-[var(--app-text-secondary)]">
-              {copy.portfolio.allocation.title}
-            </span>
-          </div>
-          <PortfolioAllocationBar
-            items={snapshot.data.allocation}
-            testId="portfolio-top-allocation-bar"
-            className="space-y-2"
-          />
-        </section>
-      ) : null}
 
       <RebalanceAlertBanner
         copy={copy.portfolio}

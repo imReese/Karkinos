@@ -48,7 +48,9 @@ export const overviewCopyZh = {
   },
   dashboard: {
     equityPanel: '资产走势',
-    equityCurve: '净值走势',
+    equityCurve: '资产余额',
+    valueCurveBasis:
+      '资产余额包含出入金与投资变动，不代表剔除资金流影响后的投资收益率。',
     returnCalendar: '收益日历',
     dataTrust: '数据可信度 / 系统状态',
     valuationCoverage: '估值覆盖',

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 
 import { formatTimestamp } from '../../../shared/format';
 import { usePreferences } from '../../../shared/preferences/context';
@@ -244,6 +245,9 @@ export function ShadowResearchPanel() {
         max_candidates_per_run: current.max_candidates_per_run,
         baseline_backtest_result_id: current.baseline_backtest_result_id,
         research_end_date: current.research_end_date ?? null,
+        ...(current.simulation_validation
+          ? { simulation_validation: current.simulation_validation }
+          : {}),
         sealed_end_date: current.sealed_end_date ?? null,
         research_capital_mode: 'normalized_notional',
         require_complete_account_evidence: false,
@@ -316,7 +320,9 @@ export function ShadowResearchPanel() {
   const status = query.data;
   const policyDirty = status
     ? (Object.keys(policy) as Array<keyof ShadowResearchPolicyInput>).some(
-        (key) => (policy[key] ?? null) !== (status.policy[key] ?? null),
+        (key) =>
+          JSON.stringify(policy[key] ?? null) !==
+          JSON.stringify(status.policy[key] ?? null),
       )
     : false;
   const draftPolicyReady = isFiveRoundPolicy(policy);
@@ -334,7 +340,7 @@ export function ShadowResearchPanel() {
     return (
       <section
         aria-labelledby="shadow-research-title"
-        className="app-ai-research-boundary min-w-0 p-4 sm:p-5"
+        className="min-w-0 py-8"
         data-evidence-kind="persisted-ai-shadow-research"
         data-testid="shadow-research-panel"
       >
@@ -368,14 +374,14 @@ export function ShadowResearchPanel() {
   return (
     <section
       aria-labelledby="shadow-research-title"
-      className="app-ai-research-boundary min-w-0 p-3 sm:p-3.5"
+      className="min-w-0 space-y-4"
       data-evidence-kind="persisted-ai-shadow-research"
       data-testid="shadow-research-panel"
     >
       <ShadowResearchHeader copy={copy} status={status} />
 
       {/* Selected candidate and research evidence */}
-      <div className="mt-3">
+      <div>
         <ShadowResearchCandidateWorkspace
           approvals={approvals}
           candidates={status?.candidates ?? []}
@@ -399,12 +405,12 @@ export function ShadowResearchPanel() {
       </div>
 
       {/* Saved research selection */}
-      <div className="mt-2.5">
+      <div>
         <StrategyChampionSpotlight status={status} />
       </div>
 
       {/* Account qualification remains separate from research ranking */}
-      <div className="mt-3">
+      <div>
         <ShadowResearchQualificationReview
           approvedBy={policy.updated_by}
           copy={copy}
@@ -429,22 +435,24 @@ export function ShadowResearchPanel() {
       <AutomaticPublicationPolicy updatedBy={policy.updated_by} />
 
       {/* Automation diagnostics and policy configuration */}
-      <details className="group mt-3 rounded-lg border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 p-3 transition-all">
-        <summary className="flex cursor-pointer items-center justify-between font-semibold text-xs text-[var(--app-text)] hover:text-[var(--app-accent)] select-none">
-          <span className="flex items-center gap-2">
-            <span>
-              {locale === 'zh'
-                ? '⚙️ 自动化研究运行诊断与策略配置'
-                : '⚙️ Automation Diagnostics & Policy Configuration'}
-            </span>
+      <details
+        className="group border-t border-[var(--app-divider)] py-4"
+        data-testid="research-automation-disclosure"
+      >
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold text-[var(--app-text)]">
+          <span>
+            {locale === 'zh'
+              ? '自动化研究运行诊断与策略配置'
+              : 'Automation Diagnostics & Policy Configuration'}
           </span>
-          <span className="text-[var(--app-text-tertiary)] text-xs">
-            {locale === 'zh' ? '收起/展开配置' : 'Toggle Settings'}
-          </span>
+          <ChevronDown
+            aria-hidden="true"
+            className="size-4 shrink-0 transition-transform group-open:rotate-180"
+          />
         </summary>
 
-        <div className="mt-4 pt-3 border-t border-[var(--app-divider)]/60">
-          <div className="grid gap-3 sm:grid-cols-2">
+        <div className="mt-4 space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2">
             <StatusMetric
               label={copy.dailyWinner}
               value={dailyOutcome.value}
@@ -553,12 +561,11 @@ function ShadowResearchHeader({
   status: ReturnType<typeof useShadowResearchAutomationQuery>['data'];
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--app-divider)] pb-2 mb-2">
-      <div className="flex items-center gap-2 min-w-0">
-        <span className="app-kicker text-xs font-semibold">{copy.kicker}</span>
-        <span className="text-[var(--app-divider)]">/</span>
+    <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
+      <div className="min-w-0">
+        <span className="sr-only">{copy.kicker}</span>
         <h2
-          className="text-sm font-bold text-[var(--app-text)] sm:text-base truncate"
+          className="text-base font-semibold text-[var(--app-text)]"
           id="shadow-research-title"
         >
           {copy.title}

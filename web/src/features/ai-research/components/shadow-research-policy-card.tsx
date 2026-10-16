@@ -6,6 +6,7 @@ import type {
 } from '../api';
 import { SHADOW_RESEARCH_COPY } from './shadow-research-copy';
 import { Field, NumberField, StatusMetric } from './shadow-research-view';
+import { SimulationValidationSettings } from './simulation-validation-policy';
 
 export const MAX_PROVIDER_CALLS = 10;
 export const MAX_CANDIDATES = 5;
@@ -206,14 +207,26 @@ export function ShadowResearchPolicyCard({
         />
       </div>
 
-      <FinalEvaluationDates
-        policy={policy}
-        copy={copy}
-        onChange={(dates) => {
-          setPolicy((current) => ({ ...current, ...dates }));
+      <SimulationValidationSettings
+        value={policy.simulation_validation}
+        defaults={status?.simulation_validation_defaults}
+        locale={locale}
+        onChange={(simulation_validation) => {
+          setPolicy((current) => ({ ...current, simulation_validation }));
           setPolicyConfirmed(false);
         }}
       />
+
+      {!policy.simulation_validation?.enabled ? (
+        <FinalEvaluationDates
+          policy={policy}
+          copy={copy}
+          onChange={(dates) => {
+            setPolicy((current) => ({ ...current, ...dates }));
+            setPolicyConfirmed(false);
+          }}
+        />
+      ) : null}
 
       <div className="mt-4 space-y-4 border-t border-[var(--app-divider)] pt-4">
         <div>

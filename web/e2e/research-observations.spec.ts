@@ -281,8 +281,7 @@ for (const width of [390, 1280]) {
       await route.fulfill({ status: 200, json: payload });
     });
     async function openPanel() {
-      if (width < 1280)
-        await page.getByRole('tab', { name: 'Results and evidence' }).click();
+      await page.getByRole('tab', { name: 'Forward observation' }).click();
       await expect(page.getByTestId('backtest-result-panel')).toBeVisible();
       const observations = page.getByTestId('research-observations-panel');
       await expect(observations).toBeVisible();
@@ -293,6 +292,9 @@ for (const width of [390, 1280]) {
     await page.goto('/backtest');
     await openPanel();
     const panel = page.getByTestId('research-observations-panel');
+    const setup = panel.getByTestId('observation-start-disclosure');
+    await expect(setup).not.toHaveAttribute('open', '');
+    await setup.locator(':scope > summary').click();
     await panel
       .getByLabel('Warmup dataset for this observation')
       .selectOption(datasetId);
@@ -333,6 +335,15 @@ for (const width of [390, 1280]) {
       name: 'Verified dataset for this observation',
       exact: true,
     });
+    async function openMaintenance() {
+      const maintenance = panel.getByTestId(
+        'observation-maintenance-disclosure',
+      );
+      if ((await maintenance.getAttribute('open')) === null)
+        await maintenance.locator(':scope > summary').click();
+      await expect(maintenance).toHaveAttribute('open', '');
+    }
+    await openMaintenance();
     await expect(select).toBeVisible();
     const automation = panel.getByRole('region', {
       name: 'Automatic advance',
@@ -357,6 +368,7 @@ for (const width of [390, 1280]) {
       };
     await page.reload();
     await openPanel();
+    await openMaintenance();
     await expect(automation).toContainText(
       'Waiting for data or the publication window',
     );
@@ -397,6 +409,7 @@ for (const width of [390, 1280]) {
     await expect(panel).toContainText('Waiting for intervals to mature');
     await page.reload();
     await openPanel();
+    await openMaintenance();
     await expect(panel).toContainText('Awaiting future data');
     await expect(panel).toContainText('Waiting for intervals to mature');
     await automation
@@ -442,11 +455,19 @@ for (const width of [390, 1280]) {
       }),
     ).toBeDisabled();
     await panel
+      .getByTestId('observation-health-disclosure')
+      .locator(':scope > summary')
+      .click();
+    await panel
       .getByRole('heading', { name: 'Forward health rule', exact: true })
       .evaluate((element) => element.scrollIntoView({ block: 'start' }));
     await page.screenshot({
       path: testInfo.outputPath(`observation-health-${width}.png`),
     });
+    await panel
+      .getByTestId('observation-history-disclosure')
+      .locator(':scope > summary')
+      .click();
     await panel
       .getByText('Decision session · 2026-09-18', { exact: true })
       .click();

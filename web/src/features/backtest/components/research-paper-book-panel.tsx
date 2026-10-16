@@ -17,13 +17,15 @@ const buttonClass =
 export function ResearchPaperBookPanel({
   observation,
   busy = false,
+  defaultOpen = false,
 }: {
   observation: ResearchObservation;
   busy?: boolean;
+  defaultOpen?: boolean;
 }) {
   const { locale } = usePreferences();
   const labels = paperBookCopy[locale];
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
   const [datasetId, setDatasetId] = useState('');
   const [error, setError] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
@@ -121,7 +123,6 @@ export function ResearchPaperBookPanel({
         {labels.title}
       </summary>
       <div className="mt-3 min-w-0 space-y-4">
-        <p className="app-muted text-xs leading-5">{labels.detail}</p>
         <p className="text-xs leading-5 text-[var(--app-text-secondary)]">
           {labels.boundary}
         </p>
@@ -155,21 +156,35 @@ export function ResearchPaperBookPanel({
           </p>
         ) : null}
         {query.data === null && !query.isError ? (
-          <ResearchPaperBookStart
-            observation={observation}
-            blocked={blocked}
-            saving={mutation.isPending}
-            onCreate={(payload) =>
-              void submit({
-                kind: 'create',
-                observationId: observation.id,
-                payload: {
-                  ...payload,
-                  request_id: requestId(`create:${JSON.stringify(payload)}`),
-                },
-              })
-            }
-          />
+          <details
+            className="border-t border-[var(--app-divider)] py-4"
+            data-testid="paper-book-start-disclosure"
+          >
+            <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">
+              {locale === 'zh'
+                ? '创建独立模拟账本'
+                : 'Create an independent paper book'}
+            </summary>
+            <div className="mt-4">
+              <ResearchPaperBookStart
+                observation={observation}
+                blocked={blocked}
+                saving={mutation.isPending}
+                onCreate={(payload) =>
+                  void submit({
+                    kind: 'create',
+                    observationId: observation.id,
+                    payload: {
+                      ...payload,
+                      request_id: requestId(
+                        `create:${JSON.stringify(payload)}`,
+                      ),
+                    },
+                  })
+                }
+              />
+            </div>
+          </details>
         ) : null}
         {book ? (
           <>
@@ -180,125 +195,147 @@ export function ResearchPaperBookPanel({
               {book.lifecycle === 'active' ? labels.active : labels.paused}
             </p>
             <ResearchPaperBookState book={book} />
-            <div className="flex flex-wrap items-end gap-3">
-              <label className="grid min-w-0 flex-1 basis-64 gap-2 text-xs">
-                {labels.dataset}
-                <select
-                  className={fieldClass}
-                  value={selected?.dataset_id ?? ''}
-                  disabled={recoveryBlocked || datasets.isFetching}
-                  onChange={(event) => {
-                    setDatasetId(event.target.value);
-                    if (staleEvidenceError) setError(null);
-                  }}
-                >
-                  <option value="">{labels.choose}</option>
-                  {matching.map((item) => (
-                    <option key={item.dataset_id} value={item.dataset_id}>
-                      {item.start_date} → {item.end_date} ·{' '}
-                      {item.dataset_id.slice(7, 17)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                className={buttonClass}
-                disabled={waiting || datasets.isFetching}
-                onClick={() => void datasets.refetch()}
-              >
-                {labels.refreshDatasets}
-              </button>
-            </div>
-            <p className="app-muted text-xs leading-5">{labels.datasetHint}</p>
-            {datasets.isError ? (
-              <p role="alert" className="text-xs">
-                {labels.datasetFailed}
-              </p>
-            ) : !datasets.isLoading && !matching.length ? (
-              <p className="app-muted text-xs">{labels.noDatasets}</p>
-            ) : null}
-            {selected ? (
-              <p className="break-all font-mono text-xs">
-                {selected.dataset_id}
-              </p>
-            ) : null}
-            {selected && needsDistributions ? (
-              <DatasetCorporateActions
-                key={`${observation.id}:${selected.dataset_id}`}
-                dataset={selected}
-                locale={locale}
-                busy={
-                  recoveryBlocked || datasets.isFetching || datasets.isError
-                }
-                onPendingChange={setCollectingActions}
-                onSelect={(dataset) => {
-                  if (
-                    mounted.current &&
-                    currentSelection.current.scope === selectionScope &&
-                    currentSelection.current.readable
-                  ) {
-                    setDatasetId(dataset.dataset_id);
-                    if (staleEvidenceError) setError(null);
-                  }
-                }}
-              />
-            ) : null}
-            {selected && !distributionsReady ? (
-              <p role="status" className="app-muted text-xs leading-5">
-                {selected.corporate_action_evidence
-                  ? labels.distributionEvidenceStale(selected.end_date)
-                  : labels.distributionEvidenceMissing}
-              </p>
-            ) : null}
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                className={buttonClass}
-                disabled={
-                  blocked ||
-                  !selected ||
-                  !distributionsReady ||
-                  datasets.isFetching ||
-                  datasets.isError
-                }
-                onClick={() =>
-                  void submit({
-                    kind: 'settle',
-                    observationId: observation.id,
-                    payload: {
-                      request_id: requestId(
-                        `settle:${book.version}:${selected!.dataset_id}`,
-                      ),
-                      expected_version: book.version,
-                      dataset_id: selected!.dataset_id,
-                    },
-                  })
-                }
-              >
-                {mutation.isPending ? labels.saving : labels.settle}
-              </button>
-              <button
-                type="button"
-                className={buttonClass}
-                disabled={blocked || book.lifecycle === 'paused'}
-                onClick={() =>
-                  void submit({
-                    kind: 'pause',
-                    observationId: observation.id,
-                    payload: {
-                      request_id: requestId(`pause:${book.version}`),
-                      expected_version: book.version,
-                    },
-                  })
-                }
-              >
-                {labels.pause}
-              </button>
-            </div>
+            <details
+              className="border-t border-[var(--app-divider)] py-4"
+              data-testid="paper-book-maintenance-disclosure"
+            >
+              <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">
+                {locale === 'zh'
+                  ? '续接数据与手动结算'
+                  : 'Continue data and settle manually'}
+              </summary>
+              <div className="mt-4 space-y-4">
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="grid min-w-0 flex-1 basis-64 gap-2 text-xs">
+                    {labels.dataset}
+                    <select
+                      className={fieldClass}
+                      value={selected?.dataset_id ?? ''}
+                      disabled={recoveryBlocked || datasets.isFetching}
+                      onChange={(event) => {
+                        setDatasetId(event.target.value);
+                        if (staleEvidenceError) setError(null);
+                      }}
+                    >
+                      <option value="">{labels.choose}</option>
+                      {matching.map((item) => (
+                        <option key={item.dataset_id} value={item.dataset_id}>
+                          {item.start_date} → {item.end_date} ·{' '}
+                          {item.dataset_id.slice(7, 17)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className={buttonClass}
+                    disabled={waiting || datasets.isFetching}
+                    onClick={() => void datasets.refetch()}
+                  >
+                    {labels.refreshDatasets}
+                  </button>
+                </div>
+                <p className="app-muted text-xs leading-5">
+                  {labels.datasetHint}
+                </p>
+                {datasets.isError ? (
+                  <p role="alert" className="text-xs">
+                    {labels.datasetFailed}
+                  </p>
+                ) : !datasets.isLoading && !matching.length ? (
+                  <p className="app-muted text-xs">{labels.noDatasets}</p>
+                ) : null}
+                {selected ? (
+                  <p className="break-all font-mono text-xs">
+                    {selected.dataset_id}
+                  </p>
+                ) : null}
+                {selected && needsDistributions ? (
+                  <DatasetCorporateActions
+                    key={`${observation.id}:${selected.dataset_id}`}
+                    dataset={selected}
+                    locale={locale}
+                    busy={
+                      recoveryBlocked || datasets.isFetching || datasets.isError
+                    }
+                    onPendingChange={setCollectingActions}
+                    onSelect={(dataset) => {
+                      if (
+                        mounted.current &&
+                        currentSelection.current.scope === selectionScope &&
+                        currentSelection.current.readable
+                      ) {
+                        setDatasetId(dataset.dataset_id);
+                        if (staleEvidenceError) setError(null);
+                      }
+                    }}
+                  />
+                ) : null}
+                {selected && !distributionsReady ? (
+                  <p role="status" className="app-muted text-xs leading-5">
+                    {selected.corporate_action_evidence
+                      ? labels.distributionEvidenceStale(selected.end_date)
+                      : labels.distributionEvidenceMissing}
+                  </p>
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className={buttonClass}
+                    disabled={
+                      blocked ||
+                      !selected ||
+                      !distributionsReady ||
+                      datasets.isFetching ||
+                      datasets.isError
+                    }
+                    onClick={() =>
+                      void submit({
+                        kind: 'settle',
+                        observationId: observation.id,
+                        payload: {
+                          request_id: requestId(
+                            `settle:${book.version}:${selected!.dataset_id}`,
+                          ),
+                          expected_version: book.version,
+                          dataset_id: selected!.dataset_id,
+                        },
+                      })
+                    }
+                  >
+                    {mutation.isPending ? labels.saving : labels.settle}
+                  </button>
+                </div>
+              </div>
+            </details>
+            <button
+              type="button"
+              className={buttonClass}
+              disabled={blocked || book.lifecycle === 'paused'}
+              onClick={() =>
+                void submit({
+                  kind: 'pause',
+                  observationId: observation.id,
+                  payload: {
+                    request_id: requestId(`pause:${book.version}`),
+                    expected_version: book.version,
+                  },
+                })
+              }
+            >
+              {labels.pause}
+            </button>
             <p className="app-muted text-xs leading-5">{labels.pauseHint}</p>
           </>
         ) : null}
+        <details className="border-t border-[var(--app-divider)] py-4">
+          <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">
+            {locale === 'zh'
+              ? '模拟账本方法与范围'
+              : 'Paper book method and scope'}
+          </summary>
+          <p className="app-muted mt-4 text-xs leading-5">{labels.detail}</p>
+        </details>
       </div>
     </details>
   );

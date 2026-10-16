@@ -181,7 +181,7 @@ export function ShadowResearchQualificationReview({
   return (
     <section
       aria-labelledby="shadow-research-qualification-title"
-      className="mt-3 rounded-[var(--app-radius-surface)] border border-[var(--app-divider)] p-3"
+      className="min-w-0 border-t border-[var(--app-divider)] py-6"
       data-testid="shadow-research-qualification"
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -199,8 +199,8 @@ export function ShadowResearchQualificationReview({
         </span>
       </div>
 
-      <dl className="mt-2.5 grid gap-2 text-xs sm:grid-cols-2">
-        <div className="min-w-0 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] p-2">
+      <dl className="mt-4 grid gap-4 text-xs sm:grid-cols-2">
+        <div className="min-w-0 border-l border-[var(--app-divider)] pl-4">
           <dt className="font-semibold text-[var(--app-muted)]">
             {view.run
               ? copy.qualificationRun
@@ -219,7 +219,7 @@ export function ShadowResearchQualificationReview({
                 : copy.qualificationNotEvaluated}
           </dd>
         </div>
-        <div className="min-w-0 rounded-[var(--app-radius-control)] bg-[var(--app-surface-raised)] p-2">
+        <div className="min-w-0 border-l border-[var(--app-divider)] pl-4">
           <dt className="font-semibold text-[var(--app-muted)]">
             {copy.qualificationWinnerBinding}
           </dt>
@@ -243,15 +243,30 @@ export function ShadowResearchQualificationReview({
           data-testid="qualification-deployment-validation"
         >
           <p>
-            {locale === 'zh'
-              ? '独立最终验证 / 固定检查点 / 费用来源'
-              : 'Independent final validation / checkpoint / fee source'}
+            {view.winner.deployment_validation.validation_provenance ===
+            'reviewed_account_cost_replay'
+              ? locale === 'zh'
+                ? '账户审核费率重算验证 / 固定检查点 / 费用来源'
+                : 'Reviewed account cost validation / checkpoint / fee source'
+              : locale === 'zh'
+                ? '独立最终验证 / 固定检查点 / 费用来源'
+                : 'Independent final validation / checkpoint / fee source'}
             : {view.winner.deployment_validation.status ?? '—'} /{' '}
             {view.winner.deployment_validation.checkpoint ?? '—'} /{' '}
             {view.winner.deployment_validation.fee_cost_model_reference ?? '—'}
           </p>
           {view.winner.deployment_validation.blockers?.length ? (
             <p>{view.winner.deployment_validation.blockers.join(' · ')}</p>
+          ) : null}
+          {view.winner.original_simulation_validation ? (
+            <p>
+              {locale === 'zh'
+                ? '原独立模拟验证 / 模型费用'
+                : 'Original independent simulation / modeled costs'}
+              : {view.winner.original_simulation_validation.status ?? '—'} /{' '}
+              {view.winner.original_simulation_validation
+                .fee_cost_model_reference ?? '—'}
+            </p>
           ) : null}
         </div>
       ) : null}

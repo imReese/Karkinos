@@ -1601,8 +1601,8 @@ const workspaceViewports = [
   {
     viewport: 'desktop',
     viewportWidth: 1440,
-    workspace: 'setup',
-    setupOpen: true,
+    workspace: 'results',
+    setupOpen: false,
   },
 ] as const;
 
@@ -1635,6 +1635,7 @@ test.each(workspaceViewports)(
     ).toBeTruthy();
     expect(await screen.findByText('Run registry')).toBeTruthy();
     expect(screen.getByTestId('backtest-run-registry')).toBeTruthy();
+    expect(screen.queryByTestId('research-observations-panel')).toBeNull();
     const persistedEvidence = screen.getByTestId('backtest-persisted-evidence');
     const equityChart = await within(persistedEvidence).findByRole('heading', {
       name: 'Equity and drawdown',
@@ -1663,7 +1664,7 @@ test.each(workspaceViewports)(
       name: 'Strategy snapshot',
     });
     expect(
-      equityChart.compareDocumentPosition(metrics!) &
+      metrics!.compareDocumentPosition(equityChart) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
@@ -1687,13 +1688,9 @@ test.each(workspaceViewports)(
         .getByRole('tab', { selected: true })
         .getAttribute('aria-controls'),
     ).toBe(`backtest-mobile-${workspace}`);
-    expect(
-      (
-        screen.getByTestId(
-          'backtest-run-setup-disclosure',
-        ) as HTMLDetailsElement
-      ).open,
-    ).toBe(setupOpen);
+    expect(!screen.getByTestId('backtest-run-setup-disclosure').hidden).toBe(
+      setupOpen,
+    );
   },
 );
 
@@ -1714,6 +1711,8 @@ test('keeps the saved report context separate from the next run configuration', 
   expect(
     within(reportContext).getByText('Bollinger Mean Reversion'),
   ).toBeTruthy();
+  expect(screen.getByTestId('backtest-run-setup-disclosure').hidden).toBe(true);
+  fireEvent.click(screen.getByRole('tab', { name: 'New backtest' }));
   const draftContext = screen.getByRole('region', {
     name: 'Next run configuration',
   });
@@ -1725,9 +1724,54 @@ test('keeps the saved report context separate from the next run configuration', 
   expect(within(draftContext).getByText('600000')).toBeTruthy();
   expect(within(reportContext).getByText('600519')).toBeTruthy();
   expect(within(reportContext).queryByText('600000')).toBeNull();
+  fireEvent.click(screen.getByRole('tab', { name: 'Results and evidence' }));
+  expect(screen.getByTestId('backtest-run-setup-disclosure').hidden).toBe(true);
+  fireEvent.click(screen.getByRole('tab', { name: 'New backtest' }));
+  expect((screen.getByLabelText('Symbol') as HTMLInputElement).value).toBe(
+    '600000',
+  );
 });
 
-test('keeps setup and current results in one primary workspace with mobile tabs', async () => {
+test('opens forward observation on demand and preserves its controls when returning to results', async () => {
+  const { fetchMock } = renderBacktestPage();
+  await screen.findByTestId('backtest-selected-report-context');
+  await waitFor(() =>
+    expect(
+      screen
+        .getByTestId('backtest-mobile-workspace-tabs')
+        .getAttribute('data-workspace-view'),
+    ).toBe('results'),
+  );
+  expect(
+    fetchMock.mock.calls.some(([url]) =>
+      String(url).includes('/api/research-observations'),
+    ),
+  ).toBe(false);
+  fireEvent.click(screen.getByRole('tab', { name: 'Forward observation' }));
+  const observationPanel = await screen.findByTestId(
+    'research-observations-panel',
+  );
+  expect(screen.getByTestId('backtest-financial-results').hidden).toBe(true);
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        String(url).includes('/api/research-observations'),
+      ),
+    ).toBe(true),
+  );
+  fireEvent.click(screen.getByRole('tab', { name: 'Results and evidence' }));
+  expect(screen.getByTestId('backtest-forward-workspace').hidden).toBe(true);
+  expect(screen.getByTestId('backtest-financial-results').hidden).toBe(false);
+  fireEvent.click(screen.getByRole('tab', { name: 'Forward observation' }));
+  expect(screen.getByTestId('research-observations-panel')).toBe(
+    observationPanel,
+  );
+  expect(
+    fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST'),
+  ).toHaveLength(0);
+});
+
+test('navigates results, setup and observation with keyboard-operable workspace tabs', async () => {
   const { fetchMock } = renderBacktestPage({ results: [] });
 
   const primary = await screen.findByTestId('backtest-primary-workbench');
@@ -1746,7 +1790,8 @@ test('keeps setup and current results in one primary workspace with mobile tabs'
   expect(contextMetrics?.className).toContain('app-horizontal-scroll-cue');
   expect(primary.contains(setup)).toBe(true);
   expect(primary.contains(results)).toBe(true);
-  expect(setup.open).toBe(true);
+  expect(setup.hidden).toBe(false);
+  expect(results.hidden).toBe(true);
   expect(
     (
       screen.getByTestId(
@@ -1757,18 +1802,23 @@ test('keeps setup and current results in one primary workspace with mobile tabs'
   expect(tabs.getAttribute('role')).toBe('tablist');
   expect(tabs.getAttribute('data-workspace-view')).toBe('setup');
   const workspaceTabs = within(tabs).getAllByRole('tab');
-  workspaceTabs[0].focus();
-  fireEvent.keyDown(workspaceTabs[0], { key: 'ArrowRight' });
-  expect(document.activeElement).toBe(workspaceTabs[1]);
-  expect(workspaceTabs[1].getAttribute('aria-selected')).toBe('true');
-  expect(workspaceTabs.map((tab) => tab.tabIndex)).toEqual([-1, 0]);
-  expect(results.getAttribute('aria-labelledby')).toBe(workspaceTabs[1].id);
-  fireEvent.keyDown(workspaceTabs[1], { key: 'Home' });
+  expect(workspaceTabs.map((tab) => tab.getAttribute('aria-label'))).toEqual([
+    'Results and evidence',
+    'New backtest',
+    'Forward observation',
+  ]);
+  workspaceTabs[1].focus();
+  fireEvent.keyDown(workspaceTabs[1], { key: 'ArrowRight' });
+  expect(document.activeElement).toBe(workspaceTabs[2]);
+  expect(workspaceTabs[2].getAttribute('aria-selected')).toBe('true');
+  expect(workspaceTabs.map((tab) => tab.tabIndex)).toEqual([-1, -1, 0]);
+  expect(results.getAttribute('aria-labelledby')).toBe(workspaceTabs[2].id);
+  expect(setup.hidden).toBe(true);
+  fireEvent.keyDown(workspaceTabs[2], { key: 'Home' });
   expect(document.activeElement).toBe(workspaceTabs[0]);
   expect(workspaceTabs[0].getAttribute('aria-selected')).toBe('true');
-  expect(
-    setup.compareDocumentPosition(results) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
+  expect(results.hidden).toBe(false);
+  fireEvent.click(workspaceTabs[1]);
 
   for (const testId of [
     'backtest-advanced-tools-disclosure',
@@ -1843,8 +1893,8 @@ test('keeps setup and current results in one primary workspace with mobile tabs'
   fireEvent.click(
     within(tabs).getByRole('tab', { name: 'Results and evidence' }),
   );
-  expect(results.className).not.toContain('hidden xl:block');
-  expect(setup!.className).toContain('hidden xl:block');
+  expect(results.hidden).toBe(false);
+  expect(setup.hidden).toBe(true);
 });
 
 test('prefills single-instrument research context from decision handoff query', async () => {
@@ -2727,13 +2777,9 @@ test.each(workspaceViewports)(
         .getByRole('tab', { selected: true })
         .getAttribute('aria-controls'),
     ).toBe(`backtest-mobile-${workspace}`);
-    expect(
-      (
-        screen.getByTestId(
-          'backtest-run-setup-disclosure',
-        ) as HTMLDetailsElement
-      ).open,
-    ).toBe(setupOpen);
+    expect(!screen.getByTestId('backtest-run-setup-disclosure').hidden).toBe(
+      setupOpen,
+    );
   },
 );
 
@@ -3281,10 +3327,21 @@ test('summarizes attribution preview evidence without claiming strategy pnl', as
     'paper-shadow-preview:dual_ma:600002:buy:100:29.17:fill:1',
   );
   expect(attributionPayload.execution_mode).toBeUndefined();
+  fireEvent.click(
+    screen.getByRole('link', { name: 'Review strategy registry evidence' }),
+  );
+  expect(screen.getByTestId('backtest-run-setup-disclosure').hidden).toBe(
+    false,
+  );
+  expect(screen.getByTestId('backtest-result-panel').hidden).toBe(true);
+  fireEvent.click(screen.getByRole('tab', { name: 'Results and evidence' }));
+  expect(screen.getByTestId('backtest-result-panel').hidden).toBe(false);
 });
 
 test('renders dataset snapshot metadata for saved reports', async () => {
   renderBacktestPage();
+  const disclosure = await screen.findByTestId('backtest-dataset-disclosure');
+  fireEvent.click(disclosure.querySelector('summary')!);
 
   expect(
     await screen.findByRole('heading', {

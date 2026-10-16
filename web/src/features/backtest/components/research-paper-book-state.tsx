@@ -54,7 +54,7 @@ export function ResearchPaperBookState({ book }: { book: ResearchPaperBook }) {
   return (
     <section className="min-w-0 space-y-4" aria-label={labels.snapshot}>
       <div>
-        <h4 className="text-sm font-semibold">{labels.snapshot}</h4>
+        <h4 className="sr-only">{labels.snapshot}</h4>
         <p className="mt-1 text-xs font-medium" data-testid="paper-book-as-of">
           {labels.asOf}: {book.last_settled_session ?? labels.notSettled}
         </p>

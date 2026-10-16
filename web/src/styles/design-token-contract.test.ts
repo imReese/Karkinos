@@ -313,8 +313,8 @@ describe('application design token contract', () => {
     ]) {
       expect(MOCHA.has(token), token).toBe(true);
     }
-    expect(MOCHA.get('--app-font-size-page-title-mobile')).toBe('20px');
-    expect(MOCHA.get('--app-font-size-page-title')).toBe('22px');
+    expect(MOCHA.get('--app-font-size-page-title-mobile')).toBe('22px');
+    expect(MOCHA.get('--app-font-size-page-title')).toBe('28px');
     expect(MOCHA.get('--app-font-size-section-title')).toBe('16px');
     expect(MOCHA.get('--app-font-size-metric')).toBe('16px');
     expect(MOCHA.get('--app-font-size-primary-metric-mobile')).toBe('28px');

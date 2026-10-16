@@ -24,7 +24,7 @@ export function AppShellMobileNavigation({
 }: AppShellMobileNavigationProps) {
   return (
     <nav
-      className="app-mobile-primary-nav relative z-[80] grid shrink-0 grid-cols-4 border-t border-[var(--app-divider)] bg-[var(--app-surface-raised)] xl:hidden"
+      className="app-mobile-primary-nav relative z-[80] grid shrink-0 grid-cols-5 border-t border-[var(--app-divider)] bg-[var(--app-surface-raised)] xl:hidden"
       aria-label={copy.shell.primaryNavigation}
     >
       {MOBILE_PRIMARY_ITEMS.map((item) => {
@@ -41,7 +41,11 @@ export function AppShellMobileNavigation({
             onClick={onMobileNavClose}
           >
             <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
-            <span>{copy.shell.nav[item.key]}</span>
+            <span>
+              {item.key === 'aiResearch'
+                ? copy.shell.researchNavigation
+                : copy.shell.nav[item.key]}
+            </span>
           </Link>
         );
       })}

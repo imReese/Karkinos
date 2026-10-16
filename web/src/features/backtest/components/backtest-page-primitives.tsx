@@ -23,11 +23,11 @@ export function BacktestResponsiveDisclosure({
   children: ReactNode;
 }) {
   return (
-    <section className="min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)]">
+    <section className="min-w-0 border-y border-[var(--app-divider)]">
       <button
         aria-controls={id}
         aria-expanded={open}
-        className="flex min-h-12 w-full items-center justify-between gap-4 p-4 text-left transition-colors hover:bg-[color-mix(in_srgb,var(--app-surface-overlay)_40%,transparent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
+        className="flex min-h-12 w-full items-center justify-between gap-4 py-4 text-left transition-colors hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)]"
         data-testid={testId}
         onClick={onToggle}
         type="button"
@@ -42,13 +42,13 @@ export function BacktestResponsiveDisclosure({
         </span>
         <span
           aria-hidden="true"
-          className="flex size-6 shrink-0 items-center justify-center rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface-raised)] text-xs font-semibold text-[var(--app-text-secondary)]"
+          className="flex size-6 shrink-0 items-center justify-center text-sm font-semibold text-[var(--app-text-secondary)]"
         >
           {open ? '−' : '+'}
         </span>
       </button>
       <div
-        className="border-t border-[var(--app-divider)] p-4 sm:p-5"
+        className="border-t border-[var(--app-divider)] py-4 sm:py-6"
         hidden={!open}
         id={id}
       >

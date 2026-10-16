@@ -38,10 +38,12 @@ export function OverviewEquityCurve({
   points,
   range,
   onRangeChange,
+  compact = false,
 }: {
   points: EquitySeriesPoint[];
   range: EquityCurveRange;
   onRangeChange: (range: EquityCurveRange) => void;
+  compact?: boolean;
 }) {
   const copy = useCopy();
   const { locale } = usePreferences();
@@ -117,77 +119,111 @@ export function OverviewEquityCurve({
   const selectedColor =
     SERIES_META.find((series) => series.key === selectedSeries)?.color ??
     'var(--app-accent)';
+  const rangeControls = (
+    <div
+      className={
+        compact
+          ? 'inline-flex shrink-0 items-center gap-1 self-start'
+          : 'app-inline-segmented'
+      }
+      data-testid="equity-range-controls"
+      aria-label={labels.range}
+      role="group"
+    >
+      {ranges.map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          aria-pressed={range === value}
+          aria-label={labels.range + ': ' + label}
+          onClick={() => onRangeChange(value)}
+          className={
+            compact
+              ? 'min-h-11 rounded px-2.5 text-xs font-semibold transition-colors sm:min-h-8 ' +
+                (range === value
+                  ? 'bg-[var(--app-accent-bg)] text-[var(--app-accent)]'
+                  : 'text-[var(--app-text-secondary)] hover:bg-[var(--app-surface-overlay)] hover:text-[var(--app-text)]')
+              : 'app-inline-segmented-btn ' +
+                (range === value ? 'app-inline-segmented-btn-active' : '')
+          }
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+  const seriesControls = (
+    <div
+      className={
+        (compact ? '' : 'mb-2 ') +
+        'flex min-w-0 shrink-0 flex-wrap items-center gap-1'
+      }
+      data-testid="equity-series-controls"
+      role="group"
+      aria-label={labels.series}
+    >
+      {OVERVIEW_SERIES.map((seriesKey) => {
+        const active = selectedSeries === seriesKey;
+        const meta = SERIES_META.find((series) => series.key === seriesKey);
+        return (
+          <button
+            key={seriesKey}
+            type="button"
+            aria-pressed={active}
+            aria-label={seriesLabels[seriesKey]}
+            onClick={() => setSelectedSeries(seriesKey)}
+            className={
+              (compact
+                ? 'app-chart-control inline-flex min-h-11 items-center gap-1.5 rounded px-2.5 text-xs font-medium transition-colors sm:min-h-8 '
+                : 'app-chart-control app-type-micro inline-flex min-h-7 items-center gap-1.5 rounded-full border px-3 py-0.5 font-medium transition-colors ') +
+              (active
+                ? (compact
+                    ? ''
+                    : 'border-[var(--app-accent-border)] shadow-sm ') +
+                  'bg-[var(--app-accent-bg)] text-[var(--app-text)] font-semibold'
+                : (compact
+                    ? ''
+                    : 'border-transparent hover:border-[var(--app-divider)] ') +
+                  'bg-transparent text-[var(--app-text-secondary)] hover:bg-[var(--app-surface-overlay)]')
+            }
+          >
+            <span
+              aria-hidden="true"
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ backgroundColor: meta?.color }}
+            />
+            {seriesLabels[seriesKey]}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
     <div className="flex flex-1 min-w-0 flex-col">
-      <SectionHeader
-        title={copy.overview.dashboard.equityPanel}
-        className="overview-spotlight-heading mb-3 shrink-0"
-        actions={
-          <div
-            className="app-inline-segmented"
-            data-testid="equity-range-controls"
-            aria-label={labels.range}
-            role="group"
-          >
-            {ranges.map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={range === value}
-                aria-label={labels.range + ': ' + label}
-                onClick={() => onRangeChange(value)}
-                className={
-                  'app-inline-segmented-btn ' +
-                  (range === value ? 'app-inline-segmented-btn-active' : '')
-                }
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        }
-      />
-
-      <div
-        className="mb-2 flex min-w-0 shrink-0 flex-wrap items-center gap-1"
-        data-testid="equity-series-controls"
-        role="group"
-        aria-label={labels.series}
-      >
-        {OVERVIEW_SERIES.map((seriesKey) => {
-          const active = selectedSeries === seriesKey;
-          const meta = SERIES_META.find((series) => series.key === seriesKey);
-          return (
-            <button
-              key={seriesKey}
-              type="button"
-              aria-pressed={active}
-              aria-label={seriesLabels[seriesKey]}
-              onClick={() => setSelectedSeries(seriesKey)}
-              className={
-                'app-chart-control app-type-micro inline-flex min-h-7 items-center gap-1.5 rounded-full border px-3 py-0.5 font-medium transition-colors ' +
-                (active
-                  ? 'border-[var(--app-accent-border)] bg-[var(--app-accent-bg)] text-[var(--app-text)] font-semibold shadow-sm'
-                  : 'border-transparent bg-transparent text-[var(--app-text-secondary)] hover:border-[var(--app-divider)] hover:bg-[var(--app-surface-overlay)]')
-              }
-            >
-              <span
-                aria-hidden="true"
-                className="h-1.5 w-1.5 rounded-full"
-                style={{ backgroundColor: meta?.color }}
-              />
-              {seriesLabels[seriesKey]}
-            </button>
-          );
-        })}
-      </div>
+      {compact ? (
+        <div className="mb-2 flex min-w-0 shrink-0 flex-col gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4">
+          {rangeControls}
+          {seriesControls}
+        </div>
+      ) : (
+        <>
+          <SectionHeader
+            title={copy.overview.dashboard.equityPanel}
+            className="overview-spotlight-heading mb-3 shrink-0"
+            actions={rangeControls}
+          />
+          {seriesControls}
+        </>
+      )}
 
       <div
         ref={chartRef}
         className={
           (usablePoints.length >= 2
-            ? 'h-[260px] sm:h-[300px] xl:h-[300px] shrink-0'
+            ? compact
+              ? 'h-[180px] sm:h-[260px] shrink-0'
+              : 'h-[260px] sm:h-[300px] xl:h-[300px] shrink-0'
             : 'h-[72px] sm:h-[84px]') + ' min-w-0 overflow-hidden'
         }
       >

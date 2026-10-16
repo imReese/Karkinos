@@ -24,9 +24,11 @@ interface Readiness {
 export function PublicationStatus({
   snapshotId,
   asOf,
+  showAsOf = true,
 }: {
   snapshotId?: string | null;
   asOf?: string | null;
+  showAsOf?: boolean;
 }) {
   const { common: copy } = useCopy();
   const query = useQuery({
@@ -63,10 +65,12 @@ export function PublicationStatus({
 
   return (
     <aside role="status" className={containerClasses}>
-      <p className="font-medium">
-        {copy.valuationAsOf}:{' '}
-        <span className="font-mono">{formatValuationTimestamp(asOf)}</span>
-      </p>
+      {showAsOf ? (
+        <p className="font-medium">
+          {copy.valuationAsOf}:{' '}
+          <span className="font-mono">{formatValuationTimestamp(asOf)}</span>
+        </p>
+      ) : null}
       {isClosedSession ? (
         <span
           data-testid="market-closed-valuation-badge"

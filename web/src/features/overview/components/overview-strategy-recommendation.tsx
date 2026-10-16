@@ -562,7 +562,7 @@ export function OverviewStrategyRecommendation({
       className={('flex flex-col min-w-0 ' + (className ?? '')).trim()}
       aria-label={dashboard.strategyRecommendationTitle}
     >
-      <div className="mb-4 flex h-9 shrink-0 items-center border-b border-[var(--app-divider)]">
+      <div className="mb-2 flex min-h-9 shrink-0 items-center border-b border-[var(--app-divider)]">
         <SectionHeader
           title={dashboard.strategyRecommendationTitle}
           meta={
@@ -590,7 +590,7 @@ export function OverviewStrategyRecommendation({
       {marketClosed ? (
         <div
           data-testid="overview-recommendation-market-closed"
-          className="space-y-3 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 px-4 py-3"
+          className="flex flex-wrap items-baseline gap-x-6 gap-y-2 py-2"
         >
           <p
             role="status"
@@ -598,7 +598,7 @@ export function OverviewStrategyRecommendation({
           >
             {dashboard.strategyRecommendationMarketClosed}
           </p>
-          <p className="app-type-compact text-[var(--app-text-secondary)]">
+          <p className="app-type-compact text-[var(--app-text-secondary)] sm:mr-auto">
             {dashboard.strategyRecommendationClosedResearch}
           </p>
           {nextTradingDate ? (
@@ -611,13 +611,13 @@ export function OverviewStrategyRecommendation({
           <a
             href="/ai-research"
             onClick={(e) => handleClientNavigation(e, '/ai-research')}
-            className="app-type-compact inline-flex min-h-11 items-center font-semibold text-[var(--app-accent)] hover:underline"
+            className="app-type-compact inline-flex min-h-10 items-center font-semibold text-[var(--app-accent)] hover:underline"
           >
             {dashboard.strategyRecommendationResearchAction}
           </a>
         </div>
       ) : plan && showDetailedActions ? (
-        <div className="flex flex-1 min-w-0 flex-col rounded-[var(--app-radius-control)] border border-[var(--app-accent-border)] bg-[var(--app-surface-raised)]/80 p-4 shadow-sm">
+        <div className="flex flex-1 min-w-0 flex-col border-l-2 border-[var(--app-accent-border)] py-2 pl-4">
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
             <StatusBadge tone={statusTone(presentationLevel)}>
               {statusLabel(presentationLevel, dashboard)}
@@ -676,7 +676,7 @@ export function OverviewStrategyRecommendation({
           </div>
         </div>
       ) : planQuery.isLoading && !plan ? (
-        <div className="flex items-center gap-2.5 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 px-4 py-2.5 text-[var(--app-text-secondary)]">
+        <div className="flex items-center gap-2.5 py-2 text-[var(--app-text-secondary)]">
           <span className="inline-block h-2 w-2 rounded-full bg-[var(--app-accent)] opacity-70" />
           <span className="app-type-compact font-medium">
             {locale === 'zh'
@@ -690,7 +690,7 @@ export function OverviewStrategyRecommendation({
           title={dashboard.accountRecommendationUnavailable}
         />
       ) : plan ? (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 px-4 py-2.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2">
           <div className="flex items-center gap-2.5 min-w-0">
             <span
               className={(

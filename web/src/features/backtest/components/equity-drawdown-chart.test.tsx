@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/providers/preferences-provider';
@@ -33,6 +33,27 @@ const fills: BacktestFill[] = [
   },
 ];
 const originalResizeObserver = window.ResizeObserver;
+
+function mockChartGeometry() {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+    function (this: HTMLElement) {
+      const textMeasurement = this.id === 'recharts_measurement_span';
+      const width = textMeasurement ? (this.textContent?.length ?? 1) * 7 : 640;
+      const height = textMeasurement ? 12 : 320;
+      return {
+        bottom: height,
+        height,
+        left: 0,
+        right: width,
+        top: 0,
+        width,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      } as DOMRect;
+    },
+  );
+}
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -81,17 +102,7 @@ test('keeps drawdown gradient identities unique across coexisting reports', () =
     configurable: true,
     value: undefined,
   });
-  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
-    bottom: 320,
-    height: 320,
-    left: 0,
-    right: 640,
-    top: 0,
-    width: 640,
-    x: 0,
-    y: 0,
-    toJSON: () => ({}),
-  } as DOMRect);
+  mockChartGeometry();
 
   render(
     <PreferencesProvider>
@@ -109,6 +120,50 @@ test('keeps drawdown gradient identities unique across coexisting reports', () =
   expect(gradientIds).toHaveLength(4);
   expect(new Set(gradientIds).size).toBe(4);
   expect(document.querySelectorAll('.recharts-wrapper')).toHaveLength(4);
+});
+
+test('uses legible amount ticks around a small equity change instead of forcing a zero baseline', async () => {
+  window.localStorage.clear();
+  window.localStorage.setItem('karkinos.locale', 'en');
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: false,
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+  Object.defineProperty(window, 'ResizeObserver', {
+    configurable: true,
+    value: undefined,
+  });
+  mockChartGeometry();
+  const unchangedPoints = [
+    { timestamp: '2026-09-15T15:00:00+08:00', equity: 100000 },
+    { timestamp: '2026-09-16T15:00:00+08:00', equity: 98000 },
+    { timestamp: '2026-09-17T15:00:00+08:00', equity: 99000 },
+  ];
+  render(
+    <PreferencesProvider>
+      <EquityDrawdownChart points={unchangedPoints} />
+    </PreferencesProvider>,
+  );
+  const frame = screen.getByTestId('backtest-equity-chart-frame');
+  await waitFor(() =>
+    expect(
+      frame.querySelectorAll('.recharts-yAxis-tick-labels text').length,
+    ).toBeGreaterThanOrEqual(3),
+  );
+  const labels = Array.from(
+    frame.querySelectorAll('.recharts-yAxis-tick-labels text'),
+    (element) => element.textContent ?? '',
+  );
+  const ticks = labels.map((label) => Number(label.replace(/,/g, '')));
+  expect(ticks.length).toBeGreaterThanOrEqual(3);
+  expect(Math.min(...ticks)).toBeGreaterThan(90000);
+  expect(Math.max(...ticks)).toBeGreaterThanOrEqual(100000);
+  expect(labels.some((label) => label.includes(','))).toBe(true);
+  expect(unchangedPoints.map((point) => point.equity)).toEqual([
+    100000, 98000, 99000,
+  ]);
 });
 
 test('allows filtering markers by side or hiding them', () => {

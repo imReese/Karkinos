@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { PreferencesProvider } from '../../../app/providers/preferences-provider';
 import { ShadowResearchPanel } from './shadow-research-panel';
+import { candidateSourceReport } from '../../../../test-fixtures/shadow-observations';
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -11,6 +12,104 @@ function jsonResponse(body: unknown, status = 200) {
     status,
   });
 }
+
+test.each([
+  { responseId: 8, responseStatus: 200, available: true, withBaseline: false },
+  { responseId: 9, responseStatus: 200, available: false, withBaseline: false },
+  { responseId: 8, responseStatus: 503, available: false, withBaseline: false },
+  { responseId: 8, responseStatus: 200, available: true, withBaseline: true },
+])(
+  'reads exact source metrics without inventing missing comparison values ($responseId/$responseStatus)',
+  async ({ responseId, responseStatus, available, withBaseline }) => {
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+    const candidate = status.candidates[0];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, _init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith('/api/ai/strategy-research/shadow-automation'))
+          return jsonResponse({
+            ...status,
+            candidates: [
+              {
+                ...candidate,
+                candidate_result_id: 8,
+                comparison: {
+                  ...candidate.comparison,
+                  baseline: withBaseline
+                    ? candidate.comparison.baseline
+                    : undefined,
+                  candidate: undefined,
+                  research_gate: { status: 'pass', blockers: [] },
+                  deployment_validation: {
+                    status: 'blocked',
+                    checkpoint: null,
+                    initial_cash: null,
+                    fee_cost_model_reference: null,
+                    blockers: ['independent_final_missing'],
+                  },
+                },
+              },
+            ],
+          });
+        if (url === '/api/backtest/results/8')
+          return jsonResponse(
+            candidateSourceReport(responseId),
+            responseStatus,
+          );
+        if (url.endsWith('/api/strategy-promotion/states'))
+          return jsonResponse([]);
+        throw new Error('Unexpected request: ' + url);
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    render(
+      <PreferencesProvider>
+        <QueryClientProvider client={queryClient}>
+          <ShadowResearchPanel />
+        </QueryClientProvider>
+      </PreferencesProvider>,
+    );
+    if (available) {
+      const metrics = await screen.findByLabelText('Source report metrics');
+      expect(within(metrics).getAllByText(/^[-−]?0(?:\.0+)?%$/)).toHaveLength(
+        2,
+      );
+      expect(within(metrics).getByText('0.00')).toBeTruthy();
+    } else {
+      expect(
+        await screen.findByText(
+          'Comparison metrics are absent from the candidate registry. Inspect the source report in Strategy Backtest.',
+        ),
+      ).toBeTruthy();
+      expect(screen.queryByLabelText('Source report metrics')).toBeNull();
+    }
+    expect(
+      within(screen.getByTestId('research-evidence-next-step')).getByText(
+        'Independent final validation is missing',
+      ),
+    ).toBeTruthy();
+    expect(
+      fetchMock.mock.calls.some(
+        ([input]) => String(input) === '/api/backtest/results/8',
+      ),
+    ).toBe(true);
+    expect(
+      fetchMock.mock.calls.every(
+        ([, init]) => !init?.method || init.method === 'GET',
+      ),
+    ).toBe(true);
+  },
+);
 
 test.each([
   {
@@ -342,6 +441,103 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+test('authorizes independent validation while account publication remains blocked', async () => {
+  window.matchMedia = vi.fn().mockReturnValue({
+    matches: false,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
+  window.localStorage.setItem('karkinos.locale', 'en');
+  const response = {
+    ...status,
+    simulation_validation_defaults: {
+      enabled: false,
+      initial_cash: '1000000',
+      expires_at: '2027-08-12T16:00:00+08:00',
+      statistical_policy: {
+        decision_checkpoint: '2026-12-12',
+        minimum_observations: 60,
+      },
+    },
+  };
+  const fetchMock = vi.fn(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/shadow-automation/policy') && init?.method === 'PUT') {
+        return jsonResponse(status.policy);
+      }
+      if (url.endsWith('/shadow-automation')) return jsonResponse(response);
+      if (url.endsWith('/api/strategy-promotion/states'))
+        return jsonResponse([]);
+      if (url.endsWith('/automatic-publication-policy')) {
+        return jsonResponse({
+          policy: { enabled: false, generation: null },
+          status: 'disabled',
+          blockers: [],
+          preview_blockers: [
+            'publication_preview_reviewed_fee_checkpoint_not_covered',
+          ],
+          proposed_binding: null,
+          latest_decision: null,
+          usable_current_sources: [],
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    },
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <ShadowResearchPanel />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+  fireEvent.click(
+    await screen.findByLabelText(
+      'Start independent forward validation automatically',
+    ),
+  );
+  expect(
+    (screen.getByLabelText('Simulated capital (CNY)') as HTMLInputElement)
+      .value,
+  ).toBe('1000000');
+  fireEvent.change(screen.getByLabelText('Simulated capital (CNY)'), {
+    target: { value: '500000' },
+  });
+  fireEvent.click(
+    screen.getByText(
+      'I have reviewed the scope above and authorize this research policy.',
+    ),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Save research policy' }));
+  await vi.waitFor(() => {
+    const call = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        String(input).endsWith('/shadow-automation/policy') &&
+        init?.method === 'PUT',
+    );
+    const body = JSON.parse(String(call?.[1]?.body));
+    expect(body.simulation_validation).toMatchObject({
+      enabled: true,
+      initial_cash: '500000',
+      authorization:
+        'authorize_bounded_independent_research_simulation_without_account_publication_trade_or_capital_authority',
+      statistical_policy: { decision_checkpoint: '2026-12-12' },
+    });
+  });
+  expect(
+    fetchMock.mock.calls.some(
+      ([input, init]) =>
+        String(input).includes('/automatic-publication-policy') &&
+        init?.method === 'PUT',
+    ),
+  ).toBe(false);
+});
+
 test('keeps unavailable automated research separate from paused policy and zero usage, then retries the read', async () => {
   window.matchMedia = vi.fn().mockReturnValue({
     matches: false,
@@ -448,7 +644,7 @@ test('shows the next off-peak window and disables manual run during peak', async
   ).toBe(true);
 });
 
-test('renders multiple current candidates as a registry with one inspector', async () => {
+test('selects current candidates with one full evidence inspector', async () => {
   window.matchMedia = vi.fn().mockReturnValue({
     matches: false,
     addEventListener: vi.fn(),
@@ -504,18 +700,30 @@ test('renders multiple current candidates as a registry with one inspector', asy
     </PreferencesProvider>,
   );
 
-  const rows = await screen.findAllByTestId('shadow-research-candidate-row');
-  expect(rows).toHaveLength(5);
+  const selector = await screen.findByRole('combobox', {
+    name: 'Current research candidates',
+  });
+  expect(within(selector).getAllByRole('option')).toHaveLength(5);
   expect(screen.getAllByTestId('shadow-research-candidate')).toHaveLength(1);
+  expect(
+    (screen.getByTestId('research-source-disclosure') as HTMLDetailsElement)
+      .open,
+  ).toBe(false);
+  expect(
+    (screen.getByTestId('research-automation-disclosure') as HTMLDetailsElement)
+      .open,
+  ).toBe(false);
+  expect(
+    within(screen.getByTestId('shadow-research-candidate')).getByRole(
+      'heading',
+      { name: 'Research backtest results' },
+    ),
+  ).toBeTruthy();
   expect(
     screen.getByTestId('shadow-research-candidate-inspector').textContent,
   ).toContain('Candidate hypothesis 5');
 
-  const firstCandidateRow = rows.find(
-    (row) => row.getAttribute('data-candidate-id') === 'candidate-1',
-  );
-  expect(firstCandidateRow).toBeTruthy();
-  fireEvent.click(firstCandidateRow as HTMLElement);
+  fireEvent.change(selector, { target: { value: 'candidate-1' } });
   expect(
     screen.getByTestId('shadow-research-candidate-inspector').textContent,
   ).toContain('Candidate hypothesis 1');
@@ -558,7 +766,7 @@ test('shows old/new OOS evidence and records only an explicit paper-shadow appro
 
   expect(
     await screen.findByRole('heading', {
-      name: 'Automated shadow strategy research',
+      name: 'Research candidates',
     }),
   ).toBeTruthy();
   expect(await screen.findByText('Current baseline')).toBeTruthy();

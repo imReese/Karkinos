@@ -21,14 +21,14 @@
   --app-font-weight-semibold: 600;
   --app-font-weight-title: 700;
   --app-font-weight-brand: 750;
-  --app-font-size-page-title-mobile: 20px;
-  --app-font-size-page-title: 22px;
+  --app-font-size-page-title-mobile: 22px;
+  --app-font-size-page-title: 28px;
   --app-font-size-section-title: 16px;
   --app-font-size-metric: 16px;
   --app-font-size-primary-metric-mobile: 28px;
   --app-font-size-primary-metric: 30px;
   --app-font-size-primary-metric-wide: 32px;
-  --app-font-size-overview-hero: clamp(2.35rem, 3.5vw, 3.65rem);
+  --app-font-size-overview-hero: clamp(2rem, 3vw, 2.5rem);
   --app-font-size-overview-headline: clamp(1.3rem, 1.65vw, 1.75rem);
   --app-font-size-overview-section: 18px;
   --app-font-size-subsection-title: 14px;
@@ -39,8 +39,8 @@
   --app-font-size-public-hero-landscape: clamp(2.4rem, 4.2vw, 3.6rem);
   --app-font-size-public-hero-zh-landscape: clamp(2.2rem, 3.8vw, 3.3rem);
   --app-font-size-public-section-landscape: clamp(2rem, 3.5vw, 3.35rem);
-  --app-line-height-page-title-mobile: 26px;
-  --app-line-height-page-title: 28px;
+  --app-line-height-page-title-mobile: 30px;
+  --app-line-height-page-title: 36px;
   --app-line-height-section-title: 22px;
   --app-line-height-metric: 22px;
   --app-line-height-primary-metric: 32px;
@@ -1297,7 +1297,7 @@ select:is(.app-field, .app-input) option {
 }
 
 .app-workspace-header {
-  padding-bottom: var(--app-space-3);
+  padding-bottom: 16px;
 }
 
 .app-workbench-route {
@@ -2322,9 +2322,8 @@ h3 {
 
 .app-decision-gate-track {
   display: grid;
-  grid-auto-columns: minmax(0, 1fr);
-  grid-auto-flow: column;
-  gap: 8px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px 24px;
   border-bottom: 1px solid var(--app-divider);
   padding: 8px 0 12px;
 }
@@ -2333,48 +2332,11 @@ h3 {
   min-width: 0;
 }
 
-.app-decision-gate-index {
-  display: inline-flex;
-  min-width: 24px;
-  align-items: center;
-  gap: 5px;
-  font-family: var(--app-font-mono);
-  font-size: var(--app-font-size-micro);
-  font-variant-numeric: tabular-nums;
-  line-height: var(--app-line-height-micro);
-  color: var(--app-text-tertiary);
-}
-
-.app-decision-gate-index::before {
-  width: 5px;
-  height: 5px;
-  flex: none;
-  background: var(--app-success-indicator);
-  border-radius: 50%;
-  content: '';
-}
-
-.app-decision-gate-connector {
-  height: 1px;
-  min-width: 0;
-  flex: 1;
-  background: var(--app-divider);
-}
-
-.app-decision-gate-step:last-child .app-decision-gate-connector {
-  display: none;
-}
-
 .app-decision-gate-label {
   display: block;
-  margin-top: 5px;
-  padding-right: 8px;
-  overflow: hidden;
   color: var(--app-text-secondary);
-  font-size: var(--app-font-size-micro);
-  line-height: var(--app-line-height-micro);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: var(--app-font-size-compact);
+  line-height: var(--app-line-height-compact);
 }
 
 .app-operations-command-grid {
@@ -2396,19 +2358,6 @@ h3 {
 
 .app-pilot-readiness-summary::-webkit-details-marker {
   display: none;
-}
-
-.app-ai-research-command-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--app-section-gap);
-  align-items: start;
-}
-
-.app-ai-research-header {
-  flex-direction: column;
-  align-items: stretch;
-  justify-content: flex-start;
 }
 
 .app-ai-research-route-toolbar {
@@ -2436,25 +2385,15 @@ h3 {
     grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   }
 
-  .app-ai-research-command-grid {
-    grid-template-columns: minmax(0, 1fr) minmax(288px, 0.46fr);
-  }
-
-  .app-ai-research-context-strip,
   .app-risk-metric-strip {
     grid-auto-flow: row;
     grid-auto-columns: auto;
-  }
-
-  .app-ai-research-context-strip {
-    grid-template-columns: minmax(0, 1fr);
   }
 
   .app-risk-metric-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .app-ai-research-context-strip .app-metric-strip-item,
   .app-risk-metric-strip .app-metric-strip-item {
     border-right: 0;
     border-bottom: 1px solid var(--app-divider);
@@ -2464,7 +2403,6 @@ h3 {
     border-right: 1px solid var(--app-divider);
   }
 
-  .app-ai-research-context-strip .app-metric-strip-item:last-child,
   .app-risk-metric-strip .app-metric-strip-item:nth-last-child(-n + 2) {
     border-bottom: 0;
   }
@@ -2476,13 +2414,6 @@ h3 {
     white-space: nowrap;
   }
 
-  .app-ai-research-context-strip .app-metric-strip-item > .truncate {
-    overflow: visible;
-    overflow-wrap: anywhere;
-    text-overflow: clip;
-    white-space: normal;
-  }
-
   .app-holding-summary-metrics .app-metric-strip-item > .app-type-label {
     overflow: visible;
     overflow-wrap: anywhere;
@@ -2491,11 +2422,12 @@ h3 {
   }
 
   .app-decision-gate-track {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     padding-block: 8px;
   }
 
   .app-decision-gate-label {
-    display: none;
+    display: block;
   }
 
   .app-operations-attention-list [data-evidence-field='reason'],

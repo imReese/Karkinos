@@ -1,7 +1,7 @@
 export const SHADOW_RESEARCH_COPY = {
   en: {
     kicker: 'Automated AI strategy evolution & after-close research',
-    title: 'Automated shadow strategy research',
+    title: 'Research candidates',
     loading: 'Reading saved automated research…',
     loadFailed: 'Automated research status could not be loaded.',
     retry: 'Retry',
@@ -203,7 +203,7 @@ export const SHADOW_RESEARCH_COPY = {
     loadFailed: '无法读取自动研究状态。',
     retry: '重试',
     kicker: 'AI 策略演化与收盘后研究',
-    title: '自动 shadow 策略研究池',
+    title: '研究候选',
     detail:
       '持久化行情收盘后，Karkinos 使用归一化名义资金与 canonical 估算成本执行 Formula discovery，不要求也不外发 Account Truth、valuation 或 ledger 事实。Formula 校验、成本后回测和 rolling OOS 均留在本地；账户资格仍是后续晋级与执行的独立门禁。',
     disabled: '已暂停',

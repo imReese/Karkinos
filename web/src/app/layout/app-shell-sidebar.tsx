@@ -1,6 +1,7 @@
 import type { RefObject } from 'react';
 
 import { Link } from '@tanstack/react-router';
+import { ChevronLeft, X } from 'lucide-react';
 
 import { KarkinosMark } from '../../shared/ui/brand/karkinos-mark';
 import type { Locale } from '../../shared/preferences/context';
@@ -75,7 +76,7 @@ export function AppShellSidebar({
           aria-label={copy.shell.closeNavigation}
           onClick={onMobileNavClose}
         >
-          ✕
+          <X className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
 
@@ -131,19 +132,10 @@ export function AppShellSidebar({
               : copy.shell.openNavigation
           }
         >
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+          <ChevronLeft
             className="app-nav-icon app-nav-collapse-icon h-4 w-4 shrink-0"
-          >
-            <path d="M15 18l-6-6 6-6" />
-          </svg>
+            aria-hidden="true"
+          />
           <span className="app-nav-copy truncate">
             {copy.shell.closeNavigation}
           </span>

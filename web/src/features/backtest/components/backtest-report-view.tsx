@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react';
+import { ArrowUpRight, ChevronDown } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { useCopy } from '../../../shared/i18n/context';
@@ -247,7 +247,7 @@ function BacktestReportSkeleton({ title }: { title: string }) {
   );
 }
 
-function useSearchReportId(): number | null {
+function useSearchReportId() {
   const [id, setId] = useState<number | null>(() => {
     if (typeof window !== 'undefined' && window.location?.search) {
       const params = new URLSearchParams(window.location.search);
@@ -279,26 +279,24 @@ function useSearchReportId(): number | null {
     return () => window.removeEventListener('popstate', updateFromLocation);
   }, []);
 
-  return id;
+  return [id, setId] as const;
 }
 
-export function BacktestReportView() {
+export function BacktestReportView({
+  view = 'results',
+}: {
+  view?: 'results' | 'observations';
+}) {
   const copy = useCopy();
   const labels = copy.backtest;
   const results = useBacktestResultsQuery();
-  const queryId = useSearchReportId();
-  const [selectedId, setSelectedId] = useState<number | null>(queryId);
+  const [requestedId, setSelectedId] = useSearchReportId();
+  const selectedId = requestedId ?? results.data?.[0]?.id ?? null;
+  const [observationsVisited, setObservationsVisited] = useState(false);
 
   useEffect(() => {
-    if (queryId !== null && results.data?.some((item) => item.id === queryId)) {
-      setSelectedId(queryId);
-      return;
-    }
-    if (selectedId !== null || !results.data?.length) {
-      return;
-    }
-    setSelectedId(results.data[0].id);
-  }, [results.data, selectedId, queryId]);
+    if (view === 'observations') setObservationsVisited(true);
+  }, [view]);
 
   const report = useBacktestResultQuery(selectedId);
   const selectedSummary = useMemo(
@@ -341,56 +339,106 @@ export function BacktestReportView() {
         : 'neutral';
 
   return (
-    <div data-backtest-report-workspace="saved-evidence" className="space-y-4">
-      <ResultSelector
-        results={results.data}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-      />
-
-      {selectedSummary ? (
-        <section
-          aria-label={labels.selection.selectedReport}
-          className="border-b border-[var(--app-divider)] pb-3"
-          data-testid="backtest-selected-report-context"
-        >
-          <h3 className="text-sm font-semibold text-[var(--app-text)]">
-            {labels.selection.selectedReport} #{selectedSummary.id}
-          </h3>
-          <dl className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-xs">
-            <div className="flex min-w-0 gap-2">
-              <dt className="shrink-0 text-[var(--app-text-tertiary)]">
-                {labels.page.strategy}
-              </dt>
-              <dd className="min-w-0 break-words text-[var(--app-text)]">
-                {formatStrategyDisplayName(
-                  {
-                    name:
-                      report.data?.config.strategy ?? selectedSummary.strategy,
-                  },
-                  labels.page.strategyNames,
-                )}
-              </dd>
+    <div
+      data-backtest-report-workspace="saved-evidence"
+      className="min-w-0 space-y-6"
+    >
+      <header className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        {selectedSummary ? (
+          <section
+            aria-label={labels.selection.selectedReport}
+            className="min-w-0"
+            data-testid="backtest-selected-report-context"
+          >
+            <div className="flex items-center gap-2">
+              <h2 className="app-type-section-title text-[var(--app-text)]">
+                {labels.selection.selectedReport} #{selectedSummary.id}
+              </h2>
+              <a
+                aria-label={labels.page.reportPermalink}
+                className="inline-flex size-9 shrink-0 items-center justify-center text-[var(--app-text-secondary)] hover:text-[var(--app-accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--app-focus-ring)]"
+                href={`/backtest?id=${selectedSummary.id}`}
+              >
+                <ArrowUpRight aria-hidden="true" className="size-4" />
+              </a>
             </div>
-            {report.data ? (
+            <dl className="mt-1 flex flex-wrap gap-x-6 gap-y-2 text-xs">
               <div className="flex min-w-0 gap-2">
-                <dt className="shrink-0 text-[var(--app-text-tertiary)]">
-                  {labels.page.runContextInstrument}
-                </dt>
-                <dd className="min-w-0 break-words font-mono text-[var(--app-text)]">
-                  {(report.data.config.assets?.length
-                    ? report.data.config.assets
-                    : report.data.metrics_json?.dataset_snapshot
-                        ?.symbol_universe
-                  )
-                    ?.map((asset) => asset.symbol)
-                    .join(', ') || labels.page.notDeclared}
+                <dt className="sr-only">{labels.page.strategy}</dt>
+                <dd className="min-w-0 break-words font-medium text-[var(--app-text)]">
+                  {formatStrategyDisplayName(
+                    {
+                      name:
+                        report.data?.config.strategy ??
+                        selectedSummary.strategy,
+                    },
+                    labels.page.strategyNames,
+                  )}
                 </dd>
               </div>
-            ) : null}
-          </dl>
-        </section>
-      ) : null}
+              {report.data ? (
+                <>
+                  <div className="flex min-w-0 gap-2">
+                    <dt className="sr-only">
+                      {labels.page.runContextInstrument}
+                    </dt>
+                    <dd className="min-w-0 break-words font-mono text-[var(--app-text-secondary)]">
+                      {(report.data.config.assets?.length
+                        ? report.data.config.assets
+                        : report.data.metrics_json?.dataset_snapshot
+                            ?.symbol_universe
+                      )
+                        ?.map((asset) => asset.symbol)
+                        .join(', ') || labels.page.notDeclared}
+                    </dd>
+                  </div>
+                  <div className="flex min-w-0 flex-wrap gap-x-2 gap-y-1">
+                    <dt className="text-[var(--app-text-tertiary)]">
+                      {report.data.metrics_json?.execution_window
+                        ? labels.page.evaluatedInterval
+                        : labels.page.configuredInterval}
+                    </dt>
+                    <dd className="tabular-nums text-[var(--app-text-secondary)]">
+                      {report.data.metrics_json?.execution_window
+                        ? report.data.metrics_json.execution_window
+                            .metric_start_date &&
+                          report.data.metrics_json.execution_window
+                            .metric_end_date
+                          ? `${report.data.metrics_json.execution_window.metric_start_date} → ${report.data.metrics_json.execution_window.metric_end_date}`
+                          : labels.page.notDeclared
+                        : `${report.data.config.start_date} → ${report.data.config.end_date}`}
+                    </dd>
+                  </div>
+                </>
+              ) : null}
+            </dl>
+          </section>
+        ) : null}
+        <details
+          className="relative min-w-0 shrink-0 self-start"
+          data-testid="backtest-report-selector-disclosure"
+        >
+          <summary className="app-button-secondary flex min-h-9 cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
+            {labels.page.savedReports}
+            <span className="tabular-nums text-[var(--app-text-tertiary)]">
+              {results.data.length}
+            </span>
+            <ChevronDown aria-hidden="true" className="size-3.5" />
+          </summary>
+          <div className="mt-3 w-[min(900px,calc(100vw-3rem))] max-w-full border border-[var(--app-divider)] bg-[var(--app-surface)] p-4 sm:absolute sm:right-0 sm:top-full sm:z-20 sm:max-w-none">
+            <ResultSelector
+              results={results.data}
+              selectedId={selectedId}
+              onSelect={(id) => {
+                setSelectedId(id);
+                const url = new URL(window.location.href);
+                url.searchParams.set('id', String(id));
+                window.history.replaceState(window.history.state, '', url);
+              }}
+            />
+          </div>
+        </details>
+      </header>
 
       {selectedSummary && !report.data ? (
         <MetricStrip
@@ -436,55 +484,73 @@ export function BacktestReportView() {
         />
       ) : report.data ? (
         <>
-          <ResearchObservationsPanel
-            key={report.data.id}
-            report={report.data}
-          />
-          <EquityDrawdownChart
-            fills={report.data.fills ?? []}
-            points={report.data.equity_curve}
-          />
-          <MetricsGrid report={report.data} />
-          <BacktestCostEvidencePanel report={report.data} />
-          <CashDividendAccountingPanel
-            accounting={report.data.metrics_json?.cash_dividend_accounting}
-          />
-          <div className="space-y-3">
-            <ReportDisclosure
-              detail={labels.validationEvidence.subtitle}
-              kicker={labels.validationEvidence.kicker}
-              testId="backtest-validation-disclosure"
-              title={labels.validationEvidence.title}
-            >
-              <ValidationEvidencePanel report={report.data} />
-            </ReportDisclosure>
-            <ReportDisclosure
-              detail={labels.datasetSnapshot.subtitle}
-              kicker={labels.datasetSnapshot.kicker}
-              testId="backtest-dataset-disclosure"
-              title={labels.datasetSnapshot.title}
-            >
-              <DatasetSnapshotPanel report={report.data} />
-            </ReportDisclosure>
-            <ReportDisclosure
-              detail={labels.strategySnapshot.subtitle}
-              kicker={labels.strategySnapshot.kicker}
-              testId="backtest-strategy-evidence-disclosure"
-              title={labels.strategySnapshot.title}
-            >
-              <div className="space-y-5 [&>[data-backtest-report-section]]:border-t-0 [&>[data-backtest-report-section]]:pt-0 [&>[data-backtest-report-section]>:first-child]:hidden">
-                <StrategyMetadataSnapshotPanel report={report.data} />
-                <StrategyHypothesisPanel report={report.data} />
-              </div>
-            </ReportDisclosure>
-            <ReportDisclosure
-              detail={labels.fills.rows(report.data.fills?.length ?? 0)}
-              kicker={labels.fills.kicker}
-              testId="backtest-fills-disclosure"
-              title={labels.fills.title}
-            >
-              <FillsTable fills={report.data.fills ?? []} />
-            </ReportDisclosure>
+          <div
+            hidden={view !== 'observations'}
+            className="min-w-0 space-y-4"
+            data-testid="backtest-forward-workspace"
+          >
+            <p className="app-muted max-w-3xl text-sm leading-6">
+              {labels.page.observationsDetail}
+            </p>
+            {observationsVisited || view === 'observations' ? (
+              <ResearchObservationsPanel
+                key={report.data.id}
+                report={report.data}
+              />
+            ) : null}
+          </div>
+          <div
+            hidden={view !== 'results'}
+            className="min-w-0 space-y-6"
+            data-testid="backtest-financial-results"
+          >
+            <MetricsGrid report={report.data} variant="primary" />
+            <EquityDrawdownChart
+              fills={report.data.fills ?? []}
+              points={report.data.equity_curve}
+            />
+            <MetricsGrid report={report.data} variant="secondary" />
+            <BacktestCostEvidencePanel report={report.data} />
+            <CashDividendAccountingPanel
+              accounting={report.data.metrics_json?.cash_dividend_accounting}
+            />
+            <div className="space-y-3">
+              <ReportDisclosure
+                detail={labels.validationEvidence.subtitle}
+                kicker={labels.validationEvidence.kicker}
+                testId="backtest-validation-disclosure"
+                title={labels.validationEvidence.title}
+              >
+                <ValidationEvidencePanel report={report.data} />
+              </ReportDisclosure>
+              <ReportDisclosure
+                detail={labels.datasetSnapshot.subtitle}
+                kicker={labels.datasetSnapshot.kicker}
+                testId="backtest-dataset-disclosure"
+                title={labels.datasetSnapshot.title}
+              >
+                <DatasetSnapshotPanel report={report.data} />
+              </ReportDisclosure>
+              <ReportDisclosure
+                detail={labels.strategySnapshot.subtitle}
+                kicker={labels.strategySnapshot.kicker}
+                testId="backtest-strategy-evidence-disclosure"
+                title={labels.strategySnapshot.title}
+              >
+                <div className="space-y-5 [&>[data-backtest-report-section]]:border-t-0 [&>[data-backtest-report-section]]:pt-0 [&>[data-backtest-report-section]>:first-child]:hidden">
+                  <StrategyMetadataSnapshotPanel report={report.data} />
+                  <StrategyHypothesisPanel report={report.data} />
+                </div>
+              </ReportDisclosure>
+              <ReportDisclosure
+                detail={labels.fills.rows(report.data.fills?.length ?? 0)}
+                kicker={labels.fills.kicker}
+                testId="backtest-fills-disclosure"
+                title={labels.fills.title}
+              >
+                <FillsTable fills={report.data.fills ?? []} />
+              </ReportDisclosure>
+            </div>
           </div>
         </>
       ) : null}

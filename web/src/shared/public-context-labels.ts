@@ -4,6 +4,11 @@ type LabelMap = Record<string, string>;
 
 export const STATUS_LABELS: Record<Locale, LabelMap> = {
   en: {
+    awaiting_human_approval: 'Awaiting human approval',
+    evaluated_research_only: 'Evaluated for research only',
+    research_blocked: 'Research evidence blocked',
+    failed_closed: 'Failed closed',
+    disabled: 'Disabled',
     all: 'All',
     accepted: 'Accepted',
     acknowledged_no_retry: 'Acknowledged — no retry',
@@ -77,6 +82,11 @@ export const STATUS_LABELS: Record<Locale, LabelMap> = {
       'Strategy attribution review required',
   },
   zh: {
+    awaiting_human_approval: '待人工批准',
+    evaluated_research_only: '仅完成研究评估',
+    research_blocked: '研究证据受阻',
+    failed_closed: '失败并阻断',
+    disabled: '未启用',
     all: '全部',
     accepted: '已接受',
     acknowledged_no_retry: '已确认不得重试',

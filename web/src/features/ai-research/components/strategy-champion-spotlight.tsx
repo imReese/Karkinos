@@ -26,13 +26,13 @@ export function StrategyChampionSpotlight({
   const checks = candidate?.comparison.promotion_gate.checks;
   const passed = checks?.filter((check) => check.status === 'pass').length;
   return (
-    <section
-      className="min-w-0 border-y border-[var(--app-divider)] py-3"
+    <details
+      className="min-w-0 border-t border-[var(--app-divider)] py-4"
       data-testid="strategy-champion-spotlight"
     >
-      <h3 className="text-sm font-semibold">
+      <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">
         {zh ? '已保存的研究选择' : 'Saved research selection'}
-      </h3>
+      </summary>
       <p className="app-muted mt-1 text-xs leading-5">
         {zh
           ? '研究排名用于选择下一次实验。全范围验证、前向模拟和账户推荐授权分别显示，排名不代替资格。'
@@ -90,6 +90,6 @@ export function StrategyChampionSpotlight({
           ) : null}
         </>
       )}
-    </section>
+    </details>
   );
 }

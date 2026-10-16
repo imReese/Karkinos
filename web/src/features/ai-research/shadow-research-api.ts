@@ -204,6 +204,16 @@ export type ShadowResearchQualificationCandidate = {
     initial_cash: null;
     fee_cost_model_reference: string | null;
     blockers: string[] | null;
+    validation_provenance?: 'reviewed_account_cost_replay';
+  } | null;
+  original_simulation_validation?: {
+    status: string | null;
+    checkpoint: string | null;
+    fee_cost_model_reference: string | null;
+    validation_provenance: 'independent_simulation';
+    modeled_costs: true;
+    initial_cash: null;
+    blockers: string[] | null;
   } | null;
 };
 
@@ -243,6 +253,7 @@ export type ShadowResearchQualificationAttempt = {
 export type ShadowResearchAutomationStatus = {
   schema_version: string;
   runtime_contract?: string;
+  simulation_validation_defaults?: SimulationValidationPolicy;
   policy: {
     schema_version: 'karkinos.ai.shadow_research_policy.v4';
     policy_id: 'ai_shadow_research';
@@ -265,6 +276,7 @@ export type ShadowResearchAutomationStatus = {
     research_question: string;
     updated_by: string;
     authorization_recorded: boolean;
+    simulation_validation?: SimulationValidationPolicy;
     automatic_strategy_replacement_enabled: false;
     broker_submission_enabled: false;
     production_strategy_mutation_enabled: false;
@@ -358,6 +370,19 @@ export type ShadowResearchAutomationStatus = {
   authority_effect: 'research_only';
 };
 
+export type SimulationValidationPolicy = {
+  enabled: boolean;
+  authorization?: string;
+  initial_cash?: string | number;
+  expires_at?: string;
+  statistical_policy?: {
+    decision_checkpoint: string;
+    minimum_observations?: number;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+};
+
 export type ShadowResearchPolicyInput = {
   enabled: boolean;
   after_close_time: string;
@@ -372,6 +397,7 @@ export type ShadowResearchPolicyInput = {
   require_complete_account_evidence: boolean;
   research_question: string;
   updated_by: string;
+  simulation_validation?: SimulationValidationPolicy;
 };
 
 export function useShadowResearchAutomationQuery() {

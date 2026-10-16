@@ -227,8 +227,7 @@ for (const width of [390, 1280]) {
       await route.fulfill({ status: 200, json: payload });
     });
     async function openPanels() {
-      if (width < 1280)
-        await page.getByRole('tab', { name: 'Results and evidence' }).click();
+      await page.getByRole('tab', { name: 'Forward observation' }).click();
       await expect(page.getByTestId('backtest-result-panel')).toBeVisible();
       const observations = page.getByTestId('research-observations-panel');
       await expect(observations).toBeVisible();
@@ -244,6 +243,10 @@ for (const width of [390, 1280]) {
     await page.goto('/backtest');
     await openPanels();
     const panel = page.getByTestId('research-paper-book-panel');
+    await panel
+      .getByTestId('paper-book-start-disclosure')
+      .locator(':scope > summary')
+      .click();
     await expect(
       panel.getByRole('button', { name: 'Create independent paper book' }),
     ).toBeDisabled();
@@ -273,6 +276,10 @@ for (const width of [390, 1280]) {
       'Not settled; initial cash only',
     );
     const observations = page.getByTestId('research-observations-panel');
+    await observations
+      .getByTestId('observation-maintenance-disclosure')
+      .locator(':scope > summary')
+      .click();
     const targetDataset = observations.getByRole('combobox', {
       name: 'Verified dataset for this observation',
       exact: true,
@@ -281,9 +288,17 @@ for (const width of [390, 1280]) {
     await observations
       .getByRole('button', { name: 'Publish targets and measure outcomes' })
       .click();
+    await observations
+      .getByTestId('observation-history-disclosure')
+      .locator(':scope > summary')
+      .click();
     await expect(
       observations.getByText('Decision session · 2026-09-18'),
     ).toBeVisible();
+    await panel
+      .getByTestId('paper-book-maintenance-disclosure')
+      .locator(':scope > summary')
+      .click();
     const dataset = panel.getByRole('combobox', {
       name: 'Formal Dataset for paper settlement',
       exact: true,
@@ -359,6 +374,10 @@ for (const width of [390, 1280]) {
     expect(observation.lifecycle).toBe('active');
     await page.reload();
     await openPanels();
+    await panel
+      .getByTestId('paper-book-maintenance-disclosure')
+      .locator(':scope > summary')
+      .click();
     await expect(panel.getByTestId('paper-book-lifecycle')).toContainText(
       'New target intake stopped',
     );

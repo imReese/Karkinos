@@ -67,13 +67,18 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function chart(data: EquitySeriesPoint[], range: EquityCurveRange = 'all') {
+function chart(
+  data: EquitySeriesPoint[],
+  range: EquityCurveRange = 'all',
+  compact = false,
+) {
   return (
     <PreferencesProvider>
       <OverviewEquityCurve
         points={data}
         range={range}
         onRangeChange={() => undefined}
+        compact={compact}
       />
     </PreferencesProvider>
   );
@@ -163,24 +168,29 @@ test('bridges a genuine missing valuation with a same-color dashed line', () => 
   expect(bridge?.getAttribute('d')?.match(/M/g)).toHaveLength(1);
 });
 
-test('lets overview switch the performance series without changing the time range', async () => {
-  render(chart(points));
-  const user = userEvent.setup();
-  const controls = screen.getByTestId('equity-series-controls');
-  const total = within(controls).getByRole('button', { name: 'Total Assets' });
-  const cash = within(controls).getByRole('button', { name: 'Cash' });
-  expect(total).toHaveAttribute('aria-pressed', 'true');
-  expect(cash).toHaveAttribute('aria-pressed', 'false');
+test.each([false, true])(
+  'lets overview switch the performance series without changing the time range (compact=%s)',
+  async (compact) => {
+    render(chart(points, 'all', compact));
+    const user = userEvent.setup();
+    const controls = screen.getByTestId('equity-series-controls');
+    const total = within(controls).getByRole('button', {
+      name: 'Total Assets',
+    });
+    const cash = within(controls).getByRole('button', { name: 'Cash' });
+    expect(total).toHaveAttribute('aria-pressed', 'true');
+    expect(cash).toHaveAttribute('aria-pressed', 'false');
 
-  await user.click(cash);
+    await user.click(cash);
 
-  expect(total).toHaveAttribute('aria-pressed', 'false');
-  expect(cash).toHaveAttribute('aria-pressed', 'true');
-  expect(screen.getByTestId('equity-chart-frame')).toHaveAttribute(
-    'aria-label',
-    'Cash',
-  );
-});
+    expect(total).toHaveAttribute('aria-pressed', 'false');
+    expect(cash).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('equity-chart-frame')).toHaveAttribute(
+      'aria-label',
+      'Cash',
+    );
+  },
+);
 
 test('year-to-date renders a flat zero baseline before the first account point', () => {
   const ytdPoints: EquitySeriesPoint[] = [

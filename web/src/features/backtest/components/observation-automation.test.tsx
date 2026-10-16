@@ -302,6 +302,14 @@ test('opt-in and disable use saved generations, reload persisted state, and pres
     }
     return json(url.includes('?') ? [saved] : saved);
   });
+  const maintenance = await screen.findByTestId(
+    'observation-maintenance-disclosure',
+  );
+  fireEvent.click(
+    within(maintenance).getByText(
+      'Continue data, publish targets and manage automation',
+    ),
+  );
   const view = await controls();
   expect(view.getByRole('status')).toHaveTextContent('Automatic advance off');
   expect(view.queryByText('Dataset discovery details')).not.toBeInTheDocument();
@@ -449,7 +457,8 @@ test('legacy state and failed refresh cannot imply enabled state; diagnostics re
   const saved = observation();
   delete saved.automation;
   let reads = 0;
-  const fetchMock = mount(async () => {
+  const fetchMock = mount(async (url) => {
+    if (url.endsWith('/paper-book')) return json(null);
     reads++;
     if (reads === 2) return json({ detail: 'unavailable' }, 503);
     if (reads > 2)
@@ -464,6 +473,14 @@ test('legacy state and failed refresh cannot imply enabled state; diagnostics re
       };
     return json([saved]);
   });
+  const maintenance = await screen.findByTestId(
+    'observation-maintenance-disclosure',
+  );
+  fireEvent.click(
+    within(maintenance).getByText(
+      'Continue data, publish targets and manage automation',
+    ),
+  );
   const view = await controls();
   expect(view.getByRole('status')).toHaveTextContent(
     'unavailable in this response',

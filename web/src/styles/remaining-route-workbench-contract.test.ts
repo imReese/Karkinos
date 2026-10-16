@@ -192,7 +192,6 @@ describe('remaining route workbench contract', () => {
 
   it('keeps primary route sections on the semantic 18px title role', () => {
     expect(ACTIVITY_FEED).toContain('app-type-section-title mt-2');
-    expect(AI_RESEARCH).toContain('app-type-section-title');
     expect(BACKTEST).toContain('app-type-section-title mt-1');
     expect(ACCOUNT_TRUTH).toContain('app-type-section-title');
     expect(HOLDING_DETAIL).toContain(
@@ -251,11 +250,11 @@ describe('remaining route workbench contract', () => {
     expect(CSS).toContain(
       "[data-workbench-route='ai-research'] .app-ai-research-boundary",
     );
-    expect(CSS).toMatch(
-      /min-width:\s*1280px[\s\S]*\.app-ai-research-command-grid\s*{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(288px,\s*0\.46fr\)/,
+    expect(AI_RESEARCH.indexOf('<ShadowResearchPanel')).toBeLessThan(
+      AI_RESEARCH.indexOf('data-testid="ai-research-context-metrics"'),
     );
-    expect(CSS).toMatch(
-      /\.app-ai-research-context-strip\s*{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+    expect(AI_RESEARCH).toMatch(
+      /<details[\s\S]*data-testid="ai-research-context-metrics"/,
     );
     expect(CSS).toMatch(
       /\.app-risk-metric-strip \.app-type-label\.truncate\s*{[\s\S]*overflow-wrap:\s*anywhere;[\s\S]*text-overflow:\s*clip;[\s\S]*white-space:\s*normal;/,
@@ -665,38 +664,10 @@ describe('remaining route workbench contract', () => {
     );
   });
 
-  it('keeps the current backtest workspace flat and separates PnL from system danger', () => {
-    const currentWorkspace = BACKTEST.slice(
-      BACKTEST.indexOf('export function BacktestPage'),
-      BACKTEST.indexOf('function BacktestResponsiveDisclosure'),
-    );
-    const strategyMetadata = BACKTEST.slice(
-      BACKTEST.indexOf('function StrategyMetadataPanel'),
-      BACKTEST.indexOf('function formatMetadataList'),
-    );
+  it('keeps backtest financial PnL distinct from system danger', () => {
     const summaryValue = BACKTEST.slice(
       BACKTEST.indexOf('function SummaryValue'),
     );
-
-    expect(currentWorkspace).toContain(
-      'data-testid="backtest-primary-workbench"',
-    );
-    expect(currentWorkspace).toContain(
-      'data-testid="backtest-run-setup-disclosure"',
-    );
-    expect(currentWorkspace).toContain('useBacktestResultsQuery()');
-    expect(currentWorkspace).toContain('labels.resultsWorkspaceTab');
-    expect(currentWorkspace).toContain(
-      'data-testid="backtest-persisted-evidence"',
-    );
-    expect(currentWorkspace).toContain('<StatusBadge tone="warning">');
-    expect(currentWorkspace).toContain('rounded-[var(--app-radius-control)]');
-    expect(currentWorkspace).not.toContain('rounded-2xl');
-    expect(currentWorkspace).not.toContain('rounded-3xl');
-    expect(currentWorkspace).not.toContain('backdrop-blur');
-    expect(currentWorkspace).not.toMatch(/shadow-\[0_/);
-    expect(strategyMetadata).not.toContain('rounded-2xl');
-    expect(strategyMetadata).not.toContain('rounded-xl');
     expect(summaryValue).toContain('var(--app-pnl-negative)');
     expect(summaryValue).not.toContain('var(--app-danger)');
   });

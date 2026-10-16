@@ -41,9 +41,8 @@ test('keeps canonical context neutral until persisted queries settle', async () 
   );
 
   const metrics = screen.getByTestId('ai-research-context-metrics');
-  expect(metrics.querySelector('h2')?.className).toContain(
-    'app-type-section-title',
-  );
+  expect(metrics.tagName).toBe('DETAILS');
+  expect((metrics as HTMLDetailsElement).open).toBe(false);
   const checking = await screen.findAllByText('Checking');
   expect(checking).toHaveLength(4);
   expect(checking.filter((element) => element.tagName === 'DD')).toHaveLength(
@@ -133,10 +132,11 @@ test('opens the cited research canvas from canonical persisted context', async (
   const primaryCanvas = screen.getByTestId('ai-research-primary-canvas');
   const contextMetrics = screen.getByTestId('ai-research-context-metrics');
   const commandGrid = screen.getByTestId('ai-research-command-grid');
-  expect(commandGrid.className).toContain('app-ai-research-command-grid');
-  expect(contextMetrics.querySelector('dl')?.className).toContain(
-    'app-ai-research-context-strip',
-  );
+  expect(commandGrid.contains(primaryCanvas)).toBe(true);
+  expect(contextMetrics.tagName).toBe('DETAILS');
+  expect((contextMetrics as HTMLDetailsElement).open).toBe(false);
+  fireEvent.click(contextMetrics.querySelector('summary')!);
+  expect((contextMetrics as HTMLDetailsElement).open).toBe(true);
   expect(
     primaryCanvas.compareDocumentPosition(contextMetrics) &
       Node.DOCUMENT_POSITION_FOLLOWING,

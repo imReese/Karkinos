@@ -35,9 +35,11 @@ function formatNumber(value: unknown) {
 export function MetricsGrid({
   report,
   compact = false,
+  variant = 'all',
 }: {
   report: BacktestReport;
   compact?: boolean;
+  variant?: 'all' | 'primary' | 'secondary';
 }) {
   const labels = useCopy().backtest.metrics;
   const { locale } = usePreferences();
@@ -138,17 +140,24 @@ export function MetricsGrid({
       data-backtest-report-section="metrics"
       className="grid min-w-0 gap-2"
     >
-      <BacktestExecutionWindowPanel report={report} />
-      <MetricStrip
-        ariaLabel={`${labels.totalReturn} · ${labels.maxDrawdown}`}
-        className={`app-backtest-evidence-strip ${compact ? 'sm:grid-flow-row sm:grid-cols-2 [&>div:nth-child(even)]:border-r-0 [&>div:nth-child(-n+2)]:border-b [&>div]:border-[var(--app-divider)]' : ''}`}
-        items={metricStripItems.slice(0, 4)}
-      />
-      <MetricStrip
-        ariaLabel={`${labels.volatility} · ${labels.totalSlippage}`}
-        className={`app-backtest-evidence-strip ${compact ? 'sm:grid-flow-row sm:grid-cols-2 [&>div:nth-child(even)]:border-r-0 [&>div:nth-child(-n+2)]:border-b [&>div]:border-[var(--app-divider)]' : ''}`}
-        items={metricStripItems.slice(4)}
-      />
+      {variant !== 'primary' ? (
+        <BacktestExecutionWindowPanel report={report} />
+      ) : null}
+      {variant !== 'secondary' ? (
+        <MetricStrip
+          ariaLabel={`${labels.totalReturn} · ${labels.maxDrawdown}`}
+          className={`app-backtest-evidence-strip grid-cols-2 sm:grid-cols-4 ${compact ? 'sm:grid-flow-row sm:grid-cols-2 [&>div:nth-child(even)]:border-r-0 [&>div:nth-child(-n+2)]:border-b [&>div]:border-[var(--app-divider)]' : ''}`}
+          prominent={variant === 'primary'}
+          items={metricStripItems.slice(0, 4)}
+        />
+      ) : null}
+      {variant !== 'primary' ? (
+        <MetricStrip
+          ariaLabel={`${labels.volatility} · ${labels.totalSlippage}`}
+          className={`app-backtest-evidence-strip grid-cols-2 sm:grid-cols-4 ${compact ? 'sm:grid-flow-row sm:grid-cols-2 [&>div:nth-child(even)]:border-r-0 [&>div:nth-child(-n+2)]:border-b [&>div]:border-[var(--app-divider)]' : ''}`}
+          items={metricStripItems.slice(4)}
+        />
+      ) : null}
     </section>
   );
 }

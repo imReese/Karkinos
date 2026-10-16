@@ -17,44 +17,47 @@ export const MARKET_ROUTE = '/market';
 
 export const NAVIGATION_GROUPS = [
   {
-    key: 'monitor',
-    label: { en: 'Monitor', zh: '监控' },
+    key: 'portfolio',
+    label: { en: 'Investment', zh: '投资工作台' },
     items: [
       { to: OVERVIEW_ROUTE, key: 'overview', icon: OverviewNavIcon },
       { to: '/portfolio', key: 'portfolio', icon: PortfolioNavIcon },
+      { to: '/decision', key: 'decision', icon: DecisionNavIcon },
+      { to: '/risk', key: 'risk', icon: RiskNavIcon },
+    ],
+  },
+  {
+    key: 'research',
+    label: { en: 'Research & validation', zh: '研究与验证' },
+    items: [
+      { to: '/ai-research', key: 'aiResearch', icon: AiResearchNavIcon },
+      { to: '/backtest', key: 'backtest', icon: BacktestNavIcon },
       { to: MARKET_ROUTE, key: 'market', icon: MarketNavIcon },
     ],
   },
   {
-    key: 'decide',
-    label: { en: 'Decide', zh: '研判' },
-    items: [
-      { to: '/decision', key: 'decision', icon: DecisionNavIcon },
-      { to: '/risk', key: 'risk', icon: RiskNavIcon },
-      { to: '/ai-research', key: 'aiResearch', icon: AiResearchNavIcon },
-      { to: '/backtest', key: 'backtest', icon: BacktestNavIcon },
-    ],
-  },
-  {
     key: 'execute',
-    label: { en: 'Execute', zh: '执行与审计' },
+    label: { en: 'Execution & records', zh: '执行与记录' },
     items: [
       { to: '/trading', key: 'trading', icon: TradingNavIcon },
-      { to: '/operations', key: 'operations', icon: OperationsNavIcon },
       { to: '/activity', key: 'activity', icon: ActivityNavIcon },
     ],
   },
   {
     key: 'system',
     label: { en: 'System', zh: '系统' },
-    items: [{ to: '/settings', key: 'settings', icon: SettingsNavIcon }],
+    items: [
+      { to: '/operations', key: 'operations', icon: OperationsNavIcon },
+      { to: '/settings', key: 'settings', icon: SettingsNavIcon },
+    ],
   },
 ] as const;
 
 export const MOBILE_PRIMARY_ITEMS = [
   NAVIGATION_GROUPS[0].items[0],
-  NAVIGATION_GROUPS[0].items[1],
   NAVIGATION_GROUPS[1].items[0],
+  NAVIGATION_GROUPS[0].items[1],
+  NAVIGATION_GROUPS[0].items[2],
 ] as const;
 
 export function isNavigationItemActive(pathname: string, target: string) {

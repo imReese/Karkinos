@@ -28,13 +28,13 @@ export function ResearchCandidateDefinition({
   const validation = candidate.comparison.deployment_validation;
   return (
     <section
-      className="mt-3 min-w-0 border-t border-[var(--app-divider)] pt-3 text-xs"
+      className="min-w-0 text-xs"
       data-testid="research-candidate-definition"
     >
       <h4 className="font-semibold">
         {zh ? '策略来源与验证范围' : 'Strategy source and validation scope'}
       </h4>
-      <dl className="mt-2 grid gap-2 sm:grid-cols-2">
+      <dl className="mt-4 grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
         <div>
           <dt className="app-muted">
             {zh ? '实际生成模型' : 'Recorded generation model'}

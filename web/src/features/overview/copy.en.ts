@@ -53,7 +53,9 @@ export const overviewCopyEn = {
   },
   dashboard: {
     equityPanel: 'Portfolio value',
-    equityCurve: 'Equity Curve',
+    equityCurve: 'Account value',
+    valueCurveBasis:
+      'Account value reflects deposits, withdrawals, and investment changes. This is not a cash-flow-adjusted investment return.',
     returnCalendar: 'Return Calendar',
     dataTrust: 'Data trust / system status',
     valuationCoverage: 'Valuation coverage',

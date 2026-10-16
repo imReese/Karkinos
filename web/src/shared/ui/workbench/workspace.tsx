@@ -46,7 +46,7 @@ export function WorkspaceHeader({
     <header
       data-workbench-primitive="workspace-header"
       className={cn(
-        'app-workspace-header flex min-w-0 flex-col gap-2 border-b border-[var(--app-divider)] sm:flex-row sm:items-start sm:justify-between',
+        'app-workspace-header flex min-w-0 flex-col gap-3 border-b border-[var(--app-divider)] sm:flex-row sm:items-center sm:justify-between sm:gap-6',
         className,
       )}
     >
@@ -56,7 +56,7 @@ export function WorkspaceHeader({
         ) : null}
         <h1 className="app-workspace-title">{title}</h1>
         {description ? (
-          <p className="app-workspace-description mt-0.5 max-w-4xl">
+          <p className="app-workspace-description mt-1 max-w-3xl">
             {description}
           </p>
         ) : null}
@@ -87,10 +87,12 @@ export function MetricStrip({
   items,
   ariaLabel,
   className,
+  prominent = false,
 }: {
   items: ReadonlyArray<MetricStripItem>;
   ariaLabel: string;
   className?: string;
+  prominent?: boolean;
 }) {
   return (
     <dl
@@ -111,7 +113,8 @@ export function MetricStrip({
           </dt>
           <dd
             className={cn(
-              'app-type-metric mt-0.5 truncate tabular-nums',
+              'mt-0.5 truncate tabular-nums',
+              prominent ? 'app-type-primary-metric' : 'app-type-metric',
               METRIC_TONE_CLASSES[item.tone ?? 'neutral'],
             )}
           >

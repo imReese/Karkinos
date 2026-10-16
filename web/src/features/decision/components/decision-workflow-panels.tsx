@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
+import { ArrowUpRight } from 'lucide-react';
 import { handleClientNavigation } from '../../../shared/routing/client-navigate';
-import { ExceptionList, StatusBadge } from '../../../shared/ui/workbench';
+import { StatusBadge } from '../../../shared/ui/workbench';
 import { useCopy } from '../../../shared/i18n/context';
 import {
   usePreferences,
@@ -34,12 +35,13 @@ export function DecisionNextActionGuidePanel({
   return (
     <section
       data-testid="decision-next-action-guide"
-      className="min-w-0 space-y-2"
+      className="app-decision-next-action min-w-0 border-l-2 border-[var(--app-accent)] bg-[var(--app-surface)] px-4 py-4 sm:px-6 sm:py-5"
+      aria-labelledby="decision-next-action-title"
     >
-      <div className="flex min-h-11 items-center justify-between gap-3 border-y border-[var(--app-divider)] py-2.5">
-        <h2 className="text-sm font-semibold text-[var(--app-text)]">
+      <div className="flex items-center justify-between gap-3">
+        <span className="app-type-label font-semibold text-[var(--app-text-secondary)]">
           {labels.nextActionKicker}
-        </h2>
+        </span>
         <StatusBadge
           tone={
             guide.status === '通过' || guide.status === 'Passed'
@@ -50,40 +52,40 @@ export function DecisionNextActionGuidePanel({
           {guide.status}
         </StatusBadge>
       </div>
-      <ExceptionList
-        ariaLabel={labels.nextActionKicker}
-        density="compact"
-        emptyState={labels.workflowDetail}
-        labels={{
-          reason: locale === 'zh' ? '阻断原因' : 'Reason',
-          unblockCondition: locale === 'zh' ? '解除条件' : 'Unblock condition',
-          nextAction: locale === 'zh' ? '安全下一步' : 'Safe next step',
-          evidence: locale === 'zh' ? '证据' : 'Evidence',
-        }}
-        items={[
-          {
-            id: 'primary-decision-action',
-            severity: 'warning',
-            statusLabel: guide.status,
-            title: guide.title,
-            reason: guide.reason,
-            unblockCondition: guide.unblockCondition,
-            nextAction:
-              guide.href && guide.cta ? (
-                <a
-                  className="font-semibold text-[var(--app-accent)] underline decoration-transparent underline-offset-2 hover:decoration-current"
-                  href={guide.href}
-                  onClick={(e) => handleClientNavigation(e, guide.href!)}
-                >
-                  {guide.cta}
-                </a>
-              ) : (
-                guide.unblockCondition
-              ),
-            evidence: guide.note,
-          },
-        ]}
-      />
+      <div className="mt-2 flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 max-w-3xl">
+          <h2
+            id="decision-next-action-title"
+            className="text-xl font-semibold leading-7 tracking-tight text-[var(--app-text)] sm:text-2xl sm:leading-8"
+          >
+            {guide.title}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-[var(--app-text-secondary)]">
+            {guide.reason}
+          </p>
+        </div>
+        {guide.href && guide.cta ? (
+          <a
+            className="app-button-primary inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-[var(--app-radius-control)] px-4 py-2 text-sm font-semibold"
+            href={guide.href}
+            onClick={(event) => handleClientNavigation(event, guide.href!)}
+          >
+            {guide.cta}
+            <ArrowUpRight className="size-4 shrink-0" aria-hidden="true" />
+          </a>
+        ) : null}
+      </div>
+      <div className="mt-4 border-t border-[var(--app-divider)] pt-3 text-xs leading-5 text-[var(--app-text-secondary)]">
+        <span className="mr-2 font-medium text-[var(--app-text)]">
+          {locale === 'zh' ? '解除条件' : 'Unblock condition'}
+        </span>
+        {guide.unblockCondition}
+        {guide.note &&
+        guide.note !== guide.reason &&
+        guide.note !== guide.unblockCondition ? (
+          <p className="mt-1 text-[var(--app-text-tertiary)]">{guide.note}</p>
+        ) : null}
+      </div>
     </section>
   );
 }

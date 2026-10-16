@@ -40,6 +40,7 @@ export function PortfolioCurrentHoldingsSection({
     >
       <SectionHeader
         title={copy.portfolio.currentHoldings.title}
+        meta={`${model.filteredPositions.length} / ${model.portfolioPositions.length}`}
         description={
           <span className="sr-only">
             {copy.portfolio.currentHoldings.detail}
@@ -69,11 +70,6 @@ export function PortfolioCurrentHoldingsSection({
           sortBy={state.sortBy}
           sortDirection={state.sortDirection}
           onSortByChange={actions.onSortByChange}
-          summary={`${copy.portfolio.currentHoldingsCount(
-            model.portfolioPositions.length,
-          )} · ${copy.portfolio.filteredHoldingsCount(
-            model.filteredPositions.length,
-          )}`}
         />
       ) : null}
 

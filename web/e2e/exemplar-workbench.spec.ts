@@ -1,5 +1,9 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { installOverviewFixture, overviewFixture } from './overview-fixture';
+import {
+  candidateSourceReport,
+  researchStatus,
+} from '../test-fixtures/shadow-observations';
 
 const overviewAcceptanceViewports = [
   { width: 1440, height: 900 },
@@ -415,8 +419,9 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
   expect(overviewPerformanceBox.y).toBeLessThan(overviewHoldingsBox.y);
   expect(overviewHoldingsBox.y).toBeLessThan(overviewAllocationRiskBox.y);
   if (overviewResearchActionsBox) {
-    expect(overviewAllocationRiskBox.y).toBeLessThan(
-      overviewResearchActionsBox.y,
+    expect(overviewHoldingsBox.y).toBeLessThan(overviewResearchActionsBox.y);
+    expect(overviewResearchActionsBox.y).toBeLessThan(
+      overviewAllocationRiskBox.y,
     );
   }
   expect(
@@ -479,17 +484,20 @@ test('exemplar pages keep one evidence-first desktop reading path', async ({
 
   await page.goto('/backtest');
   const primaryResearch = page.getByTestId('backtest-primary-workbench');
-  const parameterPanel = page.getByTestId('backtest-parameter-panel');
-  const resultPanel = page.getByTestId('backtest-result-panel');
-  const strategyDetail = page.getByTestId(
-    'backtest-strategy-detail-disclosure',
-  );
+  const tabs = page.getByTestId('backtest-mobile-workspace-tabs');
   await expect(primaryResearch).toBeVisible();
-  await expect(strategyDetail).not.toHaveAttribute('open', '');
-  expect((await resultPanel.boundingBox())!.x).toBeLessThan(
-    (await parameterPanel.boundingBox())!.x,
-  );
-  await expect(page.getByTestId('backtest-mobile-workspace-tabs')).toBeHidden();
+  await expect(tabs).toBeVisible();
+  await tabs
+    .getByRole('tab', { name: /Results and evidence|结果与证据/ })
+    .click();
+  await expect(page.getByTestId('backtest-result-panel')).toBeVisible();
+  await expect(page.getByTestId('backtest-run-setup-disclosure')).toBeHidden();
+  await tabs.getByRole('tab', { name: /New backtest|新建回测/ }).click();
+  await expect(page.getByTestId('backtest-parameter-panel')).toBeVisible();
+  await expect(page.getByTestId('backtest-result-panel')).toBeHidden();
+  await expect(
+    page.getByTestId('backtest-strategy-detail-disclosure'),
+  ).not.toHaveAttribute('open', '');
 });
 
 test('overview prioritizes account value, performance, holdings and risk across all viewports', async ({
@@ -516,6 +524,9 @@ test('overview prioritizes account value, performance, holdings and risk across 
     const recommendation = (await page
       .getByTestId('overview-strategy-recommendation')
       .boundingBox())!;
+    const attention = (await page
+      .getByTestId('overview-attention-area')
+      .boundingBox())!;
     const overflow = await page.evaluate(() => {
       const content = document.querySelector(
         '.app-shell-content',
@@ -535,12 +546,13 @@ test('overview prioritizes account value, performance, holdings and risk across 
     expect(holdings.y).toBeGreaterThanOrEqual(
       performance.y + performance.height,
     );
-    expect(allocationRisk.y).toBeGreaterThanOrEqual(
-      holdings.y + holdings.height,
-    );
-    expect(recommendation.y).toBeGreaterThanOrEqual(performance.y);
+    expect(attention.y).toBeGreaterThanOrEqual(holdings.y + holdings.height);
+    expect(recommendation.y).toBeGreaterThanOrEqual(attention.y);
     expect(recommendation.y).toBeLessThanOrEqual(
-      performance.y + performance.height,
+      attention.y + attention.height,
+    );
+    expect(allocationRisk.y).toBeGreaterThanOrEqual(
+      attention.y + attention.height,
     );
     expect(
       Math.abs(performance.x - holdings.x),
@@ -555,6 +567,9 @@ test('overview prioritizes account value, performance, holdings and risk across 
     await expect(page.getByTestId('overview-data-status')).toHaveCount(0);
     await expect(page.getByTestId('overview-data-trust')).toHaveCount(0);
     await expect(page.getByTestId('overview-today-queue')).toHaveCount(0);
+    await expect(page.getByTestId('overview-value-curve-basis')).toContainText(
+      'not a cash-flow-adjusted investment return',
+    );
   }
 });
 
@@ -613,11 +628,19 @@ test('tablet evidence copy and kill-switch controls use the available width', as
   await expect(killSwitch).not.toHaveAttribute('open', '');
 });
 
-test('backtest preserves result-first evidence and complete metrics across all acceptance viewports', async ({
+test('backtest keeps saved results primary and preserves drafts across its three workspaces at every viewport', async ({
   page,
 }) => {
   test.setTimeout(60_000);
   await page.setViewportSize(overviewAcceptanceViewports[0]);
+  const writes: string[] = [];
+  page.on('request', (request) => {
+    if (
+      new URL(request.url()).pathname.startsWith('/api/') &&
+      request.method() !== 'GET'
+    )
+      writes.push(request.url());
+  });
   const resultsResponse = page.waitForResponse(
     (response) =>
       response.request().method() === 'GET' &&
@@ -629,166 +652,104 @@ test('backtest preserves result-first evidence and complete metrics across all a
   const savedResults = (await response.json()) as unknown;
   const hasSavedResults =
     Array.isArray(savedResults) && savedResults.length > 0;
-
-  if (hasSavedResults) {
-    await expect(
-      page.locator('[data-backtest-report-section="metrics"]'),
-    ).toBeVisible({ timeout: 15_000 });
-  }
+  const tabs = page.getByTestId('backtest-mobile-workspace-tabs');
+  await expect(tabs).toHaveAttribute(
+    'data-workspace-view',
+    hasSavedResults ? 'results' : 'setup',
+  );
 
   for (const viewport of overviewAcceptanceViewports) {
     await page.setViewportSize(viewport);
-
-    const geometry = await page.evaluate(() => {
-      const content = document.querySelector(
-        '.app-shell-content',
-      ) as HTMLElement;
-      const setup = document.querySelector(
-        '[data-testid="backtest-parameter-panel"]',
-      ) as HTMLElement;
-      const results = document.querySelector(
-        '[data-testid="backtest-result-panel"]',
-      ) as HTMLElement;
-      const tabs = document.querySelector(
-        '[data-testid="backtest-mobile-workspace-tabs"]',
-      ) as HTMLElement;
-      const catalogHeader = document.querySelector(
-        '[data-testid="backtest-strategy-catalog-header"]',
-      ) as HTMLElement;
-      const catalogControl = catalogHeader.querySelector(
-        'label',
-      ) as HTMLElement;
-      const contextText = Array.from(
-        document.querySelectorAll(
-          '.app-backtest-context-strip .app-metric-strip-item > .truncate',
-        ),
+    await expect(tabs).toBeVisible();
+    await tabs
+      .getByRole('tab', { name: /Results and evidence|结果与证据/ })
+      .click();
+    const resultPanel = page.getByTestId('backtest-result-panel');
+    const setupPanel = page.getByTestId('backtest-run-setup-disclosure');
+    await expect(resultPanel).toBeVisible();
+    await expect(setupPanel).toBeHidden();
+    let identity = '';
+    if (hasSavedResults) {
+      const context = page.getByTestId('backtest-selected-report-context');
+      await expect(context).toBeVisible();
+      identity = await context.getByRole('heading').innerText();
+      const financialResults = page.getByTestId('backtest-financial-results');
+      await expect(financialResults).toBeVisible();
+      const primaryMetrics = financialResults
+        .locator('[data-backtest-report-section="metrics"]')
+        .first();
+      await expect(primaryMetrics).toBeVisible();
+      await expect(primaryMetrics.locator('dt')).toHaveCount(4);
+      const chart = financialResults.getByRole('heading', {
+        name: /Equity and drawdown|净值与回撤/,
+      });
+      await expect(chart).toBeVisible();
+      const contextBox = (await context.boundingBox())!;
+      const metricsBox = (await primaryMetrics.boundingBox())!;
+      const chartBox = (await chart.boundingBox())!;
+      expect(contextBox.y, JSON.stringify(viewport)).toBeLessThan(metricsBox.y);
+      expect(metricsBox.y, JSON.stringify(viewport)).toBeLessThan(chartBox.y);
+      const metrics = financialResults.locator(
+        '.app-backtest-evidence-strip .app-metric-strip-item > .truncate',
       );
-      const reportEvidenceText = Array.from(
-        document.querySelectorAll(
-          '.app-backtest-evidence-strip:not(.app-backtest-context-strip) .app-metric-strip-item > .truncate',
-        ),
-      );
-      const readinessEvidence = Array.from(
-        document.querySelectorAll(
-          '[data-testid="backtest-run-readiness-summary"] [title]',
-        ),
-      ) as HTMLElement[];
-      const datasetSnapshot = document.querySelector(
-        '[data-backtest-report-section="dataset-snapshot"]',
-      ) as HTMLElement | null;
-      const datasetSnapshotGrid = (datasetSnapshot?.querySelector(
-        ':scope > .grid',
-      ) ?? null) as HTMLElement | null;
-      const datasetSnapshotValues = datasetSnapshotGrid
-        ? (Array.from(
-            datasetSnapshotGrid.querySelectorAll(':scope > div > div + div'),
-          ) as HTMLElement[])
-        : [];
-      return {
-        contentOverflow: content.scrollWidth - content.clientWidth,
-        catalogColumnCount:
-          getComputedStyle(catalogHeader).gridTemplateColumns.split(' ').length,
-        catalogControlWidth: catalogControl.getBoundingClientRect().width,
-        catalogHeaderWidth: catalogHeader.getBoundingClientRect().width,
-        contextTextResponsive:
-          contextText.length > 0 &&
-          contextText.every((element) => {
+      expect(await metrics.count()).toBeGreaterThan(0);
+      expect(
+        await metrics.evaluateAll((elements) =>
+          elements.every((element) => {
             const style = getComputedStyle(element);
             return (
               style.whiteSpace === 'normal' && style.overflow === 'visible'
             );
           }),
-        documentOverflow:
+        ),
+      ).toBe(true);
+      await expect(page.getByTestId('backtest-forward-workspace')).toBeHidden();
+    }
+    await tabs.getByRole('tab', { name: /New backtest|新建回测/ }).click();
+    await expect(setupPanel).toBeVisible();
+    await expect(resultPanel).toBeHidden();
+    const symbol = setupPanel.getByLabel(/^(Symbol|标的代码)$/);
+    await symbol.fill('600000');
+    await tabs
+      .getByRole('tab', { name: /Results and evidence|结果与证据/ })
+      .click();
+    if (hasSavedResults)
+      await expect(
+        page
+          .getByTestId('backtest-selected-report-context')
+          .getByRole('heading'),
+      ).toHaveText(identity);
+    await tabs.getByRole('tab', { name: /New backtest|新建回测/ }).click();
+    await expect(symbol).toHaveValue('600000');
+    await tabs
+      .getByRole('tab', { name: /Forward observation|前向观察/ })
+      .click();
+    await expect(resultPanel).toBeVisible();
+    await expect(setupPanel).toBeHidden();
+    if (hasSavedResults) {
+      await expect(
+        page.getByTestId('research-observations-panel'),
+      ).toBeVisible();
+      await expect(page.getByTestId('backtest-financial-results')).toBeHidden();
+      await expect(
+        page
+          .getByTestId('backtest-selected-report-context')
+          .getByRole('heading'),
+      ).toHaveText(identity);
+    }
+    await tabs
+      .getByRole('tab', { name: /Results and evidence|结果与证据/ })
+      .click();
+    expect(
+      await page.evaluate(
+        () =>
           document.documentElement.scrollWidth -
           document.documentElement.clientWidth,
-        datasetSnapshotColumnCount:
-          datasetSnapshotGrid === null
-            ? null
-            : getComputedStyle(datasetSnapshotGrid).gridTemplateColumns.split(
-                ' ',
-              ).length,
-        datasetSnapshotTruncationCount: datasetSnapshotValues.filter(
-          (element) => {
-            const style = getComputedStyle(element);
-            return (
-              element.scrollWidth > element.clientWidth + 1 &&
-              (style.textOverflow === 'ellipsis' ||
-                Number.parseInt(style.webkitLineClamp, 10) > 0)
-            );
-          },
-        ).length,
-        resultWidth: results.getBoundingClientRect().width,
-        resultX: results.getBoundingClientRect().x,
-        resultY: results.getBoundingClientRect().y,
-        resultEvidenceUnclipped: reportEvidenceText.every((element) => {
-          const style = getComputedStyle(element);
-          return style.whiteSpace === 'normal' && style.overflow === 'visible';
-        }),
-        readinessEvidenceOverflow: readinessEvidence.reduce(
-          (largest, element) =>
-            Math.max(largest, element.scrollWidth - element.clientWidth),
-          0,
-        ),
-        readinessEvidenceVerticalOverflow: readinessEvidence.reduce(
-          (largest, element) =>
-            Math.max(largest, element.scrollHeight - element.clientHeight),
-          0,
-        ),
-        setupWidth: setup.getBoundingClientRect().width,
-        setupX: setup.getBoundingClientRect().x,
-        tabsVisible: getComputedStyle(tabs).display !== 'none',
-        workspaceView: tabs.dataset.workspaceView,
-      };
-    });
-
-    expect(geometry.documentOverflow, JSON.stringify(viewport)).toBe(0);
-    expect(geometry.contentOverflow, JSON.stringify(viewport)).toBe(0);
-    if (geometry.datasetSnapshotColumnCount !== null) {
-      expect(
-        geometry.datasetSnapshotColumnCount,
-        JSON.stringify(viewport),
-      ).toBe(2);
-      expect(
-        geometry.datasetSnapshotTruncationCount,
-        JSON.stringify(viewport),
-      ).toBe(0);
-    }
-    expect(geometry.contextTextResponsive, JSON.stringify(viewport)).toBe(true);
-    expect(geometry.resultEvidenceUnclipped, JSON.stringify(viewport)).toBe(
-      true,
-    );
-    expect(
-      geometry.readinessEvidenceOverflow,
+      ),
       JSON.stringify(viewport),
-    ).toBeLessThanOrEqual(0);
-    expect(
-      geometry.readinessEvidenceVerticalOverflow,
-      JSON.stringify(viewport),
-    ).toBeLessThanOrEqual(0);
-
-    if (viewport.width >= 1280) {
-      expect(geometry.catalogColumnCount, JSON.stringify(viewport)).toBe(1);
-      expect(
-        Math.abs(geometry.catalogControlWidth - geometry.catalogHeaderWidth),
-        JSON.stringify(viewport),
-      ).toBeLessThanOrEqual(1);
-      expect(geometry.tabsVisible, JSON.stringify(viewport)).toBe(false);
-      expect(geometry.resultX, JSON.stringify(viewport)).toBeLessThan(
-        geometry.setupX,
-      );
-      expect(geometry.resultWidth, JSON.stringify(viewport)).toBeGreaterThan(
-        geometry.setupWidth,
-      );
-    } else {
-      expect(geometry.tabsVisible, JSON.stringify(viewport)).toBe(true);
-      expect(geometry.workspaceView, JSON.stringify(viewport)).toBe(
-        hasSavedResults ? 'results' : 'setup',
-      );
-      if (hasSavedResults) {
-        expect(geometry.resultY, JSON.stringify(viewport)).toBeLessThan(700);
-      }
-    }
+    ).toBeLessThanOrEqual(1);
   }
+  expect(writes).toEqual([]);
 });
 
 test('AI research keeps candidates and saved evidence ahead of task drafts across all acceptance viewports', async ({
@@ -796,6 +757,36 @@ test('AI research keeps candidates and saved evidence ahead of task drafts acros
 }) => {
   test.setTimeout(60_000);
   await page.setViewportSize(overviewAcceptanceViewports[0]);
+  const status = researchStatus(false);
+  status.candidates = [0, 1].map((index) => ({
+    ...status.candidates[0],
+    candidate_id: `synthetic-layout-candidate-${index + 1}`,
+    candidate_result_id: 8 + index,
+    updated_at: `2026-09-16T08:0${index}:00Z`,
+    comparison: {
+      ...status.candidates[0].comparison,
+      economic_hypothesis: `Synthetic candidate hypothesis ${index + 1}`,
+    },
+  }));
+  await page.route('**/api/ai/strategy-research/shadow-automation', (route) =>
+    route.fulfill({ json: status }),
+  );
+  for (const id of [8, 9]) {
+    await page.route(`**/api/backtest/results/${id}`, (route) =>
+      route.fulfill({ json: candidateSourceReport(id) }),
+    );
+  }
+  await page.route('**/api/research-observations?**', (route) =>
+    route.fulfill({ json: [] }),
+  );
+  const writes: string[] = [];
+  page.on('request', (request) => {
+    if (
+      new URL(request.url()).pathname.startsWith('/api/') &&
+      request.method() !== 'GET'
+    )
+      writes.push(`${request.method()} ${request.url()}`);
+  });
   await page.goto('/ai-research');
   const queue = page.locator(
     'section[aria-labelledby="ai-research-queue-title"]',
@@ -805,6 +796,7 @@ test('AI research keeps candidates and saved evidence ahead of task drafts acros
   );
   const primaryCanvas = page.getByTestId('ai-research-primary-canvas');
   const contextMetrics = page.getByTestId('ai-research-context-metrics');
+  const contextSummary = contextMetrics.locator(':scope > summary');
   const workspaceHeader = page.locator(
     '[data-workbench-primitive="workspace-header"]',
   );
@@ -814,6 +806,12 @@ test('AI research keeps candidates and saved evidence ahead of task drafts acros
   });
   const boundaryBadges = page.locator('.app-ai-research-boundary-badges');
   const candidateWorkspace = page.getByTestId('shadow-research-panel');
+  const candidateSelector = page.getByRole('combobox', {
+    name: 'Current research candidates',
+  });
+  const candidateInspector = page.getByTestId(
+    'shadow-research-candidate-inspector',
+  );
   const collapseWorkspace = page.getByRole('button', {
     name: 'Collapse research workspace',
     exact: true,
@@ -822,6 +820,8 @@ test('AI research keeps candidates and saved evidence ahead of task drafts acros
     name: /Open Strategy (Lab|Backtest)/,
   });
   await expect(queue).toBeVisible({ timeout: 15_000 });
+  await expect(candidateSelector.locator('option')).toHaveCount(2);
+  await expect(candidateInspector).toHaveCount(1);
   await expect(composer).toHaveCount(0);
   await collapseWorkspace.focus();
   await expect(collapseWorkspace).toBeFocused();
@@ -839,47 +839,100 @@ test('AI research keeps candidates and saved evidence ahead of task drafts acros
 
   for (const viewport of overviewAcceptanceViewports) {
     await page.setViewportSize(viewport);
+    const selectedIndex = overviewAcceptanceViewports.indexOf(viewport) % 2;
+    const selectedCandidate = status.candidates[selectedIndex];
+    await candidateSelector.selectOption(selectedCandidate.candidate_id);
+    await expect(candidateSelector).toHaveValue(selectedCandidate.candidate_id);
+    await expect(candidateInspector).toHaveCount(1);
+    await expect(page.getByTestId('shadow-research-candidate')).toHaveCount(1);
+    await expect(
+      candidateInspector.getByRole('heading', {
+        name: selectedCandidate.comparison.economic_hypothesis,
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      candidateInspector.getByLabel('Source report metrics'),
+    ).toBeVisible();
+    for (const label of ['Total return', 'Sharpe', 'Max drawdown']) {
+      await expect(
+        candidateInspector
+          .getByLabel('Source report metrics')
+          .getByText(label, { exact: true }),
+      ).toBeVisible();
+    }
+    await expect(
+      candidateInspector.getByRole('link', {
+        name: new RegExp(
+          `Source report #${selectedCandidate.candidate_result_id}`,
+        ),
+      }),
+    ).toHaveAttribute(
+      'href',
+      `/backtest?id=${selectedCandidate.candidate_result_id}`,
+    );
+    await expect(candidateInspector).toContainText(
+      'Forward paper results and account returns are recorded separately.',
+    );
+    await expect(
+      candidateInspector.getByRole('button', {
+        name: 'Approve for paper/shadow only',
+        exact: true,
+      }),
+    ).toHaveCount(0);
+
+    const sourceDisclosure = candidateInspector.getByTestId(
+      'research-source-disclosure',
+    );
+    const sourceSummary = sourceDisclosure.locator(':scope > summary');
+    await expect(sourceDisclosure).not.toHaveAttribute('open', '');
+    await sourceSummary.focus();
+    await sourceSummary.press('Enter');
+    await expect(sourceDisclosure).toHaveAttribute('open', '');
+    await expect(
+      sourceDisclosure.getByTestId('research-candidate-definition'),
+    ).toContainText('A development sample is not full-market validation.');
+    await sourceSummary.press('Enter');
+    await expect(sourceDisclosure).not.toHaveAttribute('open', '');
+
+    const methodSummary = candidateInspector.locator('summary').filter({
+      hasText: /^Simulation method and authority boundaries$/,
+    });
+    const methodDisclosure = methodSummary.locator('..');
+    await expect(methodDisclosure).not.toHaveAttribute('open', '');
+    await methodSummary.focus();
+    await methodSummary.press('Enter');
+    await expect(methodDisclosure).toHaveAttribute('open', '');
+    await expect(methodDisclosure).toContainText(
+      'Freeze the saved candidate, create its independent paper book',
+    );
+    await methodSummary.press('Enter');
+    await expect(methodDisclosure).not.toHaveAttribute('open', '');
+
     await page.evaluate(() => {
       window.scrollTo(0, 0);
       document.querySelector('.app-shell-content')?.scrollTo(0, 0);
     });
     const primaryCanvasBox = (await primaryCanvas.boundingBox())!;
     const contextMetricsBox = (await contextMetrics.boundingBox())!;
-    if (viewport.width >= 1280) {
-      expect(
-        Math.abs(contextMetricsBox.y - primaryCanvasBox.y),
-        JSON.stringify(viewport),
-      ).toBeLessThan(8);
-      expect(primaryCanvasBox.x, JSON.stringify(viewport)).toBeLessThan(
-        contextMetricsBox.x,
-      );
-      expect(primaryCanvasBox.width, JSON.stringify(viewport)).toBeGreaterThan(
-        contextMetricsBox.width,
-      );
-    } else {
-      expect(primaryCanvasBox.y, JSON.stringify(viewport)).toBeLessThan(
-        contextMetricsBox.y,
-      );
-      const evidenceToCanvasGap =
-        contextMetricsBox.y - (primaryCanvasBox.y + primaryCanvasBox.height);
-      expect(
-        evidenceToCanvasGap,
-        JSON.stringify(viewport),
-      ).toBeGreaterThanOrEqual(16);
-      expect(evidenceToCanvasGap, JSON.stringify(viewport)).toBeLessThanOrEqual(
-        32,
-      );
-      if (viewport.width >= 1024) {
-        expect(
-          Math.abs(contextMetricsBox.x - primaryCanvasBox.x),
-          JSON.stringify(viewport),
-        ).toBeLessThanOrEqual(1);
-        expect(
-          Math.abs(contextMetricsBox.width - primaryCanvasBox.width),
-          JSON.stringify(viewport),
-        ).toBeLessThanOrEqual(1);
-      }
-    }
+    const evidenceToCanvasGap =
+      contextMetricsBox.y - (primaryCanvasBox.y + primaryCanvasBox.height);
+    expect(
+      evidenceToCanvasGap,
+      JSON.stringify(viewport),
+    ).toBeGreaterThanOrEqual(16);
+    expect(evidenceToCanvasGap, JSON.stringify(viewport)).toBeLessThanOrEqual(
+      32,
+    );
+    expect(
+      Math.abs(contextMetricsBox.x - primaryCanvasBox.x),
+      JSON.stringify(viewport),
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(contextMetricsBox.width - primaryCanvasBox.width),
+      JSON.stringify(viewport),
+    ).toBeLessThanOrEqual(1);
+    await expect(contextMetrics).not.toHaveAttribute('open', '');
     expect(
       (await candidateWorkspace.boundingBox())!.y,
       JSON.stringify(viewport),
@@ -897,17 +950,23 @@ test('AI research keeps candidates and saved evidence ahead of task drafts acros
     const workspaceHeaderBox = (await workspaceHeader.boundingBox())!;
 
     expect(
-      Math.abs(openStrategyLabBox.x - workspaceHeaderBox.x),
+      openStrategyLabBox.x,
       `header action ${JSON.stringify(viewport)}`,
-    ).toBeLessThanOrEqual(1);
+    ).toBeGreaterThanOrEqual(workspaceHeaderBox.x);
     expect(
-      primaryCanvasBox.x - boundaryBadgesBox.x,
+      openStrategyLabBox.x + openStrategyLabBox.width,
+      `header action stays within the workspace ${JSON.stringify(viewport)}`,
+    ).toBeLessThanOrEqual(workspaceHeaderBox.x + workspaceHeaderBox.width);
+    expect(
+      boundaryBadgesBox.x,
       `workspace control ${JSON.stringify(viewport)}`,
-    ).toBeLessThanOrEqual(1);
+    ).toBeGreaterThanOrEqual(primaryCanvasBox.x);
     expect(
-      collapseWorkspaceBox.x - (boundaryBadgesBox.x + boundaryBadgesBox.width),
-      `workspace control gap ${JSON.stringify(viewport)}`,
-    ).toBeGreaterThanOrEqual(0);
+      collapseWorkspaceBox.x >= boundaryBadgesBox.x + boundaryBadgesBox.width ||
+        collapseWorkspaceBox.y >=
+          boundaryBadgesBox.y + boundaryBadgesBox.height,
+      `workspace controls do not overlap ${JSON.stringify(viewport)}`,
+    ).toBe(true);
     expect(
       collapseWorkspaceBox.x + collapseWorkspaceBox.width,
       `workspace controls stay in their pane ${JSON.stringify(viewport)}`,
@@ -915,7 +974,11 @@ test('AI research keeps candidates and saved evidence ahead of task drafts acros
     expect(
       openComposerBox.x,
       `queue action ${JSON.stringify(viewport)}`,
-    ).toBeLessThan(primaryCanvasBox.x + primaryCanvasBox.width / 2);
+    ).toBeGreaterThanOrEqual(primaryCanvasBox.x);
+    expect(
+      openComposerBox.x + openComposerBox.width,
+      `queue action ${JSON.stringify(viewport)}`,
+    ).toBeLessThanOrEqual(primaryCanvasBox.x + primaryCanvasBox.width);
     expect(
       openComposerBox.x >= queueTitleBox.x + queueTitleBox.width ||
         openComposerBox.y >= queueTitleBox.y + queueTitleBox.height,
@@ -925,6 +988,10 @@ test('AI research keeps candidates and saved evidence ahead of task drafts acros
       openComposer,
       collapseWorkspace,
       openStrategyLab,
+      candidateSelector,
+      sourceSummary,
+      methodSummary,
+      contextSummary,
     })) {
       expect(
         Math.round((await target.boundingBox())!.height),
@@ -972,7 +1039,15 @@ test('AI research keeps candidates and saved evidence ahead of task drafts acros
       .getByRole('button', { name: 'Close task draft', exact: true })
       .click();
     await expect(composer).toHaveCount(0);
+    await contextSummary.focus();
+    await contextSummary.press('Enter');
+    await expect(contextMetrics).toHaveAttribute('open', '');
+    await expect(contextMetrics).toContainText('Backtest context');
+    await expect(contextMetrics).toContainText('Strategy context');
+    await contextSummary.press('Enter');
+    await expect(contextMetrics).not.toHaveAttribute('open', '');
   }
+  expect(writes).toEqual([]);
 });
 
 test('activity keeps immutable history in the first reading path across all acceptance viewports', async ({
@@ -1153,7 +1228,36 @@ test('portfolio keeps filtering ordered above a compact holdings projection', as
   await expect(page.getByTestId('portfolio-summary-strip')).toBeVisible();
   await expect(filterBar).toBeVisible();
   await expect(filterBar.getByRole('textbox')).toBeVisible();
+  await expect(filterBar.getByRole('combobox')).toHaveCount(2);
+  const moreFilters = filterBar.getByRole('button', {
+    name: 'More filters',
+    exact: true,
+  });
+  await expect(moreFilters).toHaveAttribute('aria-expanded', 'false');
+  await moreFilters.click();
   await expect(filterBar.getByRole('combobox')).toHaveCount(4);
+  const hideFilters = filterBar.getByRole('button', {
+    name: /^Hide filters(?: · \d+ active filters?)?$/,
+  });
+  await expect(hideFilters).toHaveAttribute('aria-expanded', 'true');
+  const quoteFilter = filterBar.getByRole('combobox', {
+    name: 'Quote state',
+    exact: true,
+  });
+  await quoteFilter.selectOption('healthy');
+  await expect(hideFilters).toHaveAccessibleName(
+    'Hide filters · 1 active filter',
+  );
+  await hideFilters.click();
+  await expect(filterBar.getByRole('combobox')).toHaveCount(2);
+  const activeFilters = filterBar.getByRole('button', {
+    name: 'More filters · 1 active filter',
+    exact: true,
+  });
+  await expect(activeFilters).toHaveAttribute('aria-expanded', 'false');
+  await activeFilters.click();
+  await expect(quoteFilter).toHaveValue('healthy');
+  await quoteFilter.selectOption('all');
 
   const firstTableCell = page
     .locator('.app-positions-table .app-data-table th')
@@ -2232,7 +2336,7 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
           .getByTestId('overview-strategy-recommendation')
           .boundingBox();
         const queue = page.getByTestId('overview-today-queue');
-        expect(decisionBox?.y ?? 0).toBeLessThan(holdingsBox?.y ?? 0);
+        expect(holdingsBox?.y ?? 0).toBeLessThan(decisionBox?.y ?? 0);
         if ((await queue.count()) > 0) {
           const queueBox = await queue.boundingBox();
           expect(queueBox?.y ?? 0).toBeGreaterThanOrEqual(
@@ -2246,24 +2350,6 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
       );
 
       if (path === '/backtest') {
-        const contextStrip = page.locator('.app-backtest-context-strip');
-        await expect(contextStrip).toBeVisible();
-        const contextGeometry = await contextStrip.evaluate((element) => ({
-          height: element.getBoundingClientRect().height,
-          horizontalOverflow: element.scrollWidth - element.clientWidth,
-          textUnclipped: Array.from(
-            element.querySelectorAll('.truncate'),
-          ).every((item) => {
-            const style = getComputedStyle(item);
-            return (
-              style.whiteSpace === 'normal' && style.overflow === 'visible'
-            );
-          }),
-        }));
-        expect(contextGeometry.height, theme).toBeLessThanOrEqual(144);
-        expect(contextGeometry.horizontalOverflow, theme).toBeGreaterThan(0);
-        expect(contextGeometry.textUnclipped, theme).toBe(true);
-
         const tabs = page.getByTestId('backtest-mobile-workspace-tabs');
         const resultTab = tabs.getByRole('tab', {
           name: /Results and evidence|结果与证据/,
@@ -2277,9 +2363,13 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
           'aria-selected',
           hasSavedResults ? 'true' : 'false',
         );
-        if (!hasSavedResults) {
-          await resultTab.click();
-        }
+        const setupTab = tabs.getByRole('tab', {
+          name: /New backtest|新建回测/,
+        });
+        await setupTab.click();
+        await expect(page.locator('.app-backtest-context-strip')).toBeVisible();
+        await resultTab.click();
+        await expect(page.locator('.app-backtest-context-strip')).toBeHidden();
         await expect(resultTab).toHaveAttribute('aria-selected', 'true');
         await expect(page.getByTestId('backtest-result-panel')).toBeVisible();
         if (hasSavedResults) {
@@ -2886,8 +2976,8 @@ test('remaining phase-four routes stay overflow safe in Latte and Mocha', async 
           .toBe(true);
         if ((await reportWorkspace.count()) > 0) {
           await expect(
-            reportWorkspace.locator('[data-workbench-primitive="filter-bar"]'),
-          ).toHaveCount(1);
+            reportWorkspace.getByTestId('backtest-report-selector-disclosure'),
+          ).not.toHaveAttribute('open', '');
           await expect(
             reportWorkspace.locator(
               '[data-workbench-primitive="metric-strip"]',

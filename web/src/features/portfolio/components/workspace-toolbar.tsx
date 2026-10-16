@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowDown, ArrowUp } from 'lucide-react';
+import { ArrowDown, ArrowUp, SlidersHorizontal } from 'lucide-react';
 
 import { useCopy } from '../../../shared/i18n/context';
 import { FilterBar, WorkbenchSelect } from '../../../shared/ui/workbench';
@@ -69,12 +69,12 @@ export function WorkspaceToolbar({
     ? `${moreFiltersLabel} · ${labels.activeFilters(activeSecondaryFilterCount)}`
     : moreFiltersLabel;
   const inputClassName =
-    'app-field h-10 rounded-[var(--app-radius-control)] px-3 text-xs sm:h-8';
+    'app-field h-11 rounded-[var(--app-radius-control)] px-3 text-xs sm:h-8';
 
   return (
     <FilterBar label={labels.helper}>
-      <div className="grid w-full min-w-0 gap-2 md:grid-cols-[minmax(220px,1fr)_auto] md:items-center">
-        <label className="min-w-0">
+      <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
+        <label className="min-w-0 basis-full sm:min-w-40 sm:flex-1 sm:basis-auto">
           <span className="sr-only">{labels.search}</span>
           <input
             value={search}
@@ -84,13 +84,9 @@ export function WorkspaceToolbar({
           />
         </label>
 
-        {summary ? (
-          <div className="text-xs text-[var(--app-text-tertiary)] tabular-nums md:text-right">
-            {summary}
-          </div>
-        ) : null}
+        {summary ? <div className="sr-only">{summary}</div> : null}
 
-        <div className="flex min-w-0 flex-wrap items-center gap-2 md:col-span-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <ToolbarSelect
             aria-label={labels.assetClass}
             value={assetClassFilter}
@@ -117,13 +113,14 @@ export function WorkspaceToolbar({
 
           <button
             type="button"
-            className="app-button-secondary inline-flex min-h-10 items-center gap-1.5 rounded-[var(--app-radius-control)] px-2.5 text-xs font-semibold md:hidden"
+            className="app-button-secondary inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-[var(--app-radius-control)] px-2.5 text-xs font-semibold sm:min-h-8 sm:min-w-0"
             aria-expanded={showMoreFilters}
             aria-controls="portfolio-secondary-filters"
             aria-label={moreFiltersAccessibleLabel}
             onClick={() => setShowMoreFilters((current) => !current)}
           >
-            <span>{moreFiltersLabel}</span>
+            <SlidersHorizontal aria-hidden="true" size={14} />
+            <span className="hidden sm:inline">{moreFiltersLabel}</span>
             {activeSecondaryFilterCount > 0 ? (
               <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-[var(--app-accent-bg)] px-1.5 text-[length:var(--app-font-size-micro)] tabular-nums text-[var(--app-accent)]">
                 {activeSecondaryFilterCount}
@@ -134,7 +131,7 @@ export function WorkspaceToolbar({
           <div
             id="portfolio-secondary-filters"
             data-testid="portfolio-secondary-filters"
-            className={showMoreFilters ? 'contents' : 'hidden md:contents'}
+            className={showMoreFilters ? 'contents' : 'hidden'}
           >
             <ToolbarSelect
               aria-label={labels.quoteFilter}

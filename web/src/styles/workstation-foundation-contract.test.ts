@@ -57,7 +57,8 @@ describe('Karkinos workstation foundation contract', () => {
     expect(OVERVIEW).toContain('data-workbench-width="wide"');
     expect(OVERVIEW).toContain('<WorkspaceHeader');
     expect(OVERVIEW).toContain('<SectionHeader');
-    expect(OVERVIEW).toContain('<MetricStrip');
+    expect(OVERVIEW).toContain('app-type-overview-hero');
+    expect(OVERVIEW).toContain('overview-hero-support');
     expect(OVERVIEW).not.toMatch(/rounded-(?:2xl|3xl)/);
     expect(OVERVIEW).not.toMatch(/\btext-(?:xl|2xl|3xl)\b/);
     expect(OVERVIEW).not.toContain('xl:grid-cols-[minmax(0,1fr)_18rem]');

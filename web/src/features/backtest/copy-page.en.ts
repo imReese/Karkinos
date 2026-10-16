@@ -2,10 +2,20 @@ export const backtestPageEn = {
   kicker: 'Backtest lab',
   title: 'Strategy Backtest',
   subtitle:
-    'Run a controlled historical simulation, then inspect risk, costs, equity path, and fill coverage.',
+    'Read historical simulation results, compare costs and drawdown, then choose the next research step.',
   formKicker: 'Run setup',
   formTitle: 'Backtest configuration',
   nextRunConfiguration: 'Next run configuration',
+  setupWorkspaceTab: 'New backtest',
+  resultsShortTab: 'Results',
+  observationsWorkspaceTab: 'Forward observation',
+  savedReports: 'Change saved report',
+  reportPermalink: 'Open report link',
+  configuredInterval: 'Configured interval',
+  evaluatedInterval: 'Evaluated interval',
+  observationsDetail:
+    'Review this report’s independent forward observation and simulated book, or explicitly authorize an observation. Historical and forward results remain separate.',
+  reportEvidence: 'Report evidence and research previews',
   formDetail:
     'Choose an explicit asset list, or leave it blank to use the saved research universe.',
   decisionHandoffKicker: 'Decision handoff',

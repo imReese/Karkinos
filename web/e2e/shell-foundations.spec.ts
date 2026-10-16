@@ -55,7 +55,12 @@ test('desktop shell defaults to labeled business groups and remains collapsible'
       await expect(statusRail).toBeHidden();
       await expect(page.getByTestId('compact-status-trigger')).toBeVisible();
     }
-    for (const group of ['Monitor', 'Decide', 'Execute', 'System']) {
+    for (const group of [
+      'Investment',
+      'Research & validation',
+      'Execution & records',
+      'System',
+    ]) {
       await expect(page.getByText(group, { exact: true })).toBeVisible();
     }
     await expect(page.getByTestId('sidebar-nav-overview')).toContainText(

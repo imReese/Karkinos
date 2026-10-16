@@ -61,8 +61,7 @@ export function useDecisionCockpitWorkspace() {
   const signalActions = useSignalActionsQuery(primaryDecisionReady);
   const signalJournal = useSignalJournalQuery(primaryDecisionReady);
   const [summaryExpanded, setSummaryExpanded] = useState(false);
-  const [healthyGateMatrixExpanded, setHealthyGateMatrixExpanded] =
-    useState(false);
+  const [gateMatrixExpanded, setGateMatrixExpanded] = useState(false);
 
   useEffect(() => {
     if (today.data?.candidates) {
@@ -135,8 +134,8 @@ export function useDecisionCockpitWorkspace() {
     signalJournal,
     summaryExpanded,
     setSummaryExpanded,
-    healthyGateMatrixExpanded,
-    setHealthyGateMatrixExpanded,
+    gateMatrixExpanded,
+    setGateMatrixExpanded,
     loading,
     error,
     lanes,

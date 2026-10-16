@@ -1,6 +1,5 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 
-import { formatTimestamp } from '../../../shared/format';
 import {
   useStrategyPromotionStatesQuery,
   type ShadowResearchCandidate,
@@ -57,7 +56,6 @@ export function ShadowResearchCandidateWorkspace({
       (source) =>
         source.strategy_id === `ai_formula_shadow:${candidate.candidate_id}`,
     );
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(
     null,
   );
@@ -118,80 +116,16 @@ export function ShadowResearchCandidateWorkspace({
 
   if (candidates.length === 0) {
     return (
-      <div className="mt-6 rounded-[var(--app-radius-control)] border border-dashed border-[var(--app-divider)] bg-[color-mix(in_srgb,var(--app-surface-raised)_50%,transparent)] p-6 text-center">
+      <div className="border-y border-[var(--app-divider)] py-8">
         <div className="text-sm font-semibold text-[var(--app-text)]">
           {copy.candidateRegistry}
         </div>
-        <p className="app-muted mx-auto mt-1 max-w-md text-xs leading-5">
+        <p className="app-muted mt-2 max-w-2xl text-sm leading-6">
           {loading ? copy.running : copy.noCandidates}
         </p>
       </div>
     );
   }
-
-  const renderRegistryRow = (candidate: ShadowResearchCandidate) => {
-    const selected = candidate.candidate_id === selectedCandidate?.candidate_id;
-    const lineage = candidate.comparison.iteration_lineage;
-    const candidateMetrics = candidate.comparison.candidate;
-    const statusLabel =
-      candidate.promotion_status === 'paper_shadow_approved'
-        ? sourceUsable(candidate)
-          ? copy.approved
-          : copy.publicationUnverified
-        : candidate.status.replace(/_/g, ' ');
-    const rowClassName = [
-      'grid w-full min-w-0 gap-1.5 px-2.5 py-1.5 text-left transition-all rounded-[var(--app-radius-control)] sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center',
-      selected
-        ? 'bg-[color-mix(in_srgb,var(--app-accent)_12%,transparent)] border border-[var(--app-accent)] shadow-xs'
-        : 'hover:bg-[color-mix(in_srgb,var(--app-surface-overlay)_45%,transparent)] border border-transparent',
-    ].join(' ');
-
-    return (
-      <button
-        aria-pressed={selected}
-        className={rowClassName}
-        data-candidate-id={candidate.candidate_id}
-        data-testid="shadow-research-candidate-row"
-        key={candidate.candidate_id}
-        onClick={() => setSelectedCandidateId(candidate.candidate_id)}
-        type="button"
-      >
-        <span className="min-w-0">
-          <span className="block truncate text-xs font-semibold text-[var(--app-text)]">
-            {candidate.comparison.economic_hypothesis || candidate.draft_id}
-          </span>
-          <span className="app-type-micro mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[var(--app-text-tertiary)]">
-            <span>{statusLabel}</span>
-            {lineage ? (
-              <span>
-                {copy.iterationRound} {lineage.iteration_number}/
-                {lineage.total_iterations}
-              </span>
-            ) : null}
-            {candidateMetrics ? (
-              <span className="font-mono text-[var(--app-text)]">
-                SR {candidateMetrics.sharpe.toFixed(2)} ·{' '}
-                {(candidateMetrics.total_return * 100).toFixed(1)}%
-              </span>
-            ) : null}
-            <span>{formatTimestamp(candidate.updated_at)}</span>
-          </span>
-        </span>
-        <span className="flex shrink-0 flex-wrap items-center gap-1 sm:justify-end">
-          {verifiedWinnerCandidateIds.has(candidate.candidate_id) ? (
-            <span className="rounded-full border border-[var(--app-success-border)] bg-[var(--app-success-bg)] px-1.5 py-0.2 text-[length:var(--app-font-size-micro)] font-semibold text-[var(--app-success-text)]">
-              {copy.winnerBadge}
-            </span>
-          ) : null}
-          {verifiedResearchWinnerCandidateIds.has(candidate.candidate_id) ? (
-            <span className="rounded-full border border-[var(--app-divider)] px-1.5 py-0.2 text-[length:var(--app-font-size-micro)] font-semibold text-[var(--app-text-secondary)]">
-              {copy.researchWinnerBadge}
-            </span>
-          ) : null}
-        </span>
-      </button>
-    );
-  };
 
   const renderSelectedCandidate = (candidate: ShadowResearchCandidate) => (
     <CandidateCard
@@ -245,77 +179,60 @@ export function ShadowResearchCandidateWorkspace({
 
   return (
     <section
-      className="mt-3 min-w-0"
+      className="min-w-0 space-y-4"
       data-testid="shadow-research-candidate-workspace"
     >
-      <div className="border-b border-[var(--app-divider)] pb-1.5">
-        <h3 className="app-type-section-title text-[var(--app-text)]">
-          {copy.candidateRegistry}
-        </h3>
-        <p className="sr-only">{copy.candidateRegistryDetail}</p>
-      </div>
-
-      <div className="mt-2.5 grid min-w-0 gap-3 xl:grid-cols-[minmax(240px,0.38fr)_minmax(0,1fr)] xl:items-start">
-        <div className="min-w-0">
-          <div className="flex items-baseline justify-between gap-2 pb-1.5">
-            <h4 className="text-xs font-semibold text-[var(--app-text)]">
-              {copy.currentCandidates}
-            </h4>
-            <span className="app-type-micro tabular-nums text-[var(--app-text-tertiary)]">
-              {current.length}
-            </span>
-          </div>
-          <div
-            className="divide-y divide-[var(--app-divider)] border-y border-[var(--app-divider)]"
+      <div className="flex min-w-0 flex-wrap items-end gap-4 border-b border-[var(--app-divider)] pb-4">
+        <h3 className="sr-only">{copy.candidateRegistry}</h3>
+        <label className="min-w-0 flex-1 text-xs font-semibold sm:max-w-xl">
+          <span className="sr-only">{copy.currentCandidates}</span>
+          <select
+            className="app-field min-h-11 w-full min-w-0 px-3 py-2 text-sm"
             data-testid="shadow-research-current-registry"
+            onChange={(event) => setSelectedCandidateId(event.target.value)}
+            value={selectedCandidate?.candidate_id ?? ''}
           >
-            {current.map(renderRegistryRow)}
-          </div>
-
-          {historical.length ? (
-            <details
-              className="mt-2.5 border-y border-[var(--app-divider)]"
-              onToggle={(event) => setHistoryOpen(event.currentTarget.open)}
-              open={historyOpen}
-            >
-              <summary className="flex min-h-8 cursor-pointer list-none items-center justify-between gap-3 py-1.5">
-                <span className="min-w-0">
-                  <span className="block text-xs font-semibold text-[var(--app-text)]">
-                    {copy.candidateHistory}
-                  </span>
-                  <span className="app-type-micro block text-[var(--app-text-secondary)]">
-                    {copy.candidateHistoryDetail(historical.length)}
-                  </span>
-                </span>
-                <span className="app-type-micro shrink-0 tabular-nums text-[var(--app-text-tertiary)]">
-                  {historyOpen ? '−' : '+'}
-                </span>
-              </summary>
-              {historyOpen ? (
-                <div
-                  className="divide-y divide-[var(--app-divider)] border-t border-[var(--app-divider)]"
-                  data-testid="shadow-research-history-registry"
-                >
-                  {historical.map(renderRegistryRow)}
-                </div>
-              ) : null}
-            </details>
-          ) : null}
-        </div>
-
-        {selectedCandidate ? (
-          <section
-            aria-label={copy.selectedCandidate}
-            className="min-w-0"
-            data-testid="shadow-research-candidate-inspector"
-          >
-            <div className="app-product-mark mb-2">
-              {copy.selectedCandidate}
-            </div>
-            {renderSelectedCandidate(selectedCandidate)}
-          </section>
-        ) : null}
+            {current.length ? (
+              <optgroup label={copy.currentCandidates}>
+                {current.map((candidate) => (
+                  <option
+                    value={candidate.candidate_id}
+                    key={candidate.candidate_id}
+                  >
+                    {candidate.comparison.economic_hypothesis ||
+                      candidate.draft_id}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
+            {historical.length ? (
+              <optgroup label={copy.candidateHistory}>
+                {historical.map((candidate) => (
+                  <option
+                    value={candidate.candidate_id}
+                    key={candidate.candidate_id}
+                  >
+                    {candidate.comparison.economic_hypothesis ||
+                      candidate.draft_id}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
+          </select>
+        </label>
+        <p className="text-xs tabular-nums text-[var(--app-text-secondary)]">
+          {copy.candidateRegistry} · {ordered.length}
+        </p>
       </div>
+      {selectedCandidate ? (
+        <section
+          aria-label={copy.selectedCandidate}
+          className="min-w-0"
+          data-testid="shadow-research-candidate-inspector"
+        >
+          {renderSelectedCandidate(selectedCandidate)}
+        </section>
+      ) : null}
     </section>
   );
 }
