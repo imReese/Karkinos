@@ -1739,7 +1739,7 @@ test('keeps setup and current results in one primary workspace with mobile tabs'
   expect(document.activeElement).toBe(workspaceTabs[0]);
   expect(workspaceTabs[0].getAttribute('aria-selected')).toBe('true');
   expect(
-    results.compareDocumentPosition(setup) & Node.DOCUMENT_POSITION_FOLLOWING,
+    setup.compareDocumentPosition(results) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 
   for (const testId of [

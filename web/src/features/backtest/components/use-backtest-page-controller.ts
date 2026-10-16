@@ -204,7 +204,9 @@ export function useBacktestPageController() {
 
   useEffect(() => {
     if (!mobileWorkspaceTouched && savedResults.data?.length) {
-      setMobileWorkspaceView('results');
+      setMobileWorkspaceView(
+        window.matchMedia('(min-width: 1280px)').matches ? 'setup' : 'results',
+      );
     }
   }, [mobileWorkspaceTouched, savedResults.data]);
 
@@ -256,7 +258,9 @@ export function useBacktestPageController() {
       const report = await runBacktest.mutateAsync(payload);
       setLatestReport(report);
       setMobileWorkspaceTouched(true);
-      setMobileWorkspaceView('results');
+      setMobileWorkspaceView(
+        window.matchMedia('(min-width: 1280px)').matches ? 'setup' : 'results',
+      );
       signalPreview.reset();
       riskPreview.reset();
       paperShadowPreview.reset();

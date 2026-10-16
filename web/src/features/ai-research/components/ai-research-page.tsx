@@ -31,7 +31,7 @@ export function AiResearchPage() {
         description={labels.subtitle}
         actions={
           <a
-            className="app-button-secondary min-h-8 rounded-[var(--app-radius-control)] px-2.5 py-1 text-xs font-semibold"
+            className="app-button-secondary inline-flex min-h-11 items-center rounded-[var(--app-radius-control)] px-2.5 py-1 text-xs font-semibold"
             href="/backtest"
             onClick={(e) => handleClientNavigation(e, '/backtest')}
           >
@@ -44,9 +44,21 @@ export function AiResearchPage() {
         className="app-ai-research-command-grid min-w-0"
         data-testid="ai-research-command-grid"
       >
+        <div
+          className="grid min-w-0 gap-3"
+          data-testid="ai-research-primary-canvas"
+        >
+          <ShadowResearchPanel />
+          <ResearchTaskPanel
+            backtestResultId={latestBacktest?.id ?? null}
+            defaultOpen
+            routePrimary
+            strategyId={currentStrategy?.strategy_id ?? null}
+          />
+        </div>
         <section
           aria-labelledby="ai-research-context-title"
-          className="min-w-0 border-t border-[var(--app-divider)] pt-2 xl:order-2 xl:sticky xl:top-3 xl:self-start xl:max-h-[calc(100vh-1.5rem)] xl:overflow-y-auto"
+          className="min-w-0 border-t border-[var(--app-divider)] pt-2 xl:sticky xl:top-3 xl:self-start xl:max-h-[calc(100vh-1.5rem)] xl:overflow-y-auto"
           data-testid="ai-research-context-metrics"
         >
           <div className="mb-2 min-w-0">
@@ -119,19 +131,6 @@ export function AiResearchPage() {
             </button>
           ) : null}
         </section>
-
-        <div
-          className="grid min-w-0 gap-3 xl:order-1"
-          data-testid="ai-research-primary-canvas"
-        >
-          <ShadowResearchPanel />
-          <ResearchTaskPanel
-            backtestResultId={latestBacktest?.id ?? null}
-            defaultOpen
-            routePrimary
-            strategyId={currentStrategy?.strategy_id ?? null}
-          />
-        </div>
       </div>
     </section>
   );

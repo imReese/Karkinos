@@ -6,6 +6,7 @@ import {
   strategyDescription,
   strategySourceDisplayName,
 } from './backtest-page-model';
+import { StrategyMetadataPanel } from './strategy-metadata-panel';
 
 export function StrategyCatalogPanel({
   strategyCatalog,
@@ -41,12 +42,9 @@ export function StrategyCatalogPanel({
   ].filter(Boolean);
 
   return (
-    <section className="min-w-0 border-y border-[var(--app-divider)] py-3 sm:py-4">
-      <div
-        className="grid min-w-0 gap-3 2xl:grid-cols-[minmax(0,1fr)_minmax(180px,240px)] 2xl:items-end"
-        data-testid="backtest-strategy-catalog-header"
-      >
-        <div className="min-w-0">
+    <section className="min-w-0">
+      <div className="min-w-0" data-testid="backtest-strategy-catalog-header">
+        <div className="sr-only">
           <div className="app-type-overline text-[var(--app-text-tertiary)]">
             {labels.strategyCatalogKicker}
           </div>
@@ -114,6 +112,7 @@ export function StrategyCatalogPanel({
               ))}
             </div>
           ) : null}
+          <StrategyMetadataPanel strategy={selectedStrategy} labels={labels} />
         </div>
       </details>
     </section>

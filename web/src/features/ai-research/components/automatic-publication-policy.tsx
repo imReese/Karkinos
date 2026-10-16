@@ -103,7 +103,7 @@ export function AutomaticPublicationPolicy({
     Number.isFinite(Date.parse(draft.expires_at));
   return (
     <section
-      className="mt-3 min-w-0 space-y-3 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] p-3 text-xs"
+      className="mt-3 min-w-0 space-y-2 border-y border-[var(--app-divider)] py-3 text-xs"
       data-testid="automatic-publication-policy"
     >
       <h3 className="text-sm font-semibold">
@@ -111,11 +111,6 @@ export function AutomaticPublicationPolicy({
           ? '自动上岗：账户建议发布授权'
           : 'Automatic account recommendation publication'}
       </h3>
-      <p className="app-muted leading-5">
-        {zh
-          ? '授权后，满足冻结全范围验证和当前账户资格的候选可自动成为指定账户范围的建议来源，无需逐候选确认。此授权不创建订单或授予交易权限。'
-          : 'After authorization, candidates that pass frozen deployment-scope validation and current account qualification may automatically become the recommendation source for the specified allocation. No per-candidate confirmation is required. This grant creates no order or trading permission.'}
-      </p>
       <p role="status">
         {zh ? '当前授权' : 'Current grant'}:{' '}
         {query.isLoading
@@ -128,43 +123,6 @@ export function AutomaticPublicationPolicy({
               : 'Unknown'
             : state.status}
       </p>
-      {state?.policy?.enabled && 'entry_board_policy' in state.policy ? (
-        <p>
-          {zh ? '账户可买板块' : 'Allowed entry boards'}:{' '}
-          {entryBoards(state.policy.entry_board_policy?.allowed_boards)}
-        </p>
-      ) : null}
-      <div className="space-y-1" data-testid="usable-publication-sources">
-        <p className="font-semibold">
-          {zh ? '当前可用账户来源' : 'Usable account sources'}
-        </p>
-        {state?.usable_current_sources?.length ? (
-          state.usable_current_sources.map((source) => (
-            <p className="break-all" key={source.strategy_id}>
-              {source.strategy_id} · {zh ? '授权来源' : 'Decision source'}:{' '}
-              {source.decision_source ?? (zh ? '尚未提供' : 'Not provided')}
-            </p>
-          ))
-        ) : (
-          <p className="app-muted">
-            {query.isLoading || query.isError
-              ? zh
-                ? '尚无法核对'
-                : 'Not verified yet'
-              : zh
-                ? '无适用来源'
-                : 'No applicable source'}
-          </p>
-        )}
-      </div>
-      {state?.latest_decision ? (
-        <p className="app-muted break-all">
-          {zh ? '最近自动决策' : 'Latest automatic decision'}:{' '}
-          {state.latest_decision.status ?? '—'} ·{' '}
-          {state.latest_decision.strategy_id ?? '—'} ·{' '}
-          {state.latest_decision.decision_source ?? '—'}
-        </p>
-      ) : null}
       {blockers.length ? (
         <ul
           className="list-disc space-y-1 pl-4"
@@ -185,12 +143,54 @@ export function AutomaticPublicationPolicy({
           {zh ? '重新读取发布授权' : 'Reload publication grant'}
         </button>
       ) : null}
-      <details>
-        <summary className="cursor-pointer font-semibold">
+      <details data-testid="publication-policy-settings">
+        <summary className="min-h-11 cursor-pointer py-3 font-semibold">
           {zh
             ? '配置并核验自动发布边界'
             : 'Configure and verify publication bounds'}
         </summary>
+        <p className="app-muted leading-5">
+          {zh
+            ? '授权后，满足冻结全范围验证和当前账户资格的候选可自动成为指定账户范围的建议来源，无需逐候选确认。此授权不创建订单或授予交易权限。'
+            : 'After authorization, candidates that pass frozen deployment-scope validation and current account qualification may automatically become the recommendation source for the specified allocation. No per-candidate confirmation is required. This grant creates no order or trading permission.'}
+        </p>
+        {state?.policy?.enabled && 'entry_board_policy' in state.policy ? (
+          <p>
+            {zh ? '账户可买板块' : 'Allowed entry boards'}:{' '}
+            {entryBoards(state.policy.entry_board_policy?.allowed_boards)}
+          </p>
+        ) : null}
+        <div className="space-y-1" data-testid="usable-publication-sources">
+          <p className="font-semibold">
+            {zh ? '当前可用账户来源' : 'Usable account sources'}
+          </p>
+          {state?.usable_current_sources?.length ? (
+            state.usable_current_sources.map((source) => (
+              <p className="break-all" key={source.strategy_id}>
+                {source.strategy_id} · {zh ? '授权来源' : 'Decision source'}:{' '}
+                {source.decision_source ?? (zh ? '尚未提供' : 'Not provided')}
+              </p>
+            ))
+          ) : (
+            <p className="app-muted">
+              {query.isLoading || query.isError
+                ? zh
+                  ? '尚无法核对'
+                  : 'Not verified yet'
+                : zh
+                  ? '无适用来源'
+                  : 'No applicable source'}
+            </p>
+          )}
+        </div>
+        {state?.latest_decision ? (
+          <p className="app-muted break-all">
+            {zh ? '最近自动决策' : 'Latest automatic decision'}:{' '}
+            {state.latest_decision.status ?? '—'} ·{' '}
+            {state.latest_decision.strategy_id ?? '—'} ·{' '}
+            {state.latest_decision.decision_source ?? '—'}
+          </p>
+        ) : null}
         <PublicationPolicyFields
           draft={draft}
           change={change}

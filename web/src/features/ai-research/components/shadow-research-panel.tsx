@@ -374,37 +374,7 @@ export function ShadowResearchPanel() {
     >
       <ShadowResearchHeader copy={copy} status={status} />
 
-      {/* 1. 现役优胜策略聚焦点与代际矩阵 (Champion Spotlight & Generation Matrix) */}
-      <div className="mt-2.5">
-        <StrategyChampionSpotlight status={status} />
-      </div>
-
-      <AutomaticPublicationPolicy updatedBy={policy.updated_by} />
-
-      {/* 2. 账户资格复核 (Account Qualification Review) */}
-      <div className="mt-3">
-        <ShadowResearchQualificationReview
-          approvedBy={policy.updated_by}
-          copy={copy}
-          locale={locale}
-          onApprove={async (
-            qualificationCandidateId,
-            approvalNotes,
-            forwardReview,
-          ) => {
-            await approveQualification.mutateAsync({
-              qualification_candidate_id: qualificationCandidateId,
-              approved_by: policy.updated_by,
-              notes: approvalNotes,
-              ...(forwardReview ? { forward_review: forwardReview } : {}),
-            });
-          }}
-          pending={approveQualification.isPending}
-          status={status}
-        />
-      </div>
-
-      {/* 3. 候选策略详细工作区 (Candidate Workspace) */}
+      {/* Selected candidate and research evidence */}
       <div className="mt-3">
         <ShadowResearchCandidateWorkspace
           approvals={approvals}
@@ -428,7 +398,37 @@ export function ShadowResearchPanel() {
         />
       </div>
 
-      {/* 4. 自动化引擎运行诊断与策略配置 (Automation Engine Diagnostics & Policy Settings) */}
+      {/* Saved research selection */}
+      <div className="mt-2.5">
+        <StrategyChampionSpotlight status={status} />
+      </div>
+
+      {/* Account qualification remains separate from research ranking */}
+      <div className="mt-3">
+        <ShadowResearchQualificationReview
+          approvedBy={policy.updated_by}
+          copy={copy}
+          locale={locale}
+          onApprove={async (
+            qualificationCandidateId,
+            approvalNotes,
+            forwardReview,
+          ) => {
+            await approveQualification.mutateAsync({
+              qualification_candidate_id: qualificationCandidateId,
+              approved_by: policy.updated_by,
+              notes: approvalNotes,
+              ...(forwardReview ? { forward_review: forwardReview } : {}),
+            });
+          }}
+          pending={approveQualification.isPending}
+          status={status}
+        />
+      </div>
+
+      <AutomaticPublicationPolicy updatedBy={policy.updated_by} />
+
+      {/* Automation diagnostics and policy configuration */}
       <details className="group mt-3 rounded-lg border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 p-3 transition-all">
         <summary className="flex cursor-pointer items-center justify-between font-semibold text-xs text-[var(--app-text)] hover:text-[var(--app-accent)] select-none">
           <span className="flex items-center gap-2">

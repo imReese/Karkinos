@@ -110,6 +110,19 @@ test.each([
       </PreferencesProvider>,
     );
     expect(await screen.findByText(expected, { exact: false })).toBeTruthy();
+    const candidates = screen.getByTestId(
+      'shadow-research-candidate-workspace',
+    );
+    for (const supporting of [
+      screen.getByTestId('strategy-champion-spotlight'),
+      screen.getByTestId('shadow-research-qualification'),
+      screen.getByTestId('automatic-publication-policy'),
+    ]) {
+      expect(
+        candidates.compareDocumentPosition(supporting) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
     expect(
       screen.getByText(
         'Best available for research · account qualification not evaluated',

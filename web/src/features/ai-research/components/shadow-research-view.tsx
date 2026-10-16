@@ -151,12 +151,12 @@ export function CandidateCard({
         </p>
       ) : null}
 
-      <ResearchCandidateDefinition candidate={candidate} />
-      <CritiqueEvolutionTimeline candidate={candidate} copy={copy} />
-
       {comparison.research_capital_mode === 'normalized_notional' ? (
         <ShadowResearchObservations candidate={candidate} />
       ) : null}
+
+      <ResearchCandidateDefinition candidate={candidate} />
+      <CritiqueEvolutionTimeline candidate={candidate} copy={copy} />
 
       {candidate.status === 'awaiting_human_approval' &&
       candidate.recommendation === 'paper_shadow_review' &&

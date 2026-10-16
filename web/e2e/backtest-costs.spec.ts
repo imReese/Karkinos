@@ -189,6 +189,19 @@ for (const width of [390, 1280]) {
         ),
       )
       .toBeLessThanOrEqual(1);
+    if (width >= 1280) {
+      // A saved report uses a narrower setup pane; inputs must fit that pane.
+      const setup = page.getByTestId('backtest-run-setup-disclosure');
+      const start = setup.getByLabel('Start date', { exact: true });
+      const end = setup.getByLabel('End date', { exact: true });
+      const symbol = setup.getByLabel('Symbol', { exact: true });
+      await expect(start).toBeVisible();
+      const startBox = (await start.boundingBox())!;
+      const endBox = (await end.boundingBox())!;
+      expect(startBox.width).toBeGreaterThanOrEqual(140);
+      expect(startBox.x + startBox.width).toBeLessThanOrEqual(endBox.x);
+      expect((await symbol.boundingBox())!.width).toBeGreaterThanOrEqual(140);
+    }
     await evidence.scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath(`costs-${width}.png`) });
   });

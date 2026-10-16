@@ -607,6 +607,16 @@ test('shows localized blockers and only offers datasets with the exact verified 
   const selector = screen.getByRole('combobox', {
     name: '用于本次观察的核验数据集',
   });
+  const history = screen.getByText(
+    '尚未发布目标。请选择当前核验数据，发布首次观察。',
+  );
+  const newObservation = screen.getByRole('button', { name: '开始观察' });
+  for (const configuration of [selector, newObservation]) {
+    expect(
+      history.compareDocumentPosition(configuration) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  }
   await waitFor(() =>
     expect(selector.querySelectorAll('option')).toHaveLength(2),
   );

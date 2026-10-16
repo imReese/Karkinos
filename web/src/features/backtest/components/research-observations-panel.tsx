@@ -191,55 +191,6 @@ function ObservationPanel({
               : 'Uses isolated virtual cash, modeled fills and costs within the saved source scope. Account recommendation and trading permissions are separate.'
             : labels.boundary}
         </p>
-        <ObservationStartForm
-          report={report}
-          continuousStart={continuousStart}
-          saving={mutation.isPending || starting}
-          busy={
-            mutation.isPending ||
-            starting ||
-            incompleteStart ||
-            query.isLoading ||
-            query.isError
-          }
-          onStart={(payload, setup) => {
-            const command: Extract<ObservationCommand, { kind: 'start' }> = {
-              kind: 'start',
-              payload: {
-                ...payload,
-                request_id: requestId(`start:${JSON.stringify(payload)}`),
-              },
-            };
-            if (continuousStart && setup?.authorized) {
-              sequence.current = {
-                command,
-                setup,
-                bookRequestId: crypto.randomUUID(),
-                costs: report.config.cost_assumptions
-                  ? { ...report.config.cost_assumptions }
-                  : null,
-              };
-              void finishContinuousStart();
-            } else void submit(command);
-          }}
-        />
-        {incompleteStart ? (
-          <div role="status" className="space-y-2 text-xs">
-            <p>
-              {locale === 'zh'
-                ? '启动尚未完成。已创建的观察和账本保留；重试沿用原请求，不补造目标。'
-                : 'Setup is incomplete. Created observations and books are preserved; resuming reuses the original requests without inventing targets.'}
-            </p>
-            <button
-              type="button"
-              className={buttonClass}
-              disabled={starting}
-              onClick={() => void finishContinuousStart()}
-            >
-              {locale === 'zh' ? '继续完成模拟启动' : 'Resume paper setup'}
-            </button>
-          </div>
-        ) : null}
         <div className="flex flex-wrap items-end gap-3">
           <label className="grid min-w-0 flex-1 basis-64 gap-2 text-xs">
             {labels.select}
@@ -333,6 +284,55 @@ function ObservationPanel({
                 });
             }}
           />
+        ) : null}
+        <ObservationStartForm
+          report={report}
+          continuousStart={continuousStart}
+          saving={mutation.isPending || starting}
+          busy={
+            mutation.isPending ||
+            starting ||
+            incompleteStart ||
+            query.isLoading ||
+            query.isError
+          }
+          onStart={(payload, setup) => {
+            const command: Extract<ObservationCommand, { kind: 'start' }> = {
+              kind: 'start',
+              payload: {
+                ...payload,
+                request_id: requestId(`start:${JSON.stringify(payload)}`),
+              },
+            };
+            if (continuousStart && setup?.authorized) {
+              sequence.current = {
+                command,
+                setup,
+                bookRequestId: crypto.randomUUID(),
+                costs: report.config.cost_assumptions
+                  ? { ...report.config.cost_assumptions }
+                  : null,
+              };
+              void finishContinuousStart();
+            } else void submit(command);
+          }}
+        />
+        {incompleteStart ? (
+          <div role="status" className="space-y-2 text-xs">
+            <p>
+              {locale === 'zh'
+                ? '启动尚未完成。已创建的观察和账本保留；重试沿用原请求，不补造目标。'
+                : 'Setup is incomplete. Created observations and books are preserved; resuming reuses the original requests without inventing targets.'}
+            </p>
+            <button
+              type="button"
+              className={buttonClass}
+              disabled={starting}
+              onClick={() => void finishContinuousStart()}
+            >
+              {locale === 'zh' ? '继续完成模拟启动' : 'Resume paper setup'}
+            </button>
+          </div>
         ) : null}
       </div>
     </details>
@@ -636,6 +636,9 @@ function ObservationDetail({
           {observationError(observation.last_blocker.code, locale)}
         </p>
       ) : null}
+      <ResearchObservationHealth observation={observation} />
+      <ResearchObservationHistory observation={observation} />
+      <ResearchPaperBookPanel observation={observation} busy={busy} />
       <div className="flex flex-wrap items-end gap-3">
         <label className="grid min-w-0 flex-1 basis-64 gap-2 text-xs">
           {labels.dataset}
@@ -705,8 +708,6 @@ function ObservationDetail({
         readFailed={readFailed}
         onRefresh={onRefresh}
       />
-      <ResearchObservationHealth observation={observation} />
-      <ResearchObservationHistory observation={observation} />
       <details className="min-w-0 text-xs">
         <summary className="cursor-pointer text-[var(--app-text-secondary)]">
           {labels.sourceDataset}
@@ -715,7 +716,6 @@ function ObservationDetail({
           {observation.source.dataset_id}
         </p>
       </details>
-      <ResearchPaperBookPanel observation={observation} busy={busy} />
     </div>
   );
 }

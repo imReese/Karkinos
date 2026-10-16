@@ -64,7 +64,10 @@ test('does not infer an account source or permission from missing evidence', asy
   mount();
   expect(
     await screen.findByText('publication_account_evidence_missing'),
-  ).toBeInTheDocument();
+  ).toBeVisible();
+  expect(screen.getByTestId('publication-policy-settings')).not.toHaveAttribute(
+    'open',
+  );
   expect(screen.getByText('No applicable source')).toBeInTheDocument();
   expect(
     screen.queryByRole('button', { name: 'Enable automatic publication' }),

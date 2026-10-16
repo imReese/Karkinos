@@ -179,6 +179,7 @@ export function ResearchPaperBookPanel({
             >
               {book.lifecycle === 'active' ? labels.active : labels.paused}
             </p>
+            <ResearchPaperBookState book={book} />
             <div className="flex flex-wrap items-end gap-3">
               <label className="grid min-w-0 flex-1 basis-64 gap-2 text-xs">
                 {labels.dataset}
@@ -296,7 +297,6 @@ export function ResearchPaperBookPanel({
               </button>
             </div>
             <p className="app-muted text-xs leading-5">{labels.pauseHint}</p>
-            <ResearchPaperBookState book={book} />
           </>
         ) : null}
       </div>

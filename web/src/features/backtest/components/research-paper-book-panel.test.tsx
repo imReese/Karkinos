@@ -195,6 +195,16 @@ test.each([false, true])(
     );
     open();
     await chooseDataset();
+    const snapshot = screen.getByRole('region', {
+      name: 'Saved book snapshot',
+    });
+    const settlement = screen.getByLabelText(
+      'Formal Dataset for paper settlement',
+    );
+    expect(
+      snapshot.compareDocumentPosition(settlement) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     const settle = screen.getByRole('button', {
       name: 'Settle paper book manually',
     });

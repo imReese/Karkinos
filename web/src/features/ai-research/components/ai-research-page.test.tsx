@@ -134,13 +134,11 @@ test('opens the cited research canvas from canonical persisted context', async (
   const contextMetrics = screen.getByTestId('ai-research-context-metrics');
   const commandGrid = screen.getByTestId('ai-research-command-grid');
   expect(commandGrid.className).toContain('app-ai-research-command-grid');
-  expect(contextMetrics.className).toContain('xl:order-2');
-  expect(primaryCanvas.className).toContain('xl:order-1');
   expect(contextMetrics.querySelector('dl')?.className).toContain(
     'app-ai-research-context-strip',
   );
   expect(
-    contextMetrics.compareDocumentPosition(primaryCanvas) &
+    primaryCanvas.compareDocumentPosition(contextMetrics) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(

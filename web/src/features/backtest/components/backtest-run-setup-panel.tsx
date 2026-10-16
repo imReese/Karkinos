@@ -19,7 +19,6 @@ import { backtestCostCopy } from '../copy-costs';
 import { ParameterComparePanel } from './parameter-compare-panel';
 import { ParameterSweepPanel } from './parameter-sweep-panel';
 import { StrategyCatalogPanel } from './strategy-catalog-panel';
-import { StrategyMetadataPanel } from './strategy-metadata-panel';
 import { ResearchUniverseEditor } from './research-universe-editor';
 import { datasetMatchesResearchInputs } from './backtest-universe';
 
@@ -33,11 +32,13 @@ function BacktestSetupForm() {
     endDate,
     formError,
     initialCash,
+    latestReport,
     labels,
     parameterSchema,
     parameterValues,
     runBacktest,
     runAssets,
+    savedResults,
     selectedAssetClassLabel,
     selectedStrategy,
     setAssetClass,
@@ -53,7 +54,10 @@ function BacktestSetupForm() {
   } = useBacktestPage();
 
   return (
-    <form className="mt-5 grid gap-4" onSubmit={submitRun}>
+    <form
+      className={`mt-3 grid min-w-0 gap-4 ${latestReport || savedResults.data?.length ? '' : 'lg:grid-cols-2'}`}
+      onSubmit={submitRun}
+    >
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="grid gap-2 text-sm font-medium">
           {labels.startDate}
@@ -95,19 +99,20 @@ function BacktestSetupForm() {
         />
       </label>
 
-      <div className="grid gap-3">
-        {strategies.isError ? (
-          <span className="app-muted text-xs">
-            {labels.strategyRegistryFailed}
-          </span>
-        ) : null}
-        {strategies.isPending ? (
-          <span className="app-muted text-xs">
-            {labels.strategyRegistryLoading}
-          </span>
-        ) : null}
-        <StrategyMetadataPanel strategy={selectedStrategy} labels={labels} />
-      </div>
+      {strategies.isError || strategies.isPending ? (
+        <div className="grid gap-3">
+          {strategies.isError ? (
+            <span className="app-muted text-xs">
+              {labels.strategyRegistryFailed}
+            </span>
+          ) : null}
+          {strategies.isPending ? (
+            <span className="app-muted text-xs">
+              {labels.strategyRegistryLoading}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2">
         {parameterSchema.map((param) => {
@@ -207,14 +212,14 @@ function BacktestSetupForm() {
 
       {formError ? (
         <div
-          className="rounded-[var(--app-radius-control)] border border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] px-3 py-2.5 text-sm text-[var(--app-danger)]"
+          className="col-span-full rounded-[var(--app-radius-control)] border border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] px-3 py-2.5 text-sm text-[var(--app-danger)]"
           role="alert"
         >
           {formError}
         </div>
       ) : null}
 
-      <div className="flex justify-end border-t border-[var(--app-divider)] pt-4">
+      <div className="col-span-full flex justify-end border-t border-[var(--app-divider)] pt-3">
         <button
           type="submit"
           className="app-button-primary min-h-11 w-full rounded-[var(--app-radius-control)] px-4 py-2.5 text-sm font-semibold transition active:scale-[0.99] sm:w-auto"
@@ -296,17 +301,12 @@ export function BacktestRunSetupPanel() {
       }}
       role="tabpanel"
     >
-      <summary className="flex min-h-16 cursor-pointer list-none items-start justify-between gap-4 border-b border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-4 text-left transition-colors hover:bg-[color-mix(in_srgb,var(--app-surface-overlay)_40%,transparent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
+      <summary className="flex min-h-11 cursor-pointer list-none items-start justify-between gap-4 border-b border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-3 text-left transition-colors hover:bg-[color-mix(in_srgb,var(--app-surface-overlay)_40%,transparent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-focus-ring)] [&::-webkit-details-marker]:hidden">
         <span className="min-w-0">
-          <span className="app-kicker app-type-overline block">
-            {labels.formKicker}
-          </span>
-          <span className="mt-1 block text-sm font-semibold text-[var(--app-text)]">
+          <span className="block text-sm font-semibold text-[var(--app-text)]">
             {labels.formTitle}
           </span>
-          <span className="mt-0.5 block text-xs leading-5 text-[var(--app-text-secondary)]">
-            {labels.formDetail}
-          </span>
+          <span className="sr-only">{labels.formDetail}</span>
         </span>
         <span
           aria-hidden="true"
@@ -316,7 +316,7 @@ export function BacktestRunSetupPanel() {
         </span>
       </summary>
 
-      <div className="space-y-4 p-4">
+      <div className="space-y-3 p-3">
         <div className="scroll-mt-24" id="backtest-strategy-catalog">
           <StrategyCatalogPanel
             strategyCatalog={strategyCatalog}
@@ -326,11 +326,8 @@ export function BacktestRunSetupPanel() {
           />
         </div>
 
-        <section
-          className="min-w-0 border-y border-[var(--app-divider)]"
-          data-testid="backtest-parameter-panel"
-        >
-          <div className="p-4 sm:p-5">
+        <section className="min-w-0" data-testid="backtest-parameter-panel">
+          <div>
             {searchDefaults.hasHandoffContext ? (
               <section
                 className="mt-4 border-l-2 border-[var(--app-info-indicator)] py-1 pl-3"

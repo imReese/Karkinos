@@ -242,11 +242,6 @@ describe('remaining route workbench contract', () => {
   it('marks AI output as cited research rather than deterministic account fact', () => {
     expect(RESEARCH_TASK).toContain('data-evidence-kind="cited-ai-research"');
     expect(AI_RESEARCH).toContain('routePrimary');
-    expect(
-      AI_RESEARCH.indexOf('data-testid="ai-research-context-metrics"'),
-    ).toBeLessThan(
-      AI_RESEARCH.indexOf('data-testid="ai-research-primary-canvas"'),
-    );
     expect(RESEARCH_TASK).not.toContain("kicker: 'AI research boundary'");
     expect(RESEARCH_TASK).not.toContain('Freeze canonical evidence');
     expect(STRATEGY_RESEARCH).toContain(
@@ -686,7 +681,6 @@ describe('remaining route workbench contract', () => {
     expect(currentWorkspace).toContain(
       'data-testid="backtest-primary-workbench"',
     );
-    expect(currentWorkspace).toContain('xl:grid-cols-[minmax(0,1fr)_360px]');
     expect(currentWorkspace).toContain(
       'data-testid="backtest-run-setup-disclosure"',
     );
@@ -708,7 +702,7 @@ describe('remaining route workbench contract', () => {
     expect(summaryValue).not.toContain('var(--app-danger)');
   });
 
-  it('pairs Operations priority evidence with health posture and keeps Backtest copy readable', () => {
+  it('pairs Operations priority evidence with health posture', () => {
     expect(CSS).toMatch(
       /\.app-operations-command-grid \{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);/,
     );
@@ -721,12 +715,6 @@ describe('remaining route workbench contract', () => {
     );
     expect(CSS).toMatch(
       /max-width:\s*639px[\s\S]*\.app-operations-attention-list \[data-evidence-field='next-action'\][\s\S]*grid-column:\s*1 \/ -1;[\s\S]*order:\s*2;[\s\S]*\.app-operations-attention-list \[data-evidence-field='unblock-condition'\][\s\S]*grid-column:\s*1 \/ -1;[\s\S]*order:\s*3;/,
-    );
-    expect(BACKTEST).toContain(
-      '2xl:grid-cols-[minmax(0,1fr)_minmax(180px,240px)]',
-    );
-    expect(BACKTEST).not.toContain(
-      'sm:grid-cols-[minmax(0,1fr)_minmax(180px,240px)]',
     );
   });
 });
