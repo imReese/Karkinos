@@ -303,6 +303,7 @@ def selection_from_session(session: Mapping[str, Any]) -> StrategyResearchSelect
         ),
         deployment_scope=selection.get("deployment_scope"),
         portfolio_policy_id=selection.get("portfolio_policy_id"),
+        simulation_validation_binding=selection.get("simulation_validation_binding"),
     )
 
 

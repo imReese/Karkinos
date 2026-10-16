@@ -861,6 +861,503 @@ def _verified_job_daily_snapshots(store, job, planned):
         ) from None
 
 
+def _forward_seed_expected(
+    market_store,
+    config,
+    *,
+    dates,
+    through,
+    current,
+    warmup_universe,
+    now,
+    pinned_binding=None,
+    prefix=None,
+):
+    # Membership in the old warmup is explicit and exploratory. Only the
+    # current session binds the actual observed master for a new decision.
+    expected = {
+        date.fromisoformat(item.trade_date): current
+        if item.trade_date == through.isoformat()
+        else warmup_universe
+        for item in dates
+    }
+    # Historical warmup is an explicit composition of rows that actually
+    # exist in frozen receipts, not a claim that today's IPOs existed then.
+    # The separate verified jobs still capture/reconcile the requested bars.
+    market_binding = pinned_binding
+    receipts = (
+        []
+        if market_binding
+        else market_store.list_market_daily_ingestion_receipts(
+            start_date=min(expected).isoformat(), end_date=through.isoformat()
+        )
+    )
+    if market_binding or receipts:
+        from data.research_market_data import (
+            complete_research_market_binding,
+            load_research_market_frames,
+            research_market_binding,
+            resolve_daily_bar_receipts,
+        )
+
+        if market_binding is None:
+            receipts = resolve_daily_bar_receipts(
+                data_store=market_store,
+                start_date=min(expected).isoformat(),
+                end_date=through.isoformat(),
+                config=config,
+            )
+            market_binding, frames = complete_research_market_binding(
+                market_store._root,
+                binding=research_market_binding(receipts),
+                symbols=[key.symbol for key in warmup_universe],
+                start_date=min(expected).isoformat(),
+                end_date=through.isoformat(),
+                as_of=now,
+            )
+        else:
+            frames = load_research_market_frames(
+                market_store._root,
+                binding=market_binding,
+                symbols=[key.symbol for key in warmup_universe],
+                start_date=min(expected).isoformat(),
+                end_date=through.isoformat(),
+            )
+        observed_dates = {
+            symbol: {value.date() for value in frame["timestamp"]}
+            for symbol, frame in frames.items()
+        }
+        for day in expected:
+            if day == through:
+                continue
+            observed = tuple(
+                key
+                for key in warmup_universe
+                if day in observed_dates.get(key.symbol, ())
+            )
+            if not observed:
+                raise ValueError("forward_seed_warmup_session_unavailable")
+            expected[day] = observed
+    if prefix is not None:
+        for membership in prefix.session_memberships:
+            expected[membership.partition_date] = membership.instruments
+    return expected, market_binding
+
+
+def _publish_forward_seed(
+    db,
+    root,
+    objects,
+    *,
+    jobs,
+    expected,
+    master,
+    identity,
+    prefix,
+    through,
+    latest_through,
+    now,
+    scope,
+    prefix_dataset_id=None,
+):
+    job_snapshots = []
+    for job in jobs:
+        if not job.result_ref or not job.result_ref.startswith("dataset:sha256:"):
+            raise ResearchDatasetError("verified_interval_job_result_invalid")
+        job_snapshots.append(
+            (
+                VerifiedDailyMarketJobRequest.from_payload(job.payload),
+                read_daily_bar_dataset(
+                    objects,
+                    DatasetRef(
+                        objects.resolve_ref(job.result_ref.removeprefix("dataset:"))
+                    ),
+                ).snapshot,
+            )
+        )
+    memberships = list(prefix.session_memberships) if prefix is not None else []
+    for day, members in expected.items():
+        if prefix is not None and day <= prefix.end_date:
+            continue
+        available = max(
+            snapshot.cutoff
+            for planned, snapshot in job_snapshots
+            if planned.instruments_for_session(day)
+        )
+        memberships.append(
+            DailyBarDatasetMembership(
+                day,
+                members,
+                datetime.fromisoformat(master["available_at"])
+                if day == through
+                else available,
+                (identity,) if day == through else (),
+                now if day == through and through == latest_through else None,
+            )
+        )
+    all_instruments = tuple(
+        sorted(
+            {key for members in expected.values() for key in members},
+            key=lambda key: (key.instrument_type.value, key.symbol),
+        )
+    )
+    summary = publish_verified_interval_dataset(
+        root,
+        DailyBarRequest(all_instruments, min(expected), through),
+        db=db,
+        job_ids=tuple(job.job_id for job in jobs),
+        session_memberships=tuple(memberships),
+        universe_policy_id=scope["deployment_scope_fingerprint"],
+        prefix_dataset_id=prefix_dataset_id,
+    )
+    return summary
+
+
+def _existing_forward_seed(
+    db,
+    config,
+    objects,
+    catalog,
+    *,
+    dates,
+    through,
+    latest_through,
+    expected,
+    scope,
+    now,
+    forward_sessions,
+):
+    entries = (
+        catalog.list_daily_bar_datasets(
+            start_date=date.fromisoformat(dates[0].trade_date), end_date=through
+        )
+        if catalog.path.exists()
+        else ()
+    )
+    for entry in entries:
+        if (
+            entry.start_date != date.fromisoformat(dates[0].trade_date)
+            or entry.end_date != through
+        ):
+            continue
+        candidate = read_daily_bar_dataset_manifest(objects, entry.ref)
+        # Range transport jobs are not a full-scope seed. Reject their
+        # declared scope cheaply; a matching seed still reopens all proof.
+        if candidate.universe_policy_id != scope["deployment_scope_fingerprint"]:
+            continue
+        restored = read_daily_bar_dataset(objects, entry.ref)
+        snapshot = restored.snapshot
+        if (
+            snapshot.universe_policy_id == scope["deployment_scope_fingerprint"]
+            and snapshot.verification_bound
+            and snapshot.cutoff <= now
+            and all(
+                snapshot.instruments_for_session(day) == members
+                for day, members in expected.items()
+            )
+            and snapshot.session_memberships[-1].source_observation_ids
+            and through == latest_through
+        ):
+            if forward_sessions:
+                from server.services.research_corporate_action_jobs import (
+                    ensure_dataset_corporate_actions,
+                )
+
+                return ensure_dataset_corporate_actions(
+                    db,
+                    config,
+                    snapshot=snapshot,
+                    now=now,
+                    prospective_start=through,
+                    previous_observation_ids=snapshot.corporate_action_observation_ids,
+                )
+            return {
+                "status": "ready",
+                "dataset_id": entry.ref.dataset_id,
+                "job_ids": [],
+                "last_blocker": None,
+            }
+    return None
+
+
+def _forward_seed_jobs(db, config, *, expected, prefix, through, now, replacements):
+    from server.services.verified_daily_market_jobs import (
+        enqueue_verified_daily_market_jobs_for_range,
+    )
+
+    job_expected = {
+        day: members
+        for day, members in expected.items()
+        if prefix is None or day > prefix.end_date
+    }
+    all_members = tuple(
+        sorted(
+            {key for members in job_expected.values() for key in members},
+            key=lambda key: (key.instrument_type.value, key.symbol),
+        )
+    )
+    jobs = (
+        enqueue_verified_daily_market_jobs_for_range(
+            db,
+            config,
+            SQLiteJobStore(db.path),
+            instruments=all_members,
+            start_date=min(job_expected),
+            end_date=through,
+            now=now,
+            historical_range=True,
+            session_instruments=job_expected,
+        )
+        if job_expected and prefix is None
+        else tuple(
+            job
+            for day, members in job_expected.items()
+            for job in enqueue_verified_daily_market_jobs_for_range(
+                db,
+                config,
+                SQLiteJobStore(db.path),
+                instruments=members,
+                start_date=day,
+                end_date=day,
+                now=now,
+            )
+        )
+    )
+    jobs = _forward_seed_replacement_jobs(SQLiteJobStore(db.path), jobs, replacements)
+    if any(job.status != "succeeded" for job in jobs):
+        from server.persistence.market_daily_call_budget import BUDGET_DEFERRED_CODE
+
+        deferred = [job for job in jobs if job.error == BUDGET_DEFERRED_CODE]
+        retry_at = min(
+            (job.available_at for job in deferred if job.available_at is not None),
+            default=None,
+        )
+        return {
+            "status": "blocked"
+            if any(job.status == "failed" for job in jobs)
+            else "waiting",
+            "job_ids": [job.job_id for job in jobs],
+            "last_blocker": {"code": BUDGET_DEFERRED_CODE, "available_at": retry_at}
+            if deferred
+            else {"code": "forward_seed_verified_jobs_incomplete"},
+        }
+    return jobs
+
+
+def forward_seed_origin_id(
+    scope: dict[str, Any],
+    minimum_bars: int,
+    verification_policy_id: str,
+    *,
+    start_date: str | None = None,
+) -> str:
+    """Stable scheduler identity, independent of a changing latest session."""
+    from server.contracts.content_identity import content_fingerprint
+
+    return "forward_seed_origin:" + content_fingerprint(
+        {
+            "deployment_scope_fingerprint": scope["deployment_scope_fingerprint"],
+            "minimum_bars": max(
+                minimum_bars, int(scope["universe_policy"]["minimum_history_rows"])
+            ),
+            "verification_source_policy_id": verification_policy_id,
+            **(
+                {"declared_start_date": date.fromisoformat(start_date).isoformat()}
+                if start_date is not None
+                else {}
+            ),
+        }
+    )
+
+
+def read_forward_seed_origin(db, origin_id: str):
+    """Read the current preparation revision; this is not Dataset validation."""
+    from server.persistence.automation_runs import AutomationRunRepository
+
+    repository = AutomationRunRepository(db.path)
+    previous, seen = None, set()
+    while origin_id not in seen and len(seen) < 32:
+        seen.add(origin_id)
+        row = repository.get_automation_run_sync(origin_id)
+        if row is None:
+            if previous is not None:
+                raise ValueError("forward_seed_origin_revision_missing")
+            return None
+        payload = json.loads(row["payload_json"])
+        if row["run_type"] != "forward_seed_preparation":
+            raise ValueError("forward_seed_origin_revision_invalid")
+        if previous is not None:
+            prior_payload = json.loads(previous["payload_json"])
+            if (
+                prior_payload.get("alias_of_origin_id") != row["run_id"]
+                and payload.get("supersedes_origin_id") != previous["run_id"]
+            ) or any(
+                payload.get(key) != prior_payload.get(key)
+                for key in (
+                    "deployment_scope_fingerprint",
+                    "minimum_bars",
+                    "verification_source_policy_id",
+                    "start_date",
+                    "end_date",
+                    "master_observation_id",
+                    "warmup_instruments",
+                )
+            ):
+                raise ValueError("forward_seed_origin_revision_invalid")
+        if row["status"] != "superseded":
+            return row
+        previous, origin_id = row, row["source_ref"]
+        if not isinstance(origin_id, str) or not origin_id.startswith(
+            "forward_seed_origin:"
+        ):
+            raise ValueError("forward_seed_origin_revision_invalid")
+    raise ValueError("forward_seed_origin_revision_cycle")
+
+
+def _forward_seed_replacement_jobs(store, jobs, replacements):
+    resolved = []
+    for job in jobs:
+        replacement_id = replacements.get(job.job_id)
+        replacement = store.get(replacement_id) if replacement_id else job
+        if (
+            replacement is None
+            or replacement.kind != VERIFIED_DAILY_MARKET_JOB
+            or {
+                key: value
+                for key, value in replacement.payload.items()
+                if key != "observation_round"
+            }
+            != {
+                key: value
+                for key, value in job.payload.items()
+                if key != "observation_round"
+            }
+        ):
+            raise ValueError("forward_seed_replacement_job_mismatch")
+        resolved.append(replacement)
+    return tuple(resolved)
+
+
+def revise_pending_forward_seed_origin(
+    db,
+    config,
+    *,
+    origin_id,
+    scope,
+    now,
+    data_store,
+    job_replacements=None,
+    declared_start_date=None,
+):
+    """Explicitly inherit one pending window while correcting its actual inputs.
+
+    Original recipes and jobs remain audit records. New jobs arise only for
+    changed dated members; exact unchanged transport identities are reused.
+    """
+    from data.research_market_data import complete_research_market_binding
+    from data.source_policy import verification_source_policy_for_config
+    from server.contracts.content_identity import content_fingerprint
+    from server.persistence.automation_runs import AutomationRunRepository
+
+    row = read_forward_seed_origin(db, origin_id)
+    if row is None or row["status"] != "claimed" or row.get("source_ref") is not None:
+        raise ValueError("forward_seed_origin_revision_conflict")
+    origin = json.loads(row["payload_json"])
+    if (
+        origin["deployment_scope_fingerprint"] != scope["deployment_scope_fingerprint"]
+        or origin["verification_source_policy_id"]
+        != verification_source_policy_for_config(config).policy_id
+    ):
+        raise ValueError("forward_seed_origin_revision_scope_mismatch")
+    canonical_alias = None
+    if declared_start_date is not None:
+        from server.services.market_calendar_dates import (
+            resolve_verified_closed_trading_dates_in_range,
+        )
+
+        start = date.fromisoformat(declared_start_date)
+        days = resolve_verified_closed_trading_dates_in_range(
+            db,
+            now,
+            start_date=start,
+            end_date=date.fromisoformat(origin["end_date"]),
+            maximum_calendar_days=3653,
+        )
+        if not days or days[0].trade_date != origin["start_date"]:
+            raise ValueError("forward_seed_origin_declared_start_mismatch")
+        canonical_id = forward_seed_origin_id(
+            scope,
+            origin["minimum_bars"],
+            origin["verification_source_policy_id"],
+            start_date=start.isoformat(),
+        )
+        if canonical_id != origin_id:
+            existing = read_forward_seed_origin(db, canonical_id)
+            if existing is not None and existing["run_id"] != row["run_id"]:
+                raise ValueError("forward_seed_canonical_origin_conflict")
+            if existing is None:
+                canonical_alias = {
+                    "run_id": canonical_id,
+                    "run_type": "forward_seed_preparation",
+                    "run_date": row["run_date"],
+                    "status": "superseded",
+                    "execution_mode": row["execution_mode"],
+                    "started_at": now.isoformat(),
+                    "source_ref": row["run_id"],
+                    "payload": {
+                        **origin,
+                        "alias_of_origin_id": row["run_id"],
+                        "declared_start_date": start.isoformat(),
+                    },
+                }
+    binding, _ = complete_research_market_binding(
+        data_store._root,
+        binding=origin["market_data_binding"],
+        symbols=[key["symbol"] for key in origin["warmup_instruments"]],
+        start_date=origin["start_date"],
+        end_date=origin["end_date"],
+        as_of=now,
+    )
+    replacements = {**origin.get("job_replacements", {}), **(job_replacements or {})}
+    store = SQLiteJobStore(db.path)
+    for original, replacement in replacements.items():
+        old_job = store.get(original)
+        if old_job is None:
+            raise ValueError("forward_seed_replacement_job_mismatch")
+        _forward_seed_replacement_jobs(store, (old_job,), {original: replacement})
+    if (
+        canonical_alias is None
+        and binding == origin["market_data_binding"]
+        and replacements == origin.get("job_replacements", {})
+    ):
+        return row
+    revision_id = "forward_seed_origin:" + content_fingerprint(
+        {
+            "supersedes_origin_id": row["run_id"],
+            "market_data_binding": binding,
+            "job_replacements": replacements,
+        }
+    )
+    revision = {
+        "run_id": revision_id,
+        "run_type": "forward_seed_preparation",
+        "run_date": row["run_date"],
+        "status": "claimed",
+        "execution_mode": row["execution_mode"],
+        "started_at": now.isoformat(),
+        "source_ref": None,
+        "payload": {
+            **origin,
+            "market_data_binding": binding,
+            "job_replacements": replacements,
+            "supersedes_origin_id": row["run_id"],
+        },
+    }
+    return AutomationRunRepository(db.path).revise_pending_forward_seed_origin_sync(
+        row["run_id"], revision, canonical_alias=canonical_alias
+    )
+
+
 def ensure_forward_seed_for_source(
     db: Any,
     config: Any,
@@ -875,8 +1372,10 @@ def ensure_forward_seed_for_source(
     immutable results, so automatic observation startup can resume after waiting.
     """
     from data.dataset.manifest import bind_stock_master_observation
+    from data.source_policy import verification_source_policy_for_config
     from data.store import DataStore
     from server.bootstrap import resolve_data_dir
+    from server.persistence.automation_runs import AutomationRunRepository
     from server.services.market_calendar_dates import (
         resolve_latest_verified_closed_trading_date,
         resolve_verified_closed_trading_dates_in_range,
@@ -886,9 +1385,6 @@ def ensure_forward_seed_for_source(
         market_deployment_scope,
         market_master_buy_instruments,
         require_complete_market_universe_snapshot,
-    )
-    from server.services.verified_daily_market_jobs import (
-        enqueue_verified_daily_market_jobs_for_range,
     )
 
     selection = source.get("source_selection") or source.get("selection") or {}
@@ -924,34 +1420,95 @@ def ensure_forward_seed_for_source(
                     "limit": 2000,
                 },
             }
+        verification_policy = verification_source_policy_for_config(config).policy_id
+        declared_start = source.get("start_date") or selection.get("start_date")
+        if declared_start is not None:
+            declared_start = date.fromisoformat(declared_start).isoformat()
+        origins = AutomationRunRepository(db.path)
+        origin_id = forward_seed_origin_id(
+            scope, minimum, verification_policy, start_date=declared_start
+        )
+        origin_run = read_forward_seed_origin(db, origin_id)
+        if origin_run is not None:
+            origin_id = origin_run["run_id"]
+        origin = json.loads(origin_run["payload_json"]) if origin_run else None
+        root = db.path.resolve().parent / "research"
+        objects = ContentAddressedObjectStore(root / "objects")
+        catalog = DatasetCatalog(root)
+        prefix = None
+        if origin_run and origin_run.get("source_ref"):
+            prefix = read_daily_bar_dataset(
+                objects, DatasetRef(objects.resolve_ref(origin_run["source_ref"]))
+            ).snapshot
+            if (
+                prefix.universe_policy_id != scope["deployment_scope_fingerprint"]
+                or not prefix.verification_bound
+                or prefix.start_date.isoformat() != origin["start_date"]
+                or prefix.cutoff > now
+            ):
+                raise ValueError("forward_seed_origin_dataset_invalid")
         closed = resolve_latest_verified_closed_trading_date(db, now)
         if closed is None:
             raise ValueError("forward_seed_calendar_unavailable")
-        through = date.fromisoformat(closed.trade_date)
+        latest_through = date.fromisoformat(closed.trade_date)
+        through = (
+            date.fromisoformat(origin["end_date"])
+            if origin and prefix is None
+            else latest_through
+        )
         dates = resolve_verified_closed_trading_dates_in_range(
             db,
             now,
-            start_date=through - timedelta(days=min(3652, max(30, minimum * 2))),
+            start_date=date.fromisoformat(origin["start_date"])
+            if origin
+            else date.fromisoformat(declared_start)
+            if declared_start
+            else through - timedelta(days=min(3652, max(30, minimum * 2))),
             end_date=through,
             maximum_calendar_days=3653,
         )
         if minimum < 1 or len(dates) < minimum:
             raise ValueError("forward_seed_warmup_unavailable")
-        dates = dates[-minimum:]
+        if not origin and not declared_start:
+            dates = dates[-minimum:]
+        if len(dates) + forward_sessions > 2000:
+            return {
+                "status": "blocked",
+                "job_ids": [],
+                "last_blocker": {
+                    "code": "forward_seed_session_budget_exceeded",
+                    "warmup_sessions": len(dates),
+                    "minimum_forward_sessions": forward_sessions,
+                    "limit": 2000,
+                },
+            }
         original = tuple(
             sorted(
                 (
                     InstrumentKey.from_values(row["symbol"], row["instrument_type"])
-                    for row in source["instruments"]
+                    for row in (
+                        origin["warmup_instruments"]
+                        if origin and prefix is None
+                        else source["instruments"]
+                    )
                 ),
                 key=lambda key: (key.instrument_type.value, key.symbol),
             )
         )
-        root = db.path.resolve().parent / "research"
-        objects = ContentAddressedObjectStore(root / "objects")
         market_store = data_store or DataStore(resolve_data_dir())
-        raw_master = market_store.get_market_universe_snapshot(
-            trade_date=through.isoformat(), as_of=now
+        raw_master = (
+            {
+                **json.loads(
+                    objects.read_bytes(
+                        objects.resolve_ref(origin["master_observation_id"])
+                    )
+                ),
+                "snapshot_id": origin["master_observation_id"],
+            }
+            if origin and prefix is None
+            else market_store.get_market_universe_snapshot(
+                trade_date=through.isoformat(), as_of=now
+            )
         )
         master = require_complete_market_universe_snapshot(
             raw_master,
@@ -965,7 +1522,9 @@ def ensure_forward_seed_for_source(
         )
         warmup_universe = tuple(
             sorted(
-                set(original) | set(current),
+                set(original)
+                | set(current)
+                | (set(prefix.instruments) if prefix is not None else set()),
                 key=lambda key: (key.instrument_type.value, key.symbol),
             )
         )
@@ -979,54 +1538,19 @@ def ensure_forward_seed_for_source(
                     "limit": 10_000,
                 },
             }
-        # Membership in the old warmup is explicit and exploratory. Only the
-        # current session binds the actual observed master for a new decision.
-        expected = {
-            date.fromisoformat(item.trade_date): current
-            if item.trade_date == through.isoformat()
-            else warmup_universe
-            for item in dates
-        }
-        # Historical warmup is an explicit composition of rows that actually
-        # exist in frozen receipts, not a claim that today's IPOs existed then.
-        # The separate verified jobs still capture/reconcile the requested bars.
-        receipts = market_store.list_market_daily_ingestion_receipts(
-            start_date=min(expected).isoformat(), end_date=through.isoformat()
+        expected, market_binding = _forward_seed_expected(
+            market_store,
+            config,
+            dates=dates,
+            through=through,
+            current=current,
+            warmup_universe=warmup_universe,
+            now=now,
+            pinned_binding=origin.get("market_data_binding")
+            if origin and prefix is None
+            else None,
+            prefix=prefix,
         )
-        if receipts:
-            from data.research_market_data import (
-                load_research_market_frames,
-                research_market_binding,
-                resolve_daily_bar_receipts,
-            )
-
-            receipts = resolve_daily_bar_receipts(
-                data_store=market_store,
-                start_date=min(expected).isoformat(),
-                end_date=through.isoformat(),
-                config=config,
-            )
-            frames = load_research_market_frames(
-                market_store._root,
-                binding=research_market_binding(receipts),
-                symbols=[key.symbol for key in warmup_universe],
-                start_date=min(expected).isoformat(),
-                end_date=through.isoformat(),
-            )
-            for day in expected:
-                if day == through:
-                    continue
-                observed = tuple(
-                    key
-                    for key in warmup_universe
-                    if key.symbol in frames
-                    and any(
-                        value.date() == day for value in frames[key.symbol]["timestamp"]
-                    )
-                )
-                if not observed:
-                    raise ValueError("forward_seed_warmup_session_unavailable")
-                expected[day] = observed
         warmup_rows = sum(len(members) for members in expected.values())
         forward_rows = len(current) * forward_sessions
         if warmup_rows + forward_rows > 20_000_000:
@@ -1040,137 +1564,99 @@ def ensure_forward_seed_for_source(
                     "limit": 20_000_000,
                 },
             }
-        catalog = DatasetCatalog(root)
-        entries = (
-            catalog.list_daily_bar_datasets(
-                start_date=date.fromisoformat(dates[0].trade_date), end_date=through
-            )
-            if catalog.path.exists()
-            else ()
-        )
-        for entry in entries:
-            if (
-                entry.start_date != date.fromisoformat(dates[0].trade_date)
-                or entry.end_date != through
-            ):
-                continue
-            candidate = read_daily_bar_dataset_manifest(objects, entry.ref)
-            # Range transport jobs are not a full-scope seed. Reject their
-            # declared scope cheaply; a matching seed still reopens all proof.
-            if candidate.universe_policy_id != scope["deployment_scope_fingerprint"]:
-                continue
-            restored = read_daily_bar_dataset(objects, entry.ref)
-            snapshot = restored.snapshot
-            if (
-                snapshot.universe_policy_id == scope["deployment_scope_fingerprint"]
-                and snapshot.verification_bound
-                and snapshot.cutoff <= now
-                and all(
-                    snapshot.instruments_for_session(day) == members
-                    for day, members in expected.items()
+        if origin is None:
+            origin = {
+                "schema_version": "karkinos.forward_seed_origin.v1",
+                "deployment_scope_fingerprint": scope["deployment_scope_fingerprint"],
+                "minimum_bars": minimum,
+                "verification_source_policy_id": verification_policy,
+                "start_date": min(expected).isoformat(),
+                "end_date": through.isoformat(),
+                "master_observation_id": identity,
+                "warmup_instruments": [
+                    {"symbol": key.symbol, "instrument_type": key.instrument_type.value}
+                    for key in warmup_universe
+                ],
+                "market_data_binding": market_binding,
+            }
+            try:
+                claimed = origins.claim_automation_run_once_sync(
+                    run_id=origin_id,
+                    run_type="forward_seed_preparation",
+                    run_date=now.date().isoformat(),
+                    claimed_at=now.isoformat(),
+                    execution_mode="paper_shadow",
+                    payload=origin,
                 )
-                and snapshot.session_memberships[-1].source_observation_ids
-            ):
-                if forward_sessions:
-                    from server.services.research_corporate_action_jobs import (
-                        ensure_dataset_corporate_actions,
-                    )
-
-                    return ensure_dataset_corporate_actions(
-                        db,
-                        config,
-                        snapshot=snapshot,
-                        now=now,
-                        prospective_start=through,
-                        previous_observation_ids=snapshot.corporate_action_observation_ids,
-                    )
-                return {
-                    "status": "ready",
-                    "dataset_id": entry.ref.dataset_id,
-                    "job_ids": [],
-                    "last_blocker": None,
-                }
-        all_members = tuple(
-            sorted(
-                {key for members in expected.values() for key in members},
-                key=lambda key: (key.instrument_type.value, key.symbol),
-            )
-        )
-        jobs = enqueue_verified_daily_market_jobs_for_range(
+            except RuntimeError:
+                if origins.get_automation_run_sync(origin_id) is None:
+                    raise
+                return ensure_forward_seed_for_source(
+                    db, config, source=source, now=now, data_store=market_store
+                )
+            origin_run = claimed["run"]
+            if not claimed["claimed"]:
+                return ensure_forward_seed_for_source(
+                    db, config, source=source, now=now, data_store=market_store
+                )
+        existing = _existing_forward_seed(
             db,
             config,
-            SQLiteJobStore(db.path),
-            instruments=all_members,
-            start_date=min(expected),
-            end_date=through,
+            objects,
+            catalog,
+            dates=dates,
+            through=through,
+            latest_through=latest_through,
+            expected=expected,
+            scope=scope,
             now=now,
-            historical_range=True,
-            session_instruments=expected,
+            forward_sessions=forward_sessions,
         )
-        if any(job.status != "succeeded" for job in jobs):
-            from server.persistence.market_daily_call_budget import BUDGET_DEFERRED_CODE
-
-            deferred = [job for job in jobs if job.error == BUDGET_DEFERRED_CODE]
-            retry_at = min(
-                (job.available_at for job in deferred if job.available_at is not None),
-                default=None,
-            )
-            return {
-                "status": "blocked"
-                if any(job.status == "failed" for job in jobs)
-                else "waiting",
-                "job_ids": [job.job_id for job in jobs],
-                "last_blocker": {"code": BUDGET_DEFERRED_CODE, "available_at": retry_at}
-                if deferred
-                else {"code": "forward_seed_verified_jobs_incomplete"},
-            }
-        job_snapshots = []
-        for job in jobs:
-            if not job.result_ref or not job.result_ref.startswith("dataset:sha256:"):
-                raise ResearchDatasetError("verified_interval_job_result_invalid")
-            job_snapshots.append(
-                (
-                    VerifiedDailyMarketJobRequest.from_payload(job.payload),
-                    read_daily_bar_dataset(
-                        objects,
-                        DatasetRef(
-                            objects.resolve_ref(job.result_ref.removeprefix("dataset:"))
-                        ),
-                    ).snapshot,
-                )
-            )
-        memberships = []
-        for day, members in expected.items():
-            available = max(
-                snapshot.cutoff
-                for planned, snapshot in job_snapshots
-                if planned.instruments_for_session(day)
-            )
-            memberships.append(
-                DailyBarDatasetMembership(
-                    day,
-                    members,
-                    datetime.fromisoformat(master["available_at"])
-                    if day == through
-                    else available,
-                    (identity,) if day == through else (),
-                    now if day == through else None,
-                )
-            )
-        all_instruments = tuple(
-            sorted(
-                {key for members in expected.values() for key in members},
-                key=lambda key: (key.instrument_type.value, key.symbol),
-            )
+        if existing is not None:
+            return existing
+        jobs = _forward_seed_jobs(
+            db,
+            config,
+            expected=expected,
+            prefix=prefix,
+            through=through,
+            now=now,
+            replacements=origin.get("job_replacements", {}),
         )
-        summary = publish_verified_interval_dataset(
+        if isinstance(jobs, dict):
+            return jobs
+        summary = _publish_forward_seed(
+            db,
             root,
-            DailyBarRequest(all_instruments, min(expected), through),
-            db=db,
-            job_ids=tuple(job.job_id for job in jobs),
-            session_memberships=tuple(memberships),
-            universe_policy_id=scope["deployment_scope_fingerprint"],
+            objects,
+            jobs=jobs,
+            expected=expected,
+            master=master,
+            identity=identity,
+            prefix=prefix,
+            through=through,
+            latest_through=latest_through,
+            now=now,
+            scope=scope,
+            prefix_dataset_id=origin_run["source_ref"] if prefix is not None else None,
         )
+        origins.upsert_automation_run_sync(
+            {
+                "run_id": origin_id,
+                "run_type": "forward_seed_preparation",
+                "run_date": origin_run["run_date"],
+                "status": "completed",
+                "execution_mode": "paper_shadow",
+                "started_at": origin_run["started_at"],
+                "finished_at": now.isoformat(),
+                "source_ref": summary["dataset_id"],
+                "payload": {**origin, "prepared_through": through.isoformat()},
+            }
+        )
+        if through < latest_through:
+            return ensure_forward_seed_for_source(
+                db, config, source=source, now=now, data_store=market_store
+            )
         if forward_sessions:
             from server.services.research_corporate_action_jobs import (
                 ensure_dataset_corporate_actions,

@@ -587,15 +587,273 @@ def test_seed_waits_for_real_jobs_then_binds_only_current_observed_membership(
         )["dataset_id"]
         == ready["dataset_id"]
     )
+
+
+@pytest.mark.parametrize("declared_window", [False, True])
+def test_pending_seed_keeps_fixed_range_across_latest_session_then_appends_only_new_day(
+    tmp_path, monkeypatch, declared_window
+):
+    from types import SimpleNamespace
+
+    from data.dataset.model import DatasetRef
+    from data.source_policy import FREE_CN_RESEARCH_V1
+    from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
+    from server.services.market_universe_truth import market_deployment_scope
+    from server.services.verified_daily_market_data import VerifiedDailyMarketJobRequest
+    from server.services.verified_daily_market_jobs import VERIFIED_DAILY_MARKET_JOB
+    from tests.server.test_verified_daily_market_range import DAYS as THREE_DAYS
+    from tests.server.test_verified_daily_market_range import _service
+
+    db = _db(tmp_path, trading_days=THREE_DAYS)
+    market = DataStore(tmp_path / "market")
+    members = tuple(
+        InstrumentKey(str(600000 + index), InstrumentType.STOCK) for index in range(41)
+    )
+    current = [datetime(2026, 9, 18, 8, 5, tzinfo=timezone.utc)]
+
+    def master(day):
+        market.save_market_universe_snapshot(
+            trade_date=day.isoformat(),
+            provider_name="fixture",
+            members=normalize_a_share_members([key.symbol for key in members]),
+            capture_started_at=current[0] - timedelta(seconds=1),
+            capture_completed_at=current[0],
+            source_metadata=[
+                {"symbol": key.symbol, "display_name": "普通股"} for key in members
+            ],
+        )
+
+    master(THREE_DAYS[1])
+    source = {
+        "instruments": [
+            {"symbol": key.symbol, "instrument_type": "stock"} for key in members
+        ],
+        "minimum_bars": 2,
+        **({"start_date": "2026-01-01"} if declared_window else {}),
+        "source_selection": {
+            "deployment_scope": market_deployment_scope(
+                MarketUniversePolicy(
+                    minimum_master_member_count=41,
+                    minimum_history_rows=2,
+                )
+            ),
+            "portfolio_policy_id": FORMULA_PORTFOLIO_POLICY_ID,
+        },
+    }
+    config = SimpleNamespace(
+        market_data_verification_source_policy=FREE_CN_RESEARCH_V1.policy_id
+    )
+    service, primary, comparison = _service(tmp_path, monkeypatch)
+    for provider in (primary, comparison):
+        fetch = provider.fetch_daily_bars
+        monkeypatch.setattr(
+            provider,
+            "fetch_daily_bars",
+            lambda request, fetch=fetch: replace(
+                fetch(request),
+                started_at=current[0] - timedelta(seconds=1),
+                completed_at=current[0],
+            ),
+        )
+    jobs = SQLiteJobStore(db.path)
+
+    def finish(job_id):
+        claim = jobs.claim(
+            VERIFIED_DAILY_MARKET_JOB, "resume-fixture", now=current[0], job_id=job_id
+        )
+        publication = service.run(claim.payload, checked_at=current[0])
+        jobs.finish(claim.lease, now=current[0], result_ref=publication.result_ref)
+
+    first = ensure_forward_seed_for_source(
+        db, config, source=source, now=current[0], data_store=market
+    )
+    assert first["status"] == "waiting" and len(first["job_ids"]) == 2
+    finish(first["job_ids"][0])
+    first_ref = jobs.get(first["job_ids"][0]).result_ref
+    current[0] = datetime(2026, 9, 21, 8, 5, tzinfo=timezone.utc)
+    master(THREE_DAYS[-1])
+    resumed = ensure_forward_seed_for_source(
+        db, config, source=source, now=current[0], data_store=market
+    )
+    assert resumed["job_ids"] == first["job_ids"]
+    assert jobs.get(first["job_ids"][0]).result_ref == first_ref
+    finish(first["job_ids"][1])
+    append = ensure_forward_seed_for_source(
+        db, config, source=source, now=current[0], data_store=market
+    )
+    assert append["status"] == "waiting", append
+    assert len(append["job_ids"]) == 1, append
+    planned = VerifiedDailyMarketJobRequest.from_payload(
+        jobs.get(append["job_ids"][0]).payload
+    )
+    assert not planned.is_range and planned.trade_date == THREE_DAYS[-1]
+    assert planned.instruments == members
+    finish(append["job_ids"][0])
+    ready = ensure_forward_seed_for_source(
+        db, config, source=source, now=current[0], data_store=market
+    )
+    assert ready["status"] == "ready", ready
+    objects = ContentAddressedObjectStore(tmp_path / "research" / "objects")
+    snapshot = read_daily_bar_dataset(
+        objects, DatasetRef(objects.resolve_ref(ready["dataset_id"]))
+    ).snapshot
+    assert snapshot.start_date == THREE_DAYS[0] and snapshot.end_date == THREE_DAYS[-1]
+    assert [row.decision_at for row in snapshot.session_memberships] == [
+        None,
+        None,
+        current[0],
+    ]
+    assert snapshot.session_memberships[-1].source_observation_ids
+    assert len(primary.calls) == len(comparison.calls) == 3
     assert (
         ensure_forward_seed_for_source(
             db,
             config,
             source={**source, "source_result_id": 999},
-            now=NOW,
-            data_store=market_store,
+            now=current[0],
+            data_store=market,
         )["dataset_id"]
         == ready["dataset_id"]
+    )
+
+
+def test_explicit_pending_origin_inherits_stable_start_without_rewriting_old_recipe(
+    tmp_path,
+):
+    from types import SimpleNamespace
+
+    import pandas as pd
+
+    from data.research_market_data import research_market_binding
+    from data.source_policy import FREE_CN_RESEARCH_V1
+    from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
+    from server.persistence.automation_runs import AutomationRunRepository
+    from server.services.market_universe_truth import market_deployment_scope
+    from server.services.research.datasets import (
+        forward_seed_origin_id,
+        read_forward_seed_origin,
+        revise_pending_forward_seed_origin,
+    )
+    from tests.data.test_research_market_data import _batch
+
+    objects, _ = _composed(tmp_path)
+    db = _db(tmp_path)
+    market = DataStore(tmp_path)
+    receipts = []
+    for day, members in ((DAYS[0], (SECOND,)), (DAYS[1], (STOCK, SECOND))):
+        frame = pd.concat(
+            [_batch(day).assign(symbol=key.symbol) for key in members],
+            ignore_index=True,
+        )
+        receipts.append(
+            market.ingest_market_daily_batch(
+                trade_date=day.isoformat(), provider_name="fixture", bars=frame
+            )
+        )
+    master = market.save_market_universe_snapshot(
+        trade_date=DAYS[-1].isoformat(),
+        provider_name="fixture",
+        members=normalize_a_share_members([STOCK.symbol, SECOND.symbol]),
+        capture_started_at=NOW - timedelta(seconds=1),
+        capture_completed_at=NOW,
+        source_metadata=[
+            {"symbol": key.symbol, "display_name": "普通股"} for key in (STOCK, SECOND)
+        ],
+    )
+    scope = market_deployment_scope(
+        MarketUniversePolicy(minimum_master_member_count=2, minimum_history_rows=2)
+    )
+    config = SimpleNamespace(
+        market_data_verification_source_policy=FREE_CN_RESEARCH_V1.policy_id
+    )
+    old_id = forward_seed_origin_id(scope, 2, FREE_CN_RESEARCH_V1.policy_id)
+    recipe = {
+        "schema_version": "karkinos.forward_seed_origin.v1",
+        "deployment_scope_fingerprint": scope["deployment_scope_fingerprint"],
+        "minimum_bars": 2,
+        "verification_source_policy_id": FREE_CN_RESEARCH_V1.policy_id,
+        "start_date": DAYS[0].isoformat(),
+        "end_date": DAYS[-1].isoformat(),
+        "master_observation_id": bind_stock_master_observation(objects, master),
+        "warmup_instruments": [
+            {"symbol": key.symbol, "instrument_type": "stock"}
+            for key in (STOCK, SECOND)
+        ],
+        "market_data_binding": research_market_binding(receipts),
+    }
+    repository = AutomationRunRepository(db.path)
+    prior = repository.claim_automation_run_once_sync(
+        run_id=old_id,
+        run_type="forward_seed_preparation",
+        run_date=NOW.date().isoformat(),
+        claimed_at=NOW.isoformat(),
+        execution_mode="paper_shadow",
+        payload=recipe,
+    )["run"]
+    source = {
+        "instruments": recipe["warmup_instruments"],
+        "minimum_bars": 2,
+        "source_selection": {
+            "deployment_scope": scope,
+            "portfolio_policy_id": FORMULA_PORTFOLIO_POLICY_ID,
+        },
+    }
+    pending = ensure_forward_seed_for_source(
+        db, config, source=source, now=NOW, data_store=market
+    )
+    assert pending["status"] == "waiting", pending
+    old_job = SQLiteJobStore(db.path).get(pending["job_ids"][0])
+    revised = revise_pending_forward_seed_origin(
+        db,
+        config,
+        origin_id=old_id,
+        scope=scope,
+        now=NOW,
+        data_store=market,
+        declared_start_date="2026-01-01",
+    )
+    canonical_id = forward_seed_origin_id(
+        scope, 2, FREE_CN_RESEARCH_V1.policy_id, start_date="2026-01-01"
+    )
+    assert read_forward_seed_origin(db, canonical_id)["run_id"] == revised["run_id"]
+    assert read_forward_seed_origin(db, old_id)["run_id"] == revised["run_id"]
+    assert (
+        repository.get_automation_run_sync(old_id)["payload_json"]
+        == prior["payload_json"]
+    )
+    new_recipe = json.loads(revised["payload_json"])
+    for key in ("start_date", "end_date", "master_observation_id", "minimum_bars"):
+        assert new_recipe[key] == recipe[key]
+    assert new_recipe["market_data_binding"]["verified_dataset_supplements"][0][
+        "session_memberships"
+    ] == [{"trade_date": DAYS[0].isoformat(), "symbols": [STOCK.symbol]}]
+    inherited_source = {**source, "start_date": "2026-01-01"}
+    inherited = ensure_forward_seed_for_source(
+        db, config, source=inherited_source, now=NOW, data_store=market
+    )
+    assert inherited["status"] == "waiting", inherited
+    assert len(inherited["job_ids"]) == 1
+    assert SQLiteJobStore(db.path).get(old_job.job_id) == old_job
+    assert (
+        inherited["job_ids"] != pending["job_ids"]
+    )  # Only the repaired shard changes.
+    assert (
+        ensure_forward_seed_for_source(
+            db, config, source=inherited_source, now=NOW, data_store=market
+        )["job_ids"]
+        == inherited["job_ids"]
+    )
+    assert (
+        revise_pending_forward_seed_origin(
+            db,
+            config,
+            origin_id=old_id,
+            scope=scope,
+            now=NOW,
+            data_store=market,
+            declared_start_date="2026-01-01",
+        )["run_id"]
+        == revised["run_id"]
     )
 
 
@@ -760,6 +1018,76 @@ def test_seed_warmup_uses_actual_receipt_rows_without_inventing_ipo_history(tmp_
         (DAYS[0].isoformat(), [STOCK.symbol]),
         (DAYS[-1].isoformat(), [STOCK.symbol, SECOND.symbol]),
     ]
+
+
+def test_seed_warmup_preserves_a_real_nontrading_gap_and_symbol_order(tmp_path):
+    from types import SimpleNamespace
+
+    import pandas as pd
+
+    from data.source_policy import FREE_CN_RESEARCH_V1
+    from server.services.market_universe_truth import market_deployment_scope
+    from server.services.verified_daily_market_data import VerifiedDailyMarketJobRequest
+
+    days = (DAYS[0] - timedelta(days=1), *DAYS)
+    db = _db(tmp_path, trading_days=days)
+    market = DataStore(tmp_path / "market")
+    market.save_market_universe_snapshot(
+        trade_date=days[-1].isoformat(),
+        provider_name="fixture",
+        members=normalize_a_share_members([SECOND.symbol, STOCK.symbol]),
+        capture_started_at=NOW - timedelta(seconds=1),
+        capture_completed_at=NOW,
+        source_metadata=[
+            {"symbol": key.symbol, "display_name": "普通股"} for key in (SECOND, STOCK)
+        ],
+    )
+    expected = ((STOCK,), (SECOND,), (STOCK, SECOND))
+    for day, instruments in zip(days, expected, strict=True):
+        market.ingest_market_daily_batch(
+            trade_date=day.isoformat(),
+            provider_name="fixture",
+            bars=pd.DataFrame(
+                [
+                    {
+                        "symbol": key.symbol,
+                        "timestamp": pd.Timestamp(day),
+                        "open": 10.0,
+                        "high": 10.1,
+                        "low": 9.9,
+                        "close": 10.0,
+                        "volume": 1_000_000,
+                        "amount": 10_000_000,
+                    }
+                    for key in reversed(instruments)
+                ]
+            ),
+        )
+    policy = MarketUniversePolicy(minimum_master_member_count=2, minimum_history_rows=3)
+    result = ensure_forward_seed_for_source(
+        db,
+        SimpleNamespace(
+            market_data_verification_source_policy=FREE_CN_RESEARCH_V1.policy_id
+        ),
+        source={
+            "instruments": [
+                {"symbol": key.symbol, "instrument_type": "stock"}
+                for key in (SECOND, STOCK)
+            ],
+            "minimum_bars": 3,
+            "source_selection": {"deployment_scope": market_deployment_scope(policy)},
+        },
+        now=NOW,
+        data_store=market,
+    )
+    assert result["status"] == "waiting", result
+    jobs = SQLiteJobStore(db.path)
+    requests = [
+        VerifiedDailyMarketJobRequest.from_payload(jobs.get(job_id).payload)
+        for job_id in result["job_ids"]
+    ]
+    assert len(requests) == 1
+    assert tuple(requests[0].instruments_for_session(day) for day in days) == expected
 
 
 def test_dynamic_membership_adds_current_master_and_keeps_only_held_exits(

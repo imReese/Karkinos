@@ -622,6 +622,9 @@ class AiShadowResearchCandidateWorkflowMixin:
                 source.get("metrics") or source.get("metrics_json")
             )
             pack = build_normalized_research_pack(
+                simulation_notional=bool(
+                    source_metrics.get("simulation_validation_binding")
+                ),
                 performance=source,
                 after_cost_evidence=source_metrics.get("evidence_bundle") or {},
                 cost_summary=strategy_research_json_object(
@@ -663,6 +666,15 @@ class AiShadowResearchCandidateWorkflowMixin:
             "limitations": list(draft.get("limitations") or []),
             "baseline": baseline_view,
             "candidate": candidate_view,
+            **(
+                {
+                    "simulation_validation_binding": selection[
+                        "simulation_validation_binding"
+                    ]
+                }
+                if selection.get("simulation_validation_binding") is not None
+                else {}
+            ),
             **({"deployment_scope": scope_projection} if scope_projection else {}),
             "deltas": {
                 "total_return": candidate_view["total_return"]

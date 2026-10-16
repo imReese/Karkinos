@@ -449,6 +449,7 @@ async def _research_evidence_projection(
     if not after_cost_payload:
         analysis_blocking_reasons.append("after_cost_evidence_missing")
     normalized_pack = build_normalized_research_pack(
+        simulation_notional=bool(metrics.get("simulation_validation_binding")),
         performance=performance,
         after_cost_evidence=after_cost_payload,
         cost_summary=cost_summary if cost_summary_valid else {},

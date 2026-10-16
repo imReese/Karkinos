@@ -84,6 +84,7 @@ def sealed_execution_code_binding() -> dict[str, Any]:
         "analytics/sealed_holdout.py",
         "analytics/multiple_testing.py",
         "analytics/deployment_validation.py",
+        "analytics/strategy_advancement_gate.py",
         "domain/research_targets.py",
         "server/ai_runtime/formula_portfolio.py",
         "server/services/account_board_permissions.py",
@@ -111,6 +112,7 @@ def sealed_execution_code_binding() -> dict[str, Any]:
         "data/handler.py",
         "data/manager.py",
         "data/research_market_data.py",
+        "data/market_daily_store.py",
         "data/store.py",
         "data/dataset/reader.py",
         "data/dataset/model.py",
@@ -133,6 +135,28 @@ def sealed_execution_code_binding() -> dict[str, Any]:
         "data/market/corporate_actions.py",
         "data/providers/tushare_corporate_actions.py",
         "data/storage/objects.py",
+        "server/contracts/ai_shadow_research_automation.py",
+        "server/services/ai_shadow_research_commands.py",
+        "server/services/ai_shadow_research_workflow.py",
+        "server/persistence/strategy_research_sealed.py",
+        "server/persistence/research_observations.py",
+        "server/services/ai_shadow_research_qualification.py",
+        "server/projections/daily_strategy_research_candidates.py",
+        "server/projections/daily_strategy_artifacts.py",
+        "server/projections/normalized_research_recommendation.py",
+        "server/services/account_qualification_reuse.py",
+        "server/services/ai_shadow_research_candidate_workflow.py",
+        "server/contracts/normalized_strategy_research.py",
+        "server/ai_runtime/strategy_research_support.py",
+        "server/ai_runtime/strategy_research_privacy.py",
+        "server/services/ai_shadow_research_baseline.py",
+        "server/persistence/research_paper_books.py",
+        "server/persistence/ai_shadow_research_qualification_promotion.py",
+        "server/persistence/ai_shadow_research_qualification.py",
+        "server/persistence/ai_shadow_research_qualification_candidate_uow.py",
+        "server/contracts/ai_shadow_research_qualification.py",
+        "server/services/ai_shadow_research_support.py",
+        "server/services/ai_shadow_research_qualification_support.py",
     )
     payload = {
         "purpose": "frozen_future_evaluation_implementation",
@@ -153,6 +177,34 @@ def _object(value: Any) -> dict[str, Any]:
     import json
 
     return json.loads(value) if isinstance(value, str) else dict(value or {})
+
+
+def _validation_policy(binding):
+    from server.contracts.research_observation_automation import (
+        reserved_validation_policy,
+    )
+
+    return reserved_validation_policy(binding)
+
+
+def _reserved_execution_costs(db, binding, universe):
+    from types import SimpleNamespace
+
+    if binding.get("simulation_policy"):
+        from server.contracts.http.strategy_models import BacktestCostAssumptions
+        from server.services.backtest_costs import resolve_backtest_costs
+
+        costs, evidence = resolve_backtest_costs(
+            BacktestCostAssumptions.model_validate(binding["simulation_cost_inputs"])
+        )
+        return SimpleNamespace(
+            commission_calc=costs.commission_calc, fee_evidence=evidence
+        )
+    from server.services.reviewed_fee_schedule import (
+        resolve_frozen_deployment_fee_schedule,
+    )
+
+    return resolve_frozen_deployment_fee_schedule(db, binding["fee_schedule"], universe)
 
 
 async def reserve_final_research_evaluation(
@@ -262,13 +314,70 @@ async def reserve_final_research_evaluation(
         "authority_effect": "none",
     }
     grant = None
+    simulation = None
     if selection.deployment_scope:
-        from server.contracts.recommendation_publication import read_publication_grant
+        from server.contracts.research_observation_automation import (
+            read_research_validation_policy,
+        )
 
         try:
-            grant = read_publication_grant(db, now=now)
+            validation_policy = read_research_validation_policy(db, now=now)
         except ValueError:
-            pass
+            if (db.get_automation_policy_sync("ai_shadow_research") or {}).get(
+                "simulation_validation"
+            ) is not None:
+                raise
+        else:
+            if (
+                validation_policy.get("schema_version")
+                == "karkinos.research_simulation_policy.v1"
+            ):
+                simulation = validation_policy
+            else:
+                grant = validation_policy
+    if simulation:
+        from datetime import timedelta
+
+        from server.contracts.http.strategy_models import BacktestCostAssumptions
+        from server.services.market_universe_automation import verified_trading_dates
+
+        if (
+            selection.deployment_scope != simulation["deployment_scope"]
+            or selection.simulation_validation_binding
+            != {
+                key: simulation[key]
+                for key in ("grant_id", "generation", "initial_cash")
+            }
+            or Decimal(str(selection.initial_cash))
+            != Decimal(simulation["initial_cash"])
+        ):
+            raise StrategyResearchRejected(
+                "simulation_frozen_scope_or_notional_mismatch"
+            )
+        if any(
+            _object(item.get("metrics_json")).get("entry_board_policy")
+            != simulation["entry_board_policy"]
+            for item in (baseline, candidate)
+        ):
+            raise StrategyResearchRejected("simulation_frozen_entry_policy_mismatch")
+        opening_days = verified_trading_dates(
+            db,
+            start_date=partition.sealed_start.isoformat(),
+            end_date=min(
+                partition.sealed_start + timedelta(days=14), partition.sealed_end
+            ).isoformat(),
+        )
+        if not opening_days:
+            raise StrategyResearchRejected("deployment_future_opening_unverified")
+        binding.update(
+            simulation_policy=simulation,
+            deployment_scope=selection.deployment_scope,
+            initial_cash=simulation["initial_cash"],
+            entry_board_policy=simulation["entry_board_policy"],
+            effective_checkpoint=selection.sealed_end_date,
+            first_evaluation_session=opening_days[0],
+            simulation_cost_inputs=BacktestCostAssumptions().model_dump(mode="json"),
+        )
     if selection.deployment_scope and grant:
         from zoneinfo import ZoneInfo
 
@@ -517,13 +626,9 @@ async def evaluate_reserved_champion(
             forward_book = verify_reserved_forward_book(
                 calendar_db, row, through_session=trading_dates[-1], now=now
             )
-            from server.services.reviewed_fee_schedule import (
-                resolve_frozen_deployment_fee_schedule,
-            )
-
-            resolution = resolve_frozen_deployment_fee_schedule(
+            resolution = _reserved_execution_costs(
                 calendar_db,
-                binding["fee_schedule"],
+                binding,
                 tuple(
                     item["symbol"] for item in evaluation_snapshot["symbol_universe"]
                 ),
@@ -657,7 +762,7 @@ async def evaluate_reserved_champion(
             from analytics.deployment_validation import compare_session_curves
 
             policy = {
-                **binding["publication_grant"]["statistical_policy"],
+                **_validation_policy(binding)["statistical_policy"],
                 "decision_checkpoint": trading_dates[-1],
             }
             uncertainty = compare_session_curves(
@@ -1109,7 +1214,7 @@ def _deployment_assessment(
         "max_symbol_weight": str(symbol),
         "max_positions": positions,
     }
-    grant = binding["publication_grant"]
+    grant = _validation_policy(binding)
     if any(
         Decimal(str(risk[key])) > Decimal(str(limit))
         for key, limit in grant["risk_limits"].items()
@@ -1166,6 +1271,294 @@ def _deployment_assessment(
     return {**core, "evidence_fingerprint": content_fingerprint(core)}
 
 
+def _simulation_account_replay_inputs(db, store, result, evidence, grant):
+    """Bind a separately reviewed replay to the unchanged frozen SIM hypothesis.
+
+    No research cost model is relabeled as broker-reviewed. The current review
+    remains authoritative, and every frozen comparator is replayed with it.
+    """
+
+    from server.services.reviewed_fee_schedule import (
+        resolve_frozen_deployment_fee_schedule,
+    )
+
+    binding = evidence["reservation"]
+    sim = binding["simulation_policy"]
+    if (
+        binding["deployment_scope"]["deployment_scope_fingerprint"]
+        != grant["deployment_scope_fingerprint"]
+    ):
+        raise StrategyResearchRejected("deployment_simulation_scope_mismatch")
+    profiles = [
+        {k: v for k, v in p.items() if k != "decision_checkpoint"}
+        for p in (sim["statistical_policy"], grant["statistical_policy"])
+    ]
+    if profiles[0] != profiles[1]:
+        raise StrategyResearchRejected(
+            "deployment_simulation_statistical_requirements_mismatch"
+        )
+    if Decimal(str(result["initial_cash"])) != Decimal(
+        binding["initial_cash"]
+    ) or Decimal(binding["initial_cash"]) > Decimal(grant["max_initial_cash"]):
+        raise StrategyResearchRejected("deployment_simulation_capital_mismatch")
+    if grant.get("incumbent_strategy_id") != binding.get("incumbent", {}).get(
+        "strategy_id"
+    ):
+        raise StrategyResearchRejected("deployment_simulation_incumbent_not_validated")
+    assessment = evidence["deployment_assessment"]
+    if any(
+        Decimal(str(assessment["risk_limits"][k])) > Decimal(str(v))
+        for k, v in grant["risk_limits"].items()
+    ):
+        raise StrategyResearchRejected("deployment_simulation_risk_mismatch")
+    metrics = _object(result.get("metrics_json"))
+    fee = metrics.get("fee_component_evidence", {}).get("fee_schedule_binding") or {}
+    cost_ref = metrics.get("cost_assumptions", {}).get("commission_model_reference")
+    if (
+        fee.get("account_truth_scope_fingerprint") != grant["account_scope_fingerprint"]
+        or fee.get("effective_start_date", "9999")
+        > binding["research_identity"]["start_date"]
+        or fee.get("effective_end_date", "") < binding["partition"]["sealed_end"]
+    ):
+        raise StrategyResearchRejected(
+            "deployment_simulation_reviewed_cost_scope_mismatch"
+        )
+    resolution = resolve_frozen_deployment_fee_schedule(
+        db,
+        {
+            "review_id": fee.get("fee_schedule_review_id"),
+            "review_fingerprint": fee.get("fee_schedule_review_fingerprint"),
+            "cost_model_reference": cost_ref,
+            "fee_evidence": fee,
+        },
+        tuple(binding["universe"]),
+    )
+    proof = {
+        "schema_version": "karkinos.simulation_account_cost_replay.v2",
+        "final_evaluation_id": evidence["sealed_test_id"],
+        "final_evidence_fingerprint": evidence["evidence_fingerprint"],
+        "reservation_fingerprint": content_fingerprint(binding),
+        "qualified_formula_fingerprint": metrics.get("formula_fingerprint"),
+        "review_id": resolution.review.review_id,
+        "review_fingerprint": resolution.review.review_fingerprint,
+        "cost_model_reference": cost_ref,
+        "fee_evidence_fingerprint": content_fingerprint(fee),
+        "initial_cash": binding["initial_cash"],
+        "code_fingerprint": binding["code_binding"]["fingerprint"],
+        "curves_fingerprint": content_fingerprint(evidence["session_curves"]),
+        "portfolio_fingerprint": content_fingerprint(
+            evidence["portfolio_observations"]
+        ),
+        "account_scope_fingerprint": grant["account_scope_fingerprint"],
+        "statistical_requirements": profiles[1],
+    }
+    return resolution, proof
+
+
+def _simulation_reviewed_assessment(db, evidence, grant, replay):
+    """Calculate account applicability without rewriting the original SIM final."""
+    from types import SimpleNamespace
+
+    from analytics.deployment_validation import compare_session_curves
+
+    binding = evidence["reservation"]
+    curves = replay["session_curves"]
+    if set(curves["comparators"]) != set(evidence["session_curves"]["comparators"]) or [
+        row[0] for row in curves["candidate"]
+    ] != [row[0] for row in evidence["session_curves"]["candidate"]]:
+        raise StrategyResearchRejected("deployment_simulation_replay_interval_drift")
+    uncertainty = compare_session_curves(
+        candidate=curves["candidate"],
+        comparators=curves["comparators"],
+        initial_cash=binding["initial_cash"],
+        policy={
+            **grant["statistical_policy"],
+            "decision_checkpoint": curves["candidate"][-1][0][:10],
+        },
+        seed=evidence["sealed_test_id"],
+    )
+    # This local calculation uses current reviewed account requirements. It is
+    # explicitly derived evidence; the immutable SIM reservation remains intact.
+    account_binding = {**binding, "publication_grant": grant}
+    account_binding.pop("simulation_policy", None)
+    account_binding["fee_schedule"] = replay["fee_schedule"]
+    return _deployment_assessment(
+        binding=account_binding,
+        snapshot=evidence["sealed_dataset_snapshot"],
+        uncertainty=uncertainty,
+        result=SimpleNamespace(
+            equity_curve=[
+                (datetime.fromisoformat(ts), Decimal(value))
+                for ts, value in curves["candidate"]
+            ],
+            portfolio_observations=replay["portfolio_observations"],
+            incumbent_portfolio_observations=replay.get(
+                "incumbent_portfolio_observations", []
+            ),
+            comparator_accounting=replay["comparator_accounting"],
+            cash_dividend_accounting=replay["economic_return_accounting"],
+        ),
+        store_root=db.path.parent / "research",
+        trading_dates=evidence["deployment_assessment"]["membership_sessions"],
+        calendar_db=db,
+    )
+
+
+def build_simulation_account_replay(db, store, result, evidence, grant, *, data_store):
+    """One expensive, fixed account-cost replay during fresh qualification."""
+    from data.dataset.reader import daily_bar_dataset_read_scope
+
+    with daily_bar_dataset_read_scope(join_existing=True):
+        return _build_simulation_account_replay(
+            db, store, result, evidence, grant, data_store=data_store
+        )
+
+
+def _build_simulation_account_replay(db, store, result, evidence, grant, *, data_store):
+    from pathlib import Path
+
+    from server.ai_runtime.strategy_research_backtest import (
+        RestrictedFormulaBacktestAdapter,
+    )
+    from server.ai_runtime.strategy_research_support import selection_from_session
+    from server.services.market_universe_automation import verified_trading_dates
+
+    resolution, proof = _simulation_account_replay_inputs(
+        db, store, result, evidence, grant
+    )
+    binding = evidence["reservation"]
+    selection = selection_from_session(store.get_session(binding["session_id"]))
+    adapter = RestrictedFormulaBacktestAdapter(
+        data_store=data_store,
+        research_root=Path(db.path).parent / "research",
+    )
+    dates = verified_trading_dates(
+        db, start_date=selection.start_date, end_date=binding["partition"]["sealed_end"]
+    )
+    drafts = {
+        "candidate": store.get_draft(binding["session_id"], binding["draft_id"])[
+            "contract"
+        ],
+        "frozen_baseline": {"formula_ast": binding["baseline_formula_ast"]},
+        **{r["label"]: r for r in binding["challenger_family"]},
+    }
+    if binding.get("incumbent"):
+        drafts["incumbent"] = {"formula_ast": binding["incumbent"]["formula_ast"]}
+    curves, accounting, books = {}, {}, {}
+    for label, draft in drafts.items():
+        replay = adapter.run_sealed(
+            selection=selection,
+            draft=draft,
+            sealed_end_date=binding["partition"]["sealed_end"],
+            expected_dataset_snapshot=binding["research_snapshot"],
+            expected_trading_dates=dates,
+            evaluation_dataset_snapshot=evidence["sealed_dataset_snapshot"],
+            initial_cash_override=Decimal(binding["initial_cash"]),
+            commission_calc_override=resolution.commission_calc,
+            entry_board_policy=binding["entry_board_policy"],
+        )
+        curves[label] = [
+            [ts.isoformat(), str(value)]
+            for ts, value in replay.equity_curve
+            if ts.date().isoformat() >= binding["partition"]["sealed_start"]
+        ]
+        accounting[label] = replay.cash_dividend_accounting
+        books[label] = replay.portfolio_observations
+    metrics = _object(result.get("metrics_json"))
+    fee = metrics["fee_component_evidence"]["fee_schedule_binding"]
+    derived = {
+        "session_curves": {
+            "candidate": curves.pop("candidate"),
+            "comparators": curves,
+        },
+        "economic_return_accounting": accounting.pop("candidate"),
+        "comparator_accounting": accounting,
+        "portfolio_observations": books["candidate"],
+        "incumbent_portfolio_observations": books.get("incumbent", []),
+        "fee_schedule": {
+            "review_id": fee["fee_schedule_review_id"],
+            "review_fingerprint": fee["fee_schedule_review_fingerprint"],
+            "cost_model_reference": proof["cost_model_reference"],
+            "fee_evidence": fee,
+        },
+    }
+    derived["deployment_assessment"] = _simulation_reviewed_assessment(
+        db, evidence, grant, derived
+    )
+    payload = {**proof, "reviewed_replay": derived}
+    return {**payload, "evidence_fingerprint": content_fingerprint(payload)}
+
+
+def _verify_simulation_account_applicability(db, store, result, evidence, grant):
+    """Reopen immutable replay provenance; daily consumers do not rerun a kernel."""
+    from server.persistence.ai_shadow_research import ShadowResearchStore
+    from server.services.ai_shadow_research_support import (
+        shadow_research_backtest_source_fingerprint,
+    )
+
+    _, expected = _simulation_account_replay_inputs(db, store, result, evidence, grant)
+    actual = _object(result.get("metrics_json")).get("simulation_account_replay")
+    if not isinstance(actual, Mapping):
+        raise StrategyResearchRejected(
+            "deployment_simulation_account_replay_missing_or_stale"
+        )
+    payload = dict(actual)
+    fingerprint = payload.pop("evidence_fingerprint", None)
+    if fingerprint != content_fingerprint(payload) or any(
+        payload.get(key) != value for key, value in expected.items()
+    ):
+        raise StrategyResearchRejected(
+            "deployment_simulation_account_replay_missing_or_stale"
+        )
+    try:
+        authority = ShadowResearchStore(db.path).qualification_for_backtest_result(
+            int(result["id"])
+        )
+    except (LookupError, KeyError, TypeError, ValueError) as exc:
+        raise StrategyResearchRejected(
+            "deployment_simulation_qualification_binding_missing"
+        ) from exc
+    candidate, run = authority["candidate"], authority["run"]
+    selection = run.get("selection") or {}
+    comparison = candidate["comparison"]
+    if (
+        run["status"] != "completed"
+        or selection.get("status") != "winner_selected"
+        or selection.get("winner_qualification_candidate_id")
+        != candidate["qualification_candidate_id"]
+        or candidate["status"] != "qualified"
+        or candidate["recommendation"] != "paper_shadow_review"
+        or candidate["candidate_result_id"] != result["id"]
+        or candidate["source_candidate_id"] != evidence["reservation"]["candidate_id"]
+        or comparison.get("candidate_source_fingerprint")
+        != shadow_research_backtest_source_fingerprint(result)
+        or comparison.get("account_qualification_status") != "passed"
+        or run["reviewed_cost_model_reference"] != expected["cost_model_reference"]
+        or run["reviewed_fee_schedule_fingerprint"] != expected["review_fingerprint"]
+        or Decimal(run["initial_cash_text"]) != Decimal(expected["initial_cash"])
+    ):
+        raise StrategyResearchRejected(
+            "deployment_simulation_qualification_binding_drift"
+        )
+    replay = payload.get("reviewed_replay")
+    if not isinstance(replay, Mapping):
+        raise StrategyResearchRejected("deployment_simulation_reviewed_replay_missing")
+    original_assessment = _object(replay.get("deployment_assessment"))
+    core = dict(original_assessment)
+    fingerprint = core.pop("evidence_fingerprint", None)
+    if (
+        fingerprint != content_fingerprint(core)
+        or original_assessment.get("status") != "pass"
+    ):
+        raise StrategyResearchRejected(
+            "deployment_simulation_reviewed_assessment_drift"
+        )
+    # Admission/expiry/generation belong to CURRENT publication authority, not
+    # this completed scientific artifact. Reassess its trusted observations
+    # against current limits instead of rewriting or reviving an old grant.
+    return _simulation_reviewed_assessment(db, evidence, grant, replay)
+
+
 def verify_deployment_validation(
     db: Any, *, result_id: int, expected_grant_id: str | None = None
 ) -> dict[str, Any]:
@@ -1185,6 +1578,7 @@ def verify_deployment_validation(
     if not binding.get("deployment_scope"):
         raise StrategyResearchRejected("deployment_scope_not_validated")
     grant = read_publication_grant(db)
+    simulation = binding.get("simulation_policy")
     if (
         binding.get("entry_board_policy") != grant["entry_board_policy"]
         or metrics.get("entry_board_policy") != grant["entry_board_policy"]
@@ -1193,10 +1587,16 @@ def verify_deployment_validation(
         .get("entry_board_policy")
         != grant["entry_board_policy"]
         or (expected_grant_id and grant["grant_id"] != expected_grant_id)
-        or binding.get("publication_grant", {}).get("grant_id") != grant["grant_id"]
-        or binding["publication_grant"]["generation"] != grant["generation"]
-        or binding["publication_grant"]["statistical_policy_fingerprint"]
-        != grant["statistical_policy_fingerprint"]
+        or (
+            not simulation
+            and (
+                binding.get("publication_grant", {}).get("grant_id")
+                != grant["grant_id"]
+                or binding["publication_grant"]["generation"] != grant["generation"]
+                or binding["publication_grant"]["statistical_policy_fingerprint"]
+                != grant["statistical_policy_fingerprint"]
+            )
+        )
     ):
         raise StrategyResearchRejected("deployment_grant_changed")
     # This reopens immutable rows and the original research selection/code/data.
@@ -1208,7 +1608,12 @@ def verify_deployment_validation(
     row = store.get_sealed_test(evidence["sealed_test_id"])
     if row["evidence_fingerprint"] != evidence.get("evidence_fingerprint"):
         raise StrategyResearchRejected("deployment_final_fingerprint_drift")
-    if (
+    reviewed_assessment = None
+    if simulation:
+        reviewed_assessment = _verify_simulation_account_applicability(
+            db, store, result, evidence, grant
+        )
+    elif (
         metrics.get("cost_assumptions", {}).get("commission_model_reference")
         != binding["fee_schedule"]["cost_model_reference"]
     ):
@@ -1217,9 +1622,10 @@ def verify_deployment_validation(
         resolve_frozen_deployment_fee_schedule,
     )
 
-    resolve_frozen_deployment_fee_schedule(
-        db, binding["fee_schedule"], tuple(binding["universe"])
-    )
+    if not simulation:
+        resolve_frozen_deployment_fee_schedule(
+            db, binding["fee_schedule"], tuple(binding["universe"])
+        )
     formula = metrics.get("formula_binding", {}).get("formula_ast")
     if (
         "sha256:" + content_fingerprint(formula or {})
@@ -1271,6 +1677,8 @@ def verify_deployment_validation(
     )
     if checked != assessment:
         raise StrategyResearchRejected("deployment_scope_evidence_drift")
+    if reviewed_assessment is not None:
+        assessment = reviewed_assessment
     payload = {
         "schema_version": "karkinos.deployment_validation.v1",
         "status": assessment["status"],
@@ -1286,6 +1694,19 @@ def verify_deployment_validation(
         "final_evidence_fingerprint": evidence["evidence_fingerprint"],
         "statistical_policy_fingerprint": grant["statistical_policy_fingerprint"],
         "error_budget": binding["error_budget"],
+        **(
+            {
+                "validation_provenance": "independent_simulation",
+                "publication_grant_id": grant["grant_id"],
+                "publication_grant_generation": grant["generation"],
+                "account_applicability_evidence_fingerprint": metrics[
+                    "simulation_account_replay"
+                ]["evidence_fingerprint"],
+                "qualified_result_id": result_id,
+            }
+            if simulation
+            else {}
+        ),
         "blockers": assessment["blockers"],
         "return_basis": assessment["return_basis"],
         "corporate_action_coverage": assessment["corporate_action_coverage"],

@@ -129,10 +129,23 @@ def _dynamic_memberships(service, observation, prefix, dates, now, data_store=No
             observation["id"]
         )
         held_symbols = set((book or {}).get("state", {}).get("positions", {}))
+        from data.store import (
+            require_stock_master_capture_evidence,
+            stock_master_nontrading_instruments,
+        )
+
+        nontrading = set()
+        if master.get("source_capture_ids"):
+            require_stock_master_capture_evidence(service.objects, master)
+            nontrading = set(
+                stock_master_nontrading_instruments(master, session_date=session)
+            )
         maintenance = tuple(
             key
             for key in prefix.instruments
-            if key.symbol in held_symbols and key not in set(instruments)
+            if key.symbol in held_symbols
+            and key not in set(instruments)
+            and key not in nontrading
         )
         memberships.append(
             DailyBarDatasetMembership(
@@ -708,6 +721,11 @@ def run_research_observation_data_preparation_once(
         full_scope_input_active = False
         try:
             observation = _observation(service, grant)
+            from server.contracts.research_observation_automation import (
+                require_current_simulation_authorization,
+            )
+
+            require_current_simulation_authorization(db, observation["policy"], now=now)
             full_scope_input_active = _deployment_scope(observation) is not None
             payload = _prepare(
                 service, config, store, observation, now, grant, stopped, data_store

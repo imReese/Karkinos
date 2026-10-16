@@ -681,6 +681,23 @@ def public_qualification_candidate_projection(
             else None,
             "blockers": assessment.get("blockers"),
         }
+    original_simulation = None
+    if isinstance(reservation, Mapping) and reservation.get("simulation_policy"):
+        original_simulation = (
+            {
+                **summary,
+                "validation_provenance": "independent_simulation",
+                "fee_cost_model_reference": reservation["simulation_policy"].get(
+                    "cost_model_reference"
+                ),
+                "modeled_costs": True,
+                "initial_cash": None,
+            }
+            if summary is not None
+            else None
+        )
+        derived = candidate_view.get("account_deployment_validation")
+        summary = dict(derived) if isinstance(derived, Mapping) else None
     return {
         "schema_version": SHADOW_RESEARCH_QUALIFICATION_SCHEMA,
         "qualification_candidate_id": candidate.get("qualification_candidate_id"),
@@ -702,6 +719,11 @@ def public_qualification_candidate_projection(
         "deployment_validation": {**summary, "initial_cash": None}
         if summary is not None
         else None,
+        **(
+            {"original_simulation_validation": original_simulation}
+            if reservation.get("simulation_policy")
+            else {}
+        ),
         "rank": candidate.get("rank"),
         "created_at": candidate.get("created_at"),
         "private_account_values_redacted": True,

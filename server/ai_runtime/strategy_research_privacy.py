@@ -10,6 +10,7 @@ from server.ai_runtime.contracts import JsonObject
 from server.contracts.normalized_strategy_research import (
     NORMALIZED_RESEARCH_NOTIONAL,
     NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID,
+    SIMULATION_RESEARCH_NOTIONAL_POLICY_ID,
 )
 
 NORMALIZED_RESEARCH_PACK_SCHEMA = "karkinos.ai.normalized_research_pack.v1"
@@ -68,6 +69,7 @@ def build_normalized_research_pack(
     cost_summary: Mapping[str, Any],
     research_evidence_bundle: Mapping[str, Any],
     oos_validation: Mapping[str, Any] | None = None,
+    simulation_notional: bool = False,
 ) -> JsonObject:
     """Convert persisted backtest facts to ratios, basis points, and counts."""
 
@@ -84,7 +86,11 @@ def build_normalized_research_pack(
 
     pack: JsonObject = {
         "schema_version": NORMALIZED_RESEARCH_PACK_SCHEMA,
-        "notional_policy_id": NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID,
+        "notional_policy_id": (
+            SIMULATION_RESEARCH_NOTIONAL_POLICY_ID
+            if simulation_notional
+            else NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID
+        ),
         "performance_summary": _performance_summary(performance),
         "after_cost_summary": {
             "net_return_after_costs": _relative(

@@ -80,6 +80,47 @@ def require_observation_automation_policy(
         )
         if row is None or (row["lifecycle"] != "active" and not has_paper_permission):
             raise ValueError("observation_data_preparation_paused")
+    observation = conn.execute(
+        "SELECT policy_json FROM research_observations WHERE id=?",
+        (observation_id,),
+    ).fetchone()
+    observed_policy = json.loads(observation[0]) if observation else {}
+    authorization = observed_policy.get("authorization_binding") or {}
+    if authorization.get("authority_kind") == "simulation":
+        from datetime import timezone
+
+        require_simulation_policy_in_transaction(
+            conn,
+            authorization,
+            observed_policy.get("deployment_scope", {}).get(
+                "deployment_scope_fingerprint"
+            ),
+            now=datetime.now(timezone.utc),
+        )
+
+
+def require_simulation_policy_in_transaction(
+    conn, authorization, scope_fingerprint, *, now
+):
+    """Fresh SIM authority under the caller's existing financial/data write lock."""
+    from server.contracts.research_observation_automation import (
+        validate_simulation_validation_policy,
+    )
+
+    row = conn.execute(
+        "SELECT payload_json FROM automation_policies WHERE policy_id='ai_shadow_research'"
+    ).fetchone()
+    raw = json.loads(row[0]) if row else {}
+    grant = validate_simulation_validation_policy(raw.get("simulation_validation"))
+    if (
+        not grant["enabled"]
+        or publication_time(now) >= publication_time(grant["expires_at"])
+        or any(
+            authorization.get(key) != grant[key] for key in ("grant_id", "generation")
+        )
+        or scope_fingerprint != grant["deployment_scope_fingerprint"]
+    ):
+        raise ValueError("simulation_authorization_changed")
 
 
 def require_corporate_action_capture_permission(
@@ -119,6 +160,17 @@ def require_corporate_action_capture_permission(
             )
         ):
             raise ValueError("corporate_action_publication_grant_changed")
+    elif permission.get("kind") == "simulation":
+        if set(permission) != {
+            "kind",
+            "grant_id",
+            "generation",
+            "deployment_scope_fingerprint",
+        }:
+            raise ValueError("corporate_action_permission_invalid")
+        require_simulation_policy_in_transaction(
+            conn, permission, permission["deployment_scope_fingerprint"], now=now
+        )
     else:
         raise ValueError("corporate_action_permission_invalid")
 
@@ -437,6 +489,50 @@ class AutomationRunRepository(SQLiteRepository):
                 (run_id,),
             ).fetchone()
             return dict(row) if row else None
+
+    def revise_pending_forward_seed_origin_sync(
+        self,
+        prior_run_id: str,
+        revision: dict[str, Any],
+        *,
+        canonical_alias: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Explicitly supersede a pending supply recipe, retaining its original payload."""
+        with connect_sqlite(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN IMMEDIATE")
+            prior = conn.execute(
+                "SELECT * FROM automation_runs WHERE run_id=?", (prior_run_id,)
+            ).fetchone()
+            if (
+                prior is None
+                or prior["run_type"] != "forward_seed_preparation"
+                or prior["status"] != "claimed"
+                or prior["source_ref"] is not None
+            ):
+                raise ValueError("forward_seed_origin_revision_conflict")
+            if (
+                canonical_alias is not None
+                and conn.execute(
+                    "SELECT 1 FROM automation_runs WHERE run_id=?",
+                    (canonical_alias["run_id"],),
+                ).fetchone()
+                is not None
+            ):
+                raise ValueError("forward_seed_canonical_origin_conflict")
+            saved = upsert_automation_run_in_transaction(
+                conn, revision, now=self._now().isoformat()
+            )
+            conn.execute(
+                "UPDATE automation_runs SET status='superseded', source_ref=?, updated_at=? WHERE run_id=?",
+                (saved["run_id"], self._now().isoformat(), prior_run_id),
+            )
+            if canonical_alias is not None:
+                upsert_automation_run_in_transaction(
+                    conn, canonical_alias, now=self._now().isoformat()
+                )
+            conn.commit()
+            return saved
 
     def claim_daily_candidate_background_attempt_sync(
         self,

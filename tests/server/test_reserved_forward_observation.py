@@ -41,8 +41,9 @@ pytestmark = pytest.mark.product_smoke
 
 
 @pytest.mark.parametrize("exercise_forward", [False, "main", "star_excluded"])
+@pytest.mark.parametrize("simulation", [False, True])
 def test_reserved_start_waits_then_resumes_exact_cash_fees_and_keeps_owner_pause(
-    journey, tmp_path, monkeypatch, exercise_forward
+    journey, tmp_path, monkeypatch, exercise_forward, simulation
 ):
     _, observations, current, legacy, _ = journey
     scope = market_deployment_scope(
@@ -147,20 +148,54 @@ def test_reserved_start_waits_then_resumes_exact_cash_fees_and_keeps_owner_pause
     )
     grants = ShadowResearchStore(observations.db.path)
     grants.init()
-    grants.configure_publication_grant(
-        policy=grant, expected_generation=None, now=current[0].isoformat()
-    )
+    if simulation:
+        from uuid import uuid4
+
+        from server.contracts.research_observation_automation import (
+            SIMULATION_VALIDATION_AUTHORIZE,
+            validate_simulation_validation_policy,
+        )
+        from server.services.ai_shadow_research_commands import (
+            simulation_validation_defaults,
+        )
+
+        proposal = simulation_validation_defaults(current[0])
+        grant = validate_simulation_validation_policy(
+            {
+                **proposal,
+                "enabled": True,
+                "authorization": SIMULATION_VALIDATION_AUTHORIZE,
+                "grant_id": str(uuid4()),
+                "generation": str(uuid4()),
+                "deployment_scope": scope,
+                "deployment_scope_fingerprint": scope["deployment_scope_fingerprint"],
+                "initial_cash": "32000",
+            }
+        )
+        observations.db.upsert_automation_policy_sync(
+            policy_id="ai_shadow_research",
+            payload={"simulation_validation": grant},
+            updated_by="human:test",
+        )
+        assert (
+            observations.db.get_automation_policy_sync("ai_recommendation_publication")
+            is None
+        )
+    else:
+        grants.configure_publication_grant(
+            policy=grant, expected_generation=None, now=current[0].isoformat()
+        )
     fees = {
         "review_id": "reviewed-fixture",
         "cost_model_reference": "fixture.exact.fees",
     }
     binding = {
         "candidate_result_id": source_id,
-        "publication_grant": grant,
+        "simulation_policy" if simulation else "publication_grant": grant,
         "entry_board_policy": grant["entry_board_policy"],
         "deployment_scope": scope,
         "initial_cash": "32000",
-        "fee_schedule": fees,
+        **({} if simulation else {"fee_schedule": fees}),
         "partition": {"sealed_start": DAYS[5].isoformat(), "sealed_end": "2026-09-24"},
     }
     monkeypatch.setattr(
@@ -228,7 +263,9 @@ def test_reserved_start_waits_then_resumes_exact_cash_fees_and_keeps_owner_pause
     assert ready["status"] == "ready", ready
     identity = ready["observation_id"]
     observed = observations.repository.get(identity)
-    assert observed["policy"]["decision_actor"] == "standing_publication_grant"
+    assert observed["policy"]["decision_actor"] == (
+        "standing_simulation_policy" if simulation else "standing_publication_grant"
+    )
     assert observed["publications"]
     assert max(
         Decimal(weight)
@@ -243,11 +280,15 @@ def test_reserved_start_waits_then_resumes_exact_cash_fees_and_keeps_owner_pause
     )
     assert paper["initial_cash"] == "32000"
     assert paper["state"]["cash"] == "32000"
-    assert paper["policy"]["fee_schedule_binding"] == fees
-    assert (
-        paper["policy"]["cost_assumptions"]["commission_model_reference"]
-        == "fixture.exact.fees"
-    )
+    if simulation:
+        assert "fee_schedule_binding" not in paper["policy"]
+        assert paper["policy"]["cost_assumptions"]["source"] == "research_simulation"
+    else:
+        assert paper["policy"]["fee_schedule_binding"] == fees
+        assert (
+            paper["policy"]["cost_assumptions"]["commission_model_reference"]
+            == "fixture.exact.fees"
+        )
     assert (
         asyncio.run(
             start_reserved_champion_observation(
@@ -271,6 +312,23 @@ def test_reserved_start_waits_then_resumes_exact_cash_fees_and_keeps_owner_pause
             tmp_path,
             restricted_entry=exercise_forward == "star_excluded",
         )
+    if simulation and not exercise_forward:
+        observations.db.upsert_automation_policy_sync(
+            policy_id="ai_shadow_research",
+            payload={"simulation_validation": {**grant, "enabled": False}},
+            updated_by="human:test",
+        )
+        before = observations.repository.get(identity)
+        blocked = observations.advance(
+            identity,
+            request_id="revoked-sim-target",
+            expected_version=before["version"],
+            dataset_id=seed.dataset_id,
+        )
+        assert blocked["last_blocker"]["code"] == "simulation_policy_disabled"
+        assert len(observations.repository.get(identity)["publications"]) == len(
+            before["publications"]
+        )
     configure_observation_automation(
         observations, identity, enabled=False, expected_generation=policy["generation"]
     )
@@ -279,7 +337,7 @@ def test_reserved_start_waits_then_resumes_exact_cash_fees_and_keeps_owner_pause
             observations.db, observations.objects, **args
         )
     )
-    assert paused["status"] == "paused"
+    assert paused["status"] == ("blocked" if simulation else "paused")
     assert len(observations.repository.list()) == 1
     assert policies.get_observation_automation_policy(identity)["enabled"] is False
     assert observations.db.list_strategy_promotion_states_sync() == []
@@ -422,6 +480,46 @@ def exercise_and_compare_forward(
             observations.db, clock=lambda: current[0]
         )
         book = book_service.get(identity)
+        if index == 0 and binding.get("simulation_policy"):
+            original_settle = book_service.repository.settle
+            automation = observations.db.get_automation_policy_sync(
+                "research-observation:" + identity
+            )
+            for generation in (None, automation["generation"]):
+
+                def revoke_before_locked_write(**kwargs):
+                    observations.db.upsert_automation_policy_sync(
+                        policy_id="ai_shadow_research",
+                        payload={
+                            "simulation_validation": {
+                                **binding["simulation_policy"],
+                                "enabled": False,
+                            }
+                        },
+                        updated_by="human:test",
+                    )
+                    return original_settle(**kwargs)
+
+                with pytest.MonkeyPatch.context() as race:
+                    race.setattr(
+                        book_service.repository, "settle", revoke_before_locked_write
+                    )
+                    with pytest.raises(
+                        ValueError, match="simulation_authorization_changed"
+                    ):
+                        book_service.settle(
+                            identity,
+                            request_id=f"revoked-settlement:{generation}",
+                            expected_version=book["version"],
+                            dataset_id=full.dataset_id,
+                            automation_generation=generation,
+                        )
+                assert book_service.get(identity)["steps"] == []
+                observations.db.upsert_automation_policy_sync(
+                    policy_id="ai_shadow_research",
+                    payload={"simulation_validation": binding["simulation_policy"]},
+                    updated_by="human:test",
+                )
         settled = book_service.settle(
             identity,
             request_id=f"settle:{day}",
@@ -448,6 +546,63 @@ def exercise_and_compare_forward(
             assert STOCK.symbol not in publication["payload"]["target_weights"]
         previous = read_daily_bar_dataset(observations.objects, full).snapshot
     assert len(set(held_quantities)) == 1
+    if binding.get("simulation_policy"):
+        # A real four-session SIM book advances, but is never a sixty-session final pass.
+        with pytest.raises(ValueError, match="deployment_forward_health_not_ready"):
+            verify_reserved_forward_book(
+                observations.db, reservation, through_session=future[-1], now=current[0]
+            )
+        assert len(actual_book["steps"]) == 4
+        assert actual_book["fills"]
+        assert observations.db.list_strategy_promotion_states_sync() == []
+        before = observations.repository.get(identity)
+        original = observations._publication
+
+        def revoke_after_calculation(*args, **kwargs):
+            publication = original(*args, **kwargs)
+            observations.db.upsert_automation_policy_sync(
+                policy_id="ai_shadow_research",
+                payload={
+                    "simulation_validation": {
+                        **binding["simulation_policy"],
+                        "enabled": False,
+                    }
+                },
+                updated_by="human:test",
+            )
+            return publication
+
+        with pytest.MonkeyPatch.context() as race:
+            race.setattr(observations, "_publication", revoke_after_calculation)
+            with pytest.raises(ValueError, match="simulation_authorization_changed"):
+                observations.advance(
+                    identity,
+                    request_id="revoke-between-calculate-and-persist",
+                    expected_version=before["version"],
+                    dataset_id=full.dataset_id,
+                )
+        assert len(observations.repository.get(identity)["publications"]) == len(
+            before["publications"]
+        )
+        assert observations.db.list_strategy_promotion_states_sync() == []
+        with pytest.raises(ValueError, match="simulation_policy_disabled"):
+            book_service.settle(
+                identity,
+                request_id="new-settlement-after-revocation",
+                expected_version=actual_book["version"],
+                dataset_id=full.dataset_id,
+            )
+        assert book_service.get(identity)["steps"] == actual_book["steps"]
+        assert (
+            book_service.settle(
+                identity,
+                request_id=f"settle:{future[-1]}",
+                expected_version=actual_book["version"] - 1,
+                dataset_id=full.dataset_id,
+            )
+            == settled
+        )
+        return
     proof = verify_reserved_forward_book(
         observations.db, reservation, through_session=future[-1], now=current[0]
     )

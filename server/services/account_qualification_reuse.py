@@ -23,6 +23,9 @@ from server.contracts.ai_shadow_research_qualification import (
 )
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.daily_strategy_artifacts import DailyStrategyArtifactRejected
+from server.contracts.normalized_strategy_research import (
+    SIMULATION_RESEARCH_NOTIONAL_POLICY_ID,
+)
 from server.contracts.strategy_research import StrategyResearchSelection
 from server.services.ai_shadow_research_qualification_support import (
     QUALIFICATION_COMPARISON_SCHEMA,
@@ -192,7 +195,16 @@ def require_normalized_source_selection(
         "end_date": selection.end_date,
         "frequency": selection.frequency,
         "initial_cash": selection.initial_cash,
-        "notional_policy_id": NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID,
+        "notional_policy_id": (
+            SIMULATION_RESEARCH_NOTIONAL_POLICY_ID
+            if selection.simulation_validation_binding is not None
+            else NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID
+        ),
+        **(
+            {"simulation_validation_binding": selection.simulation_validation_binding}
+            if selection.simulation_validation_binding is not None
+            else {}
+        ),
         "cost_model_reference": selection.cost_model_reference,
         "account_fact_binding": "not_applicable_strategy_only_research",
         "saved_backtest_result_id": None,
@@ -203,7 +215,10 @@ def require_normalized_source_selection(
     if (
         actual != expected
         or selection.has_account_binding
-        or selection.initial_cash != NORMALIZED_RESEARCH_NOTIONAL
+        or (
+            selection.simulation_validation_binding is None
+            and selection.initial_cash != NORMALIZED_RESEARCH_NOTIONAL
+        )
         or any(item != "stock" for item in selection.asset_classes)
         or selection.saved_backtest_result_id
         != int(source.get("baseline_result_id") or 0)
@@ -315,6 +330,18 @@ async def reusable_terminal_qualification_result(
                 record,
                 run=run,
                 valuation=valuation,
+                frozen_simulation_cash=(
+                    Decimal(
+                        str(
+                            sources[0].source_selection.simulation_validation_binding[
+                                "initial_cash"
+                            ]
+                        )
+                    )
+                    if sources[0].source_selection.simulation_validation_binding
+                    is not None
+                    else None
+                ),
             ) or not _reviewed_fee_identity_matches(
                 fee_status,
                 run=run,
@@ -363,7 +390,7 @@ async def _terminal_candidate_set_matches(
         len(sources) != 5
         or not isinstance(candidates, list)
         or len(candidates) != 5
-        or run.get("status") != "completed"
+        or run.get("status") not in {"completed", "blocked"}
     ):
         return False
     source_by_id = {
@@ -404,6 +431,8 @@ async def _terminal_candidate_set_matches(
             ).isoformat(),
             valuation_snapshot_id=str(run["valuation_snapshot_id"]),
             ledger_cutoff_id=int(run["ledger_cutoff_id"]),
+            deployment_scope=source.source_selection.deployment_scope,
+            portfolio_policy_id=source.source_selection.portfolio_policy_id,
         )
         expected_gate = advancement_gate_builder(
             baseline=baseline_view,
@@ -414,6 +443,16 @@ async def _terminal_candidate_set_matches(
                 "artifact_fingerprint": source.source_critique["artifact_fingerprint"],
             },
         ).to_json_dict()
+        reviewed = candidate_view.get("account_deployment_validation")
+        if isinstance(reviewed, Mapping) and reviewed.get("status") != "pass":
+            expected_gate["status"] = "blocked"
+            expected_gate["blockers"] = list(
+                dict.fromkeys(
+                    [*expected_gate["blockers"], *(reviewed.get("blockers") or [])]
+                )
+            )
+            expected_gate.pop("evidence_fingerprint", None)
+            expected_gate["evidence_fingerprint"] = content_fingerprint(expected_gate)
         expected_status = (
             "qualified" if expected_gate.get("status") == "pass" else "blocked"
         )
@@ -466,11 +505,21 @@ async def _terminal_candidate_set_matches(
             ),
             "account_capital_constraint": account_capital,
             "initial_cash_policy": {
-                "policy_id": QUALIFICATION_NOTIONAL_POLICY_ID,
-                "normalized_notional_policy_id": (
-                    NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID
+                "policy_id": (
+                    SIMULATION_RESEARCH_NOTIONAL_POLICY_ID
+                    if source.source_selection.simulation_validation_binding is not None
+                    else QUALIFICATION_NOTIONAL_POLICY_ID
                 ),
-                "rule": "minimum_of_normalized_notional_and_reconciled_total_equity",
+                "normalized_notional_policy_id": (
+                    SIMULATION_RESEARCH_NOTIONAL_POLICY_ID
+                    if source.source_selection.simulation_validation_binding is not None
+                    else NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID
+                ),
+                "rule": (
+                    "exact_frozen_simulation_notional_within_reconciled_equity_and_publication_grant"
+                    if source.source_selection.simulation_validation_binding is not None
+                    else "minimum_of_normalized_notional_and_reconciled_total_equity"
+                ),
                 "research_initial_cash": money_text(initial_cash),
             },
             "iteration_lineage": dict(
@@ -565,6 +614,7 @@ def _account_evidence_matches(
     *,
     run: Mapping[str, Any],
     valuation: Mapping[str, Any],
+    frozen_simulation_cash: Decimal | None = None,
 ) -> bool:
     if (
         _record_field(record, "reference_id") != run.get("account_evidence_reference")
@@ -583,9 +633,11 @@ def _account_evidence_matches(
     ):
         return False
     total_equity = account_total_equity(_record_field(record, "payload"), valuation)
-    return money_text(qualification_initial_cash(total_equity)) == run.get(
-        "initial_cash_text"
-    )
+    return money_text(
+        qualification_initial_cash(
+            total_equity, frozen_simulation_cash=frozen_simulation_cash
+        )
+    ) == run.get("initial_cash_text")
 
 
 def _reviewed_fee_identity_matches(

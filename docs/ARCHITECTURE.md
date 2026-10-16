@@ -552,6 +552,27 @@ data, replay, cost-model, or policy failures block the research or simulation th
 uses those inputs. Provider failure does not disable deterministic observation or
 account scans of previously published versions.
 
+The research policy may separately authorize independent full-scope validation.
+It freezes hypothetical capital, research costs, entry-board rules, risk limits,
+a finite final-test budget and future statistical checkpoint. It reuses the
+existing verified-seed, sealed-reservation, observation and paper-book owners;
+no account publication grant, private balance or reviewed account fee schedule is
+required to collect this evidence. The future interval starts only after the
+verified seed is ready. Revocation fences that simulation's observation inputs,
+new targets and settlements without erasing its history. Shared market-data
+collection retains its separate lifecycle.
+
+An independent simulation final retains its own validation provenance. A later
+account publication needs its own active grant and current qualification. Reuse
+requires compatible strategy, code, scope, entry rules, capital, statistical and
+risk requirements. Qualification replays the original candidate and its frozen
+comparison family over the same data and interval under current reviewed fees,
+then applies the account's statistical and risk requirements to those curves.
+The completed qualification stores that assessment immutably; subsequent
+consumers reopen it and revalidate the current fee and publication bindings.
+The original simulation, modeled costs and paper fills retain their identities.
+Missing or incompatible evidence blocks account publication.
+
 Simulation policy is default-off and binds universe, permitted formulas, costs,
 allocation/risk limits, observation start, concurrent candidate limits, and compute
 budgets. Enabling research alone does not authorize simulation. Enabling simulation

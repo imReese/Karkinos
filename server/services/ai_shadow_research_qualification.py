@@ -36,6 +36,9 @@ from server.contracts.ai_shadow_research_qualification import (
 )
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.daily_strategy_artifacts import DRAFT_BACKUP_FIELDS
+from server.contracts.normalized_strategy_research import (
+    SIMULATION_RESEARCH_NOTIONAL_POLICY_ID,
+)
 from server.contracts.strategy_research import StrategyResearchSelection
 from server.services.account_qualification_admission import (
     QualificationAdmission,
@@ -73,6 +76,7 @@ from server.services.ai_shadow_research_qualification_support import (
 )
 from server.services.ai_shadow_research_support import (
     shadow_research_backtest_source_fingerprint,
+    shadow_research_json_object,
     shadow_research_market_close_as_of,
 )
 from server.services.market_calendar_dates import latest_verified_closed_trading_date
@@ -195,6 +199,11 @@ class AiShadowResearchQualificationService:
                 now=current_time,
                 calendar_db=self._db,
             )
+            simulation_cash = (
+                Decimal(final_evaluation["reservation"]["initial_cash"])
+                if final_evaluation["reservation"].get("simulation_policy")
+                else None
+            )
             snapshot = await call_maybe_async(self._account_identity_reader)
             valuation = require_current_qualification_valuation(
                 snapshot,
@@ -239,10 +248,15 @@ class AiShadowResearchQualificationService:
 
                     expected_cash = min(
                         qualification_initial_cash(
-                            portfolio_equity_from_valuation(self._db, valuation)
+                            portfolio_equity_from_valuation(self._db, valuation),
+                            frozen_simulation_cash=simulation_cash,
                         ),
                         publication_number(publication_grant["max_initial_cash"]),
                     )
+                    if simulation_cash is not None and expected_cash != simulation_cash:
+                        raise ShadowResearchQualificationRejected(
+                            "qualification_simulation_capital_exceeds_publication_grant"
+                        )
                     if (
                         publication_number(saved_run["initial_cash_text"])
                         != expected_cash
@@ -280,7 +294,9 @@ class AiShadowResearchQualificationService:
                 self._reviewed_fee_schedule_resolver,
                 frozen[0].source_selection,
             )
-            initial_cash = qualification_initial_cash(account["total_equity"])
+            initial_cash = qualification_initial_cash(
+                account["total_equity"], frozen_simulation_cash=simulation_cash
+            )
             from server.contracts.recommendation_publication import (
                 publication_number,
                 read_publication_grant,
@@ -296,6 +312,10 @@ class AiShadowResearchQualificationService:
                 initial_cash = min(
                     initial_cash, publication_number(grant["max_initial_cash"])
                 )
+                if simulation_cash is not None and initial_cash != simulation_cash:
+                    raise ShadowResearchQualificationRejected(
+                        "qualification_simulation_capital_exceeds_publication_grant"
+                    )
             account_capital = build_research_account_capital_evidence(
                 initial_cash=initial_cash,
                 account_evidence=account["record"].to_dict(),
@@ -840,8 +860,8 @@ class AiShadowResearchQualificationService:
             **(
                 {
                     "entry_board_policy": final_evaluation["reservation"][
-                        "publication_grant"
-                    ]["entry_board_policy"]
+                        "entry_board_policy"
+                    ]
                 }
                 if source.source_selection.deployment_scope
                 else {}
@@ -853,6 +873,30 @@ class AiShadowResearchQualificationService:
             == source.source_candidate["candidate_id"]
             else {}
         )
+        if (
+            final_evaluation["reservation"].get("simulation_policy")
+            and final_evaluation["reservation"]["candidate_id"]
+            == source.source_candidate["candidate_id"]
+        ):
+            from server.contracts.recommendation_publication import (
+                read_publication_grant,
+            )
+            from server.services.research_final_evaluation import (
+                build_simulation_account_replay,
+            )
+
+            grant = read_publication_grant(self._db, now=self._now())
+            result["metrics_json"][
+                "simulation_account_replay"
+            ] = await asyncio.to_thread(
+                build_simulation_account_replay,
+                self._db,
+                self._research_store,
+                result,
+                final_evaluation,
+                grant,
+                data_store=self._backtest_adapter._data_store,
+            )
         baseline_row = await self._db.get_backtest_result(baseline_result_id)
         if not isinstance(baseline_row, Mapping):
             raise ShadowResearchQualificationRejected(
@@ -875,10 +919,27 @@ class AiShadowResearchQualificationService:
                 },
             )
             gate_payload = gate.to_json_dict()
-            status = "qualified" if gate.passed else "blocked"
-            recommendation = (
-                "paper_shadow_review" if gate.passed else "keep_researching"
+            reviewed = candidate_row.get("metrics_json")
+            if not isinstance(reviewed, Mapping):
+                reviewed = shadow_research_json_object(reviewed)
+            replay = reviewed.get("simulation_account_replay")
+            replay_assessment = (
+                replay["reviewed_replay"]["deployment_assessment"] if replay else None
             )
+            passed = gate.passed and (
+                replay_assessment is None or replay_assessment["status"] == "pass"
+            )
+            if replay_assessment is not None and replay_assessment["status"] != "pass":
+                gate_payload["status"] = "blocked"
+                gate_payload["blockers"] = list(
+                    dict.fromkeys(
+                        [*gate_payload["blockers"], *replay_assessment["blockers"]]
+                    )
+                )
+                gate_payload.pop("evidence_fingerprint", None)
+                gate_payload["evidence_fingerprint"] = content_fingerprint(gate_payload)
+            status = "qualified" if passed else "blocked"
+            recommendation = "paper_shadow_review" if passed else "keep_researching"
             comparison = {
                 "schema_version": QUALIFICATION_COMPARISON_SCHEMA,
                 "baseline_source_fingerprint": (
@@ -913,17 +974,23 @@ class AiShadowResearchQualificationService:
                     "formula_semantics_only_frozen_source_evidence"
                 ),
                 "research_capital_mode": "account_bound",
-                "account_qualification_status": (
-                    "passed" if gate.passed else "blocked"
-                ),
+                "account_qualification_status": ("passed" if passed else "blocked"),
                 "account_capital_constraint": dict(account_capital),
                 "initial_cash_policy": {
-                    "policy_id": QUALIFICATION_NOTIONAL_POLICY_ID,
+                    "policy_id": (
+                        SIMULATION_RESEARCH_NOTIONAL_POLICY_ID
+                        if source.source_selection.simulation_validation_binding
+                        else QUALIFICATION_NOTIONAL_POLICY_ID
+                    ),
                     "normalized_notional_policy_id": (
-                        NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID
+                        SIMULATION_RESEARCH_NOTIONAL_POLICY_ID
+                        if source.source_selection.simulation_validation_binding
+                        else NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID
                     ),
                     "rule": (
-                        "minimum_of_normalized_notional_and_reconciled_total_equity"
+                        "exact_frozen_simulation_notional_within_reconciled_equity_and_publication_grant"
+                        if source.source_selection.simulation_validation_binding
+                        else "minimum_of_normalized_notional_and_reconciled_total_equity"
                     ),
                     "research_initial_cash": money_text(initial_cash),
                 },

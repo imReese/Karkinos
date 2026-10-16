@@ -61,10 +61,20 @@ def _decimal_text(value: Decimal) -> str:
 class _PublishedTargetReplay(BacktestEngine):
     """Adapt published targets and collect facts around canonical execution."""
 
-    def __init__(self, *, book_id, schedule, session_instruments=None, **kwargs):
+    def __init__(
+        self,
+        *,
+        book_id,
+        schedule,
+        session_instruments=None,
+        session_nontrading_instruments=None,
+        **kwargs,
+    ):
         self.book_id = book_id
         self.schedule = schedule
         self._session_instruments = session_instruments
+        self._session_nontrading_instruments = session_nontrading_instruments or {}
+        self._last_observed_sessions: dict[Symbol, date] = {}
         self.sessions: list[dict[str, Any]] = []
         self.paper_fills: list[dict[str, Any]] = []
         self.attempts: list[dict[str, Any]] = []
@@ -91,6 +101,16 @@ class _PublishedTargetReplay(BacktestEngine):
             and str(event.symbol) not in publication.target_weights
         ):
             publication = None
+        pending = self._pending_signals.get(event.symbol)
+        if publication is None and pending is not None and not self._warming_up:
+            publication = next(
+                (
+                    row
+                    for row in self.schedule.values()
+                    if row.id == pending.strategy_id
+                ),
+                None,
+            )
         self._publication = publication
         self._requested_order = None
         if publication is not None and self._session_instruments is None:
@@ -110,6 +130,7 @@ class _PublishedTargetReplay(BacktestEngine):
             else 0
         )
         super()._on_market_event(event)
+        self._last_observed_sessions[event.symbol] = session
         if publication is not None:
             fill = (
                 self.paper_fills[-1] if len(self.paper_fills) > previous_fills else None
@@ -167,6 +188,8 @@ class _PublishedTargetReplay(BacktestEngine):
 
     def _stage_next_targets(self, session: date) -> None:
         """Stage one actually published future-session target before sorting fills."""
+        if not self._warming_up:
+            self._record_nontrading_attempts(session)
         following = [day for day in self._session_instruments if day > session]
         if not following:
             return
@@ -179,6 +202,33 @@ class _PublishedTargetReplay(BacktestEngine):
                 strategy_id=publication.id,
                 symbol=Symbol(symbol),
                 target_weight=weight,
+            )
+
+    def _record_nontrading_attempts(self, session: date) -> None:
+        for symbol in self._session_nontrading_instruments.get(session, ()):
+            pending = self._pending_signals.get(symbol)
+            if pending is None:
+                continue
+            position = self.portfolio.positions.get(symbol)
+            self.attempts.append(
+                {
+                    "publication_id": pending.strategy_id,
+                    "symbol": str(symbol),
+                    "session": session.isoformat(),
+                    "status": "blocked",
+                    "reason": "bound_nontrading_session",
+                    "fill_id": None,
+                    "target_weight": _decimal_text(pending.target_weight),
+                    "actual_weight": _decimal_text(
+                        position.market_value / self.portfolio.total_equity
+                    )
+                    if position and self.portfolio.total_equity > ZERO
+                    else "0",
+                    "requested_quantity": None,
+                    "filled_quantity": "0",
+                    "cash_after_attempt": _decimal_text(self.portfolio.cash),
+                    "partially_filled": False,
+                }
             )
 
     def _on_order_event(self, event: OrderEvent) -> None:
@@ -229,7 +279,7 @@ class _PublishedTargetReplay(BacktestEngine):
                 "fill_id": fill.fill_id,
                 "order_id": fill.order_id,
                 "publication_id": self._publication.id,
-                "session": self._publication.reference_session.isoformat(),
+                "session": fill.timestamp.astimezone(_SHANGHAI).date().isoformat(),
                 "timestamp": fill.timestamp.isoformat(),
                 "symbol": str(fill.symbol),
                 "side": fill.side.value,
@@ -244,6 +294,7 @@ class _PublishedTargetReplay(BacktestEngine):
         )
 
     def _capture_session(self, session: date) -> None:
+        nontrading_valuations = []
         if self._session_instruments is not None:
             expected = set(self._session_instruments.get(session, ()))
             missing = [
@@ -251,11 +302,33 @@ class _PublishedTargetReplay(BacktestEngine):
                 for symbol, position in self.portfolio.positions.items()
                 if position.quantity > ZERO and symbol not in expected
             ]
-            if missing:
+            unknown = [
+                symbol
+                for symbol in missing
+                if Symbol(symbol)
+                not in self._session_nontrading_instruments.get(session, ())
+                or Symbol(symbol) not in self._last_observed_sessions
+            ]
+            if unknown:
                 raise ValueError(
                     "paper_replay_holding_valuation_missing:"
-                    + ",".join(sorted(missing))
+                    + ",".join(sorted(unknown))
                 )
+            nontrading_valuations = [
+                {
+                    "symbol": symbol,
+                    "valuation_basis": "last_observed_close_bound_nontrading",
+                    "observation_session": self._last_observed_sessions[
+                        Symbol(symbol)
+                    ].isoformat(),
+                    "reference_close": _decimal_text(
+                        self.portfolio.positions[Symbol(symbol)].market_value
+                        / self.portfolio.positions[Symbol(symbol)].quantity
+                    ),
+                    "tradable": False,
+                }
+                for symbol in sorted(missing)
+            ]
         positions = {
             str(symbol): {
                 field: _decimal_text(getattr(position, field))
@@ -314,6 +387,11 @@ class _PublishedTargetReplay(BacktestEngine):
                 "corporate_actions": sorted(
                     corporate_actions, key=lambda item: item["action_id"]
                 ),
+                **(
+                    {"nontrading_valuations": nontrading_valuations}
+                    if nontrading_valuations
+                    else {}
+                ),
             }
         )
         self._session_fill_start = len(self.paper_fills)
@@ -333,6 +411,7 @@ def replay_paper_book(
     distributions: Sequence[StockDistribution] = (),
     include_share_distributions: bool = True,
     session_instruments: Mapping[date, Sequence[Symbol]] | None = None,
+    session_nontrading_instruments: Mapping[date, Sequence[Symbol]] | None = None,
     max_dataset_rows: int = 200_000,
     max_instruments: int = 50,
 ) -> dict[str, Any]:
@@ -358,6 +437,17 @@ def replay_paper_book(
     ):
         raise ValueError("paper_replay_input_invalid")
     universe = set(instruments)
+    nontrading = session_nontrading_instruments or {}
+    if nontrading and (
+        session_instruments is None
+        or any(
+            type(day) is not date
+            or not set(symbols) <= universe
+            or set(symbols).intersection(session_instruments.get(day, ()))
+            for day, symbols in nontrading.items()
+        )
+    ):
+        raise ValueError("paper_replay_nontrading_evidence_invalid")
     if any(symbol != instrument.symbol for symbol, instrument in instruments.items()):
         raise ValueError("paper_replay_instrument_identity_invalid")
     grouped: dict[Symbol, list[MarketEvent]] = {symbol: [] for symbol in instruments}
@@ -462,6 +552,7 @@ def replay_paper_book(
                 if weight > ZERO
             }
             <= sessions[publication.reference_session]
+            | set(nontrading.get(publication.reference_session, ()))
         ):
             raise ValueError("paper_replay_target_close_missing")
         identities.add(publication.id)
@@ -473,6 +564,7 @@ def replay_paper_book(
         book_id=book_id,
         schedule=schedule,
         session_instruments=session_instruments,
+        session_nontrading_instruments=nontrading,
         instruments=dict(instruments),
         data_handlers=grouped,
         initial_cash=initial_cash,

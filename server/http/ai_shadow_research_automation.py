@@ -48,6 +48,7 @@ class ShadowResearchPolicyPayload(BaseModel):
     require_complete_account_evidence: bool = False
     research_end_date: str | None = Field(default=None, min_length=10, max_length=10)
     sealed_end_date: str | None = Field(default=None, min_length=10, max_length=10)
+    simulation_validation: dict[str, Any] | None = None
     research_question: str = Field(min_length=1, max_length=4_000)
     updated_by: str = Field(min_length=1, max_length=128)
     confirmation: str = Field(min_length=1, max_length=200)

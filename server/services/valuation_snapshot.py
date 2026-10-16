@@ -7,6 +7,9 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
+from server.persistence.valuation_publication_recovery import (
+    require_valuation_recovery_clear as require_valuation_recovery_clear,
+)
 from server.projections.valuation_snapshot import (
     VALUATION_POLICY_VERSION,
     is_asset_class_valuation_healthy,
@@ -82,6 +85,7 @@ __all__ = [
     "VALUATION_POLICY_VERSION",
     "build_current_valuation_snapshot",
     "portfolio_equity_from_valuation",
+    "require_valuation_recovery_clear",
     "is_asset_class_valuation_healthy",
     "ledger_identity_from_rows",
     "load_persisted_quote_rows",

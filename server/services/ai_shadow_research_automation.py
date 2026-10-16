@@ -166,12 +166,81 @@ class AiShadowResearchAutomationService(
                 if row["status"] in {"reserved", "running"}
                 and row.get("evidence", {})
                 .get("reservation", {})
-                .get("publication_grant", {})
+                .get(
+                    "simulation_policy",
+                    row.get("evidence", {})
+                    .get("reservation", {})
+                    .get("publication_grant", {}),
+                )
                 .get("generation")
                 == grant["generation"]
             ),
             None,
         )
+
+    def _save_research_policy(self, policy, *, simulation_change, expected_generation):
+        return self._store.configure_research_policy(
+            policy=policy,
+            simulation_change=simulation_change,
+            expected_generation=expected_generation,
+            now=self._now().astimezone(timezone.utc).isoformat(),
+        )
+
+    def _validation_seed_prepared(self, source):
+        """A scheduling hint only; an open model window revalidates all inputs."""
+        import json
+
+        from data.source_policy import verification_source_policy_for_config
+        from server.services.research.datasets import (
+            forward_seed_origin_id,
+            read_forward_seed_origin,
+        )
+
+        scope = source["source_selection"]["deployment_scope"]
+        run = read_forward_seed_origin(
+            self._db,
+            forward_seed_origin_id(
+                scope,
+                source["minimum_bars"],
+                verification_source_policy_for_config(
+                    self._state.require_config()
+                ).policy_id,
+                start_date=source["start_date"],
+            ),
+        )
+        return bool(
+            run
+            and run["run_type"] == "forward_seed_preparation"
+            and run["status"] == "completed"
+            and run.get("source_ref")
+            and json.loads(run["payload_json"]).get("prepared_through")
+            == source["end_date"]
+        )
+
+    def _independent_simulation_inputs(self, reserved):
+        from types import SimpleNamespace
+
+        from server.ai_runtime.strategy_research_backtest import (
+            RestrictedFormulaBacktestAdapter,
+        )
+        from server.ai_runtime.strategy_research_support import selection_from_session
+        from server.persistence.strategy_research import StrategyResearchAuditStore
+
+        store = StrategyResearchAuditStore(self._db.path)
+        binding = reserved["evidence"]["reservation"]
+        source = SimpleNamespace(
+            source_selection=selection_from_session(
+                store.get_session(binding["session_id"])
+            ),
+            source_candidate=self._store.get_candidate(binding["candidate_id"]),
+            source_draft=store.get_draft(binding["session_id"], binding["draft_id"])[
+                "contract"
+            ],
+        )
+        adapter = RestrictedFormulaBacktestAdapter(
+            data_store=self._data_store, research_root=self._db.path.parent / "research"
+        )
+        return store, source, adapter
 
     def _require_execution_current(self) -> None:
         if self._execution_guard is not None:

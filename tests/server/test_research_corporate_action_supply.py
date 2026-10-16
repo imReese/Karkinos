@@ -103,15 +103,45 @@ def run_jobs(db, config, ids, current):
     return [store.get(identity) for identity in ids]
 
 
+@pytest.mark.parametrize("simulation", [False, True])
 def test_automatic_full_scope_seed_waits_for_canonical_worker_then_reuses_ca(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, simulation
 ):
     db = _db(tmp_path)
     market = DataStore(tmp_path / "market")
     current = [NOW.replace(hour=14)]
     policy = MarketUniversePolicy(minimum_master_member_count=2, minimum_history_rows=2)
     scope = market_deployment_scope(policy)
-    install_grant(db, scope["deployment_scope_fingerprint"])
+    if simulation:
+        from uuid import uuid4
+
+        from server.contracts.research_observation_automation import (
+            SIMULATION_VALIDATION_AUTHORIZE,
+        )
+        from server.services.ai_shadow_research_commands import (
+            simulation_validation_defaults,
+        )
+
+        proposal = simulation_validation_defaults(current[0])
+        grant = {
+            **proposal,
+            "enabled": True,
+            "authorization": SIMULATION_VALIDATION_AUTHORIZE,
+            "grant_id": str(uuid4()),
+            "generation": str(uuid4()),
+            "deployment_scope": scope,
+            "deployment_scope_fingerprint": scope["deployment_scope_fingerprint"],
+        }
+        repo = AutomationRunRepository(db.path)
+        repo.upsert_automation_policy_sync(
+            policy_id="ai_shadow_research",
+            payload={"simulation_validation": grant},
+            updated_by="human:test",
+        )
+        db.get_automation_policy_sync = repo.get_automation_policy_sync
+        assert repo.get_automation_policy_sync("ai_recommendation_publication") is None
+    else:
+        install_grant(db, scope["deployment_scope_fingerprint"])
     market.save_market_universe_snapshot(
         trade_date=DAYS[-1].isoformat(),
         provider_name="fixture",
@@ -136,9 +166,56 @@ def test_automatic_full_scope_seed_waits_for_canonical_worker_then_reuses_ca(
         market_data_verification_source_policy=FREE_CN_RESEARCH_V1.policy_id,
     )
     calls = clocked_worker(monkeypatch, current)
-    warmup = ensure_forward_seed_for_source(
-        db, config, source=source, now=current[0], data_store=market
-    )
+    if simulation:
+        from server.services.ai_shadow_research_workflow import (
+            AiShadowResearchWorkflowMixin,
+        )
+
+        class WarmupWorkflow(AiShadowResearchWorkflowMixin):
+            _db = db
+            _data_store = market
+            _state = SimpleNamespace(require_config=lambda: config)
+
+            def get_policy(self):
+                return SimpleNamespace(
+                    simulation_validation=grant, research_end_date=None
+                )
+
+            def _policy_preflight(self, _policy):
+                return None
+
+            def _now(self):
+                return current[0]
+
+            def status(self):
+                return {}
+
+            async def _forward_validation_preflight(self, _grant):
+                return None
+
+            def _provider_batch_window_admission(self):
+                return {"run_status": "deferred_for_provider_off_peak"}, None
+
+            def _validation_seed_source(self, _policy, _grant):
+                return source
+
+            def _validation_seed_prepared(self, _source):
+                return False
+
+            def _require_deepseek_provider(self):
+                raise AssertionError("warmup must not require or invoke a model")
+
+            def _record_preflight(self, **kwargs):
+                raise AssertionError(kwargs)
+
+        prepared = asyncio.run(WarmupWorkflow().run_once())
+        assert prepared["run_status"] == "awaiting_verified_research_inputs"
+        assert prepared["provider_call_performed"] is False
+        warmup = prepared["forward_validation"]
+    else:
+        warmup = ensure_forward_seed_for_source(
+            db, config, source=source, now=current[0], data_store=market
+        )
     assert warmup["status"] == "waiting"
     assert warmup["last_blocker"]["code"] == "forward_seed_verified_jobs_incomplete"
     warmup_service, primary, comparison = range_service(tmp_path, monkeypatch)

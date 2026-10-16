@@ -223,6 +223,9 @@ def test_status_projects_only_current_source_qualification_attempt(tmp_path) -> 
             self._db = db
             self._store = Store()
             self._daily_artifacts = Artifacts()
+            self._now = lambda: datetime(
+                2026, 9, 2, 17, tzinfo=ZoneInfo("Asia/Shanghai")
+            )
 
         def get_policy(self) -> ShadowResearchPolicy:
             return ShadowResearchPolicy()
@@ -346,6 +349,9 @@ def test_status_requires_exact_verified_current_pair_for_qualification_run(
             self._db = object()
             self._store = Store()
             self._daily_artifacts = Artifacts()
+            self._now = lambda: datetime(
+                2026, 9, 2, 17, tzinfo=ZoneInfo("Asia/Shanghai")
+            )
 
         def get_policy(self) -> ShadowResearchPolicy:
             return ShadowResearchPolicy()

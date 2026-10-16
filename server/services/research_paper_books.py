@@ -36,6 +36,7 @@ from core.types import (
 from data.dataset.reader import (
     DatasetReaderError,
     daily_bar_dataset_read_scope,
+    dataset_session_nontrading_instruments,
     read_dataset_corporate_action_evidence,
 )
 from domain.instrument import Instrument, make_etf, make_research_stock, make_stock
@@ -115,14 +116,15 @@ def paper_book_code_binding():
         "server/contracts/recommendation_publication.py",
         "server/services/market_universe_truth.py",
         "server/services/market_calendar_evidence.py",
+        "data/store.py",
         "data/dataset/reader.py",
         "data/dataset/model.py",
         "data/dataset/manifest.py",
         "data/market/model.py",
         "data/market/capture.py",
         "data/market/revision.py",
+        "data/market/reconciliation.py",
         "data/market/contracts.py",
-        "data/market/capture.py",
         "data/market/normalize.py",
         "data/market/ingestion.py",
         "data/market/cross_source.py",
@@ -137,6 +139,22 @@ def paper_book_code_binding():
         "data/market/corporate_actions.py",
         "data/providers/tushare_corporate_actions.py",
         "data/storage/objects.py",
+        "server/contracts/ai_shadow_research_automation.py",
+        "server/services/ai_shadow_research_commands.py",
+        "server/services/ai_shadow_research_workflow.py",
+        "server/persistence/strategy_research_sealed.py",
+        "server/persistence/research_observations.py",
+        "server/services/ai_shadow_research_qualification.py",
+        "server/projections/daily_strategy_research_candidates.py",
+        "server/projections/daily_strategy_artifacts.py",
+        "server/projections/normalized_research_recommendation.py",
+        "server/services/account_qualification_reuse.py",
+        "server/services/ai_shadow_research_candidate_workflow.py",
+        "server/contracts/normalized_strategy_research.py",
+        "server/ai_runtime/strategy_research_support.py",
+        "server/ai_runtime/strategy_research_privacy.py",
+        "server/services/ai_shadow_research_baseline.py",
+        "server/persistence/ai_shadow_research_qualification_promotion.py",
     )
     payload = {
         "python": platform.python_version(),
@@ -197,7 +215,7 @@ def verify_reserved_forward_book(db, reservation, *, through_session, now):
         or "ai-sealed-auto-"
         + content_fingerprint({"run_id": binding["source_run_id"]})[:24]
     )
-    grant = binding["publication_grant"]
+    grant = binding.get("simulation_policy") or binding["publication_grant"]
     _, identity = reserved_forward_identity(sealed_id, grant)
     observations = ResearchObservationService(db, clock=lambda: now)
     observed = observations.repository.get(identity)
@@ -222,13 +240,18 @@ def verify_reserved_forward_book(db, reservation, *, through_session, now):
             "grant_id": grant["grant_id"],
             "generation": grant["generation"],
             "reservation_id": sealed_id,
+            **(
+                {"authority_kind": "simulation"}
+                if binding.get("simulation_policy")
+                else {}
+            ),
         }
         or observed["source_backtest_result_id"] != binding["candidate_result_id"]
         or observed["policy"].get("portfolio_policy_id") != FORMULA_PORTFOLIO_POLICY_ID
         or observation_deployment_scope(observed["source"])
         != binding["deployment_scope"]
         or Decimal(book["initial_cash"]) != Decimal(binding["initial_cash"])
-        or book["policy"].get("fee_schedule_binding") != binding["fee_schedule"]
+        or book["policy"].get("fee_schedule_binding") != binding.get("fee_schedule")
         or observed["policy"].get("entry_board_policy")
         != grant.get("entry_board_policy")
         or binding.get("entry_board_policy") != grant.get("entry_board_policy")
@@ -356,7 +379,7 @@ def verify_reserved_forward_book(db, reservation, *, through_session, now):
             "deployment_scope_fingerprint"
         ],
         "initial_cash": book["initial_cash"],
-        "fee_schedule_binding": binding["fee_schedule"],
+        "fee_schedule_binding": binding.get("fee_schedule"),
         "entry_board_policy": binding.get("entry_board_policy"),
         "first_session": expected[0],
         "through_session": expected[-1],
@@ -757,6 +780,13 @@ class ResearchPaperBookService:
         if book["code_binding"] != paper_book_code_binding():
             raise ValueError("paper_book_code_changed")
         now = _instant(self.clock())
+        from server.contracts.research_observation_automation import (
+            require_current_simulation_authorization,
+        )
+
+        require_current_simulation_authorization(
+            self.db, book["policy"].get("observation_target_policy", {}), now=now
+        )
         calendar = self.observations._calendar(
             date.fromisoformat(observation_input_binding(book["source"])["start_date"]),
             now,
@@ -849,6 +879,17 @@ class ResearchPaperBookService:
         warmup = date.fromisoformat(book["policy"]["warmup_session"])
         dynamic_scope = observation_deployment_scope(book["source"])
         memberships = {}
+        nontrading_memberships = {}
+        current_nontrading = (
+            dataset_session_nontrading_instruments(
+                self.observations.objects, current.snapshot
+            )
+            if dynamic_scope
+            else {}
+        )
+        current_memberships = {
+            row.partition_date: row for row in current.snapshot.session_memberships
+        }
         warmup_bars = []
         prior, prior_key = None, None
         for index, step in enumerate(old_steps):
@@ -873,6 +914,21 @@ class ResearchPaperBookService:
             if dynamic_scope:
                 memberships[day] = tuple(
                     Symbol(bar.instrument.symbol) for bar in session_bars
+                )
+                original = next(
+                    row
+                    for row in prior.snapshot.session_memberships
+                    if row.partition_date == day
+                )
+                original_nontrading = (
+                    current_nontrading
+                    if original == current_memberships.get(day)
+                    else dataset_session_nontrading_instruments(
+                        self.observations.objects, prior.snapshot
+                    )
+                )
+                nontrading_memberships[day] = tuple(
+                    Symbol(key.symbol) for key in original_nontrading.get(day, ())
                 )
             if index == 0:
                 warmup_bars = [bar for bar in prior.bars if bar.session_date == warmup]
@@ -919,8 +975,12 @@ class ResearchPaperBookService:
                     for bar in current.bars
                     if bar.session_date == day
                 )
+                nontrading_memberships[day] = tuple(
+                    Symbol(key.symbol) for key in current_nontrading.get(day, ())
+                )
             replay_options = {
                 "session_instruments": memberships,
+                "session_nontrading_instruments": nontrading_memberships,
                 "max_dataset_rows": book["policy"]["max_dataset_rows"],
                 "max_instruments": book["policy"]["resource_limits"]["max_instruments"],
             }

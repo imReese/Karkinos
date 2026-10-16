@@ -49,6 +49,103 @@ from server.services.strategy_promotion_support import (
 )
 
 
+def simulation_validation_defaults(now: datetime) -> dict[str, Any]:
+    """A non-authorizing proposal independent of accounts and private balances."""
+    from datetime import timedelta
+
+    from server.ai_runtime.formula_dsl import CANONICAL_COST_MODEL_REFERENCE
+    from server.ai_runtime.strategy_research_privacy import NORMALIZED_RESEARCH_NOTIONAL
+    from server.contracts.research_observation_automation import (
+        SIMULATION_VALIDATION_SCHEMA,
+    )
+    from server.services.account_board_permissions import freeze_entry_board_policy
+    from server.services.market_universe_truth import (
+        MarketUniversePolicy,
+        market_deployment_scope,
+    )
+
+    scope = market_deployment_scope(MarketUniversePolicy())
+    board = freeze_entry_board_policy(None, now.date().isoformat())
+    profile = {
+        "method": "paired_moving_block_bootstrap.v1",
+        "minimum_observations": 60,
+        "block_length": 5,
+        "minimum_effective_blocks": 10,
+        "bootstrap_samples": 100_000,
+        "significance_level": "0.05",
+        "minimum_net_excess": "0",
+        "decision_checkpoint": (now.date() + timedelta(days=120)).isoformat(),
+        "checkpoint_interval_days": 120,
+    }
+    return {
+        "schema_version": SIMULATION_VALIDATION_SCHEMA,
+        "enabled": False,
+        "authorization": "",
+        "strategy_family": "formula",
+        "deployment_scope": scope,
+        "deployment_scope_fingerprint": scope["deployment_scope_fingerprint"],
+        "initial_cash": str(NORMALIZED_RESEARCH_NOTIONAL),
+        "cost_model_reference": CANONICAL_COST_MODEL_REFERENCE,
+        "entry_board_policy": board,
+        "risk_limits": {
+            "max_positions": 4,
+            "max_symbol_weight": "0.30",
+            "max_gross_weight": "0.97",
+            "max_drawdown": "0.30",
+        },
+        "statistical_policy": profile,
+        "statistical_policy_fingerprint": content_fingerprint(profile),
+        "max_final_tests": 1,
+        "total_error_budget": "0.05",
+        "max_concurrent_candidates": 1,
+        "expires_at": (now + timedelta(days=365)).isoformat(),
+        "updated_by": "human:owner",
+    }
+
+
+def _simulation_policy_semantics(value):
+    from copy import deepcopy
+    from decimal import Decimal, InvalidOperation
+
+    from server.contracts.recommendation_publication import publication_time
+
+    result = deepcopy(
+        {
+            key: item
+            for key, item in value.items()
+            if key
+            not in {
+                "generation",
+                "created_at",
+                "updated_at",
+                "statistical_policy_fingerprint",
+            }
+        }
+    )
+    for container, names in (
+        (result, ("initial_cash", "total_error_budget")),
+        (
+            result.get("risk_limits", {}),
+            ("max_drawdown", "max_gross_weight", "max_symbol_weight"),
+        ),
+        (
+            result.get("statistical_policy", {}),
+            ("significance_level", "minimum_net_excess"),
+        ),
+    ):
+        for key in names:
+            if key in container:
+                try:
+                    container[key] = format(
+                        Decimal(str(container[key])).normalize(), "f"
+                    )
+                except InvalidOperation:
+                    pass
+    if result.get("expires_at"):
+        result["expires_at"] = publication_time(result["expires_at"]).isoformat()
+    return result
+
+
 class AiShadowResearchCommandsMixin:
     def publication_service(self):
         from server.services.recommendation_publication import (
@@ -78,6 +175,82 @@ class AiShadowResearchCommandsMixin:
     def update_policy(self, patch: Mapping[str, Any]) -> dict[str, Any]:
         current = self.get_policy().to_dict()
         merged = {**current, **dict(patch)}
+        simulation_change = patch.get("simulation_validation") is not None
+        expected_simulation_generation = None
+        if (
+            patch.get("simulation_validation") is None
+            and current.get("simulation_validation") is not None
+        ):
+            merged["simulation_validation"] = current["simulation_validation"]
+        if patch.get("simulation_validation") is not None:
+            from decimal import Decimal
+            from uuid import uuid4
+
+            from server.contracts.research_observation_automation import (
+                validate_simulation_validation_policy,
+            )
+            from server.services.market_universe_truth import (
+                MarketUniversePolicy,
+                market_deployment_scope,
+            )
+
+            previous = current.get("simulation_validation") or {}
+            proposed = dict(patch["simulation_validation"])
+            expected_simulation_generation = proposed.pop(
+                "expected_generation", proposed.get("generation")
+            )
+            defaults = simulation_validation_defaults(self._now())
+            simulation = {**defaults, **previous, **proposed}
+            simulation["statistical_policy"] = {
+                **defaults["statistical_policy"],
+                **previous.get("statistical_policy", {}),
+                **proposed.get("statistical_policy", {}),
+            }
+            simulation["statistical_policy_fingerprint"] = content_fingerprint(
+                simulation["statistical_policy"]
+            )
+            if "significance_level" not in proposed.get("statistical_policy", {}) and (
+                not previous.get("statistical_policy", {}).get("significance_level")
+                or "max_final_tests" in proposed
+                or "total_error_budget" in proposed
+            ):
+                if (
+                    type(simulation["max_final_tests"]) is not int
+                    or simulation["max_final_tests"] < 1
+                ):
+                    raise ValueError("simulation_final_test_budget_invalid")
+                simulation["statistical_policy"]["significance_level"] = str(
+                    Decimal(str(simulation["total_error_budget"]))
+                    / simulation["max_final_tests"]
+                )
+                simulation["statistical_policy_fingerprint"] = content_fingerprint(
+                    simulation["statistical_policy"]
+                )
+            # Renewing a policy must not reset its already spent final-test budget.
+            simulation["grant_id"] = previous.get("grant_id") or str(uuid4())
+            delivery_fields = {"generation", "created_at", "updated_at"}
+            semantic = {k: v for k, v in simulation.items() if k not in delivery_fields}
+            prior_semantic = {
+                k: v for k, v in previous.items() if k not in delivery_fields
+            }
+            simulation = {
+                **semantic,
+                "generation": str(uuid4()),
+            }
+            simulation = validate_simulation_validation_policy(simulation)
+            if previous and _simulation_policy_semantics(
+                semantic
+            ) == _simulation_policy_semantics(prior_semantic):
+                simulation = {**prior_semantic, "generation": previous["generation"]}
+            if simulation["enabled"] and simulation[
+                "deployment_scope"
+            ] != market_deployment_scope(
+                MarketUniversePolicy.from_dict(
+                    simulation["deployment_scope"]["universe_policy"]
+                )
+            ):
+                raise ValueError("simulation_scope_invalid")
+            merged["simulation_validation"] = simulation
         merged["token_budget_mode"] = (
             SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED
             if merged.get("daily_token_budget") is None
@@ -113,13 +286,13 @@ class AiShadowResearchCommandsMixin:
                 )
             merged["authorization"] = ""
         policy = ShadowResearchPolicy.from_mapping(merged)
-        saved = self._db.upsert_automation_policy_sync(
-            policy_id=SHADOW_RESEARCH_POLICY_ID,
-            payload=policy.to_dict(),
-            updated_by=policy.updated_by,
+        saved = self._save_research_policy(
+            policy.to_dict(),
+            simulation_change=simulation_change,
+            expected_generation=expected_simulation_generation,
         )
         return {
-            **policy.to_dict(),
+            **ShadowResearchPolicy.from_mapping(saved).to_dict(),
             "created_at": saved.get("created_at"),
             "updated_at": saved.get("updated_at"),
         }
@@ -318,6 +491,9 @@ class AiShadowResearchCommandsMixin:
         active_paper_shadow = sources[0]["strategy_id"] if sources else None
         return {
             "schema_version": SHADOW_RESEARCH_API_SCHEMA,
+            "simulation_validation_defaults": simulation_validation_defaults(
+                self._now()
+            ),
             "runtime_contract": SHADOW_RESEARCH_RUNTIME_CONTRACT,
             "policy": policy.to_dict(),
             "kill_switch": kill_switch,
@@ -359,6 +535,9 @@ class AiShadowResearchCommandsMixin:
         publication_status = self.publication_service().status(include_preview=False)
         return {
             "schema_version": SHADOW_RESEARCH_API_SCHEMA,
+            "simulation_validation_defaults": simulation_validation_defaults(
+                self._now()
+            ),
             "runtime_contract": SHADOW_RESEARCH_RUNTIME_CONTRACT,
             "policy": self.get_policy().to_dict(),
             "automatic_strategy_replacement_enabled": publication_status["status"]

@@ -89,14 +89,15 @@ def observation_code_binding() -> dict[str, Any]:
         "core/events.py",
         "core/types.py",
         "data/features.py",
+        "data/store.py",
         "data/dataset/reader.py",
         "data/dataset/model.py",
         "data/dataset/manifest.py",
         "data/market/model.py",
         "data/market/capture.py",
         "data/market/revision.py",
+        "data/market/reconciliation.py",
         "data/market/contracts.py",
-        "data/market/capture.py",
         "data/market/normalize.py",
         "data/market/ingestion.py",
         "data/market/cross_source.py",
@@ -125,6 +126,22 @@ def observation_code_binding() -> dict[str, Any]:
         "analytics/forward_target_outcomes.py",
         "analytics/forward_observation_health.py",
         "analytics/dataset_snapshot.py",
+        "server/contracts/ai_shadow_research_automation.py",
+        "server/services/ai_shadow_research_commands.py",
+        "server/services/ai_shadow_research_workflow.py",
+        "server/persistence/strategy_research_sealed.py",
+        "server/services/ai_shadow_research_qualification.py",
+        "server/projections/daily_strategy_research_candidates.py",
+        "server/projections/daily_strategy_artifacts.py",
+        "server/projections/normalized_research_recommendation.py",
+        "server/services/account_qualification_reuse.py",
+        "server/services/ai_shadow_research_candidate_workflow.py",
+        "server/contracts/normalized_strategy_research.py",
+        "server/ai_runtime/strategy_research_support.py",
+        "server/ai_runtime/strategy_research_privacy.py",
+        "server/services/ai_shadow_research_baseline.py",
+        "server/persistence/research_paper_books.py",
+        "server/persistence/ai_shadow_research_qualification_promotion.py",
     )
     hashes = {
         name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in paths
@@ -286,7 +303,11 @@ class ResearchObservationService:
         policy = {
             "policy_id": _POLICY_ID,
             "scope": "independent_target_shadow",
-            "decision_actor": "standing_publication_grant"
+            "decision_actor": (
+                "standing_simulation_policy"
+                if authorization_binding.get("authority_kind") == "simulation"
+                else "standing_publication_grant"
+            )
             if authorization_binding
             else "human_command",
             **request,
@@ -368,6 +389,11 @@ class ResearchObservationService:
         market_as_of = None
         data_available = False
         try:
+            from server.contracts.research_observation_automation import (
+                require_current_simulation_authorization,
+            )
+
+            require_current_simulation_authorization(self.db, policy, now=now)
             if observation["code_binding"] != observation_code_binding():
                 raise ValueError("observation_code_changed")
             input_start = date.fromisoformat(
@@ -632,6 +658,7 @@ class ResearchObservationService:
         *,
         snapshot,
     ):
+        from data.dataset.reader import dataset_session_nontrading_instruments
         from domain.instrument import make_research_stock
         from server.ai_runtime.formula_portfolio import (
             formula_session_targets,
@@ -701,6 +728,12 @@ class ResearchObservationService:
                 str(book["policy"]["cost_assumptions"]["slippage_bps"])
             ),
             entry_board_policy=observation["policy"].get("entry_board_policy"),
+            nontrading_symbols=[
+                key.symbol
+                for key in dataset_session_nontrading_instruments(
+                    self.objects, snapshot
+                ).get(decision_session, ())
+            ],
         )
         state = book["state"]
         quantities = {

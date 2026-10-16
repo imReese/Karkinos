@@ -178,6 +178,9 @@ def strategy_advancement_backtest_view(
     ]
     dataset = _json_object(metrics.get("dataset_snapshot"))
     dataset_quality = _json_object(dataset.get("data_quality"))
+    account_replay = _json_object(metrics.get("simulation_account_replay"))
+    reviewed_replay = _json_object(account_replay.get("reviewed_replay"))
+    reviewed_assessment = _json_object(reviewed_replay.get("deployment_assessment"))
     total_cost = _number(evidence.get("total_cost"))
     return {
         "result_id": int(source.get("id") or 0),
@@ -253,6 +256,22 @@ def strategy_advancement_backtest_view(
         **(
             {"independent_evaluation": metrics["independent_evaluation"]}
             if "independent_evaluation" in metrics
+            else {}
+        ),
+        **(
+            {
+                "account_deployment_validation": {
+                    "status": reviewed_assessment.get("status"),
+                    "checkpoint": reviewed_assessment.get("effective_checkpoint"),
+                    "fee_cost_model_reference": account_replay.get(
+                        "cost_model_reference"
+                    ),
+                    "blockers": reviewed_assessment.get("blockers"),
+                    "validation_provenance": "reviewed_account_cost_replay",
+                    "evidence_fingerprint": account_replay.get("evidence_fingerprint"),
+                }
+            }
+            if "simulation_account_replay" in metrics
             else {}
         ),
     }

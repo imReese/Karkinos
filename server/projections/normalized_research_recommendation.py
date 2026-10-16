@@ -11,6 +11,7 @@ from server.contracts.content_identity import content_fingerprint
 from server.contracts.normalized_strategy_research import (
     NORMALIZED_RESEARCH_NOTIONAL,
 )
+from server.contracts.strategy_research import validate_simulation_notional_binding
 from server.projections.normalized_research_operation_preview import (
     bind_research_winner_operation_preview,
     is_valid_research_operation_recommendation,
@@ -392,6 +393,15 @@ def _research_outcome(
     max_drawdown = _number(metrics.get("max_drawdown"))
     total_cost = _number(metrics.get("total_cost"))
     initial_cash = _number(metrics.get("initial_cash"))
+    expected_cash: float | None = NORMALIZED_RESEARCH_NOTIONAL
+    if comparison.get("simulation_validation_binding") is not None:
+        try:
+            binding = validate_simulation_notional_binding(
+                comparison["simulation_validation_binding"]
+            )
+        except ValueError:
+            return None
+        expected_cash = _number(binding["initial_cash"])
     if (
         None
         in {
@@ -404,7 +414,7 @@ def _research_outcome(
             initial_cash,
         }
         or initial_cash is None
-        or initial_cash != NORMALIZED_RESEARCH_NOTIONAL
+        or initial_cash != expected_cash
         or total_cost is None
         or total_cost < 0
     ):

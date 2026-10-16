@@ -398,6 +398,32 @@ class ShadowResearchQualificationRepositoryMixin:
             self.get_qualification_candidate(qualification_candidate_id)
         )
 
+    def qualification_for_backtest_result(self, result_id: int) -> dict[str, Any]:
+        """Reopen the immutable comparison and its terminal selection together."""
+        with self._connect_readonly() as conn:
+            conn.execute("BEGIN")
+            rows = conn.execute(
+                """
+                SELECT * FROM ai_shadow_research_qualification_candidates
+                WHERE candidate_result_id=?
+                """,
+                (result_id,),
+            ).fetchall()
+            if len(rows) != 1:
+                raise LookupError("qualification result binding missing or ambiguous")
+            candidate = qualification_candidate_record(dict(rows[0]))
+            run = conn.execute(
+                "SELECT * FROM ai_shadow_research_qualification_runs "
+                "WHERE qualification_run_id=?",
+                (candidate["qualification_run_id"],),
+            ).fetchone()
+            if run is None:
+                raise LookupError("qualification run binding missing")
+            return {
+                "candidate": candidate,
+                "run": qualification_run_record(dict(run)),
+            }
+
     def list_qualification_candidates(
         self, qualification_run_id: str
     ) -> list[dict[str, Any]]:

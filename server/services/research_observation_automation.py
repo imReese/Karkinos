@@ -66,14 +66,29 @@ async def start_reserved_champion_observation(
     from server.services.research_paper_books import ResearchPaperBookService
 
     try:
-        current = read_publication_grant(db, now=now)
+        simulation = (
+            grant.get("schema_version") == "karkinos.research_simulation_policy.v1"
+        )
+        from server.contracts.research_observation_automation import (
+            read_simulation_validation_policy,
+        )
+
+        current = (
+            read_simulation_validation_policy(db, now=now)
+            if simulation
+            else read_publication_grant(db, now=now)
+        )
         if any(current[key] != grant.get(key) for key in ("grant_id", "generation")):
             raise ValueError("observation_publication_grant_changed")
         if not reservation_id:
             raise ValueError("observation_deployment_reservation_required")
         reserved = StrategyResearchAuditStore(db.path).get_sealed_test(reservation_id)
         binding = (reserved.get("evidence") or {}).get("reservation", {})
-        frozen_grant = binding.get("publication_grant", {})
+        frozen_grant = (
+            binding.get("simulation_policy")
+            if simulation
+            else binding.get("publication_grant")
+        ) or {}
         if (
             binding.get("candidate_result_id") != source_result_id
             or any(
@@ -86,9 +101,15 @@ async def start_reserved_champion_observation(
         ):
             raise ValueError("observation_deployment_reservation_mismatch")
         initial_cash = Decimal(str(binding.get("initial_cash")))
-        if not 0 < initial_cash <= Decimal(current["max_initial_cash"]):
+        if (
+            not 0
+            < initial_cash
+            <= Decimal(
+                current["initial_cash"] if simulation else current["max_initial_cash"]
+            )
+        ):
             raise ValueError("observation_deployment_cash_invalid")
-        if not binding.get("fee_schedule"):
+        if not simulation and not binding.get("fee_schedule"):
             raise ValueError("observation_deployment_fees_missing")
         row = await db.get_backtest_result(source_result_id)
         if row is None:
@@ -113,14 +134,18 @@ async def start_reserved_champion_observation(
                 resolve_board_buy_permissions,
             )
 
-            blocker = entry_board_policy_blocker(
-                current["entry_board_policy"],
-                resolve_board_buy_permissions(
-                    config, now.astimezone(_SHANGHAI).date().isoformat()
-                ),
-                decision_date=now.astimezone(_SHANGHAI).date().isoformat(),
+            blocker = (
+                None
+                if simulation
+                else entry_board_policy_blocker(
+                    current["entry_board_policy"],
+                    resolve_board_buy_permissions(
+                        config, now.astimezone(_SHANGHAI).date().isoformat()
+                    ),
+                    decision_date=now.astimezone(_SHANGHAI).date().isoformat(),
+                )
             )
-            if blocker:
+            if blocker and not simulation:
                 raise ValueError(blocker)
             source["forward_minimum_observations"] = current["statistical_policy"][
                 "minimum_observations"
@@ -139,6 +164,7 @@ async def start_reserved_champion_observation(
                     "grant_id": current["grant_id"],
                     "generation": current["generation"],
                     "reservation_id": reservation_id,
+                    **({"authority_kind": "simulation"} if simulation else {}),
                 },
                 entry_board_policy=current["entry_board_policy"],
             )
@@ -154,7 +180,7 @@ async def start_reserved_champion_observation(
                 cost_assumptions=BacktestCostAssumptions.model_validate(
                     settings.get("cost_assumptions") or {}
                 ),
-                fee_schedule_binding=binding["fee_schedule"],
+                fee_schedule_binding=binding.get("fee_schedule"),
                 health_policy={
                     "mode": "pause_on_breach",
                     "minimum_settled_sessions": current["statistical_policy"][

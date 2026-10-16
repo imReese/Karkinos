@@ -206,7 +206,7 @@ class StrategyResearchSealedRepositoryMixin:
                 persisted = self._sealed_row(dict(existing))
                 original = (persisted.get("evidence") or {}).get("reservation", {})
                 replay_binding = {**binding, "frozen_at": original.get("frozen_at")}
-                if "publication_grant" in binding:
+                if "publication_grant" in binding or "simulation_policy" in binding:
                     replay_binding["error_budget"] = original.get("error_budget")
                 if existing["request_fingerprint"] != content_fingerprint(
                     replay_binding
@@ -221,7 +221,9 @@ class StrategyResearchSealedRepositoryMixin:
                 datetime.fromisoformat(
                     binding.get("first_evaluation_session", partition["sealed_start"])
                 ).date(),
-                time(9, 30) if binding.get("publication_grant") else time.min,
+                time(9, 30)
+                if binding.get("publication_grant") or binding.get("simulation_policy")
+                else time.min,
                 ZoneInfo("Asia/Shanghai"),
             )
             if created.tzinfo is None or created >= latest_freeze:
@@ -251,10 +253,10 @@ class StrategyResearchSealedRepositoryMixin:
                     raise StrategyResearchRejected(
                         "sealed_partition_overlap_already_reserved"
                     )
-            if "publication_grant" in binding:
+            if "publication_grant" in binding or "simulation_policy" in binding:
                 from decimal import Decimal
 
-                grant = binding["publication_grant"]
+                grant = binding.get("simulation_policy") or binding["publication_grant"]
                 attempts = []
                 for raw in conn.execute(
                     "SELECT evidence_json FROM ai_strategy_sealed_tests"
@@ -263,9 +265,9 @@ class StrategyResearchSealedRepositoryMixin:
                         "reservation", {}
                     )
                     if (
-                        previous.get("publication_grant", {}).get("grant_id")
-                        == grant["grant_id"]
-                    ):
+                        previous.get("simulation_policy")
+                        or previous.get("publication_grant", {})
+                    ).get("grant_id") == grant["grant_id"]:
                         attempts.append(previous)
                 alpha = Decimal(str(grant["statistical_policy"]["significance_level"]))
                 spent = (
@@ -336,7 +338,9 @@ class StrategyResearchSealedRepositoryMixin:
         for raw in rows:
             row = self._sealed_row(dict(raw))
             binding = (row.get("evidence") or {}).get("reservation", {})
-            if binding.get("publication_grant", {}).get("grant_id") == grant_id:
+            if (
+                binding.get("simulation_policy") or binding.get("publication_grant", {})
+            ).get("grant_id") == grant_id:
                 result.append(row)
         return result
 

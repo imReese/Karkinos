@@ -17,7 +17,9 @@ from server.contracts.normalized_strategy_research import (
     CANONICAL_COST_MODEL_REFERENCE,
     NORMALIZED_RESEARCH_NOTIONAL,
     NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID,
+    SIMULATION_RESEARCH_NOTIONAL_POLICY_ID,
 )
+from server.contracts.strategy_research import validate_simulation_notional_binding
 from server.projections.normalized_research_recommendation import (
     is_valid_normalized_research_recommendation,
 )
@@ -215,6 +217,14 @@ def build_verified_research_candidate_strategy_batch(
                 "daily_research_candidate_lineage_mismatch"
             )
         iteration_numbers.add(iteration_number)
+        simulation = snapshot.get("simulation_validation_binding")
+        if simulation is not None:
+            try:
+                simulation = validate_simulation_notional_binding(simulation)
+            except ValueError as exc:
+                raise DailyStrategyArtifactRejected(
+                    "daily_research_simulation_notional_invalid"
+                ) from exc
         candidate_source_selection = {
             "schema_version": "karkinos.ai.normalized_source_selection_binding.v1",
             "universe": strategy_universe,
@@ -224,8 +234,13 @@ def build_verified_research_candidate_strategy_batch(
             "start_date": test_window.get("start_date"),
             "end_date": test_window.get("end_date"),
             "frequency": strategy.get("frequency"),
-            "initial_cash": NORMALIZED_RESEARCH_NOTIONAL,
-            "notional_policy_id": NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID,
+            "initial_cash": float(simulation["initial_cash"])
+            if simulation
+            else NORMALIZED_RESEARCH_NOTIONAL,
+            "notional_policy_id": SIMULATION_RESEARCH_NOTIONAL_POLICY_ID
+            if simulation
+            else NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID,
+            **({"simulation_validation_binding": simulation} if simulation else {}),
             "cost_model_reference": strategy.get("cost_model_reference"),
             "account_fact_binding": "not_applicable_strategy_only_research",
             "saved_backtest_result_id": None,

@@ -398,6 +398,15 @@ def build_daily_strategy_backup_payload(
                 "strategy": strategy,
                 "strategy_artifact_fingerprint": content_fingerprint(strategy),
                 "comparison_fingerprint": content_fingerprint(comparison),
+                **(
+                    {
+                        "simulation_validation_binding": comparison[
+                            "simulation_validation_binding"
+                        ]
+                    }
+                    if comparison.get("simulation_validation_binding") is not None
+                    else {}
+                ),
                 "promotion_gate_status": gate.get("status"),
                 "promotion_gate_fingerprint": gate.get("evidence_fingerprint"),
                 "promotion_blockers": list(gate.get("blockers") or []),

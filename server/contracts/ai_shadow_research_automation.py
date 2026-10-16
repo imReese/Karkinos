@@ -143,8 +143,21 @@ class ShadowResearchPolicy:
     )
     updated_by: str = "human:owner"
     authorization: str = ""
+    simulation_validation: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
+        if self.simulation_validation is not None:
+            from server.contracts.research_observation_automation import (
+                validate_simulation_validation_policy,
+            )
+
+            validate_simulation_validation_policy(self.simulation_validation)
+            if (
+                self.simulation_validation.get("enabled")
+                and self.research_capital_mode
+                != SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
+            ):
+                raise ValueError("simulation_requires_normalized_research")
         if (self.research_end_date is None) != (self.sealed_end_date is None):
             raise ShadowResearchRejected("sealed_research_dates_must_be_paired")
         if self.research_end_date is not None:
@@ -244,6 +257,11 @@ class ShadowResearchPolicy:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            **(
+                {"simulation_validation": dict(self.simulation_validation)}
+                if self.simulation_validation is not None
+                else {}
+            ),
             "schema_version": SHADOW_RESEARCH_POLICY_SCHEMA,
             "policy_id": SHADOW_RESEARCH_POLICY_ID,
             "enabled": self.enabled,
@@ -361,6 +379,7 @@ class ShadowResearchPolicy:
             ),
             updated_by=str(value.get("updated_by") or "human:owner"),
             authorization=authorization,
+            simulation_validation=value.get("simulation_validation"),
         )
 
 

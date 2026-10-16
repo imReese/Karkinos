@@ -141,6 +141,7 @@ class StrategyResearchCritiqueMixin:
             reviewed_fee_schedule_resolution=reviewed_fee_schedule_resolution,
         )
         normalized_pack = build_normalized_research_pack(
+            simulation_notional=selection.simulation_validation_binding is not None,
             performance=saved,
             after_cost_evidence=after_cost_evidence,
             cost_summary=cost_summary,

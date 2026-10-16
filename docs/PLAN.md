@@ -47,8 +47,10 @@ cap sizes new entries. Replay, independent paper and recommendation adapters use
 that same allocation. The grant's observed concentration bound is separate from
 the target, allowing fees and price changes without redefining the formula.
 
-An active owner grant reserves a frozen future checkpoint, actual capital and
-reviewed fees, starts an isolated book and coordinates data/targets/settlement.
+An independent simulation authorization reserves a frozen future checkpoint,
+hypothetical capital and research costs, starts an isolated book and coordinates
+data/targets/settlement without requiring account publication authority. An
+account-bound grant retains its actual capital and reviewed-fee constraints.
 No overlapping AI iteration consumes the reserved interval. Final evaluation
 requires actual timely targets and settled sessions, independently replays those
 outcomes and compares the candidate with frozen executable alternatives. Default
@@ -65,17 +67,26 @@ Cold warmup uses actual range captures per stock shard and retains per-session
 dual-source verification. It does not repeat every historical request by day or
 claim historical availability. Current forward jobs take priority over ordinary
 backfills; budget deferrals expose their retry time without raising the limit.
+External source unavailability defers the same task with bounded exponential
+backoff; it does not exhaust the allowance for malformed or conflicting data.
 Single-day collection uses up to 100 instruments per batch; historical ranges
 remain bounded to 40. This keeps one complete declared-market input round within
-the continuous trading-week provider budget, including same-upstream dividend
-queries and the next-opening deadline. Concurrent books share that capacity.
-Network or provider failures can still miss that deadline;
+the canonical daily attempt budget for the current market size, including
+same-upstream dividend queries. A canonical attempt can contain several actual
+SDK calls; this budget does not establish provider rate-limit compliance or a
+next-opening completion guarantee. The initial historical warmup can span budget
+days. Concurrent books share that capacity. Actual completion must be monitored;
+network or provider failures can miss the next-opening deadline;
 late data never repairs an already missed point-in-time observation.
 
 Publication is default-off and affects account recommendations. Inside a current
 standing grant, successful final evidence plus fresh account qualification can
 publish without another candidate confirmation. Publication/replacement is atomic
 and idempotent; revocation/expiry invalidates dependent sources at consumption.
+Independent validation is controlled separately in the research policy. Its
+evidence can support later account qualification only when the exact frozen
+scope, portfolio and actual reviewed-cost replay are compatible; it cannot grant
+account authority by itself.
 Code, scope, fee or authorization changes invalidate the affected experiment.
 A settlement retains the current verified dataset and one prior prefix at a time.
 Identical immutable prefix references can reuse bars verified during that same

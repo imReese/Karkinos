@@ -17,6 +17,7 @@ from server.contracts.normalized_strategy_research import (
     CANONICAL_COST_MODEL_REFERENCE,
     NORMALIZED_RESEARCH_NOTIONAL,
     NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID,
+    SIMULATION_RESEARCH_NOTIONAL_POLICY_ID,
 )
 
 STRATEGY_HYPOTHESIS_DRAFT_CONTRACT = "karkinos.ai.strategy_hypothesis_draft.v1"
@@ -28,6 +29,27 @@ STRATEGY_RESEARCH_ITERATION_CONTEXT_CONTRACT = (
 )
 STRATEGY_RESEARCH_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v18"
 SANITIZED_ACCOUNT_EVIDENCE_CONTRACT = "karkinos.ai.sanitized_account_risk_evidence.v1"
+
+
+def validate_simulation_notional_binding(value: Any) -> dict[str, Any]:
+    from uuid import UUID
+
+    try:
+        if not isinstance(value, Mapping) or set(value) != {
+            "grant_id",
+            "generation",
+            "initial_cash",
+        }:
+            raise ValueError
+        UUID(str(value["grant_id"]))
+        UUID(str(value["generation"]))
+        cash = Decimal(str(value["initial_cash"]))
+        if not cash.is_finite() or cash <= 0:
+            raise ValueError
+    except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
+        raise StrategyResearchRejected("simulation_notional_binding_invalid") from exc
+    return dict(value)
+
 
 HYPOTHESIS_EXPORT_CONFIRMATION = (
     "send_selected_sanitized_strategy_research_evidence_to_configured_external_"
@@ -78,6 +100,7 @@ class StrategyResearchSelection:
     ledger_cutoff_id: int | None = None
     deployment_scope: dict[str, Any] | None = None
     portfolio_policy_id: str | None = None
+    simulation_validation_binding: dict[str, Any] | None = None
     schema_version: str = STRATEGY_RESEARCH_SELECTION_CONTRACT
 
     def __post_init__(self) -> None:
@@ -124,6 +147,20 @@ class StrategyResearchSelection:
                 raise StrategyResearchRejected("sealed_end_date_not_future")
         if self.initial_cash <= 0:
             raise StrategyResearchRejected("initial_cash_invalid")
+        if self.simulation_validation_binding is not None:
+            simulation = validate_simulation_notional_binding(
+                self.simulation_validation_binding
+            )
+            cash = Decimal(str(simulation["initial_cash"]))
+            if (
+                not cash.is_finite()
+                or cash <= 0
+                or cash != Decimal(str(self.initial_cash))
+                or self.has_account_binding
+                or not self.deployment_scope
+                or self.cost_model_reference != CANONICAL_COST_MODEL_REFERENCE
+            ):
+                raise StrategyResearchRejected("simulation_notional_binding_invalid")
         if self.account_truth_freshness_as_of is not None:
             try:
                 account_truth_as_of = datetime.fromisoformat(
@@ -153,6 +190,7 @@ class StrategyResearchSelection:
             )
         if (
             not self.has_account_binding
+            and self.simulation_validation_binding is None
             and self.initial_cash != NORMALIZED_RESEARCH_NOTIONAL
         ):
             raise StrategyResearchRejected(
@@ -223,6 +261,10 @@ class StrategyResearchSelection:
             payload["deployment_scope"] = self.deployment_scope
         if self.portfolio_policy_id is not None:
             payload["portfolio_policy_id"] = self.portfolio_policy_id
+        if self.simulation_validation_binding is not None:
+            payload["simulation_validation_binding"] = (
+                self.simulation_validation_binding
+            )
         return payload
 
     def to_external_dict(self) -> JsonObject:
@@ -232,8 +274,13 @@ class StrategyResearchSelection:
         payload.pop("ledger_cutoff_id", None)
         payload.pop("sealed_end_date", None)
         payload.pop("initial_cash", None)
+        payload.pop("simulation_validation_binding", None)
         if not self.has_account_binding:
-            payload["notional_policy_id"] = NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID
+            payload["notional_policy_id"] = (
+                SIMULATION_RESEARCH_NOTIONAL_POLICY_ID
+                if self.simulation_validation_binding is not None
+                else NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID
+            )
         payload["account_fact_binding"] = (
             "present_but_identifiers_redacted"
             if self.has_account_binding

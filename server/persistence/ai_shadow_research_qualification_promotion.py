@@ -22,6 +22,47 @@ from server.contracts.content_identity import canonical_json, content_fingerprin
 class ShadowResearchQualificationPromotionRepositoryMixin:
     """Read the exact canonical backtest rows bound by a qualification run."""
 
+    def configure_research_policy(
+        self, *, policy, simulation_change, expected_generation, now
+    ):
+        """Keep SIM opt-in/revocation serialized with the existing policy write."""
+        from server.contracts.ai_shadow_research_automation import ShadowResearchPolicy
+
+        with self._connect(immediate=True) as conn:
+            row = conn.execute(
+                "SELECT * FROM automation_policies WHERE policy_id='ai_shadow_research'"
+            ).fetchone()
+            previous = _json_object(row["payload_json"]) if row else {}
+            prior = previous.get("simulation_validation") or {}
+            saved = dict(policy)
+            if simulation_change:
+                current = saved.get("simulation_validation") or {}
+                if prior.get("generation") != expected_generation:
+                    raise ValueError("simulation_policy_generation_conflict")
+                if prior and current.get("grant_id") != prior.get("grant_id"):
+                    raise ValueError("simulation_policy_identity_conflict")
+            elif previous.get("simulation_validation") is not None:
+                saved["simulation_validation"] = previous["simulation_validation"]
+            else:
+                saved.pop("simulation_validation", None)
+            saved = ShadowResearchPolicy.from_mapping(saved).to_dict()
+            conn.execute(
+                """INSERT INTO automation_policies(policy_id,payload_json,created_at,updated_at,updated_by)
+                VALUES('ai_shadow_research',?,?,?,?) ON CONFLICT(policy_id) DO UPDATE SET
+                payload_json=excluded.payload_json,updated_at=excluded.updated_at,updated_by=excluded.updated_by""",
+                (
+                    canonical_json(saved),
+                    row["created_at"] if row else now,
+                    now,
+                    saved["updated_by"],
+                ),
+            )
+        return {
+            **saved,
+            "created_at": row["created_at"] if row else now,
+            "updated_at": now,
+        }
+
     def configure_publication_grant(
         self, *, policy: Mapping[str, Any], expected_generation: str | None, now: str
     ) -> dict[str, Any]:

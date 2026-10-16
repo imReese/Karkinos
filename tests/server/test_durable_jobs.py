@@ -61,6 +61,27 @@ def test_retry_backoff_and_attempt_budget_survive_restart(tmp_path):
     assert store.enqueue("calendar", {"year": 2026}, now=now).status == "failed"
 
 
+@pytest.mark.parametrize("retryable,preserve", [(False, True), (True, 1)])
+def test_invalid_deferral_flags_leave_current_lease_and_allowance_unchanged(
+    tmp_path, retryable, preserve
+):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = SQLiteJobStore(db.path)
+    now = datetime(2026, 10, 16, tzinfo=timezone.utc)
+    queued = store.enqueue("verified", {"fixture": "validation"}, now=now)
+    job = store.claim("verified", "worker", now=now)
+    with pytest.raises(ValueError, match="job_retry_invalid"):
+        store.fail(
+            job.lease,
+            now=now,
+            error="unavailable",
+            retryable=retryable,
+            preserve_retry_allowance=preserve,
+        )
+    assert store.get(queued.job_id) == job
+
+
 def test_exact_claim_preserves_legacy_backlog_and_unrelated_leases(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()

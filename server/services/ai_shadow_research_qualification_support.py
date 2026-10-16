@@ -106,6 +106,10 @@ def qualification_backtest_values(
 
 
 def require_complete_valuation(value: Any, db: Any) -> dict[str, Any]:
+    from server.services.valuation_snapshot import (
+        require_valuation_recovery_clear,
+    )
+
     if not isinstance(value, Mapping):
         raise ShadowResearchQualificationRejected(
             "qualification_valuation_snapshot_missing"
@@ -148,6 +152,10 @@ def require_complete_valuation(value: Any, db: Any) -> dict[str, Any]:
             raise ShadowResearchQualificationRejected(
                 "qualification_valuation_snapshot_not_persisted"
             )
+    try:
+        require_valuation_recovery_clear(db, snapshot)
+    except ValueError as exc:
+        raise ShadowResearchQualificationRejected(str(exc)) from exc
     return snapshot
 
 
@@ -282,7 +290,19 @@ def account_total_equity(
     return summary_equity
 
 
-def qualification_initial_cash(total_equity: Decimal) -> Decimal:
+def qualification_initial_cash(
+    total_equity: Decimal, *, frozen_simulation_cash: Decimal | None = None
+) -> Decimal:
+    if frozen_simulation_cash is not None:
+        if (
+            not frozen_simulation_cash.is_finite()
+            or frozen_simulation_cash <= 0
+            or frozen_simulation_cash > total_equity
+        ):
+            raise ShadowResearchQualificationRejected(
+                "qualification_simulation_capital_unavailable"
+            )
+        return frozen_simulation_cash
     return min(Decimal(str(NORMALIZED_RESEARCH_NOTIONAL)), total_equity)
 
 

@@ -204,6 +204,19 @@ class ResearchObservationsRepository:
             ):
                 raise ValueError("research_observation_computation_clock_reversed")
             if publication is not None:
+                policy = json.loads(row["policy_json"])
+                authorization = policy.get("authorization_binding") or {}
+                if authorization.get("authority_kind") == "simulation":
+                    from server.persistence.automation_runs import (
+                        require_simulation_policy_in_transaction,
+                    )
+
+                    require_simulation_policy_in_transaction(
+                        conn,
+                        authorization,
+                        policy["deployment_scope"]["deployment_scope_fingerprint"],
+                        now=now,
+                    )
                 paper_binding = publication.get("payload", {}).get("paper_book_binding")
                 if paper_binding is not None:
                     book = conn.execute(

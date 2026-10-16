@@ -149,6 +149,7 @@ class _FormulaSignalStrategy(Strategy):
         *,
         slippage_bps=Decimal("5"),
         session_memberships=None,
+        session_nontrading_instruments=None,
         minimum_history_rows=60,
         entry_board_policy=None,
     ) -> None:
@@ -194,6 +195,11 @@ class _FormulaSignalStrategy(Strategy):
                 max_positions=self._allocation_slots,
                 max_symbol_weight=Decimal(str(self._canonical_target_weight)),
                 entry_board_policy=entry_board_policy,
+                nontrading_symbols=(
+                    session_nontrading_instruments(day)
+                    if session_nontrading_instruments
+                    else None
+                ),
             )
             if not engine._warming_up:
                 self.session_books.append(
@@ -206,6 +212,28 @@ class _FormulaSignalStrategy(Strategy):
                             for s, p in engine.portfolio.positions.items()
                             if p.quantity > 0
                         },
+                        **(
+                            {
+                                "nontrading_valuations": [
+                                    {
+                                        "symbol": row["symbol"],
+                                        "valuation_basis": row["valuation_basis"],
+                                        "observation_session": row[
+                                            "observation_session"
+                                        ],
+                                        "reference_close": row["reference_close"],
+                                        "tradable": False,
+                                    }
+                                    for row in decision["forecasts"]
+                                    if row.get("valuation_basis")
+                                ]
+                            }
+                            if any(
+                                row.get("valuation_basis")
+                                for row in decision["forecasts"]
+                            )
+                            else {}
+                        ),
                     }
                 )
             self.session_decisions.append(decision)
@@ -408,6 +436,10 @@ class RestrictedFormulaBacktestAdapter:
             else {}
         )
         metrics_json = metrics.to_json_dict()
+        if selection.simulation_validation_binding is not None:
+            metrics_json["simulation_validation_binding"] = (
+                selection.simulation_validation_binding
+            )
         if entry_board_policy is not None:
             metrics_json["entry_board_policy"] = dict(entry_board_policy)
         metrics_json["execution_timing"] = result.execution_timing
@@ -822,11 +854,15 @@ class RestrictedFormulaBacktestAdapter:
             else min(4, len(instruments))
         )
         session_memberships = None
+        session_nontrading_instruments = None
         distributions = None
         if evaluation_dataset_snapshot is not None:
             from backtest.distributions import distributions_from_evidence
             from data.dataset.model import DatasetRef
-            from data.dataset.reader import read_daily_bar_dataset
+            from data.dataset.reader import (
+                dataset_session_nontrading_instruments,
+                read_daily_bar_dataset,
+            )
             from data.storage.objects import ContentAddressedObjectStore
 
             root = self._research_root
@@ -841,6 +877,12 @@ class RestrictedFormulaBacktestAdapter:
             )
             session_memberships = lambda day: [
                 key.symbol for key in restored.snapshot.instruments_for_session(day)
+            ]
+            nontrading = dataset_session_nontrading_instruments(
+                objects, restored.snapshot
+            )
+            session_nontrading_instruments = lambda day: [
+                key.symbol for key in nontrading.get(day, ())
             ]
             distributions = distributions_from_evidence(
                 restored.corporate_action_evidence, include_shares=True
@@ -876,6 +918,7 @@ class RestrictedFormulaBacktestAdapter:
             handlers,
             entry_board_policy=entry_board_policy,
             session_memberships=session_memberships,
+            session_nontrading_instruments=session_nontrading_instruments,
             minimum_history_rows=(selection.deployment_scope or {})
             .get("universe_policy", {})
             .get("minimum_history_rows", 60),

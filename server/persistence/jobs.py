@@ -243,10 +243,20 @@ class SQLiteJobStore:
         retry_seconds=60,
         failure_evidence_ref=None,
         retryable=True,
+        preserve_retry_allowance=False,
     ):
+        """Record a leased failure; a transient deferral may retain its allowance.
+
+        The extra claim slot never resets the monotonic attempt or refunds I/O
+        budget. Ordinary failures still consume the original finite allowance.
+        """
         if retry_seconds < 0 or not error:
             raise ValueError("job_retry_invalid")
-        if not isinstance(retryable, bool):
+        if (
+            not isinstance(retryable, bool)
+            or not isinstance(preserve_retry_allowance, bool)
+            or (preserve_retry_allowance and not retryable)
+        ):
             raise ValueError("job_retry_invalid")
         if failure_evidence_ref is not None and (
             not isinstance(failure_evidence_ref, str)
@@ -256,11 +266,14 @@ class SQLiteJobStore:
         with self._transaction() as conn:
             require_job_lease(conn, lease, now=now)
             conn.execute(
-                "UPDATE job_runs SET status=CASE WHEN attempt>=max_attempts OR ?=0 THEN 'failed' ELSE 'queued' END, "
+                "UPDATE job_runs SET status=CASE WHEN attempt>=max_attempts+? OR ?=0 THEN 'failed' ELSE 'queued' END, "
+                "max_attempts=max_attempts+?, "
                 "error=?, failure_evidence_ref=COALESCE(?, failure_evidence_ref), "
                 "available_at=?, lease_owner=NULL, lease_expires_at=NULL, updated_at=? WHERE job_id=?",
                 (
+                    int(preserve_retry_allowance),
                     int(retryable),
+                    int(preserve_retry_allowance),
                     error,
                     failure_evidence_ref,
                     job_time(now + timedelta(seconds=retry_seconds)),

@@ -286,6 +286,65 @@ def test_dynamic_missing_held_bar_blocks_but_unowned_future_member_can_be_absent
         )
 
 
+@pytest.mark.parametrize("supersede", [False, True])
+def test_bound_halt_values_last_observed_close_and_keeps_original_pending_target(
+    supersede,
+):
+    other = Symbol("600001")
+    instruments = {
+        s: make_stock(str(s), str(s), limit_pct=ZERO) for s in (SYMBOL, other)
+    }
+    bars = [
+        *[_bar(day, symbol=s) for day in DAYS[:2] for s in instruments],
+        _bar(DAYS[2], symbol=other),
+        _bar(DAYS[3], "10.5"),
+        _bar(DAYS[3], symbol=other),
+    ]
+    mapping = {
+        day: [other] if day == DAYS[2] else list(instruments) for day in DAYS[:4]
+    }
+    targets = [_target(1), _target(2, "0", identity="exit-before-halt")]
+    if supersede:
+        targets.append(_target(3, "1", identity="new-actual-publication"))
+    result = _replay(
+        bars,
+        targets,
+        instruments=instruments,
+        session_instruments=mapping,
+        session_nontrading_instruments={DAYS[2]: [SYMBOL]},
+    )
+    halted = result["sessions"][1]
+    assert halted["equity"] == "10000"
+    assert halted["cash"] == "0"
+    assert halted["fills"] == []
+    assert halted["positions"][SYMBOL]["quantity"] == "1000"
+    assert halted["nontrading_valuations"] == [
+        {
+            "symbol": str(SYMBOL),
+            "valuation_basis": "last_observed_close_bound_nontrading",
+            "observation_session": DAYS[1].isoformat(),
+            "reference_close": "10",
+            "tradable": False,
+        }
+    ]
+    assert halted["attempts"][0]["publication_id"] == "exit-before-halt"
+    assert halted["attempts"][0]["reason"] == "bound_nontrading_session"
+    assert [f["session"] for f in result["fills"]] == (
+        [DAYS[1].isoformat()]
+        if supersede
+        else [DAYS[1].isoformat(), DAYS[3].isoformat()]
+    )
+    resumed = result["sessions"][-1]
+    assert resumed["equity"] == "10500"
+    if supersede:
+        assert resumed["cash"] == "0"
+        assert resumed["positions"][SYMBOL]["quantity"] == "1000"
+    else:
+        assert resumed["cash"] == "10500"
+        assert resumed["fills"][0]["publication_id"] == "exit-before-halt"
+        assert resumed["fills"][0]["side"] == "sell"
+
+
 def test_empty_ca_tuple_still_marks_all_symbols_before_target_sizing():
     other = Symbol("600001")
     instruments = {

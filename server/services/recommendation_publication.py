@@ -33,6 +33,9 @@ from server.services.reviewed_fee_schedule import (
 from server.services.reviewed_fee_schedule import (
     resolve_frozen_deployment_fee_schedule as resolve_frozen_deployment_fee_schedule,
 )
+from server.services.valuation_snapshot import (
+    require_valuation_recovery_clear,
+)
 
 
 def _object(value: Any) -> dict[str, Any]:
@@ -60,6 +63,47 @@ def _verified_deployment(db: Any, result_id: int, grant_id: str) -> dict[str, An
     ):
         raise ValueError("publication_deployment_validation_not_verified")
     return dict(value)
+
+
+def _preview_entry_board_policy(db: Any, config: Any, now: datetime):
+    """Preserve scientific entry rules; current account permission is separate."""
+    from zoneinfo import ZoneInfo
+
+    from server.contracts.ai_shadow_research_automation import SHADOW_RESEARCH_POLICY_ID
+    from server.contracts.research_observation_automation import (
+        validate_simulation_validation_policy,
+    )
+    from server.services.account_board_permissions import (
+        entry_board_policy_blocker,
+        freeze_entry_board_policy,
+        resolve_board_buy_permissions,
+        validate_entry_board_policy,
+    )
+
+    day = now.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
+    simulation = _object(db.get_automation_policy_sync(SHADOW_RESEARCH_POLICY_ID)).get(
+        "simulation_validation"
+    )
+    if isinstance(simulation, Mapping) and simulation.get("enabled") is True:
+        # Only the frozen scientific mask is reused, even after its collection
+        # window expires. This grants no SIM operation or publication authority.
+        selected = validate_simulation_validation_policy(simulation)[
+            "entry_board_policy"
+        ]
+        origin = "frozen_simulation_entry_rules"
+    else:
+        previous = _object(db.get_automation_policy_sync(PUBLICATION_POLICY_ID))
+        if previous.get("entry_board_policy") is not None:
+            selected = validate_entry_board_policy(previous["entry_board_policy"])
+            origin = "existing_publication_entry_rules"
+        else:
+            selected = freeze_entry_board_policy(config, day)
+            origin = "current_account_entry_rules"
+    permissions = resolve_board_buy_permissions(config, day)
+    blocker = entry_board_policy_blocker(selected, permissions, decision_date=day)
+    if blocker:
+        raise ValueError(blocker)
+    return selected, permissions, origin
 
 
 class RecommendationPublicationService:
@@ -192,6 +236,7 @@ class RecommendationPublicationService:
             valuation = build_current_valuation_snapshot(self.db, persist=False)
             if valuation.get("status") != "complete":
                 raise ValueError("publication_preview_current_valuation_incomplete")
+            require_valuation_recovery_clear(self.db, valuation)
             if self.state is None:
                 raise ValueError("publication_preview_account_context_unavailable")
             review_status = build_reviewed_fee_schedule_review_status(self.state)
@@ -225,12 +270,10 @@ class RecommendationPublicationService:
                 fee_cash_cap,
             )
             now = self._now()
-            from server.services.account_board_permissions import (
-                freeze_entry_board_policy,
-            )
-
-            entry_board_policy = freeze_entry_board_policy(
-                getattr(self.state, "config", None), now.date().isoformat()
+            entry_board_policy, board_permissions, board_policy_origin = (
+                _preview_entry_board_policy(
+                    self.db, getattr(self.state, "config", None), now
+                )
             )
             statistical = dict(
                 inputs.get("statistical_policy")
@@ -377,6 +420,8 @@ class RecommendationPublicationService:
                     },
                     "risk_limit_basis": "observed_book_exposure_and_drawdown",
                     "entry_board_policy": entry_board_policy,
+                    "entry_board_policy_source": board_policy_origin,
+                    "account_board_permissions": board_permissions,
                     "reviewed_fee_schedule": {
                         "review_id": review.get("review_id"),
                         "effective_start_date": coverage_start,
@@ -493,6 +538,7 @@ class RecommendationPublicationService:
                 or current.get("snapshot_id") != binding["valuation_snapshot_id"]
             ):
                 raise ValueError("publication_current_qualification_required")
+            require_valuation_recovery_clear(self.db, current)
         validation = _verified_deployment(
             self.db, int(evidence["backtest_result_id"]), grant["grant_id"]
         )
@@ -527,9 +573,15 @@ class RecommendationPublicationService:
             if bound < 0 or bound > publication_number(cap):
                 raise ValueError("publication_validated_risk_exceeds_grant")
         budget = validation.get("error_budget", {})
+        publication_bound = (
+            validation.get("publication_grant_id") == grant["grant_id"]
+            and validation.get("publication_grant_generation") == grant["generation"]
+            if validation.get("validation_provenance") == "independent_simulation"
+            else budget.get("grant_id") == grant["grant_id"]
+            and budget.get("generation") == grant["generation"]
+        )
         if (
-            budget.get("grant_id") != grant["grant_id"]
-            or budget.get("generation") != grant["generation"]
+            not publication_bound
             or type(budget.get("attempt_count")) is not int
             or not 1 <= budget["attempt_count"] <= grant["max_final_tests"]
             or not 0

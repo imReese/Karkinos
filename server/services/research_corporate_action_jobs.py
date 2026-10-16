@@ -20,7 +20,9 @@ from data.market.corporate_actions import (
 )
 from data.providers.tushare_corporate_actions import collect_tushare_market_dividend_day
 from data.storage.objects import ContentAddressedObjectStore
-from server.contracts.recommendation_publication import read_publication_grant
+from server.contracts.research_observation_automation import (
+    read_research_validation_policy,
+)
 from server.persistence.automation_runs import (
     AutomationRunRepository,
     require_corporate_action_capture_permission,
@@ -68,11 +70,14 @@ def ensure_dataset_corporate_actions(
         }
     if permission is None:
         try:
-            grant = read_publication_grant(db, now=now)
+            grant = read_research_validation_policy(db, now=now)
             if grant["deployment_scope_fingerprint"] != snapshot.universe_policy_id:
                 raise ValueError("corporate_action_publication_scope_mismatch")
             permission = {
-                "kind": "publication",
+                "kind": "simulation"
+                if grant.get("schema_version")
+                == "karkinos.research_simulation_policy.v1"
+                else "publication",
                 **{
                     key: grant[key]
                     for key in (

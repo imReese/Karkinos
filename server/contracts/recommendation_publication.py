@@ -93,6 +93,46 @@ def validate_entry_board_policy(value: Any) -> dict[str, Any]:
     return {**core, "evidence_fingerprint": fingerprint}
 
 
+def validate_final_statistical_policy(
+    statistical: Any, fingerprint: str
+) -> dict[str, Any]:
+    """Shared inference profile, independent of account-publication authority."""
+    if (
+        not isinstance(statistical, Mapping)
+        or content_fingerprint(dict(statistical)) != fingerprint
+    ):
+        raise ValueError("publication_statistical_policy_binding_invalid")
+    if statistical.get("method") != "paired_moving_block_bootstrap.v1":
+        raise ValueError("publication_statistical_method_unsupported")
+    for field in (
+        "minimum_observations",
+        "block_length",
+        "minimum_effective_blocks",
+        "bootstrap_samples",
+    ):
+        if type(statistical.get(field)) is not int or statistical[field] < 1:
+            raise ValueError("publication_statistical_profile_invalid")
+    if (
+        max(
+            statistical["minimum_observations"],
+            statistical["block_length"] * statistical["minimum_effective_blocks"],
+        )
+        > 2000
+    ):
+        raise ValueError("publication_statistical_observation_budget_exceeded")
+    interval = statistical.get("checkpoint_interval_days")
+    if interval is not None and (type(interval) is not int or interval < 1):
+        raise ValueError("publication_checkpoint_interval_invalid")
+    if not 0 < publication_number(statistical.get("significance_level")) < 1:
+        raise ValueError("publication_statistical_profile_invalid")
+    if publication_number(statistical.get("minimum_net_excess")) < 0:
+        raise ValueError("publication_statistical_profile_invalid")
+    from datetime import date
+
+    date.fromisoformat(str(statistical.get("decision_checkpoint") or ""))
+    return dict(statistical)
+
+
 def validate_publication_grant(value: Mapping[str, Any]) -> dict[str, Any]:
     policy = dict(value)
     if policy.get("schema_version") != PUBLICATION_POLICY_SCHEMA:
@@ -139,41 +179,9 @@ def validate_publication_grant(value: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("publication_replacement_margin_invalid")
     if type(policy.get("cooldown_days")) is not int or policy["cooldown_days"] < 0:
         raise ValueError("publication_cooldown_invalid")
-    statistical = policy.get("statistical_policy")
-    if (
-        not isinstance(statistical, Mapping)
-        or content_fingerprint(dict(statistical))
-        != policy["statistical_policy_fingerprint"]
-    ):
-        raise ValueError("publication_statistical_policy_binding_invalid")
-    if statistical.get("method") != "paired_moving_block_bootstrap.v1":
-        raise ValueError("publication_statistical_method_unsupported")
-    for field in (
-        "minimum_observations",
-        "block_length",
-        "minimum_effective_blocks",
-        "bootstrap_samples",
-    ):
-        if type(statistical.get(field)) is not int or statistical[field] < 1:
-            raise ValueError("publication_statistical_profile_invalid")
-    if (
-        max(
-            statistical["minimum_observations"],
-            statistical["block_length"] * statistical["minimum_effective_blocks"],
-        )
-        > 2000
-    ):
-        raise ValueError("publication_statistical_observation_budget_exceeded")
-    interval = statistical.get("checkpoint_interval_days")
-    if interval is not None and (type(interval) is not int or interval < 1):
-        raise ValueError("publication_checkpoint_interval_invalid")
-    if not 0 < publication_number(statistical.get("significance_level")) < 1:
-        raise ValueError("publication_statistical_profile_invalid")
-    if publication_number(statistical.get("minimum_net_excess")) < 0:
-        raise ValueError("publication_statistical_profile_invalid")
-    from datetime import date
-
-    date.fromisoformat(str(statistical.get("decision_checkpoint") or ""))
+    validate_final_statistical_policy(
+        policy.get("statistical_policy"), policy["statistical_policy_fingerprint"]
+    )
     publication_time(policy.get("expires_at"))
     if not str(policy.get("updated_by") or "").strip():
         raise ValueError("publication_owner_missing")

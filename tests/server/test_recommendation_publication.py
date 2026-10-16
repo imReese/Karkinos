@@ -573,6 +573,228 @@ def test_owner_preview_binds_current_scope_and_budget_before_enabling(
     ]
 
 
+@pytest.fixture
+def board_preview(book, monkeypatch):
+    """Real valuation/policies; the reviewed-fee read boundary is sanitized."""
+    from server.config import ServerConfig
+    from server.services.reviewed_fee_schedule_policy import (
+        NOTIONAL_ENVELOPE_SCHEMA_VERSION,
+        fingerprint_payload,
+    )
+    from server.services.valuation_snapshot import build_current_valuation_snapshot
+
+    db, store = book
+    db.insert_ledger_entry_sync(
+        entry_type="cash_deposit", timestamp=NOW, amount=50000, asset_class="cash"
+    )
+    valuation = build_current_valuation_snapshot(db, now=datetime.fromisoformat(NOW))
+    envelope = {
+        "schema_version": NOTIONAL_ENVELOPE_SCHEMA_VERSION,
+        "enforcement_mode": "maximum_matched_historical_gross_by_asset_class",
+        "asset_classes": ["stock"],
+        "limits": {
+            "stock": {"maximum_gross_amount": "25000", "matched_trade_count": 2}
+        },
+    }
+    envelope["evidence_fingerprint"] = fingerprint_payload(envelope)
+    monkeypatch.setattr(
+        "server.services.valuation_snapshot.build_current_valuation_snapshot",
+        lambda _db, **_: valuation,
+    )
+    monkeypatch.setattr(
+        "server.services.reviewed_fee_schedule.build_reviewed_fee_schedule_review_status",
+        lambda _: {
+            "status": "active",
+            "review": {
+                "account_truth_scope_fingerprint": "a" * 64,
+                "effective_start_date": "2020-01-01",
+                "effective_end_date": "2099-12-31",
+                "preview": {
+                    "component_reconciliation": {
+                        "reconciled_notional_envelope": envelope
+                    }
+                },
+            },
+        },
+    )
+    state = SimpleNamespace(config=ServerConfig())
+    service = RecommendationPublicationService(
+        db, store, now=lambda: datetime.fromisoformat(NOW), state=state
+    )
+    return db, store, service, state
+
+
+def _save_simulation_mask(store, mask=None):
+    from server.contracts.ai_shadow_research_automation import ShadowResearchPolicy
+    from server.contracts.research_observation_automation import (
+        SIMULATION_VALIDATION_AUTHORIZE,
+    )
+    from server.services.ai_shadow_research_commands import (
+        simulation_validation_defaults,
+    )
+
+    sim = {
+        **simulation_validation_defaults(datetime.fromisoformat(NOW)),
+        "grant_id": str(uuid4()),
+        "generation": str(uuid4()),
+        "enabled": True,
+        "authorization": SIMULATION_VALIDATION_AUTHORIZE,
+    }
+    if mask is not None:
+        sim["entry_board_policy"] = mask
+    store.configure_research_policy(
+        policy=ShadowResearchPolicy(simulation_validation=sim).to_dict(),
+        simulation_change=True,
+        expected_generation=None,
+        now=NOW,
+    )
+    return sim
+
+
+@pytest.mark.parametrize("chinext", ["disabled", "enabled"])
+def test_publication_preview_keeps_sim_mask_and_separate_current_permission_witness(
+    board_preview, chinext
+):
+    from server.config import ServerConfig
+    from tests.server.test_account_board_permissions import _review
+
+    db, store, service, state = board_preview
+    sim = _save_simulation_mask(store)
+    state.config = ServerConfig(account_board_permissions=_review(NOW, chinext=chinext))
+    assert db.get_automation_policy_sync("ai_recommendation_publication") is None
+    preview = service.preview({})
+    proposed = preview["proposed_binding"]
+    assert proposed is not None, preview["preview_blockers"]
+    assert proposed["entry_board_policy"] == sim["entry_board_policy"]
+    assert proposed["entry_board_policy"]["allowed_boards"] == ["main"]
+    assert (
+        preview["binding_source"]["entry_board_policy_source"]
+        == "frozen_simulation_entry_rules"
+    )
+    assert preview["binding_source"]["account_board_permissions"][
+        "evidence_fingerprint"
+    ]
+    assert proposed["entry_board_policy"]["permission_evidence_fingerprint"] is None
+    assert db.get_automation_policy_sync("ai_recommendation_publication") is None
+    with pytest.raises(PermissionError, match="exact_owner_confirmation"):
+        service.update({**proposed, "expected_generation": None, "confirmation": ""})
+    saved = service.update(
+        {**proposed, "expected_generation": None, "confirmation": PUBLICATION_AUTHORIZE}
+    )
+    assert saved["policy"]["entry_board_policy"] == sim["entry_board_policy"]
+    assert read_publication_grant(db, now=NOW)["enabled"] is True
+
+
+@pytest.mark.parametrize("permissions", ["disabled", "stale"])
+def test_sim_mask_revalidates_current_permissions_before_publication_grant_write(
+    board_preview, permissions
+):
+    from server.config import ServerConfig
+    from server.services.account_board_permissions import freeze_entry_board_policy
+    from tests.server.test_account_board_permissions import _review
+
+    db, store, service, state = board_preview
+    original = ServerConfig(
+        account_board_permissions=_review("2026-10-14T01:00:00+00:00")
+    )
+    mask = freeze_entry_board_policy(original, "2026-10-14")
+    _save_simulation_mask(store, mask)
+    # Renewing a permission witness keeps the original scientific policy exact.
+    state.config = ServerConfig(account_board_permissions=_review(NOW))
+    preview = service.preview({})
+    proposed = preview["proposed_binding"]
+    assert proposed is not None, preview["preview_blockers"]
+    assert proposed["entry_board_policy"] == mask
+    assert (
+        preview["binding_source"]["account_board_permissions"]["evidence_fingerprint"]
+        != mask["permission_evidence_fingerprint"]
+    )
+    state.config = ServerConfig(
+        account_board_permissions=(
+            _review(NOW, chinext="disabled")
+            if permissions == "disabled"
+            else _review("2026-08-01T01:00:00+00:00")
+        )
+    )
+    blocked = service.preview({})
+    assert blocked["proposed_binding"] is None
+    assert blocked["preview_blockers"] == [
+        "deployment_entry_board_permissions_missing:chinext"
+        if permissions == "disabled"
+        else "deployment_entry_board_permissions_not_current"
+    ]
+    with pytest.raises(ValueError, match="publication_grant_preview_unavailable"):
+        service.update(
+            {
+                **proposed,
+                "expected_generation": None,
+                "confirmation": PUBLICATION_AUTHORIZE,
+            }
+        )
+    assert db.get_automation_policy_sync("ai_recommendation_publication") is None
+
+
+def test_publication_renewal_keeps_own_frozen_mask_without_enabling_simulation(
+    board_preview,
+):
+    from server.config import ServerConfig
+    from tests.server.test_account_board_permissions import _review
+
+    db, _store, service, state = board_preview
+    state.config = ServerConfig(
+        account_board_permissions=_review("2026-10-14T01:00:00+00:00")
+    )
+    first = service.preview({})["proposed_binding"]
+    service.update(
+        {**first, "expected_generation": None, "confirmation": PUBLICATION_AUTHORIZE}
+    )
+    state.config = ServerConfig(account_board_permissions=_review(NOW))
+    renewed = service.preview({})
+    assert (
+        renewed["proposed_binding"]["entry_board_policy"] == first["entry_board_policy"]
+    )
+    assert (
+        renewed["binding_source"]["entry_board_policy_source"]
+        == "existing_publication_entry_rules"
+    )
+    assert db.get_automation_policy_sync("ai_shadow_research") is None
+
+
+def test_preview_permission_clock_uses_shanghai_day(board_preview):
+    from server.config import ServerConfig
+    from server.services.account_board_permissions import freeze_entry_board_policy
+    from server.services.recommendation_publication import _preview_entry_board_policy
+    from tests.server.test_account_board_permissions import _review
+
+    db, store, _service, _state = board_preview
+    prior = ServerConfig(account_board_permissions=_review(NOW))
+    mask = freeze_entry_board_policy(prior, "2026-10-15")
+    _save_simulation_mask(store, mask)
+    renewed = ServerConfig(
+        account_board_permissions=_review("2026-10-15T16:30:00+00:00")
+    )
+    selected, permissions, _ = _preview_entry_board_policy(
+        db, renewed, datetime.fromisoformat("2026-10-15T16:40:00+00:00")
+    )
+    assert selected == mask
+    assert permissions["resolved_for_date"] == "2026-10-16"
+    assert permissions["status"] == "current"
+
+
+def test_invalid_enabled_sim_profile_cannot_fall_back_to_account_mask(board_preview):
+    db, store, service, _state = board_preview
+    _save_simulation_mask(store)
+    stored = db.get_automation_policy_sync("ai_shadow_research")
+    stored["simulation_validation"]["entry_board_policy"]["evidence_fingerprint"] = (
+        "tampered"
+    )
+    db.upsert_automation_policy_sync(policy_id="ai_shadow_research", payload=stored)
+    preview = service.preview({})
+    assert preview["proposed_binding"] is None
+    assert preview["preview_blockers"] == ["deployment_entry_board_policy_invalid"]
+    assert db.get_automation_policy_sync("ai_recommendation_publication") is None
+
+
 @pytest.mark.parametrize(
     "mutation,reason",
     [
@@ -580,12 +802,29 @@ def test_owner_preview_binds_current_scope_and_budget_before_enabling(
         ({"deployment_scope_fingerprint": "c" * 64}, "scope_or_statistics_mismatch"),
         ({"initial_cash": "50001"}, "capital_mismatch"),
         ({"error_budget": {}}, "test_budget_invalid"),
+        ({"simulation": True}, None),
+        (
+            {"simulation": True, "publication_grant_generation": "old"},
+            "test_budget_invalid",
+        ),
+        ({"simulation": True, "publication_grant_id": None}, "test_budget_invalid"),
+        (
+            {"simulation": True, "simulation_budget": {"attempt_count": 3}},
+            "test_budget_invalid",
+        ),
+        (
+            {"simulation": True, "simulation_budget": {"error_budget_spent": "0.051"}},
+            "test_budget_invalid",
+        ),
     ],
 )
 def test_readiness_requires_verified_scope_capital_and_grant_bound_final_budget(
     monkeypatch, mutation, reason
 ):
     grant = _grant()
+    mutation = dict(mutation)
+    simulation = mutation.pop("simulation", False)
+    simulation_budget = mutation.pop("simulation_budget", {})
     validation = {
         "schema_version": "karkinos.deployment_validation.v1",
         "status": "pass",
@@ -606,6 +845,23 @@ def test_readiness_requires_verified_scope_capital_and_grant_bound_final_budget(
         },
         **mutation,
     }
+    if simulation:
+        validation = {
+            **validation,
+            "validation_provenance": "independent_simulation",
+            "publication_grant_id": mutation.get(
+                "publication_grant_id", grant["grant_id"]
+            ),
+            "publication_grant_generation": mutation.get(
+                "publication_grant_generation", grant["generation"]
+            ),
+            "error_budget": {
+                **validation["error_budget"],
+                "grant_id": "simulation-only",
+                "generation": "sim-generation",
+                **simulation_budget,
+            },
+        }
     validation["evidence_fingerprint"] = content_fingerprint(validation)
     import server.services.research_final_evaluation as final
 
@@ -637,8 +893,15 @@ def test_readiness_requires_verified_scope_capital_and_grant_bound_final_budget(
         object(),
         SimpleNamespace(get_qualification_run=lambda _: {"initial_cash_text": "50000"}),
     )
-    with pytest.raises(ValueError, match=reason):
-        service.readiness("qualified", grant, fresh=False)
+    if reason is None:
+        readiness = service.readiness("qualified", grant, fresh=False)
+        assert (
+            readiness["deployment_validation"]["error_budget"]["grant_id"]
+            == "simulation-only"
+        )
+    else:
+        with pytest.raises(ValueError, match=reason):
+            service.readiness("qualified", grant, fresh=False)
 
 
 def test_portfolio_equity_replays_real_frozen_ledger_and_rejects_drift(book):

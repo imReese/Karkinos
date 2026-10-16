@@ -65,6 +65,7 @@ def formula_session_targets(
     slippage_bps: Decimal = RESEARCH_SLIPPAGE_BPS,
     minimum_history_rows: int = 120,
     entry_board_policy: Mapping[str, Any] | None = None,
+    nontrading_symbols: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """One session decision shared by backtest, paper and account adapters."""
     if type(minimum_history_rows) is not int or minimum_history_rows < 1:
@@ -100,6 +101,13 @@ def formula_session_targets(
         if available.empty:
             raise ValueError(f"formula_session_observation_missing:{symbol}")
         current_observation = decision_session in observations.index
+        if (
+            symbol in held
+            and not current_observation
+            and nontrading_symbols is not None
+            and symbol not in nontrading_symbols
+        ):
+            raise ValueError(f"formula_session_holding_valuation_missing:{symbol}")
         row = available.iloc[-1]
         price = Decimal(str(row["close"]))
         instrument = instruments.get(Symbol(symbol))
@@ -134,6 +142,13 @@ def formula_session_targets(
                 "reference_close": str(price),
                 "observation_session": available.index[-1].isoformat(),
                 "data_available": current_observation,
+                **(
+                    {"valuation_basis": "last_observed_close_bound_nontrading"}
+                    if symbol in held
+                    and not current_observation
+                    and nontrading_symbols is not None
+                    else {}
+                ),
             }
         )
 

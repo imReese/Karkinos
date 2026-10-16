@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
@@ -35,7 +35,9 @@ from server.contracts.ai_shadow_research_qualification import (
 )
 from server.contracts.daily_strategy_artifacts import DailyStrategyArtifactRejected
 from server.contracts.strategy_research import StrategyResearchSelection
+from server.db import AppDatabase
 from server.services.account_qualification_reuse import (
+    _terminal_candidate_set_matches,
     select_oldest_retryable_source_run_id,
 )
 from server.services.ai_shadow_research_qualification import (
@@ -309,6 +311,18 @@ class FakeDatabase:
                 or row["run_date"] == filters["run_date"]
             )
         ][: int(filters.get("limit", 20))]
+
+
+@pytest.fixture(autouse=True)
+def persisted_recovery_scope(tmp_path, monkeypatch):
+    """Unit orchestration uses a real empty recovery journal for its cash scope.
+
+    Final/account/backtest owners retain their existing unit boundaries; the
+    newly consumed publication fence is never bypassed by a fake database ID.
+    """
+    recovery_db = AppDatabase(tmp_path / "qualification.db")
+    recovery_db.init_sync()
+    monkeypatch.setattr(FakeDatabase, "path", recovery_db.path, raising=False)
 
 
 class FakeShadowStore:
@@ -647,6 +661,7 @@ def _harness(
         "ledger_fingerprint": LEDGER_FINGERPRINT,
         "quote_set_fingerprint": "c" * 64,
         "valuation_policy": "persisted-close-v1",
+        "quotes": [],
     }
     db = FakeDatabase(valuation)
     store = FakeShadowStore(db)
@@ -1513,4 +1528,204 @@ def test_formula_semantic_identity_excludes_only_account_cost_rebinding():
     rebound["dataset_snapshot_id"] = "sha256:" + "9" * 64
     assert qualification_formula_semantic_fingerprint(source) != (
         qualification_formula_semantic_fingerprint(rebound)
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.parametrize("reviewed_status", ["pass", "insufficient_evidence"])
+async def test_terminal_reuse_reopens_full_scope_writer_comparisons(
+    tmp_path, reviewed_status
+):
+    """Persist the real qualification writer's output, then cold-read its identity.
+
+    This isolates comparison/reuse semantics. The module's calculation and
+    account fixtures do not assert financial acceptance or a valid final proof.
+    """
+    from datetime import date
+
+    from analytics.research_account_capital_evidence import (
+        build_research_account_capital_evidence,
+    )
+    from server.persistence.ai_shadow_research import ShadowResearchStore
+    from server.services.account_board_permissions import freeze_entry_board_policy
+    from server.services.account_qualification_admission import QualificationAdmission
+    from server.services.ai_shadow_research_qualification_support import (
+        qualification_selection,
+    )
+    from server.services.market_universe_truth import (
+        MarketUniversePolicy,
+        market_deployment_scope,
+    )
+    from tests.server.test_ai_shadow_research_qualification_persistence import (
+        _run_args,
+        _seed_source,
+    )
+
+    service, _, capture, _, adapter, _ = _harness()
+    _, sources = service._freeze_batch("source-run")
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store, seed = _seed_source(tmp_path)
+    scope = market_deployment_scope(
+        MarketUniversePolicy(minimum_master_member_count=1, minimum_history_rows=2)
+    )
+    frozen = []
+    for source in sources:
+        actual = store.save_candidate(
+            **{
+                key: source.source_candidate[key]
+                for key in (
+                    "session_id",
+                    "draft_id",
+                    "backtest_run_id",
+                    "critique_id",
+                    "baseline_result_id",
+                    "candidate_result_id",
+                    "status",
+                    "recommendation",
+                    "comparison",
+                )
+            },
+            run_id=seed["run_id"],
+            now="2026-08-31T08:03:00+00:00",
+        )
+        frozen.append(
+            replace(
+                source,
+                source_candidate=actual,
+                source_selection=replace(
+                    source.source_selection,
+                    deployment_scope=scope,
+                    portfolio_policy_id=scope["portfolio_policy_id"],
+                ),
+            )
+        )
+    baseline_id = store.save_baseline(
+        baseline_fingerprint="full-scope-reuse-baseline",
+        request=FakeRequest(),
+        result=_backtest_result(cash=750000, score=0),
+        now="2026-08-31T08:04:00+00:00",
+    )
+    run, _ = store.create_or_get_qualification_run(
+        **{
+            **_run_args(),
+            "valuation_snapshot_id": VALUATION_ID,
+            "initial_cash_text": "750000",
+            "baseline_result_id": baseline_id,
+            "reviewed_cost_model_reference": REVIEWED_COST,
+        }
+    )
+    service._db, service._store = db, store
+
+    def gate_builder(*, candidate, **kwargs):
+        gate = _gate_builder(candidate=candidate).to_json_dict()
+        passed = bool(candidate.get("independent_evaluation"))
+        if not passed:
+            gate.update(
+                status="blocked", blockers=["independent_final_evaluation_missing"]
+            )
+        return SimpleNamespace(passed=passed, to_json_dict=lambda: deepcopy(gate))
+
+    def replay(**kwargs):
+        result, request = adapter.run(**kwargs)
+        if kwargs["draft"]["draft_id"] == "draft-5":
+            result["metrics_json"]["simulation_account_replay"] = {
+                "cost_model_reference": REVIEWED_COST,
+                "reviewed_replay": {
+                    "deployment_assessment": {
+                        "status": reviewed_status,
+                        "blockers": []
+                        if reviewed_status == "pass"
+                        else ["deployment_uncertainty_not_established"],
+                    }
+                },
+            }
+        return result, request
+
+    service._backtest_adapter = SimpleNamespace(run=replay)
+    service._advancement_gate_builder = gate_builder
+    fee = SimpleNamespace(
+        cost_model_reference=REVIEWED_COST,
+        fee_evidence={
+            "account_specific": True,
+            "broker_statement_reconciled": True,
+            "account_truth_source_fingerprint": "4" * 64,
+            "account_truth_scope_fingerprint": "5" * 64,
+        },
+    )
+    account_capital = build_research_account_capital_evidence(
+        initial_cash=750000,
+        account_evidence=capture.record.to_dict(),
+        fee_schedule_evidence=fee.fee_evidence,
+        expected_valuation_snapshot_id=VALUATION_ID,
+        expected_ledger_cutoff_id=42,
+    )
+    for source in frozen:
+        await service._replay_candidate(
+            source=source,
+            account={"valuation_snapshot_id": VALUATION_ID, "ledger_cutoff_id": 42},
+            fee_resolution=fee,
+            initial_cash=Decimal(750000),
+            account_capital=account_capital,
+            prepared=SimpleNamespace(snapshot={"snapshot_id": DATASET_ID}),
+            baseline_result_id=baseline_id,
+            qualification_run_id=run["qualification_run_id"],
+            admission=QualificationAdmission.admit(service._now),
+            final_evaluation={
+                "reservation": {
+                    "candidate_id": frozen[-1].source_candidate["candidate_id"],
+                    "entry_board_policy": freeze_entry_board_policy(
+                        None, date(2026, 8, 31)
+                    ),
+                }
+            },
+        )
+    candidates = store.list_qualification_candidates(run["qualification_run_id"])
+    assert len(candidates) == 5 and len(adapter.calls) == 5
+    terminal = qualification_selection(
+        qualification_run_id=run["qualification_run_id"],
+        source_run_id=run["source_run_id"],
+        market_date=MARKET_DATE,
+        candidates=candidates,
+        replay_failed=False,
+    )
+    store.finish_qualification_run(
+        run["qualification_run_id"],
+        status=terminal["run_status"],
+        selection=terminal["selection"],
+        blockers=terminal["blockers"],
+        failure_code=terminal["failure_code"],
+        now="2026-09-01T08:03:00+00:00",
+    )
+    reopened = ShadowResearchStore(db.path)
+    saved_run = reopened.get_qualification_run(run["qualification_run_id"])
+    saved = reopened.list_qualification_candidates(run["qualification_run_id"])
+    assert saved_run["status"] == (
+        "completed" if reviewed_status == "pass" else "blocked"
+    )
+    assert await _terminal_candidate_set_matches(
+        db=db,
+        run=saved_run,
+        batch={"run_id": run["source_run_id"], "market_date": MARKET_DATE},
+        sources=frozen,
+        candidates=saved,
+        baseline=await db.get_backtest_result(baseline_id),
+        advancement_gate_builder=gate_builder,
+    )
+    assert len(adapter.calls) == 5
+    tampered = deepcopy(saved)
+    tampered[0]["comparison"]["qualified_selection_fingerprint"] = "sha256:" + "9" * 64
+    tampered[0]["comparison_fingerprint"] = content_fingerprint(
+        tampered[0]["comparison"]
+    )
+    assert not await _terminal_candidate_set_matches(
+        db=db,
+        run=saved_run,
+        batch={"run_id": run["source_run_id"], "market_date": MARKET_DATE},
+        sources=frozen,
+        candidates=tampered,
+        baseline=await db.get_backtest_result(baseline_id),
+        advancement_gate_builder=gate_builder,
     )

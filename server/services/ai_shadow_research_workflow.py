@@ -49,6 +49,59 @@ logger = logging.getLogger(__name__)
 
 
 class AiShadowResearchWorkflowMixin:
+    def _research_validation_grant(self, policy):
+        from server.contracts.research_observation_automation import (
+            read_research_validation_policy,
+        )
+
+        try:
+            return read_research_validation_policy(self._db, now=self._now()), None
+        except ValueError as exc:
+            if policy.simulation_validation is not None:
+                return None, {
+                    **self.status(),
+                    "run_status": "awaiting_independent_validation",
+                    "failure_code": str(exc),
+                    "provider_call_performed": False,
+                }
+            return None, None
+
+    async def _formal_warmup_preflight(self, policy, grant, *, window_closed=False):
+        if (
+            not grant
+            or grant.get("schema_version") != "karkinos.research_simulation_policy.v1"
+        ):
+            return None
+        from server.services.research.datasets import ensure_forward_seed_for_source
+
+        try:
+            source = await asyncio.to_thread(
+                self._validation_seed_source, policy, grant
+            )
+            if window_closed and self._validation_seed_prepared(source):
+                return None
+            seed = await asyncio.to_thread(
+                ensure_forward_seed_for_source,
+                self._db,
+                self._state.require_config(),
+                source=source,
+                now=self._now(),
+                data_store=self._data_store,
+            )
+        except ValueError as exc:
+            return self._record_preflight(
+                status="blocked_by_market_evidence",
+                failure_code=shadow_research_failure_code(exc),
+            )
+        if seed.get("status") != "ready":
+            return {
+                **self.status(),
+                "run_status": "awaiting_verified_research_inputs",
+                "forward_validation": seed,
+                "provider_call_performed": False,
+            }
+        return None
+
     async def _forward_validation_preflight(self, grant) -> dict[str, Any] | None:
         if grant:
             pending = self._open_deployment_reservation(grant)
@@ -72,6 +125,30 @@ class AiShadowResearchWorkflowMixin:
                     config=self._state.require_config(),
                     reservation_id=pending["sealed_test_id"],
                 )
+                if (
+                    pending.get("evidence", {})
+                    .get("reservation", {})
+                    .get("simulation_policy")
+                    and forward.get("status") == "ready"
+                ):
+                    try:
+                        evaluation = await self._evaluate_independent_simulation(
+                            pending
+                        )
+                    except ValueError as exc:
+                        forward = {
+                            **forward,
+                            "final_status": "waiting",
+                            "final_blocker": str(exc),
+                        }
+                    else:
+                        return {
+                            **self.status(),
+                            "run_status": "completed",
+                            "validation_status": "completed",
+                            "final_evaluation": evaluation,
+                            "provider_call_performed": False,
+                        }
                 return {
                     **self.status(),
                     "run_status": "awaiting_independent_validation",
@@ -80,6 +157,19 @@ class AiShadowResearchWorkflowMixin:
                     "sealed_test_id": pending["sealed_test_id"],
                 }
         return None
+
+    async def _evaluate_independent_simulation(self, reserved):
+        """Final inference uses the frozen research source, never account readiness."""
+        from server.services.research_final_evaluation import evaluate_reserved_champion
+
+        store, source, adapter = self._independent_simulation_inputs(reserved)
+        return await evaluate_reserved_champion(
+            research_store=store,
+            source=source,
+            adapter=adapter,
+            now=self._now(),
+            calendar_db=self._db,
+        )
 
     async def _verified_seed_preflight(self, prepared, grant) -> dict[str, Any] | None:
         scope = (
@@ -108,16 +198,17 @@ class AiShadowResearchWorkflowMixin:
             seed_source["source_selection"] = {
                 "deployment_scope": scope,
                 "portfolio_policy_id": scope["portfolio_policy_id"],
+                "start_date": prepared.request.start_date,
+                "end_date": prepared.request.end_date,
             }
+            seed_source["start_date"] = prepared.request.start_date
+            seed_source["end_date"] = prepared.request.end_date
             seed_source["forward_minimum_observations"] = grant["statistical_policy"][
                 "minimum_observations"
             ]
-            seed_source["minimum_bars"] = max(
-                seed_source.get("minimum_bars", 1),
-                prepared.result["metrics_json"]["market_universe_truth"][
-                    "required_trading_date_count"
-                ],
-            )
+            seed_source["minimum_bars"] = scope["universe_policy"][
+                "minimum_history_rows"
+            ]
             seed = await asyncio.to_thread(
                 ensure_forward_seed_for_source,
                 self._db,
@@ -135,7 +226,25 @@ class AiShadowResearchWorkflowMixin:
                 }
         return None
 
+    async def _prepare_validation_baseline(self, policy, grant):
+        board = (
+            {
+                "entry_board_policy": grant["entry_board_policy"],
+                "initial_cash_override": float(grant["initial_cash"]),
+            }
+            if grant
+            and grant.get("schema_version") == "karkinos.research_simulation_policy.v1"
+            else {}
+        )
+        return await asyncio.to_thread(self._prepare_baseline, policy, **board)
+
     async def run_once(self) -> dict[str, Any]:
+        from data.dataset.reader import daily_bar_dataset_read_scope
+
+        with daily_bar_dataset_read_scope(join_existing=True):
+            return await self._run_once_with_inputs()
+
+    async def _run_once_with_inputs(self) -> dict[str, Any]:
         policy = self.get_policy()
         preflight = self._policy_preflight(policy)
         if preflight is not None:
@@ -143,14 +252,9 @@ class AiShadowResearchWorkflowMixin:
 
         # Preserve a real future holdout: unrelated market capture continues,
         # but no overlapping model research may inspect its reserved interval.
-        try:
-            from server.contracts.recommendation_publication import (
-                read_publication_grant,
-            )
-
-            grant = read_publication_grant(self._db, now=self._now())
-        except ValueError:
-            grant = None
+        grant, validation_blocker = self._research_validation_grant(policy)
+        if validation_blocker is not None:
+            return validation_blocker
         if forward_preflight := await self._forward_validation_preflight(grant):
             return forward_preflight
         if policy.research_end_date is not None and (
@@ -163,15 +267,26 @@ class AiShadowResearchWorkflowMixin:
                 "provider_call_performed": False,
                 "sealed_end_date": policy.sealed_end_date,
             }
-        self._require_deepseek_provider()
+        independent_simulation = bool(
+            grant
+            and grant.get("schema_version") == "karkinos.research_simulation_policy.v1"
+        )
+        if not independent_simulation:
+            self._require_deepseek_provider()
         provider_window_preflight, batch_deadline_at = (
             self._provider_batch_window_admission()
         )
+        if warmup := await self._formal_warmup_preflight(
+            policy, grant, window_closed=provider_window_preflight is not None
+        ):
+            return warmup
+        if independent_simulation:
+            self._require_deepseek_provider()
         if provider_window_preflight is not None:
             return provider_window_preflight
 
         try:
-            prepared = await asyncio.to_thread(self._prepare_baseline, policy)
+            prepared = await self._prepare_validation_baseline(policy, grant)
         except asyncio.CancelledError:
             raise
         except (ReviewedFeeScheduleRejected, ReviewedFeeScheduleReadRejected) as exc:
@@ -519,9 +634,16 @@ class AiShadowResearchWorkflowMixin:
                     reviewed_fee_schedule_resolver=self._reviewed_fee_schedule_resolver,
                     account_config=self._state.require_config(),
                 )
-                if reservation and reservation.get("evidence", {}).get(
-                    "reservation", {}
-                ).get("publication_grant"):
+                if (
+                    reservation
+                    and reservation.get("evidence", {})
+                    .get("reservation", {})
+                    .get("publication_grant")
+                    or reservation
+                    and reservation.get("evidence", {})
+                    .get("reservation", {})
+                    .get("simulation_policy")
+                ):
                     from data.storage.objects import ContentAddressedObjectStore
                     from server.services.research_observation_automation import (
                         start_reserved_champion_observation,
@@ -536,9 +658,10 @@ class AiShadowResearchWorkflowMixin:
                         source_result_id=reservation["evidence"]["reservation"][
                             "candidate_result_id"
                         ],
-                        grant=reservation["evidence"]["reservation"][
-                            "publication_grant"
-                        ],
+                        grant=reservation["evidence"]["reservation"].get(
+                            "simulation_policy"
+                        )
+                        or reservation["evidence"]["reservation"]["publication_grant"],
                         now=self._now(),
                         config=self._state.require_config(),
                         reservation_id=reservation["sealed_test_id"],
@@ -620,16 +743,17 @@ class AiShadowResearchWorkflowMixin:
     ) -> dict[str, Any]:
         truth = prepared.result.get("metrics_json", {}).get("market_universe_truth", {})
         scope = truth.get("deployment_scope")
+        simulation = policy.simulation_validation or {}
         sealed_end = policy.sealed_end_date
         if scope and not sealed_end:
             from datetime import date, timedelta
 
-            from server.contracts.recommendation_publication import (
-                read_publication_grant,
+            from server.contracts.research_observation_automation import (
+                read_research_validation_policy,
             )
 
             try:
-                grant = read_publication_grant(self._db, now=self._now())
+                grant = read_research_validation_policy(self._db, now=self._now())
             except ValueError:
                 grant = None
             if grant:
@@ -665,6 +789,16 @@ class AiShadowResearchWorkflowMixin:
             "frequency": BarFrequency.DAILY.value,
             **({"sealed_end_date": sealed_end} if sealed_end else {}),
             "initial_cash": prepared.request.initial_cash,
+            **(
+                {
+                    "simulation_validation_binding": {
+                        key: simulation[key]
+                        for key in ("grant_id", "generation", "initial_cash")
+                    }
+                }
+                if simulation.get("enabled") is True
+                else {}
+            ),
             "cost_model_reference": prepared.cost_model_reference,
             "account_truth_freshness_as_of": (
                 shadow_research_market_close_as_of(

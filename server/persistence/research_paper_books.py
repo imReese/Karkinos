@@ -143,6 +143,23 @@ class ResearchPaperBooksRepository:
                     conn, observation_id, automation_generation, paper_settlement=True
                 )
             now = self._locked_clock(conn, row, computation_not_before)
+            observed = conn.execute(
+                "SELECT policy_json FROM research_observations WHERE id=?",
+                (observation_id,),
+            ).fetchone()
+            policy = json.loads(observed[0]) if observed else {}
+            authorization = policy.get("authorization_binding") or {}
+            if authorization.get("authority_kind") == "simulation":
+                from server.persistence.automation_runs import (
+                    require_simulation_policy_in_transaction,
+                )
+
+                require_simulation_policy_in_transaction(
+                    conn,
+                    authorization,
+                    policy["deployment_scope"]["deployment_scope_fingerprint"],
+                    now=now,
+                )
             last = conn.execute(
                 "SELECT MAX(session) FROM research_paper_steps WHERE book_id=?",
                 (row["id"],),

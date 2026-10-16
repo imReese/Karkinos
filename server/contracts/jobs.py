@@ -73,4 +73,5 @@ class JobStore(Protocol):
         retry_seconds: int = 60,
         failure_evidence_ref: str | None = None,
         retryable: bool = True,
+        preserve_retry_allowance: bool = False,
     ) -> None: ...

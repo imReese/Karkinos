@@ -71,6 +71,56 @@ from strategy.schema import StrategyParameterValidationError
 
 
 class AiShadowResearchBaselineMixin:
+    def _validation_seed_source(self, policy, grant):
+        """Declare warmup inputs without running a backtest or invoking a model."""
+        from server.services.market_universe_truth import (
+            market_master_buy_instruments,
+            require_complete_market_universe_snapshot,
+        )
+
+        scope = grant["deployment_scope"]
+        rules = MarketUniversePolicy.from_dict(scope["universe_policy"])
+        seed, _, start = _load_baseline_seed(
+            self._db,
+            policy,
+            research_start_date=None,
+            expected_dataset_snapshot_id=None,
+        )
+        master = _load_baseline_universe(
+            store=self._data_store,
+            seed=seed,
+            expected_dataset_snapshot_id=None,
+            expected_market_date=policy.research_end_date,
+        )
+        end = str(master["trade_date"])
+        master = require_complete_market_universe_snapshot(
+            master,
+            policy=rules,
+            expected_trade_date=end,
+            available_as_of=self._now(),
+        )
+        dates = verified_trading_dates(self._db, start_date=start, end_date=end)
+        if not dates:
+            raise ShadowResearchRejected("forward_seed_calendar_unavailable")
+        return {
+            "instruments": [
+                {"symbol": key.symbol, "instrument_type": key.instrument_type.value}
+                for key in market_master_buy_instruments(master, rules)
+            ],
+            "minimum_bars": rules.minimum_history_rows,
+            "forward_minimum_observations": grant["statistical_policy"][
+                "minimum_observations"
+            ],
+            "start_date": start,
+            "end_date": end,
+            "source_selection": {
+                "deployment_scope": scope,
+                "portfolio_policy_id": scope["portfolio_policy_id"],
+                "start_date": start,
+                "end_date": end,
+            },
+        }
+
     def _prepare_baseline(
         self,
         policy: ShadowResearchPolicy,
@@ -127,6 +177,7 @@ class AiShadowResearchBaselineMixin:
             market_date=market_date,
             initial_cash=initial_cash,
             market_universe_snapshot=market_universe_snapshot,
+            as_of=self._now(),
             replay_policy=(
                 (
                     shadow_research_json_object(seed.get("metrics_json"))
@@ -282,6 +333,11 @@ class AiShadowResearchBaselineMixin:
         )
         metrics = result.metrics
         metrics_json = metrics.to_json_dict()
+        if policy.simulation_validation and entry_board_policy is not None:
+            metrics_json["simulation_validation_binding"] = {
+                key: policy.simulation_validation[key]
+                for key in ("grant_id", "generation", "initial_cash")
+            }
         if entry_board_policy is not None:
             from server.services.account_board_permissions import (
                 validate_entry_board_policy,
@@ -741,11 +797,15 @@ def _resolve_baseline_initial_cash(
         config.get("initial_cash") or seed.get("initial_cash") or 0
     )
     if initial_cash_override is not None:
+        simulation = policy.simulation_validation or {}
+        simulation_override = simulation.get("enabled") is True and Decimal(
+            str(initial_cash_override)
+        ) == Decimal(str(simulation.get("initial_cash", 0)))
         if (
             policy.research_capital_mode
             == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
-            or initial_cash_override <= 0
-        ):
+            and not simulation_override
+        ) or initial_cash_override <= 0:
             raise ShadowResearchRejected("baseline_initial_cash_override_invalid")
         return float(initial_cash_override)
     return (
@@ -765,6 +825,7 @@ def _verify_and_load_baseline_market_truth(
     initial_cash: float,
     market_universe_snapshot: Mapping[str, Any] | None,
     replay_policy: Mapping[str, Any] | None = None,
+    as_of: datetime | None = None,
 ) -> tuple[dict[str, Any], Any, dict[str, pd.DataFrame]]:
     try:
         trading_dates = verified_trading_dates(
@@ -795,16 +856,29 @@ def _verify_and_load_baseline_market_truth(
             raise MarketUniverseRejected("research_daily_provider_ambiguous")
         receipts = complete_chains[0]
         market_binding = research_market_binding(receipts)
-        market_frames = load_research_market_frames(
-            store._root,
-            binding=market_binding,
-            symbols=[
-                str(item["symbol"])
-                for item in (market_universe_snapshot or {}).get("members", [])
-            ],
-            start_date=start_date,
-            end_date=market_date,
-        )
+        symbols = [
+            str(item["symbol"])
+            for item in (market_universe_snapshot or {}).get("members", [])
+        ]
+        if replay_policy is None:
+            from data.research_market_data import complete_research_market_binding
+
+            market_binding, market_frames = complete_research_market_binding(
+                store._root,
+                binding=market_binding,
+                symbols=symbols,
+                start_date=start_date,
+                end_date=market_date,
+                as_of=as_of or datetime.now(timezone.utc),
+            )
+        else:
+            market_frames = load_research_market_frames(
+                store._root,
+                binding=market_binding,
+                symbols=symbols,
+                start_date=start_date,
+                end_date=market_date,
+            )
         policy_rules = (
             MarketUniversePolicy.from_dict(replay_policy)
             if replay_policy
