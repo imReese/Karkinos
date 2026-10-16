@@ -149,7 +149,7 @@ def supervise(
     environment: dict[str, str],
     *,
     health_url: str | None = None,
-    startup_timeout: float = 60,
+    startup_timeout: float = 180,
 ) -> int:
     children: list[subprocess.Popen] = []
     interrupted = 0
@@ -279,7 +279,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--startup-timeout",
         type=float,
-        default=os.environ.get("KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS", "60"),
+        default=os.environ.get("KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS", "180"),
     )
     parser.add_argument(
         "--prepare-only",

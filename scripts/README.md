@@ -39,6 +39,12 @@ Behavior:
 * Background runtimes start in an independent session so closing the launcher
   session does not terminate the runtime manager.
 
+Source startup waits up to 180 seconds for readiness by default. Override
+`KARKINOS_STARTUP_HEALTH_TIMEOUT_SECONDS` for a measured local startup need
+(development accepts at most 300 seconds). Database preparation checks whole-file
+integrity before starting writers; ordinary DataStore attachments recheck schema
+and provenance constraints without repeating that scan for every consumer.
+
 Refresh a remote branch explicitly when needed:
 
 ```bash
