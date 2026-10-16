@@ -7,6 +7,9 @@ from unittest.mock import Mock
 
 import pytest
 
+from data.market.capture import capture_provider_payload, read_provider_capture
+from data.market.ingestion import DailyBarIngestionCapturedFailure
+from data.storage.objects import ContentAddressedObjectStore
 from server.contracts.market_calendar import MarketCalendarAutomationPublication
 from server.db import AppDatabase
 from server.persistence.jobs import SQLiteJobStore
@@ -19,6 +22,7 @@ from server.persistence.market_daily_call_budget import (
 )
 from server.services.verified_daily_market_data import (
     VerifiedDailyMarketDataNotPublishable,
+    VerifiedDailyMarketDataUnavailable,
     VerifiedDailySourceResolution,
 )
 from server.workers.data_worker import (
@@ -33,6 +37,65 @@ from server.workers.data_worker import (
 )
 from server.workers.presence import run_with_presence
 from server.workers.supervisor import supervised_worker
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("reported_code", "expected_code"),
+    [
+        ("baostock_response_number_missing", "baostock_response_number_missing"),
+        (
+            "baostock_response_number_missing:close",
+            "baostock_response_number_missing:close",
+        ),
+        (
+            "baostock_response_adjustflag_invalid",
+            "baostock_response_adjustflag_invalid",
+        ),
+        (
+            "baostock_response_number_missing:close?token=private",
+            "daily_bar_ingestion_failed_after_capture",
+        ),
+        (None, "daily_bar_ingestion_failed_after_capture"),
+    ],
+)
+async def test_verified_worker_retains_captured_parse_failure_without_sdk_error_text(
+    tmp_path, reported_code, expected_code
+):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = SQLiteJobStore(db.path)
+    now = datetime.now(timezone.utc)
+    objects = ContentAddressedObjectStore(tmp_path / "research" / "objects")
+    raw = b'{"rows":[["2026-01-05","sz000001","0",""]]}'
+    capture = capture_provider_payload(
+        objects,
+        provider="baostock",
+        operation="daily_bars",
+        request={"symbol": "000001"},
+        raw_payload=raw,
+        payload_format="fixture.sdk.rows.v1",
+        adapter_version="fixture.v1",
+        started_at=now,
+        completed_at=now,
+        record_count=1,
+    )
+    store.enqueue(VERIFIED_DAILY_MARKET_JOB, {"fixture": "failed_parse"}, now=now)
+    job = store.claim(VERIFIED_DAILY_MARKET_JOB, "fixture", now=now)
+    failure = DailyBarIngestionCapturedFailure(capture)
+    failure.public_error_code = reported_code
+    service = Mock()
+    service.run.side_effect = failure
+
+    await execute_verified_daily_market_job(store, job, service)
+
+    saved = store.get(job.job_id)
+    assert saved.status == "queued"
+    assert saved.result_ref is None
+    assert saved.error == expected_code
+    assert saved.failure_evidence_ref == f"capture:{capture.capture_id}"
+    reopened = read_provider_capture(objects, objects.resolve_ref(capture.capture_id))
+    assert objects.read_bytes(reopened.raw_object_ref) == raw
 
 
 def test_expired_worker_cannot_publish_even_before_replacement_claims(tmp_path):
@@ -611,6 +674,7 @@ async def test_verified_market_worker_records_fail_closed_source_resolution(tmp_
     service.run.side_effect = VerifiedDailyMarketDataNotPublishable(
         "verified_daily_market_cross_source_conflict",
         source_resolution=resolution,
+        failure_evidence_ref="verification:sha256:" + "d" * 64,
     )
 
     recorded: list[dict[str, object]] = []
@@ -629,6 +693,120 @@ async def test_verified_market_worker_records_fail_closed_source_resolution(tmp_
 
     replay = store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
     assert replay.status == "queued"
+    assert replay.error == "verified_daily_market_cross_source_conflict"
+    assert replay.failure_evidence_ref == "verification:sha256:" + "d" * 64
+
+
+@pytest.mark.asyncio
+async def test_verified_unavailable_defers_without_spending_failure_allowance_or_refunding_io(
+    tmp_path, monkeypatch
+):
+    from data.providers.baostock import BAOSTOCK_DAILY_BAR_DESCRIPTOR
+
+    tick = [datetime(2026, 10, 16, 0, 0, tzinfo=timezone.utc)]
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return (
+                tick[0].astimezone(tz)
+                if tz is not None
+                else tick[0].replace(tzinfo=None)
+            )
+
+    monkeypatch.setattr("server.workers.data_worker.datetime", Clock)
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = SQLiteJobStore(db.path)
+    payload = {"fixture": "external-unavailable-then-quality-conflict"}
+    queued = store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=tick[0])
+    failure = [
+        VerifiedDailyMarketDataUnavailable(
+            "verified_daily_market_sources_unavailable:baostock"
+        )
+    ]
+
+    def run(_payload, *, before_provider_fetch, **_):
+        before_provider_fetch(BAOSTOCK_DAILY_BAR_DESCRIPTOR)
+        raise failure[0]
+
+    service = SimpleNamespace(run=run)
+    history = []
+    for attempt in range(1, 8):
+        if attempt == 5:
+            failure[0] = VerifiedDailyMarketDataNotPublishable(
+                "verified_daily_market_cross_source_conflict",
+                failure_evidence_ref="verification:sha256:" + "d" * 64,
+            )
+        job = store.claim(
+            VERIFIED_DAILY_MARKET_JOB, "same-worker", now=tick[0], job_id=queued.job_id
+        )
+        assert job is not None and job.attempt == attempt
+        if history:
+            # A deferral cannot give an old thread the current worker's lease.
+            with pytest.raises(ValueError, match="job_lease_lost"):
+                store.fail(
+                    history[-1],
+                    now=tick[0],
+                    error="stale",
+                    preserve_retry_allowance=True,
+                )
+        history.append(job.lease)
+        await execute_verified_daily_market_job(
+            store,
+            job,
+            service,
+            heartbeat_interval=60,
+            before_provider_fetch=lambda descriptor: reserve_market_daily_provider_call(
+                db.path, job.lease, descriptor, now=tick[0]
+            ),
+        )
+        persisted = store.get(job.job_id)
+        assert persisted.attempt == attempt
+        assert (
+            persisted.payload == payload
+            and persisted.input_fingerprint == queued.input_fingerprint
+        )
+        budget = market_daily_provider_call_budget_status(db.path, now=tick[0])
+        assert budget["groups"]["baostock"] == {
+            "used": attempt,
+            "limit": 100,
+            "remaining": 100 - attempt,
+        }
+        assert persisted.status == ("failed" if attempt == 7 else "queued")
+        if attempt <= 4:
+            assert persisted.error == "VerifiedDailyMarketDataUnavailable"
+        else:
+            assert persisted.error == "verified_daily_market_cross_source_conflict"
+        later = datetime.fromisoformat(persisted.available_at)
+        assert (later - tick[0]).total_seconds() == min(
+            60 * 2 ** min(attempt - 1, 6), 3600
+        )
+        assert (
+            store.claim(
+                VERIFIED_DAILY_MARKET_JOB, "early", now=tick[0], job_id=job.job_id
+            )
+            is None
+        )
+        tick[0] = later
+        store = SQLiteJobStore(db.path)
+    assert (
+        store.claim(
+            VERIFIED_DAILY_MARKET_JOB, "restarted", now=tick[0], job_id=queued.job_id
+        )
+        is None
+    )
+    assert (
+        store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=tick[0]).status
+        == "failed"
+    )
+    with pytest.raises(ValueError, match="job_lease_lost"):
+        store.fail(
+            history[-1],
+            now=tick[0],
+            error="do-not-revive-terminal",
+            preserve_retry_allowance=True,
+        )
 
 
 @pytest.mark.asyncio

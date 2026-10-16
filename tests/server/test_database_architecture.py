@@ -136,7 +136,7 @@ def test_unit_of_work_boundaries_remain_explicit() -> None:
     expected = {
         "ai_shadow_research_uow.py": 1,
         "analysis_reviews.py": 1,
-        "automation_runs.py": 4,  # Includes fresh opt-in admission of CA Dataset candidates.  # Policy CAS, status and fenced Dataset publication.
+        "automation_runs.py": 5,  # Policy CAS, status, fenced Dataset publication, CA admission and pending seed revision.
         "broker_connector_soak.py": 1,
         "controlled_broker_cancellation_uow.py": 4,
         "controlled_broker_write_releases.py": 2,
@@ -188,6 +188,7 @@ def test_unit_of_work_boundaries_remain_explicit() -> None:
         "research_paper_books.py": 1,
         "reviewed_fee_schedule_reviews.py": 1,
         "runtime_controls.py": 1,
+        "valuation_publication_recovery.py": 1,  # Re-proven incident disposition and receipt commit.
         "signal_journal.py": 1,  # Source authority and signal/task batch commit.
         "strategy_research_uow.py": 1,
     }

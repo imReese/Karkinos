@@ -67,14 +67,36 @@ def _finish(
     success=1,
     failure=0,
     at="2026-09-04T15:03:00+08:00",
+    legacy_incident=False,
 ):
-    return db.finish_quote_fetch_run(
+    result = db.finish_quote_fetch_run(
         run_id=run_id,
         finished_at=at,
         status=status,
         success_count=success,
         failure_count=failure,
     )
+    if legacy_incident:
+        _legacy_acquisition_failure(db, run_id)
+    return result
+
+
+def _legacy_acquisition_failure(db, run_id):
+    """Reopen the old false-incident format without changing current producers."""
+    from server.persistence.financial_facts_valuation import (
+        record_valuation_publication_failure_on_connection,
+    )
+
+    run = db.get_quote_fetch_run(run_id)
+    with sqlite3.connect(db.path) as conn:
+        conn.row_factory = sqlite3.Row
+        record_valuation_publication_failure_on_connection(
+            conn,
+            updated_at=run["finished_at"],
+            reason="quote_fetch_run_not_fully_successful",
+            quote_fetch_run_id=run_id,
+            quote_fetch_run_status=run["status"],
+        )
 
 
 def _stage_close_conflict(db, symbols=("600001", "600002")):
@@ -377,6 +399,21 @@ def test_partial_failure_survives_restart_and_unrelated_success(tmp_path):
     _run(db, "partial", ["600001", "600002"])
     db.persist_quote_ingestion_sync(replace(_quote(run="partial"), price=11))
     _finish(db, "partial", status="partial_success", failure=1)
+    # Reopen a legacy false incident, rather than asking the current staged-only
+    # acquisition producer to manufacture a financial publication failure.
+    from server.persistence.financial_facts_valuation import (
+        record_valuation_publication_failure_on_connection,
+    )
+
+    with sqlite3.connect(db.path) as conn:
+        conn.row_factory = sqlite3.Row
+        record_valuation_publication_failure_on_connection(
+            conn,
+            updated_at="2026-09-04T15:03:00+08:00",
+            reason="quote_fetch_run_not_fully_successful",
+            quote_fetch_run_id="partial",
+            quote_fetch_run_status="partial_success",
+        )
     assert db.get_latest_quote_sync("600001", "stock")["price"] == 10.5
     assert (
         current_valuation_snapshot(SimpleNamespace(db=db))["snapshot_id"]
@@ -524,7 +561,9 @@ def test_partial_mixed_run_retains_exact_typed_request_scope(tmp_path):
             "instrument_types": ["etf", "open_end_fund"],
         },
     )
-    _finish(db, "mixed-failure", status="failed", success=0, failure=2)
+    _finish(
+        db, "mixed-failure", status="failed", success=0, failure=2, legacy_incident=True
+    )
     with sqlite3.connect(db.path) as conn:
         assert affected_publications(conn, {("open_end_fund", "000001")})
         assert affected_publications(conn, {("etf", "510300")})
@@ -744,7 +783,14 @@ def test_unrelated_failed_publication_does_not_block_verified_holdings(tmp_path)
     )
     db.publish_current_valuation_snapshot_sync(now=NOW)
     _run(db, "unrelated-failure", ["600002"])
-    _finish(db, "unrelated-failure", status="failed", success=0, failure=1)
+    _finish(
+        db,
+        "unrelated-failure",
+        status="failed",
+        success=0,
+        failure=1,
+        legacy_incident=True,
+    )
     before = db.get_runtime_control_sync("valuation_snapshot_publication")
     status = build_system_readiness(db.path, now=NOW)
     assert status["subsystems"]["market_data"]["status"] == "degraded"
@@ -774,7 +820,14 @@ def test_legacy_failed_current_pointer_survives_startup_republication(tmp_path):
         asset_class="stock",
     )
     _run(db, "legacy-failure", ["600001"])
-    _finish(db, "legacy-failure", status="failed", success=0, failure=1)
+    _finish(
+        db,
+        "legacy-failure",
+        status="failed",
+        success=0,
+        failure=1,
+        legacy_incident=True,
+    )
     failure = db.get_runtime_control_sync("valuation_snapshot_publication_attempt")
     with sqlite3.connect(db.path) as conn:
         conn.execute(
@@ -1000,7 +1053,7 @@ def test_legacy_incident_has_no_inferred_fact_binding(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     _run(db, "legacy", ["600001"])
-    _finish(db, "legacy", status="failed", success=0, failure=1)
+    _finish(db, "legacy", status="failed", success=0, failure=1, legacy_incident=True)
     with sqlite3.connect(db.path) as conn:
         incident = affected_publications(conn, {("stock", "600001")})[0]
     result = preview_daily_close_recovery(

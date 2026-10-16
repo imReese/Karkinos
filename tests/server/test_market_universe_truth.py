@@ -11,9 +11,80 @@ from server.services.market_universe_truth import (
     MarketUniversePolicy,
     MarketUniverseRejected,
     build_market_universe_truth,
+    market_master_buy_instruments,
     normalize_a_share_members,
     preliminary_research_panel_symbols,
 )
+
+
+def test_new_master_applies_observed_listing_status_and_dates_without_guessing(
+    tmp_path,
+):
+    from datetime import timezone
+
+    store = DataStore(tmp_path)
+    symbols = [f"60000{index}" for index in range(8)]
+    now = datetime(2026, 8, 24, 8, tzinfo=timezone.utc)
+    master = store.save_market_universe_snapshot(
+        trade_date="2026-08-21",
+        provider_name="fixture",
+        members=normalize_a_share_members(symbols),
+        capture_started_at=now,
+        capture_completed_at=now,
+        source_metadata=[
+            {
+                "symbol": symbols[0],
+                "display_name": "正常股票",
+                "list_status": "L",
+                "list_date": "20200821",
+            },
+            {"symbol": symbols[1], "display_name": "历史公司", "list_status": "D"},
+            {"symbol": symbols[2], "display_name": "暂缓上市", "list_status": "P"},
+            {
+                "symbol": symbols[3],
+                "display_name": "下日上市",
+                "list_status": "L",
+                "list_date": "20260824",
+            },
+            # Missing status/date keeps the previously supported observed-name
+            # path; missing price rows never become inactive-listing evidence.
+            {"symbol": symbols[4], "display_name": "状态未提供"},
+            {
+                "symbol": symbols[5],
+                "display_name": "同日上市",
+                "list_status": "L",
+                "list_date": "20260821",
+            },
+            {
+                "symbol": symbols[6],
+                "display_name": "拟合并公司",
+                "list_status": "D",
+                "delist_date": "20260824",
+            },
+            {
+                "symbol": symbols[7],
+                "display_name": "当日退市",
+                "list_status": "L",
+                "delist_date": "20260821",
+            },
+        ],
+    )
+    policy = MarketUniversePolicy(minimum_master_member_count=1)
+    assert [key.symbol for key in market_master_buy_instruments(master, policy)] == [
+        symbols[0],
+        symbols[4],
+        symbols[5],
+        symbols[6],
+    ]
+    assert len(master["members"]) == 8
+    assert (
+        len(market_master_buy_instruments(master, MarketUniversePolicy.legacy())) == 8
+    )
+    assert all("delist_date" not in row for row in master["member_metadata"][:6])
+    assert master["member_metadata"][-2]["delist_date"] == "2026-08-24"
+    assert (
+        store.get_market_universe_snapshot(snapshot_id=master["snapshot_id"]) == master
+    )
 
 
 def _symbols() -> list[str]:

@@ -33,6 +33,7 @@ from data.market.cross_source import (
     ingest_cross_source_daily_bars,
     ingest_cross_source_daily_bars_range,
 )
+from data.market.ingestion import DailyBarIngestionResult
 from data.market.quality import RESEARCH_STRICT_DAILY
 from data.market.serving import MarketServingStore
 from data.source_policy import resolve_market_source_policy
@@ -96,8 +97,10 @@ class VerifiedDailyMarketDataNotPublishable(VerifiedDailyMarketDataError):
         code: str,
         *,
         source_resolution: VerifiedDailySourceResolution | None = None,
+        failure_evidence_ref: str | None = None,
     ) -> None:
         self.source_resolution = source_resolution
+        self.failure_evidence_ref = failure_evidence_ref
         super().__init__(code)
 
 
@@ -452,6 +455,7 @@ class VerifiedDailyMarketDataService:
         selected_pair = None
         unavailable_providers: set[str] = set()
         attempted_pairs: list[tuple[str, str]] = []
+        ingestion_cache: dict[tuple[object, ...], DailyBarIngestionResult] = {}
         for pair in pairs:
             if {
                 pair.primary_name,
@@ -470,6 +474,7 @@ class VerifiedDailyMarketDataService:
                     reconciliation_policy=pair.reconciliation_policy,
                     checked_at=checked_at,
                     before_fetch=before_provider_fetch,
+                    ingestion_cache=ingestion_cache,
                 )
             except CrossSourceDailyBarUnavailableError as exc:
                 unavailable_providers.add(exc.provider)
@@ -483,6 +488,9 @@ class VerifiedDailyMarketDataService:
                 )
                 raise VerifiedDailyMarketDataNotPublishable(
                     _not_publishable_code(candidate_evidence),
+                    failure_evidence_ref=_not_publishable_evidence_ref(
+                        candidate_evidence
+                    ),
                     source_resolution=VerifiedDailySourceResolution(
                         source_policy_id=policy.policy_id,
                         outcome=outcome,
@@ -613,6 +621,9 @@ class VerifiedDailyMarketDataService:
         attempted: list[tuple[str, str]] = []
         evidence_rows: tuple[CrossSourceDailyBarResult, ...] = ()
         selected_pair = None
+        ingestion_cache: dict[
+            tuple[object, ...], tuple[DailyBarIngestionResult, ...]
+        ] = {}
         for pair in pairs:
             if {pair.primary_name, pair.comparison_name} & unavailable:
                 continue
@@ -629,6 +640,7 @@ class VerifiedDailyMarketDataService:
                     reconciliation_policy=pair.reconciliation_policy,
                     checked_at=checked_at,
                     before_fetch=before_provider_fetch,
+                    ingestion_cache=ingestion_cache,
                 )
             except CrossSourceDailyBarUnavailableError as exc:
                 unavailable.add(exc.provider)
@@ -637,6 +649,7 @@ class VerifiedDailyMarketDataService:
                 if not row.eligible_for_verified_dataset:
                     raise VerifiedDailyMarketDataNotPublishable(
                         _not_publishable_code(row),
+                        failure_evidence_ref=_not_publishable_evidence_ref(row),
                         source_resolution=VerifiedDailySourceResolution(
                             policy.policy_id,
                             "quality_blocked"
@@ -660,13 +673,127 @@ class VerifiedDailyMarketDataService:
                     tuple(sorted(unavailable)),
                 ),
             )
+        return self._publish_range_evidence(
+            request,
+            store=store,
+            expected=expected,
+            evidence_rows=evidence_rows,
+            pair=selected_pair,
+            source_policy_id=policy.policy_id,
+            source_resolution=VerifiedDailySourceResolution(
+                policy.policy_id,
+                "matched",
+                tuple(attempted),
+                tuple(sorted(unavailable)),
+                (selected_pair.primary_name, selected_pair.comparison_name),
+            ),
+            before_publish=before_publish,
+            publication_guard=publication_guard,
+        )
+
+    def reverify_captured_range(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        verification_ids: tuple[str, ...],
+        checked_at: datetime,
+        before_publish: Callable[[], None] | None = None,
+        publication_guard: Callable[[Callable[[], None]], None] | None = None,
+    ) -> VerifiedDailyMarketPublication:
+        """Explicitly re-evaluate original captures, with no provider I/O."""
+        from data.market.cross_source import reverify_captured_daily_bar_evidence
+        from data.market.verification_evidence import read_market_verification_evidence
+
+        request = VerifiedDailyMarketJobRequest.from_payload(payload)
+        if not request.is_range or not verification_ids:
+            raise VerifiedDailyMarketDataRequestError(
+                "captured_reverification_range_required"
+            )
+        daily_request = DailyBarRequest(
+            request.instruments, request.range_start_date, request.range_end_date
+        )
+        expected = {
+            day: members for day, members, _ in request.session_memberships if members
+        }
+        policy = resolve_market_source_policy(request.source_policy_id)
+        store = ContentAddressedObjectStore(self.root / "objects")
+        original = read_market_verification_evidence(
+            store, store.resolve_ref(verification_ids[0])
+        )
+        pairs = resolve_daily_bar_verification_pairs(
+            policy,
+            provider_registry_for_config(self._config, include_tdx=False),
+            daily_request,
+        )
+        pair = next(
+            (
+                candidate
+                for candidate in pairs
+                if (candidate.primary_name, candidate.comparison_name)
+                == (
+                    original.report.primary_provider,
+                    original.report.comparison_provider,
+                )
+            ),
+            None,
+        )
+        if pair is None:
+            raise VerifiedDailyMarketDataRequestError(
+                "captured_reverification_pair_not_allowed"
+            )
+        rows = reverify_captured_daily_bar_evidence(
+            store,
+            verification_ids=verification_ids,
+            request=daily_request,
+            expected_sessions=expected,
+            primary_descriptor=pair.primary.descriptor,
+            comparison_descriptor=pair.comparison.descriptor,
+            reconciliation_policy=pair.reconciliation_policy,
+            checked_at=_utc_now(checked_at),
+        )
+        for row in rows:
+            if not row.eligible_for_verified_dataset:
+                raise VerifiedDailyMarketDataNotPublishable(
+                    _not_publishable_code(row),
+                    failure_evidence_ref=_not_publishable_evidence_ref(row),
+                )
+        return self._publish_range_evidence(
+            request,
+            store=store,
+            expected=expected,
+            evidence_rows=rows,
+            pair=pair,
+            source_policy_id=policy.policy_id,
+            source_resolution=VerifiedDailySourceResolution(
+                policy.policy_id,
+                "captured_reverified",
+                (),
+                (),
+                (pair.primary_name, pair.comparison_name),
+            ),
+            before_publish=before_publish,
+            publication_guard=publication_guard,
+        )
+
+    def _publish_range_evidence(
+        self,
+        request,
+        *,
+        store,
+        expected,
+        evidence_rows,
+        pair,
+        source_policy_id,
+        source_resolution,
+        before_publish,
+        publication_guard,
+    ):
         if len(evidence_rows) != len(expected):
             raise VerifiedDailyMarketDataError(
                 "verified_daily_market_range_coverage_mismatch"
             )
-        pair = selected_pair
         resolver_policy = DailyBarDatasetResolverPolicy(
-            policy_id=verified_daily_resolver_policy_id(policy.policy_id),
+            policy_id=verified_daily_resolver_policy_id(source_policy_id),
             provider_priority=(pair.primary_name, pair.comparison_name),
             required_quality_policy_id=RESEARCH_STRICT_DAILY.policy_id,
         )
@@ -744,16 +871,10 @@ class VerifiedDailyMarketDataService:
             dataset_ref=ref,
             verification_id=evidence_rows[-1].verification.verification_id,
             trade_date=request.trade_date,
-            source_policy_id=policy.policy_id,
+            source_policy_id=source_policy_id,
             primary_provider=pair.primary_name,
             comparison_provider=pair.comparison_name,
-            source_resolution=VerifiedDailySourceResolution(
-                policy.policy_id,
-                "matched",
-                tuple(attempted),
-                tuple(sorted(unavailable)),
-                (pair.primary_name, pair.comparison_name),
-            ),
+            source_resolution=source_resolution,
         )
 
 
@@ -782,6 +903,17 @@ def _not_publishable_code(result: CrossSourceDailyBarResult) -> str:
     if result.verification is None:
         return "verified_daily_market_quality_blocked"
     return "verified_daily_market_cross_source_conflict"
+
+
+def _not_publishable_evidence_ref(result: CrossSourceDailyBarResult) -> str:
+    if result.verification is not None:
+        return f"verification:{result.verification.verification_id}"
+    blocked = next(
+        quality
+        for quality in (result.primary_quality, result.comparison_quality)
+        if quality.report.blocks_publication
+    )
+    return f"quality:{blocked.quality_id}"
 
 
 def _utc_now(value: datetime | None) -> datetime:

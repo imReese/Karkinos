@@ -16,6 +16,7 @@ from core.types import AssetClass, BarFrequency, Symbol
 from data.manager import build_sources_for_config
 from data.source_policy import MarketDataUseCase
 from data.source_routing import configured_legacy_provider_names
+from data.storage.objects import ContentAddressedObjectStore
 from data.store import DataStore
 from server.bootstrap import resolve_data_dir
 from server.release_activation import wait_for_release_activation
@@ -33,7 +34,7 @@ from server.services.market_universe_truth import (
 
 logger = logging.getLogger(__name__)
 
-MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION = "karkinos.market_universe_automation.v5"
+MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION = "karkinos.market_universe_automation.v6"
 MARKET_UNIVERSE_AUTOMATION_RUN_TYPE = "market_universe_sync"
 MARKET_UNIVERSE_AUTOMATION_INTERVAL_SECONDS = 60 * 60
 
@@ -137,27 +138,49 @@ class MarketUniverseAutomationService:
                 },
             )
         run_id = (
-            "market_universe_sync:v5:"
+            "market_universe_sync:v6:"
             f"{master_provider_name}:{daily_provider_name}:{trade_date}"
         )
         existing = self._db.get_automation_run_sync(run_id)
         if existing and str(existing.get("status")) == "completed":
             return existing
+        if existing and str(existing.get("status")) == "failed":
+            payload = json.loads(existing.get("payload_json") or "{}")
+            previous_master = payload.get("market_universe_snapshot_id")
+            latest_master = self._data_store.get_market_universe_snapshot(
+                trade_date=trade_date, provider_name=master_provider_name
+            )
+            repaired_master = bool(
+                latest_master
+                and latest_master.get("source_capture_ids")
+                and latest_master.get("snapshot_id") != previous_master
+            )
+            finished = datetime.fromisoformat(str(existing["finished_at"]))
+            if not repaired_master and (
+                payload.get("retryable") is False
+                or current
+                < finished
+                + timedelta(seconds=MARKET_UNIVERSE_AUTOMATION_INTERVAL_SECONDS)
+            ):
+                return existing
 
         stock_master_metadata_fetched = False
         stock_master_useful_name_count = 0
         instrument_metadata_persisted_count = 0
         symbol_metadata: Any = None
+        source_capture_ids = None
+        snapshot: dict[str, Any] | None = None
         try:
-            snapshot: dict[str, Any] | None = (
-                self._data_store.get_market_universe_snapshot(
-                    trade_date=trade_date,
-                    provider_name=master_provider_name,
-                )
+            snapshot = self._data_store.get_market_universe_snapshot(
+                trade_date=trade_date,
+                provider_name=master_provider_name,
             )
             provider_contacted = False
             metadata_lister = getattr(
                 self._security_master_source, "list_symbol_metadata", None
+            )
+            capture_lister = getattr(
+                self._security_master_source, "capture_symbol_metadata", None
             )
             if (
                 snapshot is None
@@ -171,12 +194,25 @@ class MarketUniverseAutomationService:
                     == "karkinos.market_universe_snapshot.v2"
                     and callable(metadata_lister)
                 )
+                or (callable(capture_lister) and not snapshot.get("source_capture_ids"))
             ):
                 capture_started_at = self._capture_clock()
                 metadata_lister = getattr(
                     self._security_master_source, "list_symbol_metadata", None
                 )
-                if callable(metadata_lister):
+                if callable(capture_lister):
+                    (
+                        symbol_metadata,
+                        source_capture_ids,
+                        capture_started_at,
+                        capture_completed_at,
+                    ) = capture_lister(
+                        ContentAddressedObjectStore(
+                            self._data_store._root / "research" / "objects"
+                        ),
+                        trade_date=trade_date,
+                    )
+                elif callable(metadata_lister):
                     symbol_metadata = metadata_lister()
                 if symbol_metadata is None:
                     symbols = self._security_master_source.list_symbols()
@@ -187,7 +223,8 @@ class MarketUniverseAutomationService:
                         for item in symbol_metadata
                         if isinstance(item, Mapping)
                     ]
-                capture_completed_at = self._capture_clock()
+                if source_capture_ids is None:
+                    capture_completed_at = self._capture_clock()
                 provider_contacted = True
                 normalized_members = normalize_a_share_members(symbols)
                 if len(normalized_members) < self._policy.minimum_master_member_count:
@@ -223,6 +260,7 @@ class MarketUniverseAutomationService:
                     capture_started_at=capture_started_at,
                     capture_completed_at=capture_completed_at,
                     source_metadata=symbol_metadata,
+                    source_capture_ids=source_capture_ids,
                 )
             snapshot = require_complete_market_universe_snapshot(
                 snapshot,
@@ -336,52 +374,14 @@ class MarketUniverseAutomationService:
                         trading_dates=missing_dates,
                     )
 
-            receipts = self._data_store.list_market_daily_ingestion_receipts(
-                start_date=start_date.isoformat(),
-                end_date=trade_date,
-                provider_name=daily_provider_name,
+            coverage = self._history_coverage(
+                start_date=start_date,
+                trade_date=trade_date,
+                daily_provider_name=daily_provider_name,
+                trading_dates=trading_dates,
+                members=members,
             )
-            receipt_dates = {str(item["trade_date"]) for item in receipts}
-            frames = self._data_store.load_market_bar_windows(
-                symbols=members,
-                start_date=start_date.isoformat(),
-                end_date=trade_date,
-                receipts=receipts,
-            )
-            ready = sum(
-                1
-                for frame in frames.values()
-                if _frame_window_ready(
-                    frame,
-                    end_date=trade_date,
-                    minimum_rows=self._policy.minimum_history_rows,
-                )
-            )
-            blockers: list[str] = []
-            missing_receipt_dates = sorted(set(trading_dates) - receipt_dates)
-            if missing_receipt_dates:
-                blockers.append("full_market_daily_receipt_coverage_incomplete")
-            end_receipt: Mapping[str, Any] = next(
-                (
-                    item
-                    for item in receipts
-                    if str(item.get("trade_date") or "") == trade_date
-                ),
-                {},
-            )
-            end_cross_section_count = int(end_receipt.get("row_count") or 0)
-            minimum_end_cross_section_count = max(
-                self._policy.panel_size,
-                int(len(members) * 0.9),
-            )
-            minimum_ready_count = max(
-                self._policy.panel_size,
-                int(len(members) * 0.8),
-            )
-            if end_cross_section_count < minimum_end_cross_section_count:
-                blockers.append("full_market_latest_cross_section_incomplete")
-            if ready < minimum_ready_count:
-                blockers.append("full_market_persisted_bar_coverage_incomplete")
+            blockers = coverage["blockers"]
             status = "completed" if not blockers else "failed"
             return self._record_run(
                 run_id=run_id,
@@ -398,18 +398,7 @@ class MarketUniverseAutomationService:
                     ),
                     "verified_history_start_date": start_date.isoformat(),
                     "verified_trading_date_count": len(trading_dates),
-                    "full_market_daily_receipt_count": len(receipts),
-                    "full_market_missing_receipt_dates": missing_receipt_dates[:100],
-                    "full_market_missing_receipt_date_count": len(
-                        missing_receipt_dates
-                    ),
-                    "persisted_bar_ready_count": ready,
-                    "persisted_bar_excluded_count": len(members) - ready,
-                    "minimum_persisted_bar_ready_count": minimum_ready_count,
-                    "latest_cross_section_row_count": end_cross_section_count,
-                    "minimum_latest_cross_section_row_count": (
-                        minimum_end_cross_section_count
-                    ),
+                    **coverage,
                     "persisted_receipt_skipped_count": receipt_skipped,
                     "remote_bar_refresh_attempt_count": remote_attempted,
                     "bar_refresh_success_count": updated,
@@ -421,9 +410,6 @@ class MarketUniverseAutomationService:
                     "instrument_metadata_persisted_count": (
                         instrument_metadata_persisted_count
                     ),
-                    "full_market_history_frozen": not missing_receipt_dates,
-                    "blockers": blockers,
-                    "retryable": bool(blockers),
                 },
             )
         except Exception as exc:
@@ -439,15 +425,85 @@ class MarketUniverseAutomationService:
                         daily_provider_name,
                     ),
                     "trade_date": trade_date,
+                    "market_universe_snapshot_id": snapshot.get("snapshot_id")
+                    if snapshot
+                    else None,
                     "stock_master_metadata_fetched": stock_master_metadata_fetched,
                     "stock_master_useful_name_count": (stock_master_useful_name_count),
                     "instrument_metadata_persisted_count": (
                         instrument_metadata_persisted_count
                     ),
                     "error": {"type": type(exc).__name__, "message": str(exc)},
-                    "retryable": True,
+                    "retryable": not (
+                        isinstance(exc, ValueError)
+                        and str(exc).startswith("stock_master_")
+                        and not str(exc).endswith("unavailable")
+                    ),
                 },
             )
+
+    def _history_coverage(
+        self, *, start_date, trade_date, daily_provider_name, trading_dates, members
+    ):
+        receipts = self._data_store.list_market_daily_ingestion_receipts(
+            start_date=start_date.isoformat(),
+            end_date=trade_date,
+            provider_name=daily_provider_name,
+        )
+        receipt_dates = {str(item["trade_date"]) for item in receipts}
+        frames = self._data_store.load_market_bar_windows(
+            symbols=members,
+            start_date=start_date.isoformat(),
+            end_date=trade_date,
+            receipts=receipts,
+        )
+        ready = sum(
+            1
+            for frame in frames.values()
+            if _frame_window_ready(
+                frame,
+                end_date=trade_date,
+                minimum_rows=self._policy.minimum_history_rows,
+            )
+        )
+        blockers: list[str] = []
+        missing_receipt_dates = sorted(set(trading_dates) - receipt_dates)
+        if missing_receipt_dates:
+            blockers.append("full_market_daily_receipt_coverage_incomplete")
+        end_receipt: Mapping[str, Any] = next(
+            (
+                item
+                for item in receipts
+                if str(item.get("trade_date") or "") == trade_date
+            ),
+            {},
+        )
+        end_cross_section_count = int(end_receipt.get("row_count") or 0)
+        minimum_end_cross_section_count = max(
+            self._policy.panel_size,
+            int(len(members) * 0.9),
+        )
+        minimum_ready_count = max(
+            self._policy.panel_size,
+            int(len(members) * 0.8),
+        )
+        if end_cross_section_count < minimum_end_cross_section_count:
+            blockers.append("full_market_latest_cross_section_incomplete")
+        if ready < minimum_ready_count:
+            blockers.append("full_market_persisted_bar_coverage_incomplete")
+        return {
+            "full_market_daily_receipt_count": len(receipts),
+            "full_market_missing_receipt_dates": missing_receipt_dates[:100],
+            "full_market_missing_receipt_date_count": len(missing_receipt_dates),
+            "persisted_bar_ready_count": ready,
+            "persisted_bar_excluded_count": len(members) - ready,
+            "minimum_persisted_bar_ready_count": minimum_ready_count,
+            "latest_cross_section_row_count": end_cross_section_count,
+            "minimum_latest_cross_section_row_count": minimum_end_cross_section_count,
+            "full_market_history_frozen": not missing_receipt_dates,
+            "blockers": blockers,
+            "retryable": bool(blockers),
+        }
 
     def _base_payload(
         self,

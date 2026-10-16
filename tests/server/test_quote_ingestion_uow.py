@@ -320,12 +320,19 @@ def test_incomplete_quote_run_never_publishes_ready_valuation(
     assert _table_count(db.path, "latest_quotes") == 0
     assert _table_count(db.path, "valuation_snapshots") == 0
     publication = db.get_runtime_control_sync("valuation_snapshot_publication")
-    assert publication == {
-        "status": "failed",
+    assert publication is None
+    assert db.get_runtime_control_sync("valuation_snapshot_publication_attempt") == {
+        "status": "not_attempted",
         "quote_fetch_run_id": run_id,
         "quote_fetch_run_status": status,
-        "reason": "quote_fetch_run_not_fully_successful",
+        "reason": "quote_acquisition_failed_before_publication",
     }
+    from server.persistence.valuation_publication_recovery import (
+        unresolved_publications,
+    )
+
+    with sqlite3.connect(db.path) as conn:
+        assert unresolved_publications(conn) == []
     with pytest.raises(HTTPException) as blocked:
         current_valuation_snapshot(SimpleNamespace(db=db))
     assert blocked.value.status_code == 503
@@ -796,4 +803,109 @@ def test_cross_run_same_timestamp_quote_refresh_fails_closed_when_price_conflict
     assert (
         finished_2["error_message"]
         == "valuation snapshot publication failed: ValueError"
+    )
+
+
+def test_new_acquisition_failure_preserves_prior_unresolved_publication(tmp_path):
+    from server.persistence.valuation_publication_recovery import (
+        unresolved_publications,
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.persist_quote_ingestion_sync(_command(run_id=None))
+    _create_run(db, "actual-publication-conflict")
+    db.persist_quote_ingestion_sync(
+        _command(run_id="actual-publication-conflict", price=99)
+    )
+    terminal = db.finish_quote_fetch_run(
+        run_id="actual-publication-conflict",
+        finished_at="2026-08-26T10:00:02+08:00",
+        status="success",
+        success_count=1,
+    )
+    assert terminal["status"] == "failed"
+    with sqlite3.connect(db.path) as conn:
+        original = unresolved_publications(conn)
+    assert len(original) == 1
+    _create_run(db, "acquisition-failed-later")
+    db.finish_quote_fetch_run(
+        run_id="acquisition-failed-later",
+        finished_at="2026-08-26T10:00:03+08:00",
+        status="failed",
+        failure_count=1,
+    )
+    with sqlite3.connect(db.path) as conn:
+        assert unresolved_publications(conn) == original
+    assert (
+        db.get_runtime_control_sync("valuation_snapshot_publication_attempt")["status"]
+        == "not_attempted"
+    )
+    assert (
+        db.get_runtime_control_sync("valuation_snapshot_publication")["status"]
+        == "ready"
+    )
+
+
+@pytest.mark.parametrize(
+    "variant", ["unknown_contract", "published_reference", "pending"]
+)
+def test_unproven_acquisition_paths_keep_the_publication_fence(tmp_path, variant):
+    from server.persistence.valuation_publication_recovery import (
+        begin_quote_publication,
+        unresolved_publications,
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    if variant == "unknown_contract":
+        db.create_quote_fetch_run(
+            run_id="unsafe",
+            started_at="2026-08-26T10:00:00+08:00",
+            trigger="test",
+            provider="fixture",
+            asset_type="stock",
+            symbol_count=1,
+            status="running",
+            metadata="legacy-unstructured",
+        )
+    else:
+        _create_run(db, "unsafe")
+    if variant == "published_reference":
+        # The legacy direct-current writer remains detectable even when a new
+        # acquisition contract was initially recorded for this run.
+        db.upsert_latest_quote_sync(
+            symbol="600001",
+            asset_type="stock",
+            price=10.5,
+            quote_timestamp="2026-08-26T10:00:00+08:00",
+            fetch_run_id="unsafe",
+        )
+    elif variant == "pending":
+        with sqlite3.connect(db.path) as conn:
+            begin_quote_publication(
+                conn, run_id="unsafe", updated_at="2026-08-26T10:00:01+08:00"
+            )
+        with pytest.raises(RuntimeError, match="already unresolved"):
+            db.finish_quote_fetch_run(
+                run_id="unsafe",
+                finished_at="2026-08-26T10:00:02+08:00",
+                status="failed",
+                failure_count=1,
+            )
+        assert db.get_quote_fetch_run("unsafe")["status"] == "running"
+        with sqlite3.connect(db.path) as conn:
+            assert unresolved_publications(conn)[0]["status"] == "pending"
+        return
+    db.finish_quote_fetch_run(
+        run_id="unsafe",
+        finished_at="2026-08-26T10:00:02+08:00",
+        status="failed",
+        failure_count=1,
+    )
+    with sqlite3.connect(db.path) as conn:
+        assert len(unresolved_publications(conn)) == 1
+    assert (
+        db.get_runtime_control_sync("valuation_snapshot_publication_attempt")["status"]
+        == "failed"
     )

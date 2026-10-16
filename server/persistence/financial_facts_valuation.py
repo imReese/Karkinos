@@ -124,6 +124,28 @@ def _ready_publication_on_connection(conn: sqlite3.Connection) -> dict[str, Any]
     return value
 
 
+def record_quote_acquisition_failure_on_connection(
+    conn: sqlite3.Connection,
+    *,
+    updated_at: str,
+    quote_fetch_run_id: str,
+    quote_fetch_run_status: str,
+) -> None:
+    """Keep the failed refresh visible without inventing a publication attempt."""
+    preserve_publication_recovery(conn, updated_at=updated_at)
+    _upsert_runtime_control_on_connection(
+        conn,
+        key=VALUATION_PUBLICATION_ATTEMPT_CONTROL_KEY,
+        value={
+            "status": "not_attempted",
+            "reason": "quote_acquisition_failed_before_publication",
+            "quote_fetch_run_id": quote_fetch_run_id,
+            "quote_fetch_run_status": quote_fetch_run_status,
+        },
+        updated_at=updated_at,
+    )
+
+
 def record_valuation_publication_failure_on_connection(
     conn: sqlite3.Connection,
     *,

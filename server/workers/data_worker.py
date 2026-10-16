@@ -8,6 +8,7 @@ import json
 import logging
 import math
 import os
+import re
 import sqlite3
 import threading
 import uuid
@@ -18,6 +19,7 @@ from datetime import date, datetime, time, timezone
 from data.dataset.reader import daily_bar_dataset_read_scope
 from data.market.contracts import MarketDataProviderDescriptor
 from data.market.corporate_actions import CorporateActionObservationError
+from data.market.ingestion import DailyBarIngestionCapturedFailure
 from data.source_policy import (
     source_policy_for_config,
     verification_source_policy_for_config,
@@ -65,7 +67,9 @@ from server.services.research_observation_data_preparation import (
 )
 from server.services.verified_daily_market_data import (
     VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT,
+    VerifiedDailyMarketDataNotPublishable,
     VerifiedDailyMarketDataService,
+    VerifiedDailyMarketDataUnavailable,
     VerifiedDailyMarketJobRequest,
     VerifiedDailySourceResolution,
 )
@@ -699,7 +703,7 @@ async def _execute_daily_market_job(
         )
         try:
             now = datetime.now(timezone.utc)
-            retry_seconds = min(60 * 2 ** (job.attempt - 1), 3600)
+            retry_seconds = min(60 * 2 ** min(job.attempt - 1, 6), 3600)
             if isinstance(exc, CorporateActionObservationError):
                 store.fail(
                     job.lease,
@@ -707,6 +711,51 @@ async def _execute_daily_market_job(
                     error=str(exc),
                     retry_seconds=retry_seconds,
                     retryable=str(exc) != "tushare_dividend_response_may_be_truncated",
+                )
+            elif isinstance(exc, VerifiedDailyMarketDataUnavailable):
+                store.fail(
+                    job.lease,
+                    now=now,
+                    error=type(exc).__name__,
+                    retry_seconds=retry_seconds,
+                    preserve_retry_allowance=True,
+                )
+            elif isinstance(exc, VerifiedDailyMarketDataNotPublishable):
+                code = str(exc)
+                store.fail(
+                    job.lease,
+                    now=now,
+                    error=code
+                    if code
+                    in {
+                        "verified_daily_market_quality_blocked",
+                        "verified_daily_market_cross_source_conflict",
+                        "verified_daily_market_dataset_not_verification_bound",
+                        "verified_daily_market_range_dataset_not_verification_bound",
+                    }
+                    else type(exc).__name__,
+                    retry_seconds=retry_seconds,
+                    failure_evidence_ref=exc.failure_evidence_ref,
+                )
+            elif isinstance(exc, DailyBarIngestionCapturedFailure):
+                code = getattr(exc, "public_error_code", None)
+                safe_code = (
+                    code
+                    if isinstance(code, str)
+                    and re.fullmatch(
+                        r"baostock_response_(?:fields_invalid|row_invalid|row_width_invalid|"
+                        r"code_mismatch|adjustflag_invalid|tradestatus_invalid|iteration_failed|"
+                        r"number_(?:missing|invalid)(?::(?:open|high|low|close|volume|amount))?)",
+                        code,
+                    )
+                    else "daily_bar_ingestion_failed_after_capture"
+                )
+                store.fail(
+                    job.lease,
+                    now=now,
+                    error=safe_code,
+                    retry_seconds=retry_seconds,
+                    failure_evidence_ref=f"capture:{exc.capture.capture_id}",
                 )
             elif isinstance(exc, DailyMarketCollectionFailure):
                 store.fail(

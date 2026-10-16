@@ -182,6 +182,53 @@ def test_market_universe_automation_blocks_without_verified_calendar(tmp_path) -
     assert payload["blockers"] == ["verified_closed_trading_date_unavailable"]
 
 
+def test_failed_run_records_source_bound_master_and_does_not_bypass_backoff(
+    tmp_path, monkeypatch
+):
+    from server.services.market_universe_truth import MarketUniversePolicy
+    from tests.data.providers.test_official_stock_master import _bound
+    from tests.server.test_verified_interval_dataset import DAYS, NOW
+
+    _, _, master = _bound(tmp_path)
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    market = DataStore(tmp_path)
+    monkeypatch.setattr(
+        "server.services.market_universe_automation.latest_verified_closed_trading_date",
+        lambda *_a, **_kw: DAYS[-1].isoformat(),
+    )
+    monkeypatch.setattr(
+        "server.services.market_universe_automation.verified_trading_dates",
+        lambda *_a, **_kw: [day.isoformat() for day in DAYS],
+    )
+    attempts = []
+
+    def rejected(**kwargs):
+        attempts.append(kwargs)
+        raise ValueError("stock_master_fixture_invalid")
+
+    monkeypatch.setattr(market, "get_market_daily_ingestion_receipt", rejected)
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="akshare", tushare_token="", start_date=DAYS[0].isoformat()
+        ),
+        data_store=market,
+        source=_Source(),
+        policy=MarketUniversePolicy(
+            minimum_master_member_count=8, minimum_history_rows=2
+        ),
+        throttle_seconds=0,
+    )
+    first = service.run_due(now=NOW)
+    assert first["status"] == "failed"
+    payload = json.loads(first["payload_json"])
+    assert payload["market_universe_snapshot_id"] == master["snapshot_id"]
+    assert payload["retryable"] is False
+    assert service.run_due(now=NOW + timedelta(hours=2)) == first
+    assert len(attempts) == 1
+
+
 def test_market_universe_does_not_freeze_snapshot_before_name_batch_persists(
     tmp_path,
 ) -> None:
@@ -372,7 +419,7 @@ def test_market_universe_routes_security_master_and_daily_bars_separately(
     assert len(receipts) == 80
 
     payload = json.loads(result["payload_json"])
-    assert payload["schema_version"] == "karkinos.market_universe_automation.v5"
+    assert payload["schema_version"] == "karkinos.market_universe_automation.v6"
     assert payload["security_master_provider"] == "akshare"
     assert payload["daily_bar_provider"] == "tushare"
     assert payload["market_universe_snapshot_id"] == snapshot["snapshot_id"]

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -126,6 +127,143 @@ def _plan(db, *, members=None):
         historical_range=True,
         session_instruments=members,
     )
+
+
+def test_reverify_actual_capture_lineage_without_any_new_provider_call(
+    tmp_path, monkeypatch
+):
+    import pandas as pd
+
+    from data.market.capture import read_provider_raw_payload
+    from data.market.cross_source import ingest_cross_source_daily_bars_range
+    from data.market.quality import RESEARCH_STRICT_DAILY
+    from data.market.verification_evidence import read_market_verification_evidence
+    from data.providers.baostock import BaoStockDailyBarProvider
+    from data.providers.tushare import TushareDailyBarProvider
+    from tests.data.providers.test_baostock_daily import FakeBaoStock, FakeResult
+
+    class Bao(FakeBaoStock):
+        def query_history_k_data_plus(self, code, fields, **kwargs):
+            self.query_calls.append(code)
+            return FakeResult(
+                [
+                    [
+                        day.isoformat(),
+                        code,
+                        "10",
+                        "11",
+                        "9",
+                        "10",
+                        "10000",
+                        "100000.25",
+                        "3",
+                        "1",
+                    ]
+                    for day in DAYS
+                ]
+            )
+
+    class TuShare:
+        def __init__(self):
+            self.calls = []
+
+        def daily(self, **kwargs):
+            self.calls.append(kwargs)
+            return pd.DataFrame(
+                {
+                    "trade_date": [day.strftime("%Y%m%d") for day in DAYS],
+                    "open": [10] * 3,
+                    "high": [11] * 3,
+                    "low": [9] * 3,
+                    "close": [10] * 3,
+                    "vol": [100] * 3,
+                    "amount": [100] * 3,
+                }
+            )
+
+    bao, ts = Bao(), TuShare()
+    primary, comparison = (
+        BaoStockDailyBarProvider(bao, clock=lambda: NOW),
+        TushareDailyBarProvider(ts, clock=lambda: NOW),
+    )
+    registry = ProviderRegistry(
+        tuple(
+            ProviderRegistration(
+                name=p.descriptor.provider,
+                upstream_group=p.descriptor.upstream_group,
+                daily_bar_factory=lambda p=p: p,
+            )
+            for p in (primary, comparison)
+        )
+    )
+    monkeypatch.setattr(
+        "server.services.verified_daily_market_data.provider_registry_for_config",
+        lambda *_a, **_kw: registry,
+    )
+    db = _db(tmp_path, trading_days=DAYS)
+    job = _plan(db)[0]
+    planned = VerifiedDailyMarketJobRequest.from_payload(job.payload)
+    objects = ContentAddressedObjectStore(tmp_path / "research" / "objects")
+    original = ingest_cross_source_daily_bars_range(
+        primary,
+        comparison,
+        objects,
+        request=DailyBarRequest(STOCKS, DAYS[0], DAYS[-1]),
+        expected_sessions={day: STOCKS for day in DAYS},
+        quality_policy=RESEARCH_STRICT_DAILY,
+        normalizer_version="karkinos.market.normalize.v1",
+        checked_at=NOW,
+    )
+    ids = tuple(row.verification.verification_id for row in original)
+    assert all(row.verification_status == "conflict" for row in original)
+    counts = len(bao.query_calls), len(ts.calls)
+
+    def forbidden(*_a, **_kw):
+        raise AssertionError("reverification_must_not_fetch")
+
+    monkeypatch.setattr(bao, "query_history_k_data_plus", forbidden)
+    monkeypatch.setattr(ts, "daily", forbidden)
+    service = VerifiedDailyMarketDataService(tmp_path / "research", _config())
+    result = service.reverify_captured_range(
+        planned.to_payload(),
+        verification_ids=ids,
+        checked_at=NOW + timedelta(seconds=10),
+    )
+    restored = read_daily_bar_dataset(objects, result.dataset_ref)
+    assert restored.row_count == 6 and restored.snapshot.verification_bound
+    assert {bar.amount for bar in restored.bars} == {Decimal("100000.25")}
+    assert (len(bao.query_calls), len(ts.calls)) == counts
+    assert restored.snapshot.cutoff == NOW + timedelta(seconds=10)
+    assert result.source_resolution.outcome == "captured_reverified"
+    for evidence in original:
+        assert (
+            read_market_verification_evidence(
+                objects, evidence.verification.ref
+            ).status.value
+            == "conflict"
+        )
+        read_provider_raw_payload(objects, evidence.primary.capture)
+    with pytest.raises(ValueError, match="original_policy_or_time"):
+        service.reverify_captured_range(
+            planned.to_payload(),
+            verification_ids=ids,
+            checked_at=NOW - timedelta(seconds=1),
+        )
+    with pytest.raises(ValueError, match="session_coverage_mismatch"):
+        service.reverify_captured_range(
+            planned.to_payload(),
+            verification_ids=ids[:-1],
+            checked_at=NOW + timedelta(seconds=10),
+        )
+    raw_path = objects._path_for(original[0].primary.capture.raw_object_ref.object_id)
+    raw_path.chmod(0o644)
+    raw_path.write_bytes(b"corrupt")
+    with pytest.raises(Exception, match="integrity_mismatch"):
+        service.reverify_captured_range(
+            planned.to_payload(),
+            verification_ids=ids,
+            checked_at=NOW + timedelta(seconds=10),
+        )
 
 
 def test_range_planner_has_125_batches_for_5000_by_120_and_preserves_v1_identity(
@@ -307,8 +445,13 @@ def test_range_never_promotes_partial_or_conflicting_days(tmp_path, monkeypatch,
     with pytest.raises(
         VerifiedDailyMarketDataNotPublishable,
         match="quality_blocked" if case == "missing" else "cross_source_conflict",
-    ):
+    ) as caught:
         service.run(job.payload, checked_at=NOW + timedelta(seconds=1))
+    evidence_ref = caught.value.failure_evidence_ref
+    assert evidence_ref.startswith("quality:" if case == "missing" else "verification:")
+    assert ContentAddressedObjectStore(tmp_path / "research" / "objects").resolve_ref(
+        evidence_ref.split(":", 1)[1]
+    )
     assert len(primary.calls) == len(comparison.calls) == 1
     assert not (tmp_path / "research" / "catalog" / "datasets.sqlite3").exists()
 

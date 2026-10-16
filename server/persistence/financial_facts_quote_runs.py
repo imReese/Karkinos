@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 from typing import Any, Protocol
@@ -20,11 +21,14 @@ from server.persistence.financial_facts_quote_ingestion_uow import (
     quote_run_completion_metadata,
 )
 from server.persistence.financial_facts_valuation import (
+    record_quote_acquisition_failure_on_connection,
     record_valuation_publication_failure_on_connection,
 )
 from server.persistence.valuation_publication_recovery import (
     assert_quote_publication_not_started,
 )
+
+_STAGED_ACQUISITION_CONTRACT = "staged_until_atomic_quote_publication.v1"
 
 
 class _QuoteRunPublisher(Protocol):
@@ -63,6 +67,12 @@ class QuoteFetchRunRepositoryMixin:
         metadata: dict[str, Any] | str | None = None,
     ) -> int:
         """Create one quote fetch run audit row."""
+        parsed = metadata_payload_value(metadata)
+        if parsed is None or isinstance(parsed, dict):
+            metadata = {
+                **(parsed or {}),
+                "quote_ingestion_contract": _STAGED_ACQUISITION_CONTRACT,
+            }
         payload = {
             "run_id": run_id,
             "started_at": started_at,
@@ -215,12 +225,25 @@ class QuoteFetchRunRepositoryMixin:
             )
             metadata_json = serialize_metadata_json(metadata)
             metadata_payload = metadata_payload_value(metadata)
-            _block_valuation_publication(
-                conn,
-                run_id=run_id,
-                run_status=status,
-                updated_at=finished_at,
-            )
+            if status in {
+                "failed",
+                "partial_success",
+                "partial",
+                "error",
+            } and _unpublished_staged_acquisition(conn, current):
+                record_quote_acquisition_failure_on_connection(
+                    conn,
+                    updated_at=finished_at,
+                    quote_fetch_run_id=run_id,
+                    quote_fetch_run_status=status,
+                )
+            else:
+                _block_valuation_publication(
+                    conn,
+                    run_id=run_id,
+                    run_status=status,
+                    updated_at=finished_at,
+                )
             if metadata_json is None:
                 conn.execute(
                     """
@@ -440,6 +463,78 @@ def _completion_metadata(value: dict[str, Any] | str | None) -> Any:
         for key, item in payload.items()
         if key not in {"valuation_snapshot_id", "valuation_snapshot_status"}
     }
+
+
+def _unpublished_staged_acquisition(conn: sqlite3.Connection, run: sqlite3.Row) -> bool:
+    """Prove this new-format acquisition never entered a financial write lane.
+
+    Older runs have no such original contract. Do not infer their provenance
+    from a newer complete valuation or from the absence of a current quote.
+    """
+    try:
+        metadata = metadata_payload_value(run["metadata_json"])
+        if (
+            not isinstance(metadata, dict)
+            or metadata.get("quote_ingestion_contract") != _STAGED_ACQUISITION_CONTRACT
+        ):
+            return False
+        starts = conn.execute(
+            "SELECT payload_json FROM event_log WHERE event_type='task_run.started' "
+            "AND source='quote_fetch_runs' AND source_ref=?",
+            (run["run_id"],),
+        ).fetchall()
+        if len(starts) != 1:
+            return False
+        start = json.loads(starts[0][0])
+        if (
+            not isinstance(start, dict)
+            or any(
+                start.get(k) != run[k]
+                for k in (
+                    "run_id",
+                    "started_at",
+                    "trigger",
+                    "provider",
+                    "asset_type",
+                    "symbol_count",
+                )
+            )
+            or not isinstance(start.get("metadata"), dict)
+            or start["metadata"].get("quote_ingestion_contract")
+            != _STAGED_ACQUISITION_CONTRACT
+        ):
+            return False
+        for key in (
+            "valuation_snapshot_publication",
+            "valuation_snapshot_publication_attempt",
+        ):
+            row = conn.execute(
+                "SELECT value_json FROM runtime_controls WHERE key=?", (key,)
+            ).fetchone()
+            value = json.loads(row[0]) if row else {}
+            if value.get("quote_fetch_run_id") == run["run_id"]:
+                return False
+        for table in ("quote_snapshots", "latest_quotes"):
+            if conn.execute(
+                f"SELECT 1 FROM {table} WHERE fetch_run_id=? LIMIT 1", (run["run_id"],)
+            ).fetchone():
+                return False
+        if conn.execute(
+            "SELECT 1 FROM event_log WHERE event_type IN ('market.quote.snapshot.recorded','market.quote.refreshed') "
+            "AND json_extract(payload_json,'$.fetch_run_id')=? LIMIT 1",
+            (run["run_id"],),
+        ).fetchone():
+            return False
+        if conn.execute(
+            "SELECT 1 FROM valuation_snapshots WHERE "
+            "EXISTS (SELECT 1 FROM json_each(quotes_json) q WHERE json_extract(q.value,'$.fetch_run_id')=?) "
+            "OR EXISTS (SELECT 1 FROM json_each(metadata_json,'$.ingestion_run_ids') i WHERE i.value=?) LIMIT 1",
+            (run["run_id"], run["run_id"]),
+        ).fetchone():
+            return False
+        return True
+    except (ValueError, TypeError, KeyError, AttributeError, sqlite3.Error):
+        return False
 
 
 def _block_valuation_publication(

@@ -294,6 +294,25 @@ def _member_session_exclusion(snapshot: Mapping[str, Any], symbol: str) -> str |
         ),
         {},
     )
+    session = str(snapshot.get("trade_date") or "")
+    delisted = metadata.get("delist_date")
+    status = metadata.get("list_status")
+    if (delisted and str(delisted) <= session) or (
+        status in {"P", "G", "UN"} or (status == "D" and not delisted)
+    ):
+        return "inactive_listing_excluded"
+    if status is not None and status not in {"L", "D", "P", "G", "UN"}:
+        return "trading_state_unverified"
+    listed = metadata.get("list_date")
+    if listed and str(listed) > session:
+        return "not_yet_listed_excluded"
+    if "trade_status" in metadata:
+        if metadata.get("status_session_date") != session or metadata.get(
+            "status_capture_id"
+        ) not in snapshot.get("source_capture_ids", []):
+            return "trading_state_unverified"
+        if metadata["trade_status"] == "0":
+            return "nontrading_session_excluded"
     name = str(metadata.get("display_name") or "").strip()
     if not name or name == symbol or name == f"{symbol} A股":
         return "trading_state_unverified"

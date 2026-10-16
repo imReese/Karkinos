@@ -12,11 +12,33 @@ from data.market_daily_store import verify_market_daily_receipt_on_connection
 from server.contracts.quote_ingestion import QuoteIngestionCommand
 from server.persistence.database_normalization import stable_json_fingerprint
 from server.persistence.valuation_publication_recovery import (
+    attach_recovery_market_database,
     publication_incident_ref,
+    unpublished_quote_recovery_plan,
     unresolved_publications,
 )
 
 RULE_VERSION = "karkinos.daily_close_recovery_preview.v1"
+
+
+def preview_unpublished_quote_recovery(
+    database_path: str | Path,
+    *,
+    incident_refs: list[str] | None = None,
+    market_database_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Inspect exact failed-refresh proofs without changing any incident or fact."""
+    path = Path(database_path).resolve(strict=True)
+    conn = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=2)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA query_only=ON")
+        attach_recovery_market_database(conn, market_database_path)
+        conn.execute("BEGIN")
+        return unpublished_quote_recovery_plan(conn, incident_refs=incident_refs)
+    finally:
+        conn.rollback()
+        conn.close()
 
 
 class _Blocked(ValueError):

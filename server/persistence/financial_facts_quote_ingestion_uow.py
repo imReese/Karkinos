@@ -765,7 +765,13 @@ def quote_run_completion_metadata(run, **completion):
     requested = _metadata_dict(run["metadata_json"])
     identity = {
         key: requested[key]
-        for key in ("requested_symbols", "instrument_types")
+        for key in (
+            "requested_symbols",
+            "symbols",
+            "instrument_types",
+            "asset_types",
+            "quote_ingestion_contract",
+        )
         if key in requested
     }
     if not identity:
