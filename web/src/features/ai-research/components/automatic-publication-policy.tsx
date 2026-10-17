@@ -14,7 +14,7 @@ import {
 
 const fieldClass = 'app-field min-h-10 w-full min-w-0 px-3 py-2';
 const buttonClass =
-  'app-button-secondary min-h-10 px-3 py-2 text-xs disabled:opacity-50';
+  'app-button app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-xs';
 const defaults: PublicationPolicyBounds = {
   allocation_scope: 'stock_research',
   strategy_family: 'formula',

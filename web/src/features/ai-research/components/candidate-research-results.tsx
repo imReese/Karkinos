@@ -31,27 +31,29 @@ export function CandidateResearchResults({
       ? sourceQuery.data
       : null;
   return (
-    <section aria-label={zh ? '研究回测结果' : 'Research backtest results'}>
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h4 className="text-sm font-semibold text-[var(--app-text)]">
+    <section
+      aria-label={zh ? '研究回测结果' : 'Research backtest results'}
+      className="space-y-3 rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] p-4"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--app-divider)] pb-2.5">
+        <h4 className="flex items-center gap-2 text-sm font-semibold text-[var(--app-text)]">
+          <span className="size-1.5 rounded-full bg-[var(--app-accent)]" />
           {zh ? '研究回测结果' : 'Research backtest results'}
         </h4>
         {sourceResultId ? (
           <a
-            className="app-link text-xs"
+            className="app-link inline-flex items-center gap-1 font-mono text-xs transition-colors hover:text-[var(--app-accent)]"
             href={`/backtest?id=${sourceResultId}`}
           >
-            {copy.observationReport} #{sourceResultId} &rarr;
+            <span>
+              {copy.observationReport} #{sourceResultId}
+            </span>
+            <span aria-hidden="true">&rarr;</span>
           </a>
         ) : null}
       </div>
-      <p className="mt-1 text-xs leading-5 text-[var(--app-text-secondary)]">
-        {zh
-          ? '已保存的研究回测；前向模拟与账户收益分别记录。'
-          : 'Saved research backtest evidence. Forward paper results and account returns are recorded separately.'}
-      </p>
       <div
-        className={`mt-4 grid min-w-0 gap-6 ${comparison.baseline ? 'md:grid-cols-2' : ''}`}
+        className={`min-w-0 gap-4 ${comparison.baseline ? 'grid md:grid-cols-2' : ''}`}
       >
         {comparison.baseline ? (
           <MetricComparison
@@ -65,32 +67,30 @@ export function CandidateResearchResults({
             metrics={comparison.candidate}
           />
         ) : sourceReport ? (
-          <div className="min-w-0">
-            <dl
-              className="grid grid-cols-2 gap-4 border-y border-[var(--app-divider)] py-4 sm:grid-cols-3"
-              aria-label={zh ? '来源报告指标' : 'Source report metrics'}
-            >
-              <Metric
-                label={copy.return}
-                value={formatPercent(sourceReport.metrics.total_return)}
-              />
-              <Metric
-                label={copy.sharpe}
-                value={sourceReport.metrics.sharpe.toFixed(2)}
-              />
-              <Metric
-                label={copy.drawdown}
-                value={formatPercent(
-                  Math.abs(sourceReport.metrics.max_drawdown),
-                )}
-              />
-            </dl>
-            <p className="mt-2 text-xs text-[var(--app-text-secondary)]">
-              {zh
-                ? '来源报告指标；登记比较与样本外分折指标未提供。'
-                : 'Source report metrics; registry comparison and OOS fold metrics are not provided.'}
-            </p>
-          </div>
+          <dl
+            className="grid grid-cols-1 gap-3 sm:grid-cols-3"
+            aria-label={zh ? '来源报告指标' : 'Source report metrics'}
+          >
+            <Metric
+              label={copy.return}
+              value={formatPercent(sourceReport.metrics.total_return)}
+              tone={
+                sourceReport.metrics.total_return > 0
+                  ? 'positive'
+                  : sourceReport.metrics.total_return < 0
+                    ? 'negative'
+                    : 'neutral'
+              }
+            />
+            <Metric
+              label={copy.sharpe}
+              value={sourceReport.metrics.sharpe.toFixed(2)}
+            />
+            <Metric
+              label={copy.drawdown}
+              value={formatPercent(Math.abs(sourceReport.metrics.max_drawdown))}
+            />
+          </dl>
         ) : (
           <p
             role="status"
@@ -119,15 +119,27 @@ export function MetricComparison({
 }) {
   const { locale } = usePreferences();
   const copy = SHADOW_RESEARCH_COPY[locale];
+  const returnTone =
+    metrics.total_return > 0
+      ? 'positive'
+      : metrics.total_return < 0
+        ? 'negative'
+        : 'neutral';
   return (
-    <div className="min-w-0 border-t border-[var(--app-divider)] pt-4">
-      <div className="text-xs font-semibold text-[var(--app-muted)]">
-        {label}
+    <div className="min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-raised)] p-3.5">
+      <div className="flex items-center justify-between border-b border-[var(--app-divider)] pb-2 text-xs font-semibold text-[var(--app-text)]">
+        <span>{label}</span>
+        {metrics.dataset_snapshot_id ? (
+          <span className="font-mono app-type-micro text-[var(--app-text-tertiary)]">
+            #{metrics.dataset_snapshot_id}
+          </span>
+        ) : null}
       </div>
-      <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-4 text-xs sm:grid-cols-3">
+      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3.5 sm:grid-cols-3">
         <Metric
           label={copy.return}
           value={formatPercent(metrics.total_return)}
+          tone={returnTone}
         />
         <Metric label={copy.sharpe} value={metrics.sharpe.toFixed(2)} />
         <Metric
@@ -145,13 +157,29 @@ export function MetricComparison({
   );
 }
 
-export function Metric({ label, value }: { label: string; value: string }) {
+export function Metric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: 'positive' | 'negative' | 'neutral';
+}) {
+  const toneClass =
+    tone === 'positive'
+      ? 'text-[var(--app-pnl-positive)]'
+      : tone === 'negative'
+        ? 'text-[var(--app-pnl-negative)]'
+        : 'text-[var(--app-text)]';
   return (
-    <div>
-      <dt className="app-type-label text-[var(--app-text-secondary)]">
+    <div className="min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-raised)] p-3">
+      <dt className="app-type-overline truncate text-[var(--app-text-tertiary)]">
         {label}
       </dt>
-      <dd className="app-type-primary-metric mt-1 tabular-nums text-[var(--app-text)]">
+      <dd
+        className={`app-type-primary-metric mt-1.5 font-mono text-xl font-bold tabular-nums sm:text-2xl ${toneClass}`}
+      >
         {value}
       </dd>
     </div>

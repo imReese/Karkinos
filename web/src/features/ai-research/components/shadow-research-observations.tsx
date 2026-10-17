@@ -89,7 +89,7 @@ function CandidateObservations({ sourceResultId }: { sourceResultId: number }) {
   return (
     <div className="min-w-0 space-y-3">
       <button
-        className="app-button-secondary min-h-11 px-3 py-2 text-xs"
+        className="app-button app-button-secondary min-h-9 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
         disabled={query.isFetching}
         onClick={() => void query.refetch()}
         type="button"

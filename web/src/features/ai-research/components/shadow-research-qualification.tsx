@@ -339,7 +339,7 @@ export function ShadowResearchQualificationReview({
             <span>{copy.qualificationApprovalConfirm}</span>
           </label>
           <button
-            className="app-button-primary mt-3 min-h-11 px-4 py-2 text-sm font-semibold"
+            className="app-button app-button-primary mt-3 min-h-10 rounded-[var(--app-radius-control)] px-4 py-2 text-xs font-semibold"
             disabled={
               pending || !confirmed || !notes.trim() || !approvedBy.trim()
             }

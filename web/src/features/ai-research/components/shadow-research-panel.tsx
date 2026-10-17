@@ -561,28 +561,48 @@ function ShadowResearchHeader({
   status: ReturnType<typeof useShadowResearchAutomationQuery>['data'];
 }) {
   return (
-    <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
+    <div className="flex min-w-0 flex-wrap items-center justify-between gap-4 border-b border-[var(--app-divider)] pb-3">
       <div className="min-w-0">
         <span className="sr-only">{copy.kicker}</span>
         <h2
-          className="text-base font-semibold text-[var(--app-text)]"
+          className="text-base font-semibold text-[var(--app-text)] sm:text-lg"
           id="shadow-research-title"
         >
           {copy.title}
         </h2>
         <p className="sr-only">{copy.detail}</p>
       </div>
-      <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
+      <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
         <span
-          className={`rounded-full border px-2 py-0.5 text-xs ${
+          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs ${
             status?.policy.enabled
               ? 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success-text)]'
-              : 'border-[var(--app-divider)] text-[var(--app-text-secondary)]'
+              : 'border-[var(--app-divider)] bg-[var(--app-surface-raised)] text-[var(--app-text-secondary)]'
           }`}
         >
+          <span
+            className={`size-1.5 rounded-full ${
+              status?.policy.enabled
+                ? 'bg-[var(--app-success-text)]'
+                : 'bg-[var(--app-text-tertiary)]'
+            }`}
+          />
           {status?.policy.enabled ? copy.enabled : copy.disabled}
         </span>
-        <span className="rounded-full border border-[var(--app-divider)] px-2 py-0.5 text-xs text-[var(--app-text-secondary)]">
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs ${
+            status?.kill_switch.enabled
+              ? 'border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] text-[var(--app-danger-text)]'
+              : 'border-[var(--app-divider)] bg-[var(--app-surface-raised)] text-[var(--app-text-secondary)]'
+          }`}
+        >
+          <span
+            className={`size-1.5 rounded-full ${
+              status?.kill_switch.enabled
+                ? 'bg-[var(--app-danger-text)]'
+                : 'bg-[var(--app-text-tertiary)]'
+            }`}
+          />
           {copy.killSwitch}:{' '}
           {status?.kill_switch.enabled
             ? status.kill_switch.reason || 'ON'

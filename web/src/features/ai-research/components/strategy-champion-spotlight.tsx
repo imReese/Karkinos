@@ -30,8 +30,11 @@ export function StrategyChampionSpotlight({
       className="min-w-0 border-t border-[var(--app-divider)] py-4"
       data-testid="strategy-champion-spotlight"
     >
-      <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold">
-        {zh ? '已保存的研究选择' : 'Saved research selection'}
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between py-2 text-sm font-semibold text-[var(--app-text)] hover:text-[var(--app-accent)] transition-colors">
+        <span>{zh ? '已保存的研究选择' : 'Saved research selection'}</span>
+        <span className="app-type-micro font-mono text-[var(--app-text-tertiary)]">
+          {candidate ? candidate.candidate_id : '—'}
+        </span>
       </summary>
       <p className="app-muted mt-1 text-xs leading-5">
         {zh
@@ -52,30 +55,44 @@ export function StrategyChampionSpotlight({
           <p className="app-muted mt-1 break-all text-xs">
             {candidate.run_id} · {candidate.candidate_id}
           </p>
-          <dl className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4 text-xs">
+          <dl className="mt-3 grid grid-cols-2 gap-3 rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-raised)] p-3.5 text-xs lg:grid-cols-4">
             {[
               [
                 zh ? '研究回测收益' : 'Research backtest return',
                 metrics ? formatPercent(metrics.total_return) : '—',
+                metrics && metrics.total_return > 0
+                  ? 'text-[var(--app-pnl-positive)]'
+                  : metrics && metrics.total_return < 0
+                    ? 'text-[var(--app-pnl-negative)]'
+                    : 'text-[var(--app-text)]',
               ],
               [
                 zh ? '研究回测回撤' : 'Research backtest drawdown',
                 metrics ? formatPercent(metrics.max_drawdown) : '—',
+                'text-[var(--app-text)]',
               ],
               [
                 zh ? '研究成本' : 'Research trading costs',
                 metrics ? formatCurrency(metrics.total_cost) : '—',
+                'text-[var(--app-text)]',
               ],
               [
                 zh ? '已记录门禁' : 'Recorded gate',
                 checks?.length
                   ? `${passed} / ${checks.length} · ${gate?.status ?? 'unknown'}`
                   : (gate?.status ?? '—'),
+                'text-[var(--app-text)]',
               ],
-            ].map(([label, value]) => (
-              <div key={label}>
-                <dt className="app-muted">{label}</dt>
-                <dd className="mt-1 font-semibold tabular-nums">{value}</dd>
+            ].map(([label, value, colorClass]) => (
+              <div key={label} className="min-w-0">
+                <dt className="app-type-overline text-[var(--app-text-tertiary)]">
+                  {label}
+                </dt>
+                <dd
+                  className={`mt-1 font-mono text-sm font-semibold tabular-nums ${colorClass}`}
+                >
+                  {value}
+                </dd>
               </div>
             ))}
           </dl>

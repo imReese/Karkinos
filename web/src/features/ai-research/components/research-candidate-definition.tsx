@@ -100,37 +100,57 @@ export function ResearchCandidateDefinition({
             : ''}
         </p>
       ) : null}
-      <p className="app-muted mt-2">
-        {zh
-          ? '开发样本的收益不等于全市场验证；前向模拟以其冻结范围单独记录。'
-          : 'A development sample is not full-market validation. Forward simulation records its own frozen scope.'}
-      </p>
       {query.isError ? (
         <button
           type="button"
-          className="app-button-secondary mt-2 min-h-9 px-3"
+          className="app-button app-button-secondary mt-2 min-h-9 rounded-[var(--app-radius-control)] px-3 text-xs font-semibold"
           onClick={() => void query.refetch()}
         >
           {zh ? '重新读取策略来源' : 'Reload strategy source'}
         </button>
       ) : null}
       {draft ? (
-        <details className="mt-2">
-          <summary className="cursor-pointer">
-            {zh ? '查看已保存公式与参数' : 'Saved formula and parameters'}
+        <details className="mt-3 rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-raised)] p-3">
+          <summary className="flex cursor-pointer list-none items-center justify-between font-semibold text-[var(--app-text)] hover:text-[var(--app-accent)] transition-colors">
+            <span>
+              {zh ? '查看已保存公式与参数' : 'Saved formula and parameters'}
+            </span>
+            <span className="app-type-micro font-mono text-[var(--app-text-tertiary)]">
+              AST JSON
+            </span>
           </summary>
-          <p className="mt-2">{draft.entry_conditions}</p>
-          <p>{draft.exit_conditions}</p>
-          <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-[var(--app-surface-raised)] p-2">
-            {JSON.stringify(
-              {
-                formula: draft.formula_ast,
-                parameters: draft.parameter_values,
-              },
-              null,
-              2,
-            )}
-          </pre>
+          <div className="mt-3 space-y-2 border-t border-[var(--app-divider)] pt-2.5">
+            {draft.entry_conditions ? (
+              <div className="flex items-start gap-2">
+                <span className="shrink-0 rounded bg-[color-mix(in_srgb,var(--app-pnl-positive)_12%,transparent)] px-1.5 py-0.5 app-type-micro font-semibold text-[var(--app-pnl-positive)]">
+                  {zh ? '入场条件' : 'Entry'}
+                </span>
+                <span className="font-mono text-xs text-[var(--app-text)]">
+                  {draft.entry_conditions}
+                </span>
+              </div>
+            ) : null}
+            {draft.exit_conditions ? (
+              <div className="flex items-start gap-2">
+                <span className="shrink-0 rounded bg-[color-mix(in_srgb,var(--app-pnl-negative)_12%,transparent)] px-1.5 py-0.5 app-type-micro font-semibold text-[var(--app-pnl-negative)]">
+                  {zh ? '出场条件' : 'Exit'}
+                </span>
+                <span className="font-mono text-xs text-[var(--app-text)]">
+                  {draft.exit_conditions}
+                </span>
+              </div>
+            ) : null}
+            <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-2.5 font-mono app-type-micro leading-relaxed text-[var(--app-text)]">
+              {JSON.stringify(
+                {
+                  formula: draft.formula_ast,
+                  parameters: draft.parameter_values,
+                },
+                null,
+                2,
+              )}
+            </pre>
+          </div>
         </details>
       ) : (
         <p className="app-muted mt-2" role="status">

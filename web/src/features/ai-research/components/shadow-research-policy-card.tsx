@@ -279,7 +279,7 @@ export function ShadowResearchPolicyCard({
           </p>
           <div className="flex flex-col gap-2 sm:flex-row">
             <button
-              className="app-button-primary min-h-11 px-4 py-2 text-sm font-semibold"
+              className="app-button app-button-primary min-h-10 rounded-[var(--app-radius-control)] px-4 py-2 text-xs font-semibold"
               disabled={
                 updatePolicyPending ||
                 !policyConfirmed ||
@@ -295,7 +295,7 @@ export function ShadowResearchPolicyCard({
             </button>
             <button
               aria-describedby="shadow-policy-run-detail"
-              className="app-button-secondary min-h-11 px-4 py-2 text-sm font-semibold"
+              className="app-button app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-4 py-2 text-xs font-semibold"
               disabled={
                 runPending ||
                 policyDirty ||

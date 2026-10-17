@@ -182,47 +182,53 @@ export function ShadowResearchCandidateWorkspace({
       className="min-w-0 space-y-4"
       data-testid="shadow-research-candidate-workspace"
     >
-      <div className="flex min-w-0 flex-wrap items-end gap-4 border-b border-[var(--app-divider)] pb-4">
-        <h3 className="sr-only">{copy.candidateRegistry}</h3>
-        <label className="min-w-0 flex-1 text-xs font-semibold sm:max-w-xl">
-          <span className="sr-only">{copy.currentCandidates}</span>
-          <select
-            className="app-field min-h-11 w-full min-w-0 px-3 py-2 text-sm"
-            data-testid="shadow-research-current-registry"
-            onChange={(event) => setSelectedCandidateId(event.target.value)}
-            value={selectedCandidate?.candidate_id ?? ''}
-          >
-            {current.length ? (
-              <optgroup label={copy.currentCandidates}>
-                {current.map((candidate) => (
-                  <option
-                    value={candidate.candidate_id}
-                    key={candidate.candidate_id}
-                  >
-                    {candidate.comparison.economic_hypothesis ||
-                      candidate.draft_id}
-                  </option>
-                ))}
-              </optgroup>
-            ) : null}
-            {historical.length ? (
-              <optgroup label={copy.candidateHistory}>
-                {historical.map((candidate) => (
-                  <option
-                    value={candidate.candidate_id}
-                    key={candidate.candidate_id}
-                  >
-                    {candidate.comparison.economic_hypothesis ||
-                      candidate.draft_id}
-                  </option>
-                ))}
-              </optgroup>
-            ) : null}
-          </select>
-        </label>
-        <p className="text-xs tabular-nums text-[var(--app-text-secondary)]">
-          {copy.candidateRegistry} · {ordered.length}
-        </p>
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-[var(--app-divider)] pb-4">
+        <div className="min-w-0 flex-1 sm:max-w-xl">
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="app-type-overline text-[var(--app-text-tertiary)]">
+              {copy.candidateRegistry}
+            </span>
+            <span className="font-mono text-xs tabular-nums text-[var(--app-text-secondary)]">
+              {ordered.length} {copy.candidates}
+            </span>
+          </div>
+          <label className="block min-w-0">
+            <span className="sr-only">{copy.currentCandidates}</span>
+            <select
+              className="app-field min-h-10 w-full min-w-0 px-3 py-2 text-xs font-medium text-[var(--app-text)] sm:text-sm"
+              data-testid="shadow-research-current-registry"
+              onChange={(event) => setSelectedCandidateId(event.target.value)}
+              value={selectedCandidate?.candidate_id ?? ''}
+            >
+              {current.length ? (
+                <optgroup label={copy.currentCandidates}>
+                  {current.map((candidate) => (
+                    <option
+                      value={candidate.candidate_id}
+                      key={candidate.candidate_id}
+                    >
+                      {candidate.comparison.economic_hypothesis ||
+                        candidate.draft_id}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+              {historical.length ? (
+                <optgroup label={copy.candidateHistory}>
+                  {historical.map((candidate) => (
+                    <option
+                      value={candidate.candidate_id}
+                      key={candidate.candidate_id}
+                    >
+                      {candidate.comparison.economic_hypothesis ||
+                        candidate.draft_id}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null}
+            </select>
+          </label>
+        </div>
       </div>
       {selectedCandidate ? (
         <section

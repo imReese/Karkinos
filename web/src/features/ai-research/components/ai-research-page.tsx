@@ -27,14 +27,14 @@ export function AiResearchPage() {
       <WorkspaceHeader
         eyebrow={labels.kicker}
         title={labels.title}
-        description={labels.subtitle}
         actions={
           <a
-            className="app-button-secondary inline-flex min-h-11 items-center rounded-[var(--app-radius-control)] px-2.5 py-1 text-xs font-semibold"
+            className="app-button app-button-secondary inline-flex min-h-9 items-center gap-1.5 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
             href="/backtest"
             onClick={(e) => handleClientNavigation(e, '/backtest')}
           >
-            {labels.openStrategyLab} &rarr;
+            <span>{labels.openStrategyLab}</span>
+            <span aria-hidden="true">&rarr;</span>
           </a>
         }
       />
@@ -57,13 +57,17 @@ export function AiResearchPage() {
           className="min-w-0 border-t border-[var(--app-divider)] py-4"
           data-testid="ai-research-context-metrics"
         >
-          <summary className="min-h-11 cursor-pointer py-2">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between py-2 text-sm font-semibold text-[var(--app-text)] hover:text-[var(--app-accent)] transition-colors">
             <h2
               className="inline text-sm font-semibold text-[var(--app-text)]"
               id="ai-research-context-title"
             >
               {labels.contextTitle}
             </h2>
+            <span className="app-type-micro font-mono text-[var(--app-text-tertiary)]">
+              {latestBacktest ? `#${latestBacktest.id}` : '—'} ·{' '}
+              {currentStrategy?.strategy_id ?? '—'}
+            </span>
           </summary>
           <MetricStrip
             ariaLabel={labels.contextTitle}
@@ -115,7 +119,7 @@ export function AiResearchPage() {
           />
           {savedBacktests.isError || accountStrategy.isError ? (
             <button
-              className="app-button-secondary mt-3 min-h-11 px-3 py-2 text-xs font-semibold"
+              className="app-button app-button-secondary mt-3 min-h-9 px-3 py-1.5 text-xs font-semibold"
               disabled={savedBacktests.isFetching || accountStrategy.isFetching}
               onClick={() => {
                 if (savedBacktests.isError) void savedBacktests.refetch();
