@@ -212,7 +212,7 @@ function DualSortHeader({
         <div
           role="group"
           aria-label={title}
-          className="ml-0.5 inline-flex shrink-0 items-center"
+          className="ml-1.5 inline-flex shrink-0 items-center rounded border border-[var(--app-divider)] bg-[var(--app-surface-overlay)] p-0.5"
         >
           <button
             type="button"
@@ -220,9 +220,9 @@ function DualSortHeader({
               requestSort(event, onSort, pctKey, nextPctDir);
             }}
             data-sort-control={pctKey}
-            className={`inline-flex h-6 min-w-6 items-center justify-center gap-0.5 rounded px-1 text-xs font-semibold underline-offset-4 transition-colors hover:bg-[var(--app-surface-overlay)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--app-focus-ring)] ${
+            className={`inline-flex h-5 min-w-5 items-center justify-center gap-0.5 rounded px-1 text-xs font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--app-focus-ring)] ${
               isPctActive
-                ? 'text-[var(--app-accent)] underline decoration-2'
+                ? 'bg-[var(--app-surface-raised)] text-[var(--app-accent)] shadow-xs'
                 : 'text-[var(--app-text-tertiary)] hover:text-[var(--app-text)]'
             }`}
             title={pctTooltip}
@@ -245,9 +245,9 @@ function DualSortHeader({
               requestSort(event, onSort, amountKey, nextAmountDir);
             }}
             data-sort-control={amountKey}
-            className={`inline-flex h-6 min-w-6 items-center justify-center rounded px-1 text-xs font-semibold underline-offset-4 transition-colors hover:bg-[var(--app-surface-overlay)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--app-focus-ring)] ${
+            className={`inline-flex h-5 min-w-5 items-center justify-center rounded px-1 text-xs font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--app-focus-ring)] ${
               isAmountActive
-                ? 'text-[var(--app-accent)] underline decoration-2'
+                ? 'bg-[var(--app-surface-raised)] text-[var(--app-accent)] shadow-xs'
                 : 'text-[var(--app-text-tertiary)] hover:text-[var(--app-text)]'
             }`}
             title={amountTooltip}

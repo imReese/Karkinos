@@ -9,11 +9,13 @@ import type {
 import { backtestCostCopy } from '../copy-costs';
 import { readBacktestEffectiveCosts } from '../cost-contracts';
 
-function numeric(value: string | number | undefined, scale = 1) {
+function numeric(value: string | number | undefined, scale = 1, maxDigits = 2) {
   if (value === undefined || value === null || value === '') return '—';
   const number = Number(value) * scale;
   return Number.isFinite(number)
-    ? new Intl.NumberFormat('en', { maximumFractionDigits: 6 }).format(number)
+    ? new Intl.NumberFormat('en', { maximumFractionDigits: maxDigits }).format(
+        number,
+      )
     : '—';
 }
 

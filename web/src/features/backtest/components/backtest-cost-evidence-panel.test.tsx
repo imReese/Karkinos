@@ -279,3 +279,29 @@ test.each([
     ).toBeNull();
   },
 );
+
+test('formats fractional capacity ratios cleanly to two decimal places', () => {
+  render(
+    <BacktestCostEvidencePanel
+      report={{
+        ...report,
+        metrics_json: {
+          ...report.metrics_json,
+          capacity_review: {
+            schema_version: 'karkinos.backtest_capacity.v2',
+            status: 'pass',
+            capacity_utilization_pct: '0.25761585',
+            liquidity_utilization_pct: '0.98555764',
+            max_daily_volume_participation: '0.01',
+            observation_count: 217,
+            fill_count: 217,
+          },
+        },
+      }}
+    />,
+  );
+  expect(screen.getByText('25.76%')).toBeVisible();
+  expect(screen.getByText('98.56%')).toBeVisible();
+  expect(screen.getByText('1%')).toBeVisible();
+  expect(screen.getByText('217 / 217')).toBeVisible();
+});
