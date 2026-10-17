@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiClient, postJson, putJson } from '../../shared/api/client';
+import { visiblePersistedProjectionRefetchInterval } from '../../shared/api/query-policy';
 
 export type ShadowResearchMetricView = {
   result_id: number;
@@ -407,9 +408,9 @@ export function useShadowResearchAutomationQuery() {
       apiClient<ShadowResearchAutomationStatus>(
         '/api/ai/strategy-research/shadow-automation',
       ),
-    refetchOnWindowFocus: false,
-    refetchInterval: 60_000,
-    staleTime: 10_000,
+    refetchOnWindowFocus: true,
+    refetchInterval: visiblePersistedProjectionRefetchInterval,
+    staleTime: 5_000,
   });
 }
 
@@ -418,8 +419,9 @@ export function useStrategyPromotionStatesQuery() {
     queryKey: ['strategy-promotion-states'],
     queryFn: () =>
       apiClient<StrategyPromotionState[]>('/api/strategy-promotion/states'),
-    refetchOnWindowFocus: false,
-    staleTime: 10_000,
+    refetchOnWindowFocus: true,
+    refetchInterval: visiblePersistedProjectionRefetchInterval,
+    staleTime: 5_000,
   });
 }
 

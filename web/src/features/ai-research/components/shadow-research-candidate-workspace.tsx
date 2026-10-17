@@ -1,4 +1,10 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
 
 import { usePreferences } from '../../../shared/preferences/context';
 import {
@@ -103,20 +109,31 @@ export function ShadowResearchCandidateWorkspace({
       (candidate) => candidate.candidate_id === selectedCandidateId,
     ) ?? preferredCandidate;
 
+  const prevPreferredRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!preferredCandidateId) {
       if (selectedCandidateId !== null) {
         setSelectedCandidateId(null);
       }
+      prevPreferredRef.current = null;
       return;
     }
     const candidateIds = candidateIdentity ? candidateIdentity.split('|') : [];
+    const preferredChanged =
+      prevPreferredRef.current !== null &&
+      prevPreferredRef.current !== preferredCandidateId;
+    const wasFollowingPreferred =
+      selectedCandidateId === prevPreferredRef.current;
+
     if (
       selectedCandidateId === null ||
-      !candidateIds.includes(selectedCandidateId)
+      !candidateIds.includes(selectedCandidateId) ||
+      (preferredChanged && wasFollowingPreferred)
     ) {
       setSelectedCandidateId(preferredCandidateId);
     }
+    prevPreferredRef.current = preferredCandidateId;
   }, [candidateIdentity, preferredCandidateId, selectedCandidateId]);
 
   if (candidates.length === 0) {
