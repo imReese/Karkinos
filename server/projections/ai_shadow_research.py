@@ -10,6 +10,8 @@ _CANDIDATE_STATUS_FIELDS = (
     "run_id",
     "session_id",
     "draft_id",
+    "provider_id",
+    "model_id",
     "backtest_run_id",
     "critique_id",
     "baseline_result_id",

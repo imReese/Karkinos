@@ -4,6 +4,12 @@ export function resolveCandidateEngine(
   candidate: ShadowResearchCandidate | null | undefined,
 ): string {
   if (!candidate) return '—';
+
+  // 1. Authoritative model_id directly from backend if available
+  if (candidate.model_id) {
+    return formatModelDisplayName(candidate.model_id);
+  }
+
   const draftId = (candidate.draft_id || '').toLowerCase();
   const candId = (candidate.candidate_id || '').toLowerCase();
   const genNum = candidate.comparison?.iteration_lineage?.iteration_number;
