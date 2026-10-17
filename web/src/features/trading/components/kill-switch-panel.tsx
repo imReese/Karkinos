@@ -88,7 +88,7 @@ export function KillSwitchPanel() {
           type="button"
           disabled={setKillSwitch.isPending || enabled}
           onClick={() => void updateKillSwitch(true)}
-          className="app-button-danger min-h-10 rounded-xl px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+          className="app-button app-button-danger min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-sm font-semibold"
         >
           {setKillSwitch.isPending && !enabled
             ? labels.submitting
@@ -98,7 +98,7 @@ export function KillSwitchPanel() {
           type="button"
           disabled={setKillSwitch.isPending || !enabled}
           onClick={() => void updateKillSwitch(false)}
-          className="app-button-secondary min-h-10 rounded-xl px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+          className="app-button app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-sm font-semibold"
         >
           {setKillSwitch.isPending && enabled
             ? labels.submitting

@@ -594,7 +594,7 @@ function PendingFundOrdersCard({
         action={
           <button
             type="button"
-            className="app-button-secondary px-3 py-2 text-xs"
+            className="app-button app-button-secondary px-3 py-2 text-xs"
             onClick={onRetry}
           >
             {copy.states.retry}

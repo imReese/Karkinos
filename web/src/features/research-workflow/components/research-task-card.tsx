@@ -116,7 +116,7 @@ export function ResearchTaskCard({
       {reviewable ? (
         <div className="mt-3 flex flex-wrap gap-2">
           <button
-            className="app-button-secondary min-h-11 px-3 py-1.5 text-xs font-semibold"
+            className="app-button app-button-secondary min-h-9 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
             disabled={reviewDisabled || !task.all_evidence_authoritative}
             onClick={() => onReview('context_accepted')}
             title={
@@ -127,7 +127,7 @@ export function ResearchTaskCard({
             {copy.accept}
           </button>
           <button
-            className="app-button-secondary min-h-11 px-3 py-1.5 text-xs font-semibold"
+            className="app-button app-button-secondary min-h-9 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
             disabled={reviewDisabled}
             onClick={() => onReview('context_revision_requested')}
             type="button"
@@ -135,7 +135,7 @@ export function ResearchTaskCard({
             {copy.revise}
           </button>
           <button
-            className="app-button-secondary min-h-11 px-3 py-1.5 text-xs font-semibold"
+            className="app-button app-button-secondary min-h-9 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
             disabled={reviewDisabled}
             onClick={() => onReview('closed_without_analysis')}
             type="button"
@@ -334,7 +334,7 @@ function FixtureAnalysisReviewControl({
           </label>
           <div className="flex flex-wrap gap-2">
             <button
-              className="app-button-primary min-h-11 px-3 py-1.5 text-xs font-semibold"
+              className="app-button app-button-primary min-h-9 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
               disabled={
                 recordReview.isPending || !formReady || !acceptanceEligible
               }
@@ -347,7 +347,7 @@ function FixtureAnalysisReviewControl({
               {copy.acceptMemory}
             </button>
             <button
-              className="app-button-secondary min-h-11 px-3 py-1.5 text-xs font-semibold"
+              className="app-button app-button-secondary min-h-9 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
               disabled={recordReview.isPending || !formReady}
               onClick={() => void submitReview('request_revision')}
               type="button"
@@ -355,7 +355,7 @@ function FixtureAnalysisReviewControl({
               {copy.requestAnalysisRevision}
             </button>
             <button
-              className="app-button-secondary min-h-11 px-3 py-1.5 text-xs font-semibold"
+              className="app-button app-button-secondary min-h-9 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
               disabled={recordReview.isPending || !formReady}
               onClick={() => void submitReview('reject')}
               type="button"

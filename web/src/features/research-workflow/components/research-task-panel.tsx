@@ -188,7 +188,7 @@ export function ResearchTaskPanel({
                 </StatusBadge>
                 <button
                   aria-expanded={composerOpen}
-                  className="app-button-secondary min-h-11 px-3 py-2 text-xs font-semibold"
+                  className="app-button app-button-secondary min-h-9 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
                   onClick={() => setComposerOpen((current) => !current)}
                   type="button"
                 >
@@ -200,7 +200,7 @@ export function ResearchTaskPanel({
               <label className="mt-4 block text-xs font-semibold text-[var(--app-muted)]">
                 {copy.reviewNote}
                 <input
-                  className="app-input mt-1 min-h-11 w-full px-3 py-2 text-sm text-[var(--app-text)]"
+                  className="app-input mt-1 min-h-10 w-full px-3 py-2 text-sm text-[var(--app-text)]"
                   onChange={(event) => setReviewNote(event.target.value)}
                   value={reviewNote}
                 />
@@ -221,7 +221,7 @@ export function ResearchTaskPanel({
                 title={copy.loadErrorTitle}
                 action={
                   <button
-                    className="app-button-secondary min-h-11 px-3 py-2 text-xs font-semibold"
+                    className="app-button app-button-secondary min-h-9 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
                     disabled={tasks.isFetching}
                     onClick={() => void tasks.refetch()}
                     type="button"
@@ -416,7 +416,7 @@ function ResearchTaskPanelHeader({
         <button
           aria-expanded={open}
           aria-label={open ? copy.close : copy.open}
-          className="app-button-secondary min-h-11 px-3 py-2 text-xs font-semibold"
+          className="app-button app-button-secondary min-h-9 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
           onClick={onToggle}
           type="button"
         >
@@ -568,7 +568,7 @@ function ResearchTaskComposer({
         </label>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
-            className="app-button-primary min-h-11 px-4 py-2 text-sm font-semibold"
+            className="app-button app-button-primary min-h-10 rounded-[var(--app-radius-control)] px-4 py-2 text-xs font-semibold"
             disabled={
               createTask.isPending ||
               !operator.trim() ||

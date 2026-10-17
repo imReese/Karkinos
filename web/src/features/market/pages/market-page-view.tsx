@@ -74,7 +74,7 @@ export function MarketPageView({
               <button
                 type="button"
                 onClick={() => void board.refetch()}
-                className="app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
+                className="app-button app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
               >
                 {copy.states.retry}
               </button>
@@ -228,7 +228,7 @@ function MarketInstrumentSelection({
             <button
               type="submit"
               disabled={addWatchlistItem.isPending || !newSymbol.trim()}
-              className="app-button-primary min-h-10 rounded-[var(--app-radius-control)] px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-8"
+              className="app-button app-button-primary min-h-10 rounded-[var(--app-radius-control)] px-4 py-2 text-sm sm:min-h-8"
             >
               {addWatchlistItem.isPending
                 ? copy.states.loading

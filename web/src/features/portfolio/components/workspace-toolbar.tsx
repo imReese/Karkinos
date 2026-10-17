@@ -113,7 +113,7 @@ export function WorkspaceToolbar({
 
           <button
             type="button"
-            className="app-button-secondary inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-[var(--app-radius-control)] px-2.5 text-xs font-semibold sm:min-h-8 sm:min-w-0"
+            className="app-button app-button-secondary inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-[var(--app-radius-control)] px-2.5 text-xs font-semibold sm:min-h-8 sm:min-w-0"
             aria-expanded={showMoreFilters}
             aria-controls="portfolio-secondary-filters"
             aria-label={moreFiltersAccessibleLabel}

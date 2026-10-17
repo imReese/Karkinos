@@ -164,7 +164,7 @@ export function OrderApprovalTable() {
                           type="button"
                           disabled={busy}
                           onClick={() => void handleConfirm(order.order_id)}
-                          className="app-button-primary min-h-9 rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+                          className="app-button app-button-primary min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
                         >
                           {labels.confirm}
                         </button>
@@ -172,7 +172,7 @@ export function OrderApprovalTable() {
                           type="button"
                           disabled={busy}
                           onClick={() => void handleReject(order.order_id)}
-                          className="app-button-secondary min-h-9 rounded-xl px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+                          className="app-button app-button-secondary min-h-9 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
                         >
                           {labels.reject}
                         </button>
