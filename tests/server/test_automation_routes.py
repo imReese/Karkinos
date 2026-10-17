@@ -8,6 +8,10 @@ from fastapi.testclient import TestClient
 
 from server.db import AppDatabase
 from server.routes.automation import create_router
+from server.services.automation_cockpit import (
+    AUTOMATION_COCKPIT_SCHEMA_VERSION,
+    validate_automation_cockpit_payload,
+)
 from server.services.execution_reconciliation import ExecutionReconciliationService
 from server.services.oms import OmsService
 from server.services.trading_controls import TradingControlState
@@ -83,7 +87,8 @@ def test_automation_cockpit_route_includes_runtime_connector_snapshot(
         after = list(conn.iterdump())
     assert response.status_code == 200
     payload = response.json()
-    assert payload["schema_version"] == "karkinos.automation_cockpit.v4"
+    validate_automation_cockpit_payload(payload)
+    assert payload["schema_version"] == AUTOMATION_COCKPIT_SCHEMA_VERSION
     assert "runtime_connector_snapshots" not in payload
     assert "runtime_connector_snapshot_status" not in payload
     registration = payload["connector_registrations"][0]
@@ -727,7 +732,8 @@ def test_automation_cockpit_route_returns_read_only_summary(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["schema_version"] == "karkinos.automation_cockpit.v4"
+    validate_automation_cockpit_payload(payload)
+    assert payload["schema_version"] == AUTOMATION_COCKPIT_SCHEMA_VERSION
     assert payload["broker_submission_enabled"] is False
     assert payload["automation_status"]["kill_switch_enabled"] is True
     gateways = {item["gateway_id"]: item for item in payload["gateways"]}

@@ -4,7 +4,14 @@ import json
 
 from server.db import AppDatabase
 from server.services.automation_alerts import AutomationAlertService
-from server.services.automation_cockpit import AutomationCockpitService
+from server.services.automation_cockpit import (
+    AUTOMATION_COCKPIT_SCHEMA_VERSION,
+    AutomationCockpitService,
+    validate_automation_cockpit_payload,
+)
+from server.services.current_per_order_dossier import (
+    CURRENT_PER_ORDER_CANDIDATES_SCHEMA_VERSION,
+)
 from server.services.market_session_automation import MarketSessionAutomationService
 from server.services.trading_controls import TradingControlState
 
@@ -35,7 +42,8 @@ def test_automation_cockpit_summary_collects_controls_alerts_runs_and_gateways(
 
     summary = AutomationCockpitService(db=db, trading_controls=controls).summary()
 
-    assert summary["schema_version"] == "karkinos.automation_cockpit.v4"
+    validate_automation_cockpit_payload(summary)
+    assert summary["schema_version"] == AUTOMATION_COCKPIT_SCHEMA_VERSION
     assert summary["broker_submission_enabled"] is False
     assert summary["automation_status"]["kill_switch_enabled"] is True
     assert summary["open_alert_count"] >= 1
@@ -72,7 +80,8 @@ def test_automation_cockpit_summary_includes_runtime_connector_snapshot_evidence
         broker_connectors=[connector],
     ).summary()
 
-    assert summary["schema_version"] == "karkinos.automation_cockpit.v4"
+    validate_automation_cockpit_payload(summary)
+    assert summary["schema_version"] == AUTOMATION_COCKPIT_SCHEMA_VERSION
     assert "runtime_connector_snapshots" not in summary
     assert "runtime_connector_snapshot_status" not in summary
     registration = summary["connector_registrations"][0]
@@ -103,7 +112,7 @@ def test_automation_cockpit_projects_current_per_order_reviews_without_authority
     def current_reviews():
         reader_calls.append("read")
         return {
-            "schema_version": "karkinos.current_per_order_confirmation_candidates.v1",
+            "schema_version": CURRENT_PER_ORDER_CANDIDATES_SCHEMA_VERSION,
             "candidate_count": 3,
             "candidates": [
                 {

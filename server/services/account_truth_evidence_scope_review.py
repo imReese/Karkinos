@@ -21,6 +21,10 @@ from server.services.account_truth_evidence_readiness import (
     project_account_truth_evidence_scope,
 )
 
+ACCOUNT_TRUTH_EVIDENCE_SCOPE_REVIEW_COMMAND_SCHEMA_VERSION = (
+    "karkinos.account_truth.evidence_scope_review_command.v1"
+)
+
 
 def record_account_truth_evidence_scope_review(
     state: Any,
@@ -178,7 +182,7 @@ def _command_response(
     *, review: Any, readiness: dict[str, object]
 ) -> dict[str, object]:
     return {
-        "schema_version": "karkinos.account_truth.evidence_scope_review_command.v1",
+        "schema_version": (ACCOUNT_TRUTH_EVIDENCE_SCOPE_REVIEW_COMMAND_SCHEMA_VERSION),
         "status": "recorded" if review.decision == "accepted" else "revoked",
         "review": {
             "review_id": review.review_id,

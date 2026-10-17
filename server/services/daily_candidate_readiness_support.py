@@ -80,14 +80,43 @@ def research_policy_blockers(
     return blockers
 
 
+def is_compatible_schema_version(
+    actual: Any,
+    expected: Any,
+) -> bool:
+    """Check whether actual schema version satisfies the expected contract."""
+    if not actual:
+        return False
+    actual_str = str(actual).strip()
+    if not actual_str:
+        return False
+    if isinstance(expected, (tuple, list, set)):
+        return any(is_compatible_schema_version(actual_str, item) for item in expected)
+    expected_str = str(expected).strip()
+    if actual_str == expected_str:
+        return True
+    if expected_str.endswith(".") and actual_str.startswith(expected_str):
+        return True
+    if actual_str.startswith(f"{expected_str}."):
+        return True
+    if "." in expected_str and "." in actual_str:
+        expected_namespace = expected_str.rsplit(".", 1)[0] + "."
+        if actual_str.startswith(expected_namespace):
+            return True
+    return False
+
+
 def schema_blockers(
-    expected_schemas: dict[str, str],
+    expected_schemas: dict[str, Any],
     **payloads: dict[str, Any],
 ) -> list[str]:
     return [
         f"{name}_contract_invalid"
         for name, expected in expected_schemas.items()
-        if payloads[name].get("schema_version") != expected
+        if not is_compatible_schema_version(
+            (payloads.get(name) or {}).get("schema_version"),
+            expected,
+        )
     ]
 
 

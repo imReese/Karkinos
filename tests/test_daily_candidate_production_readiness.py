@@ -6,6 +6,9 @@ from server.ai_runtime.contracts import content_fingerprint
 from server.services.ai_shadow_research_automation import (
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
 )
+from server.services.automation_cockpit import (
+    AUTOMATION_COCKPIT_SCHEMA_VERSION,
+)
 from server.services.daily_candidate_production_readiness import (
     project_daily_candidate_production_readiness,
     unavailable_daily_candidate_production_readiness,
@@ -37,7 +40,7 @@ def _inputs() -> tuple[dict, dict]:
     }
     execution_evidence["evidence_fingerprint"] = content_fingerprint(execution_evidence)
     cockpit = {
-        "schema_version": "karkinos.automation_cockpit.v4",
+        "schema_version": AUTOMATION_COCKPIT_SCHEMA_VERSION,
         "broker_submission_enabled": False,
         "daily_candidate_financial_preflight": {
             "schema_version": "karkinos.daily_candidate_financial_preflight.v1",

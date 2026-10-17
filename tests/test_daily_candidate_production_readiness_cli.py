@@ -5,6 +5,7 @@ import json
 
 from server import daily_candidate_production_readiness_cli as readiness_cli
 from server.ai_runtime.contracts import content_fingerprint
+from server.services.automation_cockpit import AUTOMATION_COCKPIT_SCHEMA_VERSION
 
 main = readiness_cli.main
 
@@ -39,7 +40,7 @@ def test_live_readiness_cli_reads_only_expected_loopback_endpoints() -> None:
         urls.append((url, timeout))
         if url.endswith("/api/automation/cockpit"):
             return {
-                "schema_version": "karkinos.automation_cockpit.v4",
+                "schema_version": AUTOMATION_COCKPIT_SCHEMA_VERSION,
                 "broker_submission_enabled": False,
                 "daily_candidate_financial_preflight": {
                     "schema_version": (

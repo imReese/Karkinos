@@ -26,6 +26,15 @@ from server.ai_runtime.contracts import content_fingerprint
 LEGACY_MARKET_UNIVERSE_POLICY_VERSION = "karkinos.market_universe_policy.v2"
 MARKET_UNIVERSE_POLICY_VERSION = "karkinos.market_universe_policy.v3"
 MARKET_UNIVERSE_TRUTH_SCHEMA_VERSION = "karkinos.market_universe_truth.v2"
+MARKET_UNIVERSE_SNAPSHOT_SCHEMA_PREFIX = "karkinos.market_universe_snapshot."
+MARKET_UNIVERSE_SNAPSHOT_SCHEMA_VERSION = "karkinos.market_universe_snapshot.v3"
+SUPPORTED_MARKET_UNIVERSE_SNAPSHOT_VERSIONS = frozenset(
+    {
+        "karkinos.market_universe_snapshot.v1",
+        "karkinos.market_universe_snapshot.v2",
+        "karkinos.market_universe_snapshot.v3",
+    }
+)
 RESEARCH_PANEL_SCHEMA_VERSION = "karkinos.research_panel_snapshot.v2"
 RESEARCH_POSITION_SIZING_POLICY_VERSION = "karkinos.research_position_sizing_policy.v1"
 FULL_MARKET_UNIVERSE_TRUTH_SCHEMA_VERSION = "karkinos.full_market_universe_truth.v1"
@@ -181,11 +190,7 @@ def require_complete_market_universe_snapshot(
         raise MarketUniverseRejected("market_universe_snapshot_missing")
     payload = dict(snapshot)
     version = payload.get("schema_version")
-    if version not in {
-        "karkinos.market_universe_snapshot.v1",
-        "karkinos.market_universe_snapshot.v2",
-        "karkinos.market_universe_snapshot.v3",
-    }:
+    if version not in SUPPORTED_MARKET_UNIVERSE_SNAPSHOT_VERSIONS:
         raise MarketUniverseRejected("market_universe_snapshot_contract_invalid")
     if available_as_of is not None and available_as_of.utcoffset() is None:
         raise MarketUniverseRejected("market_universe_as_of_timezone_required")

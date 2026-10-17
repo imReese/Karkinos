@@ -19,6 +19,7 @@ from server.services.market_universe_automation import (
     validate_market_universe_automation_payload,
 )
 from server.services.market_universe_truth import (
+    MARKET_UNIVERSE_SNAPSHOT_SCHEMA_VERSION,
     MarketUniversePolicy,
     MarketUniverseRejected,
     normalize_a_share_members,
@@ -115,7 +116,7 @@ def test_delayed_adapter_observation_keeps_legacy_and_actual_capture_time(tmp_pa
         snapshot_id=payload["market_universe_snapshot_id"]
     )
     assert observed["snapshot_id"] != legacy["snapshot_id"]
-    assert observed["schema_version"] == "karkinos.market_universe_snapshot.v3"
+    assert observed["schema_version"] == MARKET_UNIVERSE_SNAPSHOT_SCHEMA_VERSION
     assert observed["trade_date"] == TRADE_DATE
     assert datetime.fromisoformat(observed["capture_started_at"]) == CAPTURE_START
     assert datetime.fromisoformat(observed["capture_completed_at"]) == CAPTURE_END

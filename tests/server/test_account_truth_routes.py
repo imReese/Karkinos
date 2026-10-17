@@ -13,7 +13,13 @@ from fastapi import HTTPException
 from fastapi.routing import APIRoute
 
 from account_truth.broker_evidence import BrokerEvidenceRepository
-from account_truth.broker_statement import parse_broker_statement_csv
+from account_truth.broker_statement import (
+    BROKER_STATEMENT_SCHEMA_VERSION,
+    parse_broker_statement_csv,
+)
+from account_truth.citic_broker_soak_candidate import (
+    CITIC_BROKER_SOAK_CANDIDATE_SCHEMA_VERSION,
+)
 from account_truth.citic_history_xls import (
     CITIC_HISTORY_XLS_COLUMNS,
     CITIC_HISTORY_XLS_SOURCE_TYPE,
@@ -22,8 +28,19 @@ from account_truth.citic_source_canonical_resolution import (
     citic_source_set_fingerprint,
 )
 from account_truth.citic_source_intake import CiticSourceIntakeRepository
+from account_truth.reconciliation import RECONCILIATION_SCHEMA_VERSION
+from account_truth.score import ACCOUNT_TRUTH_SCORE_SCHEMA_VERSION
 from server.config import CiticHistoryXlsDirectoryConfig
 from server.db import AppDatabase
+from server.services.account_truth_evidence_readiness import (
+    ACCOUNT_TRUTH_EVIDENCE_READINESS_SCHEMA_VERSION,
+)
+from server.services.account_truth_evidence_readiness_support import (
+    ACCOUNT_TRUTH_EVIDENCE_SCOPE_SCHEMA_VERSION,
+)
+from server.services.account_truth_evidence_scope_review import (
+    ACCOUNT_TRUTH_EVIDENCE_SCOPE_REVIEW_COMMAND_SCHEMA_VERSION,
+)
 
 BROKER_STATEMENT = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note
 synthetic-buy-001,trade_buy,2026-01-05T09:35:00+08:00,2026-01-06,SYN001,合成样例股票A,stock,CNY,100,10.23,1023.00,5.00,0.00,-1028.00,8972.00,100,10.28,synthetic buy row
@@ -110,7 +127,7 @@ def test_account_truth_broker_statement_preview_is_read_only(tmp_path, monkeypat
         )
     )
 
-    assert response["schema_version"] == "karkinos.broker_statement.v2"
+    assert response["schema_version"] == BROKER_STATEMENT_SCHEMA_VERSION
     assert response["source_name"] == "local-statement.csv"
     assert response["validation_status"] == "pass"
     assert response["row_count"] == 3
@@ -171,8 +188,8 @@ def test_citic_history_xls_preview_is_private_and_never_persisted(monkeypatch):
     assert response["source_preview_fingerprint"]
     assert response["recordable_for_follow_up"] is True
     soak_candidate = response["broker_soak_candidate"]
-    assert soak_candidate["schema_version"] == (
-        "karkinos.account_truth.citic_broker_soak_candidate.v1"
+    assert (
+        soak_candidate["schema_version"] == CITIC_BROKER_SOAK_CANDIDATE_SCHEMA_VERSION
     )
     assert soak_candidate["status"] == "blocked"
     assert soak_candidate["eligible_for_broker_soak"] is False
@@ -965,7 +982,7 @@ def test_account_truth_reconciliation_reports_list_and_detail(
     assert reports[0]["asset_reconciliation"]["stock"]["status"] == "mismatch"
     assert reports[0]["asset_reconciliation"]["fund"]["status"] == "not_evaluated"
 
-    assert detail["schema_version"] == "karkinos.account_truth.reconciliation.v1"
+    assert detail["schema_version"] == RECONCILIATION_SCHEMA_VERSION
     assert detail["import_run_id"] == duplicate_run.import_run_id
     assert detail["status"] == "mismatch"
     assert detail["items"]
@@ -1099,7 +1116,7 @@ def test_account_truth_score_endpoint_exposes_component_reasons(
 
     score = asyncio.run(score_endpoint())
 
-    assert score["schema_version"] == "karkinos.account_truth.score.v1"
+    assert score["schema_version"] == ACCOUNT_TRUTH_SCORE_SCHEMA_VERSION
     assert score["import_run_id"] == duplicate_run.import_run_id
     assert score["source_name"] == "synthetic-duplicate.csv"
     assert score["status"] == "available"
@@ -1135,8 +1152,8 @@ def test_account_truth_evidence_readiness_projects_canonical_blockers(
 
     readiness = asyncio.run(endpoint())
 
-    assert readiness["schema_version"] == (
-        "karkinos.account_truth.evidence_readiness.v2"
+    assert (
+        readiness["schema_version"] == ACCOUNT_TRUTH_EVIDENCE_READINESS_SCHEMA_VERSION
     )
     assert readiness["status"] == "blocked"
     assert readiness["account_truth_import_run_id"] == duplicate_run.import_run_id
@@ -1153,7 +1170,7 @@ def test_account_truth_evidence_readiness_projects_canonical_blockers(
     assert readiness["authorizes_execution"] is False
     assert readiness["changes_capital_authority"] is False
     scope = readiness["evidence_scope"]
-    assert scope["schema_version"] == "karkinos.account_truth.evidence_scope.v1"
+    assert scope["schema_version"] == ACCOUNT_TRUTH_EVIDENCE_SCOPE_SCHEMA_VERSION
     assert scope["status"] == "blocked"
     assert scope["account_binding"]["status"] == "missing"
     assert scope["declared_coverage_window"]["status"] == "missing"
@@ -1213,8 +1230,9 @@ def test_account_truth_scope_review_is_exact_append_only_and_revocable(
         )
     )
 
-    assert recorded["schema_version"] == (
-        "karkinos.account_truth.evidence_scope_review_command.v1"
+    assert (
+        recorded["schema_version"]
+        == ACCOUNT_TRUTH_EVIDENCE_SCOPE_REVIEW_COMMAND_SCHEMA_VERSION
     )
     assert recorded["status"] == "recorded"
     assert recorded["scope_review_write_performed"] is True

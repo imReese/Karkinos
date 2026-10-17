@@ -10,6 +10,10 @@ from server.services.ai_shadow_research_automation import (
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED,
 )
+from server.services.automation_cockpit import (
+    AUTOMATION_COCKPIT_SCHEMA_PREFIX,
+    AUTOMATION_COCKPIT_SCHEMA_VERSION,
+)
 from server.services.daily_candidate_production_readiness_evidence import (
     CANONICAL_EVIDENCE_AUTHORITY as _CANONICAL_EVIDENCE_AUTHORITY,
 )
@@ -77,8 +81,11 @@ DAILY_CANDIDATE_PRODUCTION_READINESS_SCHEMA_VERSION = (
     "karkinos.daily_candidate_production_readiness.v2"
 )
 
-_EXPECTED_SCHEMAS = {
-    "cockpit": "karkinos.automation_cockpit.v4",
+_EXPECTED_SCHEMAS: dict[str, Any] = {
+    "cockpit": (
+        AUTOMATION_COCKPIT_SCHEMA_VERSION,
+        AUTOMATION_COCKPIT_SCHEMA_PREFIX,
+    ),
     "preflight": "karkinos.daily_candidate_financial_preflight.v1",
     "runtime": "karkinos.daily_candidate_runtime_status.v1",
     "trial": "karkinos.daily_candidate_trial.v2",

@@ -38,6 +38,9 @@ from account_truth.broker_order_lifecycle_collector import (
 )
 from data.market_calendar import build_static_market_calendar_snapshot
 from server.config import TrustedOperatorIdentityConfig
+from server.contracts.per_order_confirmation import (
+    validate_per_order_dossier_payload,
+)
 from server.db import AppDatabase
 from server.services.broker_connector_soak import (
     BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
@@ -73,6 +76,9 @@ from server.services.per_order_confirmation import (
     PerOrderConfirmationRejected,
     PerOrderConfirmationService,
     build_order_fingerprint,
+)
+from server.services.per_order_gateway_evidence import (
+    validate_per_order_gateway_evidence_payload,
 )
 from server.services.strategy_promotion_pipeline import (
     resolve_strategy_promotion_binding,
@@ -902,8 +908,8 @@ def test_gateway_gate_refs_resolve_to_exact_persisted_order_lineage(tmp_path) ->
     )
 
     gateway = dossier["gateway_gates"]
-    assert dossier["schema_version"] == "karkinos.per_order_confirmation_dossier.v5"
-    assert gateway["schema_version"] == "karkinos.per_order_gateway_gate_summary.v2"
+    validate_per_order_dossier_payload(dossier)
+    validate_per_order_gateway_evidence_payload(gateway)
     assert gateway["status"] == "pass"
     assert gateway["blockers"] == []
     assert {

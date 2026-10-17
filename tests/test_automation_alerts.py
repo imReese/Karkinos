@@ -5,6 +5,9 @@ from types import SimpleNamespace
 from server.db import AppDatabase
 from server.services.automation_alerts import AutomationAlertService
 from server.services.broker_gateway import BrokerGatewayService
+from server.services.current_per_order_dossier import (
+    CURRENT_PER_ORDER_CANDIDATES_SCHEMA_VERSION,
+)
 from server.services.execution_reconciliation import ExecutionReconciliationService
 from server.services.oms import OmsService
 from server.services.trading_controls import TradingControlState
@@ -34,7 +37,7 @@ def _required_gateway_evidence() -> dict:
 
 def _current_per_order_source(candidates: list[dict]) -> dict:
     return {
-        "schema_version": "karkinos.current_per_order_confirmation_candidates.v1",
+        "schema_version": CURRENT_PER_ORDER_CANDIDATES_SCHEMA_VERSION,
         "candidate_count": len(candidates),
         "candidates": candidates,
         "truncated": False,

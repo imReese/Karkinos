@@ -2,6 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from server.services.current_per_order_dossier import (
+    CURRENT_PER_ORDER_CONFIRMATION_RESOLUTION_SCHEMA_VERSION,
+    CURRENT_PER_ORDER_DOSSIER_SCHEMA_VERSION,
+)
+from server.services.per_order_gateway_evidence import (
+    PER_ORDER_GATEWAY_EVIDENCE_SCHEMA_VERSION,
+)
+
 
 def clear_current_per_order_confirmation(
     order_id: str,
@@ -36,13 +44,13 @@ def clear_current_per_order_confirmation(
         ),
     }
     current_dossier = {
-        "schema_version": "karkinos.current_per_order_confirmation_dossier.v1",
+        "schema_version": CURRENT_PER_ORDER_DOSSIER_SCHEMA_VERSION,
         "dossier_fingerprint": dossier_fingerprint,
         "review_status": "review_ready_non_submitting",
         "review_ready": True,
         "review_blockers": [],
         "gateway_gates": {
-            "schema_version": "karkinos.per_order_gateway_gate_summary.v2",
+            "schema_version": PER_ORDER_GATEWAY_EVIDENCE_SCHEMA_VERSION,
             "status": "pass",
             "gates": gates,
             "blockers": [],
@@ -60,7 +68,7 @@ def clear_current_per_order_confirmation(
         "authorizes_execution": False,
     }
     return {
-        "schema_version": "karkinos.current_per_order_confirmation_resolution.v1",
+        "schema_version": CURRENT_PER_ORDER_CONFIRMATION_RESOLUTION_SCHEMA_VERSION,
         "status": "current_verified_non_authorizing_confirmation",
         "confirmation_id": confirmation_id,
         "order_id": order_id,

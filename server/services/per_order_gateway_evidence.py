@@ -7,7 +7,7 @@ import json
 import re
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 from zoneinfo import ZoneInfo
 
 from server.services.reviewed_fee_schedule import active_review_matches_fee_evidence
@@ -15,7 +15,26 @@ from server.services.strategy_promotion_pipeline import (
     resolve_strategy_promotion_binding,
 )
 
+PER_ORDER_GATEWAY_EVIDENCE_SCHEMA_PREFIX = "karkinos.per_order_gateway_gate_summary."
 PER_ORDER_GATEWAY_EVIDENCE_SCHEMA_VERSION = "karkinos.per_order_gateway_gate_summary.v2"
+
+
+def validate_per_order_gateway_evidence_payload(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        raise ValueError("per_order_gateway_evidence_payload_must_be_mapping")
+    schema_version = str(payload.get("schema_version") or "")
+    if not schema_version.startswith(PER_ORDER_GATEWAY_EVIDENCE_SCHEMA_PREFIX):
+        raise ValueError(
+            f"per_order_gateway_evidence_schema_incompatible: expected prefix {PER_ORDER_GATEWAY_EVIDENCE_SCHEMA_PREFIX}, got {schema_version}"
+        )
+    required = ("status", "blockers", "gates")
+    missing = [key for key in required if key not in payload]
+    if missing:
+        raise ValueError(f"per_order_gateway_evidence_missing_fields: {missing}")
+    return dict(payload)
+
 
 _FINGERPRINT_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 _REQUIRED_GATEWAY_EVIDENCE: dict[str, tuple[str, frozenset[str], str]] = {

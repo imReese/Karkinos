@@ -34,6 +34,7 @@ from server.services.market_universe_truth import (
 
 logger = logging.getLogger(__name__)
 
+MARKET_UNIVERSE_AUTOMATION_SCHEMA_PREFIX = "karkinos.market_universe_automation."
 MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION = "karkinos.market_universe_automation.v6"
 MARKET_UNIVERSE_AUTOMATION_RUN_TYPE = "market_universe_sync"
 MARKET_UNIVERSE_AUTOMATION_INTERVAL_SECONDS = 60 * 60
@@ -46,7 +47,9 @@ def validate_market_universe_automation_payload(
     if not isinstance(payload, Mapping):
         raise ValueError("market_universe_automation_payload_missing")
     schema = payload.get("schema_version")
-    if not schema or not str(schema).startswith("karkinos.market_universe_automation."):
+    if not schema or not str(schema).startswith(
+        MARKET_UNIVERSE_AUTOMATION_SCHEMA_PREFIX
+    ):
         raise ValueError(f"market_universe_automation_schema_invalid: {schema}")
     for required in (
         "trigger",

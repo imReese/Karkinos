@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from server.services.automation_alerts import AutomationAlertService
@@ -24,7 +24,43 @@ from server.services.daily_decision_evidence_automation import (
 )
 from server.services.strategy_promotion_pipeline import StrategyPromotionPipeline
 
+AUTOMATION_COCKPIT_SCHEMA_PREFIX = "karkinos.automation_cockpit."
 AUTOMATION_COCKPIT_SCHEMA_VERSION = "karkinos.automation_cockpit.v4"
+
+
+def validate_automation_cockpit_payload(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Validate one automation cockpit summary payload contract."""
+    if not isinstance(payload, Mapping):
+        raise ValueError("automation_cockpit_payload_must_be_mapping")
+    data = dict(payload)
+    version = str(data.get("schema_version") or "")
+    if not (
+        version.startswith(AUTOMATION_COCKPIT_SCHEMA_PREFIX)
+        or version == AUTOMATION_COCKPIT_SCHEMA_VERSION
+    ):
+        raise ValueError(f"invalid_automation_cockpit_schema_version: {version}")
+    if data.get("broker_submission_enabled") is not False:
+        raise ValueError("automation_cockpit_must_not_enable_broker_submission")
+    for key in (
+        "automation_status",
+        "gateways",
+        "connector_registrations",
+        "controlled_execution",
+        "current_per_order_reviews",
+        "daily_candidate_trial",
+        "daily_candidate_runtime",
+        "daily_candidate_financial_preflight",
+        "open_alerts",
+        "recent_runs",
+        "promotion_states",
+        "execution_reconciliation_open_items",
+        "limitations",
+    ):
+        if key not in data:
+            raise ValueError(f"missing_automation_cockpit_key: {key}")
+    return data
 
 
 class AutomationCockpitService:
