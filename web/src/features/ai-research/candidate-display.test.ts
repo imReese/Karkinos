@@ -56,9 +56,9 @@ describe('candidate-display', () => {
     expect(formatCandidateTitle(c7, false)).toBe(
       'Gen 7 · Deep Pullback Reversion Strategy',
     );
-    expect(resolveCandidateEngine(c7)).toBe('DeepSeek-V3');
+    expect(resolveCandidateEngine(c7)).toBe('DeepSeek V4.1 Flash');
     expect(formatCandidateOptionLabel(c7, true)).toBe(
-      'Gen 7 · 缩量超跌均值回归策略 (DeepSeek-V3)',
+      'Gen 7 · 缩量超跌均值回归策略 (DeepSeek V4.1 Flash)',
     );
   });
 
@@ -85,7 +85,7 @@ describe('candidate-display', () => {
     ).toBe('Gen 6 · Gemini 3.8 Flash');
     expect(
       formatDraftSummaryName('ai-strategy-draft-deepseek-v7-promoted', true),
-    ).toBe('Gen 7 · DeepSeek-V3');
+    ).toBe('Gen 7 · DeepSeek V4.1 Flash');
     expect(formatDraftSummaryName(null, true)).toBe('无记录');
   });
 
