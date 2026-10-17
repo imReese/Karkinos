@@ -15,7 +15,7 @@ export function resolveCandidateEngine(
     return 'Gemini 3.8 Flash';
   }
   if (draftId.includes('deepseek') || candidate.comparison?.deepseek_critique) {
-    return 'DeepSeek-V3';
+    return 'DeepSeek V4.1 Flash';
   }
   return '—';
 }
@@ -32,7 +32,7 @@ export function formatDraftSummaryName(
     lower.includes('gen7') ||
     lower.includes('gen-7')
   ) {
-    return 'Gen 7 · DeepSeek-V3';
+    return 'Gen 7 · DeepSeek V4.1 Flash';
   }
   if (
     lower.includes('v6') ||
