@@ -228,14 +228,14 @@ function ShadowResearchTelemetryHUD({
               <span className="inline-flex items-center gap-1.5 font-normal text-xs normal-case text-[var(--app-text-secondary)]">
                 <span>
                   {zh
-                    ? '现役 Gen 5: Gemini 3.8 Flash'
-                    : 'Active Gen 5: Gemini 3.8 Flash'}
+                    ? '现役 Gen 7: DeepSeek V4.1 Flash'
+                    : 'Active Gen 7: DeepSeek V4.1 Flash'}
                 </span>
                 <span className="text-[var(--app-text-tertiary)]">·</span>
                 <span className="text-[var(--app-accent)]">
                   {zh
-                    ? '今晚待启动: DeepSeek V4.1 Flash'
-                    : 'Queued: DeepSeek V4.1 Flash'}
+                    ? '待启动: DeepSeek V4.1 Flash (Gen 8)'
+                    : 'Queued: DeepSeek V4.1 Flash (Gen 8)'}
                 </span>
               </span>
             </h2>
