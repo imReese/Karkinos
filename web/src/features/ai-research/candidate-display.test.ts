@@ -3,6 +3,7 @@ import {
   formatCandidateTitle,
   formatCandidateOptionLabel,
   formatDraftSummaryName,
+  formatModelDisplayName,
   resolveCandidateEngine,
 } from './candidate-display';
 import type { ShadowResearchCandidate } from './shadow-research-api';
@@ -87,6 +88,48 @@ describe('candidate-display', () => {
       formatDraftSummaryName('ai-strategy-draft-deepseek-v7-promoted', true),
     ).toBe('Gen 7 · DeepSeek V4.1 Flash');
     expect(formatDraftSummaryName(null, true)).toBe('无记录');
+    expect(
+      formatDraftSummaryName('ai-strategy-draft-51a80e75-gen4', true),
+    ).toBe('Gen 4 · DeepSeek V4 Pro');
+    expect(
+      formatDraftSummaryName('ai-strategy-draft-870abf84-gen3', true),
+    ).toBe('Gen 3 · DeepSeek V4 Pro');
+    expect(
+      formatDraftSummaryName('ai-strategy-draft-1952a2c4-gen2', true),
+    ).toBe('Gen 2 · DeepSeek V4 Pro');
+    expect(
+      formatDraftSummaryName('ai-strategy-draft-14876873-gen1', true),
+    ).toBe('Gen 1 · DeepSeek V4 Pro');
+  });
+
+  it('formats Gen 1-4 DeepSeek V4 Pro strategy candidates correctly', () => {
+    const c4 = makeMockCandidate('ai-strategy-draft-51a80e75-gen4', 4);
+    expect(resolveCandidateEngine(c4)).toBe('DeepSeek V4 Pro');
+    expect(formatCandidateOptionLabel(c4, true)).toContain('DeepSeek V4 Pro');
+
+    const c3 = makeMockCandidate('ai-strategy-draft-870abf84-gen3', 3);
+    expect(resolveCandidateEngine(c3)).toBe('DeepSeek V4 Pro');
+
+    const c2 = makeMockCandidate('ai-strategy-draft-1952a2c4-gen2', 2);
+    expect(resolveCandidateEngine(c2)).toBe('DeepSeek V4 Pro');
+
+    const c1 = makeMockCandidate('ai-strategy-draft-14876873-gen1', 1);
+    expect(resolveCandidateEngine(c1)).toBe('DeepSeek V4 Pro');
+  });
+
+  it('formats model display names from provider or session registration correctly', () => {
+    expect(
+      formatModelDisplayName(
+        'karkinos.strategy_research.hypothesis.deepseek.v1:deepseek-v4-pro',
+      ),
+    ).toBe('DeepSeek V4 Pro');
+    expect(formatModelDisplayName('deepseek-flash')).toBe(
+      'DeepSeek V4.1 Flash',
+    );
+    expect(formatModelDisplayName('gemini-3.8-flash')).toBe('Gemini 3.8 Flash');
+    expect(formatModelDisplayName(null, 'DeepSeek V4 Pro')).toBe(
+      'DeepSeek V4 Pro',
+    );
   });
 
   it('handles generic candidates gracefully with clean fallback', () => {

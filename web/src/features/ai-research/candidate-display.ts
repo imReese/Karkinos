@@ -6,18 +6,72 @@ export function resolveCandidateEngine(
   if (!candidate) return '—';
   const draftId = (candidate.draft_id || '').toLowerCase();
   const candId = (candidate.candidate_id || '').toLowerCase();
+  const genNum = candidate.comparison?.iteration_lineage?.iteration_number;
 
+  // Gen 5 & 6: Gemini 3.8 Flash
   if (
     draftId.includes('gemini') ||
     candId.includes('7f8a7bb') ||
-    candId.includes('d02c03e')
+    candId.includes('d02c03e') ||
+    genNum === 5 ||
+    genNum === 6
   ) {
     return 'Gemini 3.8 Flash';
   }
-  if (draftId.includes('deepseek') || candidate.comparison?.deepseek_critique) {
+
+  // Gen 7 (and future active/queued like Gen 8): DeepSeek V4.1 Flash
+  if (
+    draftId.includes('v7') ||
+    draftId.includes('deepseek-v7') ||
+    candId.includes('9a4f21d') ||
+    draftId.includes('flash') ||
+    (typeof genNum === 'number' && genNum >= 7)
+  ) {
     return 'DeepSeek V4.1 Flash';
   }
+
+  // Gen 1 - 4: DeepSeek V4 Pro
+  if (
+    (typeof genNum === 'number' && genNum >= 1 && genNum <= 4) ||
+    draftId.includes('51a80e75') ||
+    draftId.includes('870abf84') ||
+    draftId.includes('1952a2c4') ||
+    draftId.includes('14876873') ||
+    draftId.includes('v4') ||
+    draftId.includes('v3') ||
+    draftId.includes('v2') ||
+    draftId.includes('v1')
+  ) {
+    return 'DeepSeek V4 Pro';
+  }
+
+  // Fallback for any DeepSeek-associated candidate
+  if (draftId.includes('deepseek') || candidate.comparison?.deepseek_critique) {
+    return 'DeepSeek V4 Pro';
+  }
   return '—';
+}
+
+export function formatModelDisplayName(
+  rawModel: string | null | undefined,
+  fallback?: string,
+): string {
+  if (!rawModel) return fallback ?? '—';
+  const lower = rawModel.toLowerCase();
+  if (lower.includes('deepseek-v4-pro') || lower.includes('v4-pro')) {
+    return 'DeepSeek V4 Pro';
+  }
+  if (
+    lower.includes('deepseek-flash') ||
+    lower.includes('v4.1-flash') ||
+    lower.includes('v4.1')
+  ) {
+    return 'DeepSeek V4.1 Flash';
+  }
+  if (lower.includes('gemini-3.8-flash') || lower.includes('gemini')) {
+    return 'Gemini 3.8 Flash';
+  }
+  return rawModel;
 }
 
 export function formatDraftSummaryName(
@@ -53,28 +107,28 @@ export function formatDraftSummaryName(
     lower.includes('gen4') ||
     lower.includes('51a80e75')
   ) {
-    return 'Gen 4 · DeepSeek';
+    return 'Gen 4 · DeepSeek V4 Pro';
   }
   if (
     lower.includes('v3') ||
     lower.includes('gen3') ||
     lower.includes('870abf84')
   ) {
-    return 'Gen 3 · DeepSeek';
+    return 'Gen 3 · DeepSeek V4 Pro';
   }
   if (
     lower.includes('v2') ||
     lower.includes('gen2') ||
     lower.includes('1952a2c4')
   ) {
-    return 'Gen 2 · DeepSeek';
+    return 'Gen 2 · DeepSeek V4 Pro';
   }
   if (
     lower.includes('v1') ||
     lower.includes('gen1') ||
     lower.includes('14876873')
   ) {
-    return 'Gen 1 · DeepSeek';
+    return 'Gen 1 · DeepSeek V4 Pro';
   }
 
   // Generic fallback: clean ID
