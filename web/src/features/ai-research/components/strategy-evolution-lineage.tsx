@@ -325,7 +325,7 @@ export function StrategyEvolutionLineage({
                 <span className="font-sans">
                   {zh ? '执行模型: ' : 'Engine: '}
                   <span className="font-mono font-semibold text-[var(--app-accent)]">
-                    DeepSeek
+                    DeepSeek V4.1 Flash
                   </span>
                 </span>
                 <span className="font-mono text-xs opacity-60">

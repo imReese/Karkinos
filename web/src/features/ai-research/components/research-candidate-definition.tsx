@@ -3,7 +3,10 @@ import { apiClient } from '../../../shared/api/client';
 import { usePreferences } from '../../../shared/preferences/context';
 import type { StrategyResearchSession } from '../api';
 import type { ShadowResearchCandidate } from '../shadow-research-api';
-import { resolveCandidateEngine } from '../candidate-display';
+import {
+  formatModelDisplayName,
+  resolveCandidateEngine,
+} from '../candidate-display';
 
 export function ResearchCandidateDefinition({
   candidate,
@@ -27,8 +30,10 @@ export function ResearchCandidateDefinition({
   );
   const scope = candidate.comparison.deployment_scope;
   const validation = candidate.comparison.deployment_validation;
-  const recordedModel =
-    draft?.model_id ?? session?.model_id ?? resolveCandidateEngine(candidate);
+  const rawModel = draft?.model_id ?? session?.model_id;
+  const recordedModel = rawModel
+    ? formatModelDisplayName(rawModel, resolveCandidateEngine(candidate))
+    : resolveCandidateEngine(candidate);
   const universeCount =
     session?.selection?.universe?.length ??
     scope?.evaluated_count ??
