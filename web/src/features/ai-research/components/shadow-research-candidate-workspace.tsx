@@ -6,6 +6,7 @@ import {
 } from '../api';
 import { SHADOW_RESEARCH_COPY } from './shadow-research-copy';
 import { CandidateCard } from './shadow-research-view';
+import { StrategyEvolutionLineage } from './strategy-evolution-lineage';
 import { usePublicationPolicy } from '../publication-policy-api';
 
 export function ShadowResearchCandidateWorkspace({
@@ -177,59 +178,65 @@ export function ShadowResearchCandidateWorkspace({
     />
   );
 
+  const registryControl = (
+    <label className="inline-flex items-center">
+      <span className="sr-only">{copy.currentCandidates}</span>
+      <select
+        aria-label={copy.currentCandidates}
+        className="h-7 max-w-[180px] sm:max-w-[240px] truncate rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-2 py-0.5 text-xs font-mono font-medium text-[var(--app-text)] shadow-sm transition-colors focus:border-[var(--app-accent)] focus:outline-none"
+        data-testid="shadow-research-current-registry"
+        onChange={(event) => setSelectedCandidateId(event.target.value)}
+        value={selectedCandidate?.candidate_id ?? ''}
+      >
+        {current.length ? (
+          <optgroup label={copy.currentCandidates}>
+            {current.map((candidate) => (
+              <option
+                value={candidate.candidate_id}
+                key={candidate.candidate_id}
+              >
+                {candidate.comparison?.economic_hypothesis ||
+                  candidate.draft_id ||
+                  candidate.candidate_id}
+              </option>
+            ))}
+          </optgroup>
+        ) : null}
+        {historical.length ? (
+          <optgroup label={copy.candidateHistory}>
+            {historical.map((candidate) => (
+              <option
+                value={candidate.candidate_id}
+                key={candidate.candidate_id}
+              >
+                {candidate.comparison?.economic_hypothesis ||
+                  candidate.draft_id ||
+                  candidate.candidate_id}
+              </option>
+            ))}
+          </optgroup>
+        ) : null}
+      </select>
+    </label>
+  );
+
   return (
     <section
       className="min-w-0 space-y-4"
       data-testid="shadow-research-candidate-workspace"
     >
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-[var(--app-divider)] pb-4">
-        <div className="min-w-0 flex-1 sm:max-w-xl">
-          <div className="mb-1.5 flex items-center justify-between">
-            <span className="app-type-overline text-[var(--app-text-tertiary)]">
-              {copy.candidateRegistry}
-            </span>
-            <span className="font-mono text-xs tabular-nums text-[var(--app-text-secondary)]">
-              {ordered.length} {copy.candidates}
-            </span>
-          </div>
-          <label className="block min-w-0">
-            <span className="sr-only">{copy.currentCandidates}</span>
-            <select
-              className="app-field min-h-10 w-full min-w-0 px-3 py-2 text-xs font-medium text-[var(--app-text)] sm:text-sm"
-              data-testid="shadow-research-current-registry"
-              onChange={(event) => setSelectedCandidateId(event.target.value)}
-              value={selectedCandidate?.candidate_id ?? ''}
-            >
-              {current.length ? (
-                <optgroup label={copy.currentCandidates}>
-                  {current.map((candidate) => (
-                    <option
-                      value={candidate.candidate_id}
-                      key={candidate.candidate_id}
-                    >
-                      {candidate.comparison.economic_hypothesis ||
-                        candidate.draft_id}
-                    </option>
-                  ))}
-                </optgroup>
-              ) : null}
-              {historical.length ? (
-                <optgroup label={copy.candidateHistory}>
-                  {historical.map((candidate) => (
-                    <option
-                      value={candidate.candidate_id}
-                      key={candidate.candidate_id}
-                    >
-                      {candidate.comparison.economic_hypothesis ||
-                        candidate.draft_id}
-                    </option>
-                  ))}
-                </optgroup>
-              ) : null}
-            </select>
-          </label>
-        </div>
-      </div>
+      {ordered.length > 0 ? (
+        <StrategyEvolutionLineage
+          candidates={ordered}
+          currentCandidates={current}
+          historicalCandidates={historical}
+          onSelectCandidate={setSelectedCandidateId}
+          registryControl={registryControl}
+          selectedCandidateId={selectedCandidate?.candidate_id ?? null}
+          verifiedWinnerCandidateIds={verifiedWinnerCandidateIds}
+        />
+      ) : null}
+
       {selectedCandidate ? (
         <section
           aria-label={copy.selectedCandidate}

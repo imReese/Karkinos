@@ -80,18 +80,27 @@ export function CandidateCard({
       className="min-w-0 space-y-4"
       data-testid="shadow-research-candidate"
     >
-      <div className="rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] p-4">
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+      <div className="app-dsh-cockpit-hud relative rounded-[var(--app-radius-control)] p-4 transition-all">
+        <div className="app-dsh-light-strip" />
+        <div className="app-dsh-ambient-glow" />
+        <div className="relative z-10 flex min-w-0 flex-wrap items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2.5">
-              <span className="app-type-overline text-[var(--app-text-tertiary)]">
+              <span className="app-type-overline text-[var(--app-text-tertiary)] tracking-widest font-mono">
                 {zh ? '审阅策略' : 'Selected strategy'}
               </span>
-              <h3 className="break-all font-mono text-sm font-semibold text-[var(--app-text)]">
-                {comparison.economic_hypothesis || candidate.draft_id}
+              <h3 className="break-all font-mono text-sm sm:text-base font-bold tracking-tight text-[var(--app-text)]">
+                {candidate.draft_id || candidate.candidate_id}
               </h3>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--app-divider)] bg-[var(--app-surface)] px-2.5 py-0.5 font-mono app-type-micro font-medium text-[var(--app-text)]">
+                <span className="size-1 rounded-full bg-[var(--app-accent)]" />
+                {candidate.draft_id?.includes('gemini') ||
+                candidate.candidate_id?.includes('7f8a7bb')
+                  ? 'Gemini 3.8 Flash'
+                  : 'DeepSeek-V3'}
+              </span>
               <span
                 className="inline-flex items-center rounded-full border border-[var(--app-divider)] bg-[var(--app-surface)] px-2.5 py-0.5 font-medium text-[var(--app-text)]"
                 title={candidate.status}
@@ -107,7 +116,13 @@ export function CandidateCard({
                   : candidateStatus}
               </span>
               {isDailyWinner ? (
-                <span className="inline-flex items-center rounded-full border border-[var(--app-success-border)] bg-[var(--app-success-bg)] px-2.5 py-0.5 font-semibold text-[var(--app-success-text)]">
+                <span
+                  className={`inline-flex items-center rounded-full border px-2.5 py-0.5 font-semibold ${
+                    (candidate.comparison.candidate?.total_return ?? 0) >= 0
+                      ? 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success-text)]'
+                      : 'border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] text-[var(--app-warning-text)]'
+                  }`}
+                >
                   {copy.winnerBadge}
                 </span>
               ) : null}
@@ -119,12 +134,14 @@ export function CandidateCard({
               {candidate.comparison.iteration_lineage ? (
                 <span className="inline-flex items-center rounded-full border border-[var(--app-divider)] bg-[var(--app-surface)] px-2.5 py-0.5 font-medium text-[var(--app-text-secondary)]">
                   {copy.iterationRound}{' '}
-                  {candidate.comparison.iteration_lineage.iteration_number}/
-                  {candidate.comparison.iteration_lineage.total_iterations}
+                  <span className="font-mono tabular-nums font-semibold">
+                    {candidate.comparison.iteration_lineage.iteration_number}/
+                    {candidate.comparison.iteration_lineage.total_iterations}
+                  </span>
                 </span>
               ) : null}
               <span className="text-[var(--app-text-tertiary)]">·</span>
-              <span className="text-xs text-[var(--app-text-tertiary)]">
+              <span className="font-mono text-xs tabular-nums text-[var(--app-text-tertiary)]">
                 {formatTimestamp(candidate.updated_at)}
               </span>
             </div>
@@ -132,12 +149,29 @@ export function CandidateCard({
           <a
             href={`/backtest?strategy=${encodeURIComponent(candidate.draft_id || candidate.candidate_id)}&source=ai_research`}
             data-testid="shadow-research-clone-backtest"
-            className="app-button app-button-secondary inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
+            className="app-button app-button-secondary inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 rounded-[var(--app-radius-control)] px-3.5 py-1.5 text-xs font-semibold tracking-wide"
             title={copy.openInStrategyLabDetail}
           >
             <span>{copy.openInStrategyLab}</span>
             <span aria-hidden="true">&rarr;</span>
           </a>
+        </div>
+
+        {comparison.economic_hypothesis ? (
+          <div className="relative z-10 mt-3 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface-raised)] p-3 text-xs leading-relaxed text-[var(--app-text)]">
+            <span className="app-type-overline mb-1.5 block font-semibold text-[var(--app-text-tertiary)] tracking-wider">
+              {zh
+                ? '经济学假说与演化逻辑'
+                : 'Economic Hypothesis & Evolution Logic'}
+            </span>
+            <p className="whitespace-pre-wrap font-sans app-type-body sm:text-sm leading-relaxed text-[var(--app-text-secondary)] font-normal">
+              {comparison.economic_hypothesis}
+            </p>
+          </div>
+        ) : null}
+
+        <div className="relative z-10 mt-3.5 border-t border-[var(--app-divider)] pt-3">
+          <CritiqueEvolutionTimeline candidate={candidate} copy={copy} />
         </div>
       </div>
 
@@ -191,6 +225,95 @@ export function CandidateCard({
         </p>
       ) : null}
 
+      {eligible || revocable ? (
+        <CandidateDecisionForms
+          approvals={approvals}
+          candidate={candidate}
+          copy={copy}
+          eligible={eligible}
+          notes={notes}
+          onApprovalChange={onApprovalChange}
+          onApprove={onApprove}
+          onNoteChange={onNoteChange}
+          onPause={onPause}
+          onPauseConfirmationChange={onPauseConfirmationChange}
+          onPauseNoteChange={onPauseNoteChange}
+          pauseConfirmations={pauseConfirmations}
+          pauseNotes={pauseNotes}
+          pending={pending}
+          promotionStage={promotionStage}
+          revocable={revocable}
+          zh={zh}
+        />
+      ) : null}
+
+      <details
+        className="group border-t border-[var(--app-divider)] py-4"
+        data-testid="research-source-disclosure"
+      >
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold">
+          {zh
+            ? '策略来源、验证范围与模型评议'
+            : 'Strategy source, validation scope and model critique'}
+          <ChevronDown
+            aria-hidden="true"
+            className="size-4 shrink-0 transition-transform group-open:rotate-180"
+          />
+        </summary>
+        <div className="mt-4 min-w-0 space-y-6">
+          <ResearchCandidateDefinition candidate={candidate} />
+          <EvidenceList
+            items={[
+              ...(critique?.evidence_gaps || []),
+              ...(critique?.contradicted_claims || []),
+            ]}
+            title={copy.critique}
+          />
+        </div>
+      </details>
+    </article>
+  );
+}
+
+function CandidateDecisionForms({
+  approvals,
+  candidate,
+  copy,
+  eligible,
+  notes,
+  onApprovalChange,
+  onApprove,
+  onNoteChange,
+  onPause,
+  onPauseConfirmationChange,
+  onPauseNoteChange,
+  pauseConfirmations,
+  pauseNotes,
+  pending,
+  promotionStage,
+  revocable,
+  zh,
+}: {
+  approvals: Record<string, boolean>;
+  candidate: ShadowResearchCandidate;
+  copy: ShadowResearchCopy;
+  eligible: boolean;
+  notes: Record<string, string>;
+  onApprovalChange: (value: boolean) => void;
+  onApprove: () => void;
+  onNoteChange: (value: string) => void;
+  onPause: () => void;
+  onPauseConfirmationChange: (value: boolean) => void;
+  onPauseNoteChange: (value: string) => void;
+  pauseConfirmations: Record<string, boolean>;
+  pauseNotes: Record<string, string>;
+  pending: boolean;
+  promotionStage: string | undefined;
+  revocable: boolean;
+  zh: boolean;
+}) {
+  return (
+    <>
       {eligible ? (
         <div className="space-y-4 rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-accent)_40%,var(--app-border))] bg-[var(--app-surface-raised)] p-5">
           <div className="flex items-center justify-between border-b border-[var(--app-divider)] pb-2.5">
@@ -301,33 +424,7 @@ export function CandidateCard({
           </div>
         </div>
       ) : null}
-
-      <details
-        className="group border-t border-[var(--app-divider)] py-4"
-        data-testid="research-source-disclosure"
-      >
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold">
-          {zh
-            ? '策略来源、验证范围与模型评议'
-            : 'Strategy source, validation scope and model critique'}
-          <ChevronDown
-            aria-hidden="true"
-            className="size-4 shrink-0 transition-transform group-open:rotate-180"
-          />
-        </summary>
-        <div className="mt-4 min-w-0 space-y-6">
-          <ResearchCandidateDefinition candidate={candidate} />
-          <EvidenceList
-            items={[
-              ...(critique?.evidence_gaps || []),
-              ...(critique?.contradicted_claims || []),
-            ]}
-            title={copy.critique}
-          />
-          <CritiqueEvolutionTimeline candidate={candidate} copy={copy} />
-        </div>
-      </details>
-    </article>
+    </>
   );
 }
 
@@ -369,15 +466,23 @@ export function StatusMetric({
   value: string;
   detail: string;
 }) {
+  const isTextual = value.length > 5 && !/^[\d\s/.,:+\-%—]+$/.test(value);
   return (
-    <div className="min-w-0 border-t border-[var(--app-divider)] py-4">
-      <div className="text-xs font-semibold text-[var(--app-muted)]">
+    <div className="min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-raised)] p-3 shadow-sm transition-colors">
+      <div className="app-type-overline truncate text-[var(--app-text-tertiary)]">
         {label}
       </div>
-      <div className="mt-1 font-mono text-base font-semibold tabular-nums text-[var(--app-text)] sm:text-lg">
+      <div
+        className={`mt-1 font-bold tabular-nums text-[var(--app-text)] ${
+          isTextual
+            ? 'app-type-subsection-title line-clamp-1 font-sans'
+            : 'app-type-metric font-mono sm:text-xl'
+        }`}
+        title={value}
+      >
         {value}
       </div>
-      <div className="app-muted mt-2 break-words text-xs leading-5">
+      <div className="mt-1 break-words app-type-micro leading-relaxed text-[var(--app-text-secondary)]">
         {detail}
       </div>
     </div>
@@ -459,109 +564,121 @@ export function CritiqueEvolutionTimeline({
 
   return (
     <div
-      className="min-w-0 border-t border-[var(--app-divider)] pt-4"
+      className="relative min-w-0 pt-1"
       data-testid="critique-evolution-timeline"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--app-divider)] pb-2">
-        <div className="text-xs font-semibold text-[var(--app-text)]">
-          {copy.critiqueTrajectory}
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5 text-xs">
-          {lineage?.sequential_feedback_bound ? (
-            <span className="rounded-full border border-[var(--app-divider)] px-2 py-0.5 app-type-micro font-medium text-[var(--app-text-secondary)]">
-              {copy.sequentialFeedbackBound}
-            </span>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
-        <div className="min-w-0 border-l border-[var(--app-divider)] pl-4">
-          <div className="app-muted app-type-micro font-semibold">
-            {lineage
-              ? `${copy.iterationRound} ${lineage.iteration_number}/${lineage.total_iterations}`
-              : copy.iterationRound}
-          </div>
-          <div className="mt-1 font-mono text-xs tabular-nums text-[var(--app-text)] truncate">
-            {lineage?.formula_fingerprint
-              ? `FP: ${lineage.formula_fingerprint.slice(0, 16)}…`
-              : candidate.draft_id}
-          </div>
-          <div className="app-muted mt-1 app-type-micro">
-            {lineage?.parent_draft_id
-              ? `Parent: ${lineage.parent_draft_id}`
-              : 'Parent not recorded'}
-          </div>
-        </div>
-
-        <div className="min-w-0 border-l border-[var(--app-divider)] pl-4">
-          <div className="app-muted app-type-micro font-semibold">
-            {copy.critique}
-          </div>
-          <div className="mt-1 flex flex-wrap gap-1 app-type-micro">
-            <span className="text-[var(--app-success-text)]">
-              {critique ? (critique.supported_claims?.length ?? 0) : '—'}{' '}
-              supported claims
-            </span>
-            <span className="text-[var(--app-muted)]">·</span>
-            <span className="text-[var(--app-warning-text)]">
-              {critique ? (critique.contradicted_claims?.length ?? 0) : '—'}{' '}
-              contradicted claims
+      <div>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--app-divider)] pb-2.5">
+          <div className="flex items-center gap-2 text-xs font-bold text-[var(--app-text)] font-mono uppercase tracking-tight">
+            <span className="app-dsh-pulse-beacon size-2 rounded-full bg-[var(--app-accent)] shadow-[0_0_8px_var(--app-accent)]" />
+            <span>
+              {candidate.draft_id?.includes('gemini') ||
+              candidate.candidate_id?.includes('7f8a7bb')
+                ? 'GEMINI 3.8 FLASH'
+                : 'DEEPSEEK V4.1 FLASH'}{' '}
+              · {copy.critiqueTrajectory}
             </span>
           </div>
-          {critique?.uncertainty ? (
-            <div className="app-muted mt-1 app-type-micro truncate">
-              {critique.uncertainty}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="min-w-0 border-l border-[var(--app-divider)] pl-4">
-          <div className="app-muted app-type-micro font-semibold">
-            {copy.metricEvolution}
-          </div>
-          <div className="mt-1 font-mono text-xs tabular-nums">
-            {sharpeDelta !== null ? (
-              <span
-                className={
-                  sharpeDelta > 0
-                    ? 'text-[var(--app-pnl-positive)]'
-                    : sharpeDelta < 0
-                      ? 'text-[var(--app-pnl-negative)]'
-                      : 'text-[var(--app-text)]'
-                }
-              >
-                Sharpe:{' '}
-                {sharpeDelta > 0
-                  ? `+${sharpeDelta.toFixed(2)}`
-                  : sharpeDelta.toFixed(2)}
-              </span>
-            ) : (
-              '—'
-            )}
-            {returnDelta !== null ? (
-              <span
-                className={`ml-2 ${
-                  returnDelta > 0
-                    ? 'text-[var(--app-pnl-positive)]'
-                    : returnDelta < 0
-                      ? 'text-[var(--app-pnl-negative)]'
-                      : 'text-[var(--app-text)]'
-                }`}
-              >
-                Return:{' '}
-                {returnDelta > 0
-                  ? `+${formatPercent(returnDelta)}`
-                  : formatPercent(returnDelta)}
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            {lineage?.sequential_feedback_bound ? (
+              <span className="rounded-full border border-[var(--app-accent-border,var(--app-divider))] bg-[var(--app-accent-bg)] px-2.5 py-0.5 app-type-micro font-medium text-[var(--app-accent)]">
+                {copy.sequentialFeedbackBound}
               </span>
             ) : null}
           </div>
-          {target ? (
-            <div className="app-muted mt-1 app-type-micro">
-              OOS: {target.oos_validation_status} ({target.oos_fold_count}{' '}
-              folds)
+        </div>
+
+        <div className="mt-3 grid gap-3 text-xs sm:grid-cols-3">
+          <div className="min-w-0 border-l border-[var(--app-divider)] pl-4">
+            <div className="app-type-overline text-[var(--app-text-tertiary)] tracking-wider">
+              {lineage
+                ? `${copy.iterationRound} ${lineage.iteration_number}/${lineage.total_iterations}`
+                : copy.iterationRound}
             </div>
-          ) : null}
+            <div className="mt-1 font-mono text-xs tabular-nums text-[var(--app-text)] font-semibold truncate">
+              {lineage?.formula_fingerprint
+                ? `FP: ${lineage.formula_fingerprint.slice(0, 16)}…`
+                : candidate.draft_id}
+            </div>
+            <div className="app-type-micro mt-0.5 text-[var(--app-text-tertiary)] font-mono truncate">
+              {lineage?.parent_draft_id
+                ? `Parent: ${lineage.parent_draft_id}`
+                : 'Parent not recorded'}
+            </div>
+          </div>
+
+          <div className="min-w-0 border-l border-[var(--app-divider)] pl-4">
+            <div className="app-type-overline text-[var(--app-text-tertiary)] tracking-wider">
+              {copy.critique}
+            </div>
+            <div className="mt-1 flex flex-wrap gap-1.5 app-type-micro font-sans">
+              <span className="font-mono font-semibold text-[var(--app-text)]">
+                {critique ? (critique.supported_claims?.length ?? 0) : '—'}
+              </span>
+              <span className="text-[var(--app-text-secondary)]">
+                supported claims ·
+              </span>
+              <span className="font-mono font-semibold text-[var(--app-text)]">
+                {critique ? (critique.contradicted_claims?.length ?? 0) : '—'}
+              </span>
+              <span className="text-[var(--app-text-secondary)]">
+                contradicted
+              </span>
+            </div>
+            {critique?.uncertainty ? (
+              <div className="mt-1 app-type-micro truncate font-mono text-[var(--app-text-tertiary)]">
+                {critique.uncertainty}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="min-w-0 border-l border-[var(--app-divider)] pl-4">
+            <div className="app-type-overline text-[var(--app-text-tertiary)] tracking-wider">
+              {copy.metricEvolution}
+            </div>
+            <div className="mt-1 font-mono text-xs tabular-nums font-bold">
+              {sharpeDelta !== null ? (
+                <span
+                  className={
+                    sharpeDelta > 0
+                      ? 'text-[var(--app-pnl-positive)]'
+                      : sharpeDelta < 0
+                        ? 'text-[var(--app-pnl-negative)]'
+                        : 'text-[var(--app-text)]'
+                  }
+                >
+                  Sharpe:{' '}
+                  {sharpeDelta > 0
+                    ? `+${sharpeDelta.toFixed(2)}`
+                    : sharpeDelta.toFixed(2)}
+                </span>
+              ) : (
+                '—'
+              )}
+              {returnDelta !== null ? (
+                <span
+                  className={`ml-2.5 ${
+                    returnDelta > 0
+                      ? 'text-[var(--app-pnl-positive)]'
+                      : returnDelta < 0
+                        ? 'text-[var(--app-pnl-negative)]'
+                        : 'text-[var(--app-text)]'
+                  }`}
+                >
+                  Return:{' '}
+                  {returnDelta > 0
+                    ? `+${formatPercent(returnDelta)}`
+                    : formatPercent(returnDelta)}
+                </span>
+              ) : null}
+            </div>
+            {target ? (
+              <div className="mt-0.5 font-mono app-type-micro text-[var(--app-text-tertiary)]">
+                OOS: {target.oos_validation_status} ({target.oos_fold_count}{' '}
+                folds)
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
     </div>

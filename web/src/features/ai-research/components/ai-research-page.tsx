@@ -45,6 +45,14 @@ export function AiResearchPage() {
           data-testid="ai-research-primary-canvas"
         >
           <ShadowResearchPanel />
+          <div className="relative pt-4">
+            <div className="flex items-center gap-2 border-t border-[var(--app-divider)] pt-4 text-xs font-mono font-medium text-[var(--app-text-tertiary)] uppercase tracking-wider">
+              <span className="size-1.5 rounded-full bg-[var(--app-text-tertiary)] opacity-60" />
+              <span>
+                人工复核工单与已冻结证据工作区 / Human Research & Evidence Audit
+              </span>
+            </div>
+          </div>
           <ResearchTaskPanel
             backtestResultId={latestBacktest?.id ?? null}
             defaultOpen

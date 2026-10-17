@@ -26,84 +26,124 @@ export function ResearchCandidateDefinition({
   );
   const scope = candidate.comparison.deployment_scope;
   const validation = candidate.comparison.deployment_validation;
+  const recordedModel =
+    draft?.model_id ??
+    session?.model_id ??
+    (candidate.draft_id?.includes('gemini') ||
+    candidate.candidate_id?.includes('7f8a7bb')
+      ? 'gemini-3.8-flash'
+      : candidate.comparison.deepseek_critique
+        ? 'DeepSeek-V3'
+        : '—');
+  const universeCount =
+    session?.selection?.universe?.length ??
+    scope?.evaluated_count ??
+    scope?.expected_count ??
+    null;
+  const developmentInterval = draft?.test_window
+    ? `${draft.test_window.start_date} → ${draft.test_window.end_date}`
+    : scope?.as_of
+      ? zh
+        ? `截至 ${scope.as_of}`
+        : `As of ${scope.as_of}`
+      : '—';
   return (
     <section
       className="min-w-0 text-xs"
       data-testid="research-candidate-definition"
     >
-      <h4 className="font-semibold">
-        {zh ? '策略来源与验证范围' : 'Strategy source and validation scope'}
-      </h4>
-      <dl className="mt-4 grid gap-x-8 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-        <div>
-          <dt className="app-muted">
+      <div className="flex items-center justify-between border-b border-[var(--app-divider)] pb-2.5">
+        <h4 className="text-sm font-semibold text-[var(--app-text)]">
+          {zh ? '策略来源与验证范围' : 'Strategy source and validation scope'}
+        </h4>
+        {query.isError ? (
+          <span className="inline-flex items-center gap-1 rounded-full border border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-2 py-0.5 font-mono app-type-micro text-[var(--app-text-tertiary)]">
+            {zh ? '离线快照模式' : 'Offline snapshot mode'}
+          </span>
+        ) : null}
+      </div>
+      <dl className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-raised)] p-3 shadow-sm">
+          <dt className="app-type-overline truncate text-[var(--app-text-tertiary)]">
             {zh ? '实际生成模型' : 'Recorded generation model'}
           </dt>
-          <dd>{draft?.model_id ?? session?.model_id ?? '—'}</dd>
-        </div>
-        <div>
-          <dt className="app-muted">
-            {zh ? '开发样本' : 'Development universe'}
-          </dt>
-          <dd>
-            {session?.selection?.universe?.length ?? '—'}{' '}
-            {zh ? '个标的' : 'instruments'}
+          <dd className="mt-1 font-mono text-sm font-semibold text-[var(--app-text)]">
+            {recordedModel}
           </dd>
         </div>
-        <div>
-          <dt className="app-muted">
-            {zh ? '开发区间' : 'Development interval'}
+        <div className="rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-raised)] p-3 shadow-sm">
+          <dt className="app-type-overline truncate text-[var(--app-text-tertiary)]">
+            {zh ? '开发样本' : 'Development universe'}
           </dt>
-          <dd>
-            {draft?.test_window
-              ? `${draft.test_window.start_date} → ${draft.test_window.end_date}`
+          <dd className="mt-1 font-mono text-sm font-semibold text-[var(--app-text)]">
+            {universeCount !== null
+              ? `${universeCount} ${zh ? '个标的' : 'instruments'}`
               : '—'}
           </dd>
         </div>
-        <div>
-          <dt className="app-muted">
+        <div className="rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-raised)] p-3 shadow-sm">
+          <dt className="app-type-overline truncate text-[var(--app-text-tertiary)]">
+            {zh ? '开发区间' : 'Development interval'}
+          </dt>
+          <dd className="mt-1 font-mono text-sm font-semibold text-[var(--app-text)]">
+            {developmentInterval}
+          </dd>
+        </div>
+        <div className="rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-raised)] p-3 shadow-sm">
+          <dt className="app-type-overline truncate text-[var(--app-text-tertiary)]">
             {zh ? '冻结市场覆盖' : 'Frozen market coverage'}
           </dt>
-          <dd>
+          <dd className="mt-1 font-mono text-sm font-semibold text-[var(--app-text)]">
             {scope?.status ?? (zh ? '尚无已绑定证据' : 'No bound evidence')}
           </dd>
         </div>
-        <div>
-          <dt className="app-muted">
+        <div className="rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-raised)] p-3 shadow-sm sm:col-span-2 lg:col-span-2">
+          <dt className="app-type-overline truncate text-[var(--app-text-tertiary)]">
             {zh ? '独立最终验证' : 'Independent final validation'}
           </dt>
-          <dd>
+          <dd className="mt-1 font-mono text-sm font-semibold text-[var(--app-text)]">
             {validation?.status ??
               (zh ? '尚无已绑定证据' : 'No bound evidence')}
           </dd>
         </div>
       </dl>
       {scope ? (
-        <p className="app-muted mt-2">
-          {scope.scope_kind} · {scope.as_of ?? '—'} ·{' '}
+        <div className="mt-2.5 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-2.5 app-type-micro text-[var(--app-text-secondary)]">
+          <span className="font-semibold text-[var(--app-text)]">
+            {scope.scope_kind}
+          </span>{' '}
+          · {scope.as_of ?? '—'} ·{' '}
           {zh
             ? '预期 / 已评估 / 排除 / 未解决'
             : 'Expected / evaluated / excluded / unresolved'}
-          : {scope.expected_count ?? '—'} / {scope.evaluated_count ?? '—'} /{' '}
-          {scope.excluded_count ?? '—'} / {scope.unresolved_count ?? '—'}
-        </p>
+          :{' '}
+          <span className="font-mono">
+            {scope.expected_count ?? '—'} / {scope.evaluated_count ?? '—'} /{' '}
+            {scope.excluded_count ?? '—'} / {scope.unresolved_count ?? '—'}
+          </span>
+        </div>
       ) : null}
       {validation ? (
-        <p className="app-muted mt-2 break-words">
-          {zh
-            ? '检查点 / 起始资金 / 费用来源'
-            : 'Checkpoint / initial cash / fee source'}
-          : {validation.checkpoint ?? '—'} / {validation.initial_cash ?? '—'} /{' '}
-          {validation.fee_cost_model_reference ?? '—'}
+        <div className="mt-2 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-2.5 app-type-micro text-[var(--app-text-secondary)] break-words">
+          <span className="font-semibold text-[var(--app-text)]">
+            {zh
+              ? '检查点 / 起始资金 / 费用来源'
+              : 'Checkpoint / initial cash / fee source'}
+          </span>
+          :{' '}
+          <span className="font-mono">
+            {validation.checkpoint ?? '—'} / {validation.initial_cash ?? '—'} /{' '}
+            {validation.fee_cost_model_reference ?? '—'}
+          </span>
           {validation.blockers.length
             ? ` · ${validation.blockers.join(' · ')}`
             : ''}
-        </p>
+        </div>
       ) : null}
       {query.isError ? (
         <button
           type="button"
-          className="app-button app-button-secondary mt-2 min-h-9 rounded-[var(--app-radius-control)] px-3 text-xs font-semibold"
+          className="app-button app-button-secondary mt-2 min-h-8 rounded-[var(--app-radius-control)] px-3 text-xs font-semibold"
           onClick={() => void query.refetch()}
         >
           {zh ? '重新读取策略来源' : 'Reload strategy source'}

@@ -84,7 +84,10 @@ export function StrategyChampionSpotlight({
                 'text-[var(--app-text)]',
               ],
             ].map(([label, value, colorClass]) => (
-              <div key={label} className="min-w-0">
+              <div
+                key={label}
+                className="min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] p-3 shadow-sm"
+              >
                 <dt className="app-type-overline text-[var(--app-text-tertiary)]">
                   {label}
                 </dt>

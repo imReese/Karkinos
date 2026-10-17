@@ -171,6 +171,160 @@ function TodayProviderActivityMetric({
   );
 }
 
+function ShadowResearchTelemetryHUD({
+  copy,
+  status,
+  policy,
+  providerWindow,
+  locale,
+}: {
+  copy: (typeof SHADOW_RESEARCH_COPY)[keyof typeof SHADOW_RESEARCH_COPY];
+  status: ShadowResearchAutomationStatus | undefined;
+  policy: ShadowResearchPolicyInput;
+  providerWindow: ShadowResearchAutomationStatus['provider_call_window'];
+  locale: string;
+}) {
+  const zh = locale === 'zh';
+  const isEnabled = status?.policy.enabled ?? false;
+  const isKillSwitch = status?.kill_switch.enabled ?? false;
+  const maxCalls =
+    status?.policy.max_provider_calls_per_market_date ??
+    policy.max_provider_calls_per_market_date;
+  const actualCalls = status?.usage.provider_calls ?? 0;
+  const candidateCount = status?.candidates.length ?? 0;
+  const reservedTokens = status?.usage.reserved_tokens ?? 0;
+  const actualTokens = status?.usage.actual_tokens ?? 0;
+
+  const windowEligible = providerWindow?.status === 'eligible_off_peak';
+  const windowLabel = windowEligible
+    ? zh
+      ? '避峰优惠时段'
+      : 'Off-peak active'
+    : zh
+      ? '日间避峰锁定'
+      : 'Peak lock active';
+
+  return (
+    <div
+      className="app-dsh-cockpit-hud relative p-3.5 transition-all"
+      data-testid="shadow-research-telemetry-hud"
+    >
+      <div className="app-dsh-light-strip" />
+      <div className="app-dsh-ambient-glow" />
+
+      <div className="relative z-10 flex flex-wrap items-center justify-between gap-3">
+        {/* Left: Engine & Telemetry Status */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="app-dsh-pulse-beacon size-2 rounded-full bg-[var(--app-accent)] shadow-[0_0_8px_var(--app-accent)]" />
+            <h2
+              id="shadow-research-title"
+              className="flex flex-wrap items-center gap-2 font-mono text-xs font-bold tracking-tight text-[var(--app-text)] sm:text-sm uppercase"
+            >
+              <span>{copy.title}</span>
+              <span className="text-[var(--app-text-tertiary)] font-normal">
+                /
+              </span>
+              <span className="inline-flex items-center gap-1.5 font-normal text-xs normal-case text-[var(--app-text-secondary)]">
+                <span>
+                  {zh
+                    ? '现役 Gen 5: Gemini 3.8 Flash'
+                    : 'Active Gen 5: Gemini 3.8 Flash'}
+                </span>
+                <span className="text-[var(--app-text-tertiary)]">·</span>
+                <span className="text-[var(--app-accent)]">
+                  {zh
+                    ? '今晚待启动: DeepSeek V4.1 Flash'
+                    : 'Queued: DeepSeek V4.1 Flash'}
+                </span>
+              </span>
+            </h2>
+          </div>
+
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono app-type-micro font-semibold ${
+              isEnabled
+                ? 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success-text)]'
+                : 'border-[var(--app-divider)] bg-[var(--app-surface-raised)] text-[var(--app-text-secondary)]'
+            }`}
+          >
+            <span
+              className={`size-1.5 rounded-full ${
+                isEnabled
+                  ? 'bg-[var(--app-success-text)] shadow-[0_0_6px_var(--app-success-text)]'
+                  : 'bg-[var(--app-text-tertiary)]'
+              }`}
+            />
+            {isEnabled ? copy.enabled : copy.disabled}
+          </span>
+
+          <span className="hidden items-center gap-1.5 rounded-full border border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-2.5 py-0.5 font-mono app-type-micro text-[var(--app-text-secondary)] sm:inline-flex">
+            <span className="size-1 rounded-full bg-[var(--app-accent)]" />
+            {windowLabel}
+            <span className="text-[var(--app-text-tertiary)]">
+              {zh ? '(09:00-18:00 避峰锁定)' : '(09:00-18:00 Lock)'}
+            </span>
+          </span>
+        </div>
+
+        {/* Right: Metrics & Kill Switch */}
+        <div className="flex flex-wrap items-center gap-3 font-mono app-type-micro tabular-nums">
+          <div className="flex items-center gap-3 text-[var(--app-text-secondary)]">
+            <span>
+              <span className="text-[var(--app-text-tertiary)]">
+                {zh ? '调用: ' : 'Calls: '}
+              </span>
+              <strong className="font-semibold text-[var(--app-text)]">
+                {actualCalls}
+              </strong>
+              {' / '}
+              {maxCalls}
+            </span>
+            <span className="text-[var(--app-divider)]">/</span>
+            <span>
+              <span className="text-[var(--app-text-tertiary)]">
+                {zh ? 'Tokens: ' : 'Tokens: '}
+              </span>
+              <strong className="font-semibold text-[var(--app-text)]">
+                {actualTokens > 0
+                  ? actualTokens.toLocaleString()
+                  : `Est. ${reservedTokens.toLocaleString()}`}
+              </strong>
+            </span>
+            <span className="text-[var(--app-divider)]">/</span>
+            <span>
+              <span className="text-[var(--app-text-tertiary)]">
+                {zh ? '策略库: ' : 'Pool: '}
+              </span>
+              <strong className="font-semibold text-[var(--app-text)]">
+                {candidateCount}
+              </strong>
+            </span>
+          </div>
+
+          <span
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 app-type-micro font-semibold ${
+              isKillSwitch
+                ? 'border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] text-[var(--app-danger-text)]'
+                : 'border-[var(--app-divider)] bg-[var(--app-surface)] text-[var(--app-text-tertiary)]'
+            }`}
+          >
+            <span
+              className={`size-1.5 rounded-full ${
+                isKillSwitch
+                  ? 'bg-[var(--app-danger-text)] shadow-[0_0_6px_var(--app-danger-text)]'
+                  : 'bg-[var(--app-text-tertiary)]'
+              }`}
+            />
+            {copy.killSwitch}:{' '}
+            {isKillSwitch ? status?.kill_switch.reason || 'ON' : copy.clear}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ShadowResearchUsageMetrics({
   copy,
   status,
@@ -184,10 +338,16 @@ function ShadowResearchUsageMetrics({
 }) {
   const latestRun = status?.runs[0];
   return (
-    <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+    <div
+      className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-5"
+      data-testid="shadow-research-usage-metrics"
+    >
       <StatusMetric
         label={copy.calls}
-        value={`${status?.usage.provider_calls ?? 0} / ${status?.policy.max_provider_calls_per_market_date ?? policy.max_provider_calls_per_market_date}`}
+        value={`${status?.usage.provider_calls ?? 0} / ${
+          status?.policy.max_provider_calls_per_market_date ??
+          policy.max_provider_calls_per_market_date
+        }`}
         detail={status?.usage.market_date ?? '—'}
       />
       <TodayProviderActivityMetric
@@ -198,7 +358,11 @@ function ShadowResearchUsageMetrics({
       <StatusMetric
         label={copy.tokens}
         value={String(status?.usage.actual_tokens ?? 0)}
-        detail={`${status?.policy.token_budget_mode === 'unbounded_daily' ? copy.unboundedDailyTokens : copy.legacyBoundedDailyTokens} · ${copy.tokenAccountingEstimate} ${status?.usage.reserved_tokens ?? 0}`}
+        detail={`${
+          status?.policy.token_budget_mode === 'unbounded_daily'
+            ? copy.unboundedDailyTokens
+            : copy.legacyBoundedDailyTokens
+        } · ${copy.tokenAccountingEstimate} ${status?.usage.reserved_tokens ?? 0}`}
       />
       <StatusMetric
         label={copy.candidates}
@@ -378,10 +542,16 @@ export function ShadowResearchPanel() {
       data-evidence-kind="persisted-ai-shadow-research"
       data-testid="shadow-research-panel"
     >
-      <ShadowResearchHeader copy={copy} status={status} />
+      <ShadowResearchTelemetryHUD
+        copy={copy}
+        status={status}
+        policy={policy}
+        providerWindow={providerWindow}
+        locale={locale}
+      />
 
-      {/* Selected candidate and research evidence */}
-      <div>
+      <div className="min-w-0 space-y-8">
+        {/* Primary Research & Lineage Review (Full Width) */}
         <ShadowResearchCandidateWorkspace
           approvals={approvals}
           candidates={status?.candidates ?? []}
@@ -402,127 +572,126 @@ export function ShadowResearchPanel() {
           verifiedResearchWinnerCandidateIds={verifiedCandidateIds.research}
           verifiedWinnerCandidateIds={verifiedCandidateIds.promotion}
         />
-      </div>
 
-      {/* Saved research selection */}
-      <div>
-        <StrategyChampionSpotlight status={status} />
-      </div>
-
-      {/* Account qualification remains separate from research ranking */}
-      <div>
-        <ShadowResearchQualificationReview
-          approvedBy={policy.updated_by}
-          copy={copy}
-          locale={locale}
-          onApprove={async (
-            qualificationCandidateId,
-            approvalNotes,
-            forwardReview,
-          ) => {
-            await approveQualification.mutateAsync({
-              qualification_candidate_id: qualificationCandidateId,
-              approved_by: policy.updated_by,
-              notes: approvalNotes,
-              ...(forwardReview ? { forward_review: forwardReview } : {}),
-            });
-          }}
-          pending={approveQualification.isPending}
-          status={status}
-        />
-      </div>
-
-      <AutomaticPublicationPolicy updatedBy={policy.updated_by} />
-
-      {/* Automation diagnostics and policy configuration */}
-      <details
-        className="group border-t border-[var(--app-divider)] py-4"
-        data-testid="research-automation-disclosure"
-      >
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold text-[var(--app-text)]">
-          <span>
-            {locale === 'zh'
-              ? '自动化研究运行诊断与策略配置'
-              : 'Automation Diagnostics & Policy Configuration'}
-          </span>
-          <ChevronDown
-            aria-hidden="true"
-            className="size-4 shrink-0 transition-transform group-open:rotate-180"
-          />
-        </summary>
-
-        <div className="mt-4 space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <StatusMetric
-              label={copy.dailyWinner}
-              value={dailyOutcome.value}
-              detail={dailyOutcome.detail}
-            />
-            <StatusMetric
-              label={copy.backup}
-              value={
-                latestBackup?.verification_status === 'verified'
-                  ? copy.backupVerified
-                  : latestBackup?.verification_status || '—'
-              }
-              detail={latestBackup?.artifact_fingerprint || '—'}
-            />
-          </div>
-
-          <ShadowResearchUsageMetrics
+        {/* Governance, Qualification & Automation Rail (Full Width Sequential Flow) */}
+        <div className="min-w-0 space-y-6">
+          <ShadowResearchQualificationReview
+            approvedBy={policy.updated_by}
             copy={copy}
+            locale={locale}
+            onApprove={async (
+              qualificationCandidateId,
+              approvalNotes,
+              forwardReview,
+            ) => {
+              await approveQualification.mutateAsync({
+                qualification_candidate_id: qualificationCandidateId,
+                approved_by: policy.updated_by,
+                notes: approvalNotes,
+                ...(forwardReview ? { forward_review: forwardReview } : {}),
+              });
+            }}
+            pending={approveQualification.isPending}
             status={status}
-            policy={policy}
-            providerWindow={providerWindow}
           />
-          <p className="sr-only">{copy.fiveCandidateRule}</p>
 
-          <div className="mt-4">
-            <ShadowResearchPolicyCard
-              copy={copy}
-              datesValid={datesValid}
-              draftPolicyReady={draftPolicyReady}
-              locale={locale}
-              onRun={() => run.mutate()}
-              onSavePolicy={() => void savePolicy()}
-              persistedPolicyReady={persistedPolicyReady}
-              policy={policy}
-              policyConfirmed={policyConfirmed}
-              policyDirty={policyDirty}
-              providerWindowEligible={providerWindowEligible}
-              runPending={run.isPending}
-              runReceipt={run.isPending ? undefined : run.data}
-              setPolicy={(update) => {
-                run.reset();
-                setPolicy(update);
-                setPolicyConfirmed(false);
-              }}
-              setPolicyConfirmed={setPolicyConfirmed}
-              status={status}
-              updatePolicyPending={updatePolicy.isPending}
-            />
+          <div className="grid min-w-0 gap-6 lg:grid-cols-2">
+            <StrategyChampionSpotlight status={status} />
+            <AutomaticPublicationPolicy updatedBy={policy.updated_by} />
           </div>
-          {updatePolicy.isSuccess && !policyDirty ? (
-            <p
-              role="status"
-              className="mt-3 text-sm text-[var(--app-success-text)]"
-            >
-              {copy.policySaved}
-            </p>
-          ) : null}
-          {(query.isError ||
-            updatePolicy.isError ||
-            run.isError ||
-            approve.isError ||
-            approveQualification.isError ||
-            pause.isError ||
-            promotionStates.isError) && (
-            <p className="mt-3 text-sm text-[var(--app-danger-text)]">
-              {copy.failure}
-            </p>
-          )}
+
+          {/* Automation diagnostics and policy configuration */}
+          <details
+            className="group rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] p-4"
+            data-testid="research-automation-disclosure"
+          >
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold text-[var(--app-text)] hover:text-[var(--app-accent)] transition-colors">
+              <span>
+                {locale === 'zh'
+                  ? '自动化研究运行诊断与策略配置'
+                  : 'Automation Diagnostics & Policy Configuration'}
+              </span>
+              <ChevronDown
+                aria-hidden="true"
+                className="size-4 shrink-0 transition-transform group-open:rotate-180"
+              />
+            </summary>
+
+            <div className="mt-4 space-y-6">
+              <ShadowResearchUsageMetrics
+                copy={copy}
+                status={status}
+                policy={policy}
+                providerWindow={providerWindow}
+              />
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <StatusMetric
+                  label={copy.dailyWinner}
+                  value={dailyOutcome.value}
+                  detail={dailyOutcome.detail}
+                />
+                <StatusMetric
+                  label={copy.backup}
+                  value={
+                    latestBackup?.verification_status === 'verified'
+                      ? copy.backupVerified
+                      : latestBackup?.verification_status || '—'
+                  }
+                  detail={latestBackup?.artifact_fingerprint || '—'}
+                />
+              </div>
+
+              <p className="sr-only">{copy.fiveCandidateRule}</p>
+
+              <div className="mt-4">
+                <ShadowResearchPolicyCard
+                  copy={copy}
+                  datesValid={datesValid}
+                  draftPolicyReady={draftPolicyReady}
+                  locale={locale}
+                  onRun={() => run.mutate()}
+                  onSavePolicy={() => void savePolicy()}
+                  persistedPolicyReady={persistedPolicyReady}
+                  policy={policy}
+                  policyConfirmed={policyConfirmed}
+                  policyDirty={policyDirty}
+                  providerWindowEligible={providerWindowEligible}
+                  runPending={run.isPending}
+                  runReceipt={run.isPending ? undefined : run.data}
+                  setPolicy={(update) => {
+                    run.reset();
+                    setPolicy(update);
+                    setPolicyConfirmed(false);
+                  }}
+                  setPolicyConfirmed={setPolicyConfirmed}
+                  status={status}
+                  updatePolicyPending={updatePolicy.isPending}
+                />
+              </div>
+              {updatePolicy.isSuccess && !policyDirty ? (
+                <p
+                  role="status"
+                  className="mt-3 text-sm text-[var(--app-success-text)]"
+                >
+                  {copy.policySaved}
+                </p>
+              ) : null}
+              {(query.isError ||
+                updatePolicy.isError ||
+                run.isError ||
+                approve.isError ||
+                approveQualification.isError ||
+                pause.isError ||
+                promotionStates.isError) && (
+                <p className="mt-3 text-sm text-[var(--app-danger-text)]">
+                  {copy.failure}
+                </p>
+              )}
+            </div>
+          </details>
         </div>
-      </details>
+      </div>
     </section>
   );
 }
@@ -550,65 +719,5 @@ function ProviderCallWindowMetric({
           : copy.offPeakSchedule
       }
     />
-  );
-}
-
-function ShadowResearchHeader({
-  copy,
-  status,
-}: {
-  copy: (typeof SHADOW_RESEARCH_COPY)[keyof typeof SHADOW_RESEARCH_COPY];
-  status: ReturnType<typeof useShadowResearchAutomationQuery>['data'];
-}) {
-  return (
-    <div className="flex min-w-0 flex-wrap items-center justify-between gap-4 border-b border-[var(--app-divider)] pb-3">
-      <div className="min-w-0">
-        <span className="sr-only">{copy.kicker}</span>
-        <h2
-          className="text-base font-semibold text-[var(--app-text)] sm:text-lg"
-          id="shadow-research-title"
-        >
-          {copy.title}
-        </h2>
-        <p className="sr-only">{copy.detail}</p>
-      </div>
-      <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
-        <span
-          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs ${
-            status?.policy.enabled
-              ? 'border-[var(--app-success-border)] bg-[var(--app-success-bg)] text-[var(--app-success-text)]'
-              : 'border-[var(--app-divider)] bg-[var(--app-surface-raised)] text-[var(--app-text-secondary)]'
-          }`}
-        >
-          <span
-            className={`size-1.5 rounded-full ${
-              status?.policy.enabled
-                ? 'bg-[var(--app-success-text)]'
-                : 'bg-[var(--app-text-tertiary)]'
-            }`}
-          />
-          {status?.policy.enabled ? copy.enabled : copy.disabled}
-        </span>
-        <span
-          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs ${
-            status?.kill_switch.enabled
-              ? 'border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] text-[var(--app-danger-text)]'
-              : 'border-[var(--app-divider)] bg-[var(--app-surface-raised)] text-[var(--app-text-secondary)]'
-          }`}
-        >
-          <span
-            className={`size-1.5 rounded-full ${
-              status?.kill_switch.enabled
-                ? 'bg-[var(--app-danger-text)]'
-                : 'bg-[var(--app-text-tertiary)]'
-            }`}
-          />
-          {copy.killSwitch}:{' '}
-          {status?.kill_switch.enabled
-            ? status.kill_switch.reason || 'ON'
-            : copy.clear}
-        </span>
-      </div>
-    </div>
   );
 }

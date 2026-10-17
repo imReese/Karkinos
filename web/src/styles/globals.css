@@ -2025,6 +2025,119 @@ select:is(.app-field, .app-input) option {
     background-color var(--app-motion-standard) var(--app-ease-standard);
 }
 
+.app-lineage-sliding-pill {
+  position: absolute;
+  top: 2px;
+  bottom: 6px;
+  pointer-events: none;
+  z-index: 20;
+  border-radius: var(--app-radius-control);
+  border: 2px solid var(--app-accent);
+  background: color-mix(in srgb, var(--app-accent) 8%, transparent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--app-accent) 25%, transparent);
+  transition-property: transform, width, opacity;
+  transition-duration: var(--app-motion-standard);
+  transition-timing-function: var(--app-ease-enter);
+}
+
+/* DeepSeek / DSH Inspired Restrained Light Strips & Cockpit Radiance */
+.app-dsh-light-strip {
+  position: absolute;
+  top: 0;
+  left: 6%;
+  right: 6%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--app-accent) 60%, #38bdf8) 35%,
+    color-mix(in srgb, #818cf8 80%, #38bdf8) 50%,
+    color-mix(in srgb, var(--app-accent) 60%, #38bdf8) 65%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: 10;
+  opacity: 0.8;
+}
+
+.app-dsh-ambient-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 65% 45% at 50% -10%,
+    color-mix(in srgb, var(--app-accent) 10%, transparent),
+    transparent 70%
+  );
+  border-radius: inherit;
+  z-index: 0;
+}
+
+.app-dsh-pulse-beacon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-dsh-pulse-beacon::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 9999px;
+  background: var(--app-accent);
+  opacity: 0.35;
+  animation: app-dsh-beacon-pulse 2.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes app-dsh-beacon-pulse {
+  0%,
+  100% {
+    transform: scale(0.95);
+    opacity: 0.15;
+  }
+  50% {
+    transform: scale(1.4);
+    opacity: 0.55;
+  }
+}
+
+.app-dsh-cockpit-hud {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--app-radius-control);
+  border: 1px solid
+    color-mix(in srgb, var(--app-border) 80%, var(--app-accent) 20%);
+  background: color-mix(
+    in srgb,
+    var(--app-surface-raised) 92%,
+    var(--app-surface) 8%
+  );
+  box-shadow:
+    0 4px 20px -2px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.app-dsh-critique-panel {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--app-radius-control);
+  border: 1px solid color-mix(in srgb, #6366f1 35%, var(--app-border));
+  background: color-mix(in srgb, var(--app-surface-raised) 96%, #6366f1 4%);
+}
+
+.app-dsh-critique-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #818cf8, transparent);
+  opacity: 0.75;
+  pointer-events: none;
+}
+
 .app-evidence-drawer-backdrop {
   animation: app-overlay-fade-in var(--app-motion-standard)
     var(--app-ease-standard) both;

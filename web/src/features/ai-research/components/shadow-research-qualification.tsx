@@ -199,19 +199,35 @@ export function ShadowResearchQualificationReview({
         </span>
       </div>
 
-      <dl className="mt-4 grid gap-4 text-xs sm:grid-cols-2">
-        <div className="min-w-0 border-l border-[var(--app-divider)] pl-4">
-          <dt className="font-semibold text-[var(--app-muted)]">
+      <div className="mt-3 rounded-[var(--app-radius-control)] border border-[var(--app-accent-border,var(--app-border))] bg-[var(--app-surface-raised)] p-2.5 text-xs text-[var(--app-text-secondary)]">
+        <div className="flex items-center gap-1.5 font-semibold text-[var(--app-accent)]">
+          <span className="size-1.5 rounded-full bg-[var(--app-accent)] shadow-[0_0_6px_var(--app-accent)]" />
+          <span>
+            {locale === 'zh'
+              ? '实盘资金发布准入门禁 (生产安全隔离)'
+              : 'Live Account Publication Gate (Safety Isolated)'}
+          </span>
+        </div>
+        <p className="mt-1 text-[var(--app-text-tertiary)] leading-relaxed">
+          {locale === 'zh'
+            ? '启动 Paper/Shadow 纸面模拟仅需上方候选策略完成复核签署；本区域控制实盘账户资金发布权限，在未接入且审核生产实盘账户前保持安全阻断。'
+            : 'Initiating Paper/Shadow simulation only requires signing off on the candidate card above; this section governs live account authority and remains safely blocked without live account clearance.'}
+        </p>
+      </div>
+
+      <dl className="mt-4 grid gap-3 text-xs sm:grid-cols-2">
+        <div className="min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-raised)] p-3.5 shadow-sm">
+          <dt className="app-type-overline text-[var(--app-text-tertiary)]">
             {view.run
               ? copy.qualificationRun
               : view.attempt
                 ? copy.qualificationAttempt
                 : copy.qualificationRun}
           </dt>
-          <dd className="mt-0.5 break-all font-semibold text-[var(--app-text)]">
+          <dd className="mt-1 break-all font-mono text-sm font-semibold text-[var(--app-text)]">
             {view.run?.qualification_run_id ?? view.attempt?.attempt_id ?? '—'}
           </dd>
-          <dd className="app-muted mt-0.5">
+          <dd className="mt-1 text-xs text-[var(--app-text-secondary)]">
             {view.run
               ? `${view.run.market_date} · ${view.run.source_run_id}`
               : view.attempt
@@ -219,16 +235,16 @@ export function ShadowResearchQualificationReview({
                 : copy.qualificationNotEvaluated}
           </dd>
         </div>
-        <div className="min-w-0 border-l border-[var(--app-divider)] pl-4">
-          <dt className="font-semibold text-[var(--app-muted)]">
+        <div className="min-w-0 rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-raised)] p-3.5 shadow-sm">
+          <dt className="app-type-overline text-[var(--app-text-tertiary)]">
             {copy.qualificationWinnerBinding}
           </dt>
-          <dd className="mt-0.5 break-all font-semibold text-[var(--app-text)]">
+          <dd className="mt-1 break-all font-mono text-sm font-semibold text-[var(--app-text)]">
             {view.winner
               ? `${view.winner.qualification_candidate_id} → ${view.winner.source_candidate_id}`
               : copy.qualificationNoWinner}
           </dd>
-          <dd className="app-muted mt-0.5">
+          <dd className="mt-1 text-xs text-[var(--app-text-secondary)]">
             {view.winner && view.sourceCandidateBound
               ? copy.qualificationSourceBound
               : copy.qualificationSourceUnbound}
