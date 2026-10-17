@@ -336,7 +336,7 @@ async def _run_real_forward_book(data, reservation, *, source_id, frozen_at, gra
         fee_schedule_binding=reservation["evidence"]["reservation"]["fee_schedule"],
         health_policy={
             "mode": "pause_on_breach",
-            "minimum_settled_sessions": 60,
+            "minimum_settled_sessions": len(data["future_dates"]),
             "maximum_drawdown": grant["risk_limits"]["max_drawdown"],
             "minimum_net_excess_return": "0",
         },
@@ -466,9 +466,13 @@ async def test_verified_final_qualification_policy_publication_and_revocation(
             "max_positions": 4,
         },
     )
+    grant["total_error_budget"] = "0.25"
     grant["statistical_policy"].update(
-        bootstrap_samples=10000,
-        significance_level="0.025",
+        minimum_observations=15,
+        block_length=2,
+        minimum_effective_blocks=5,
+        bootstrap_samples=1000,
+        significance_level="0.20",
         decision_checkpoint=final_day.isoformat(),
     )
     grant["statistical_policy_fingerprint"] = content_fingerprint(

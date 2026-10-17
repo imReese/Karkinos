@@ -34,8 +34,13 @@ from server.services.market_universe_truth import (
 from tests.server.test_verified_interval_dataset import _verified_day
 
 
-def build_real_scope_datasets(tmp_path: Path) -> dict:
-    """Build 180 exploratory sessions and 60 actually observed future sessions.
+def build_real_scope_datasets(
+    tmp_path: Path,
+    *,
+    development_periods: int = 140,
+    future_periods: int = 20,
+) -> dict:
+    """Build exploratory sessions and actually observed future sessions.
 
     Provider adapters consume explicit synthetic responses, never network data.
     Dates are a declared synthetic calendar, not a claim about exchange holidays.
@@ -48,7 +53,10 @@ def build_real_scope_datasets(tmp_path: Path) -> dict:
     db._market_calendar = MarketCalendarRepository(
         db.path, now=lambda _tz=None: calendar_at
     )
-    dates = tuple(day.date() for day in pd.bdate_range(end="2026-08-31", periods=240))
+    total_periods = development_periods + future_periods
+    dates = tuple(
+        day.date() for day in pd.bdate_range(end="2026-08-31", periods=total_periods)
+    )
     for year in (2025, 2026):
         first = date(year, 1, 1)
         days = []
@@ -108,7 +116,7 @@ def build_real_scope_datasets(tmp_path: Path) -> dict:
         )
         at = datetime.combine(day, time(8, 5), tzinfo=timezone.utc)
         refs = ()
-        if index >= 179:
+        if index >= development_periods - 1:
             master = market.save_market_universe_snapshot(
                 trade_date=day.isoformat(),
                 provider_name="synthetic_fixture",
@@ -166,8 +174,8 @@ def build_real_scope_datasets(tmp_path: Path) -> dict:
         DatasetCatalog(root).register(objects, ref)
         return ref, snapshot
 
-    development_ref, development_snapshot = publish(180)
-    forward_ref, forward_snapshot = publish(240)
+    development_ref, development_snapshot = publish(development_periods)
+    forward_ref, forward_snapshot = publish(total_periods)
     return {
         "db": db,
         "data_store": market,
@@ -177,8 +185,8 @@ def build_real_scope_datasets(tmp_path: Path) -> dict:
         "scope": scope,
         "instruments": instruments,
         "dates": dates,
-        "development_dates": dates[:180],
-        "future_dates": dates[180:],
+        "development_dates": dates[:development_periods],
+        "future_dates": dates[development_periods:],
         "prices": prices,
         "development_ref": development_ref,
         "forward_ref": forward_ref,
