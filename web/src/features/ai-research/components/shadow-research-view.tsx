@@ -10,6 +10,11 @@ import { CandidateResearchResults } from './candidate-research-results';
 import { ShadowResearchObservations } from './shadow-research-observations';
 import { ResearchCandidateDefinition } from './research-candidate-definition';
 import type { ShadowResearchCopy } from './shadow-research-copy';
+import {
+  formatCandidateTitle,
+  formatDraftSummaryName,
+  resolveCandidateEngine,
+} from '../candidate-display';
 
 export function CandidateCard({
   candidate,
@@ -89,17 +94,25 @@ export function CandidateCard({
               <span className="app-type-overline text-[var(--app-text-tertiary)] tracking-widest font-mono">
                 {zh ? '审阅策略' : 'Selected strategy'}
               </span>
-              <h3 className="break-all font-mono text-sm sm:text-base font-bold tracking-tight text-[var(--app-text)]">
-                {candidate.draft_id || candidate.candidate_id}
+              <h3 className="font-sans text-sm sm:text-base font-bold tracking-tight text-[var(--app-text)]">
+                {formatCandidateTitle(candidate, zh)}
               </h3>
+              <span
+                className="inline-flex items-center gap-1 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-2 py-0.5 font-mono app-type-micro text-[var(--app-text-tertiary)]"
+                title={candidate.draft_id || candidate.candidate_id}
+              >
+                <span className="select-none text-[var(--app-text-tertiary)]">
+                  ID:
+                </span>
+                <span className="max-w-[140px] truncate font-medium text-[var(--app-text-secondary)] sm:max-w-[220px]">
+                  {candidate.draft_id || candidate.candidate_id}
+                </span>
+              </span>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--app-divider)] bg-[var(--app-surface)] px-2.5 py-0.5 font-mono app-type-micro font-medium text-[var(--app-text)]">
                 <span className="size-1 rounded-full bg-[var(--app-accent)]" />
-                {candidate.draft_id?.includes('gemini') ||
-                candidate.candidate_id?.includes('7f8a7bb')
-                  ? 'Gemini 3.8 Flash'
-                  : 'DeepSeek-V3'}
+                {resolveCandidateEngine(candidate)}
               </span>
               <span
                 className="inline-flex items-center rounded-full border border-[var(--app-divider)] bg-[var(--app-surface)] px-2.5 py-0.5 font-medium text-[var(--app-text)]"
@@ -551,6 +564,8 @@ export function CritiqueEvolutionTimeline({
   candidate: ShadowResearchCandidate;
   copy: ShadowResearchCopy;
 }) {
+  const { locale } = usePreferences();
+  const zh = locale === 'zh';
   const comparison = candidate.comparison;
   const critique = comparison.deepseek_critique;
   const lineage = comparison.iteration_lineage;
@@ -572,11 +587,8 @@ export function CritiqueEvolutionTimeline({
           <div className="flex items-center gap-2 text-xs font-bold text-[var(--app-text)] font-mono uppercase tracking-tight">
             <span className="app-dsh-pulse-beacon size-2 rounded-full bg-[var(--app-accent)] shadow-[0_0_8px_var(--app-accent)]" />
             <span>
-              {candidate.draft_id?.includes('gemini') ||
-              candidate.candidate_id?.includes('7f8a7bb')
-                ? 'GEMINI 3.8 FLASH'
-                : 'DEEPSEEK V4.1 FLASH'}{' '}
-              · {copy.critiqueTrajectory}
+              {resolveCandidateEngine(candidate).toUpperCase()} ·{' '}
+              {copy.critiqueTrajectory}
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
@@ -600,10 +612,12 @@ export function CritiqueEvolutionTimeline({
                 ? `FP: ${lineage.formula_fingerprint.slice(0, 16)}…`
                 : candidate.draft_id}
             </div>
-            <div className="app-type-micro mt-0.5 text-[var(--app-text-tertiary)] font-mono truncate">
+            <div className="app-type-micro mt-0.5 text-[var(--app-text-tertiary)] font-sans truncate">
               {lineage?.parent_draft_id
-                ? `Parent: ${lineage.parent_draft_id}`
-                : 'Parent not recorded'}
+                ? `${zh ? '父代: ' : 'Parent: '}${formatDraftSummaryName(lineage.parent_draft_id, zh)}`
+                : zh
+                  ? '无父代记录'
+                  : 'Parent not recorded'}
             </div>
           </div>
 
