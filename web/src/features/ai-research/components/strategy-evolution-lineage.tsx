@@ -4,6 +4,7 @@ import { formatPercent } from '../../../shared/format';
 import { usePreferences } from '../../../shared/preferences/context';
 import { useBacktestResultQuery } from '../ai-research-feature-boundary';
 import type { ShadowResearchCandidate } from '../shadow-research-api';
+import { formatCandidateOptionLabel } from '../candidate-display';
 import { SHADOW_RESEARCH_COPY } from './shadow-research-copy';
 
 export function StrategyEvolutionLineage({
@@ -216,9 +217,7 @@ export function StrategyEvolutionLineage({
                   <optgroup label={copy.currentCandidates}>
                     {currentCandidates.map((c) => (
                       <option value={c.candidate_id} key={c.candidate_id}>
-                        {c.comparison?.economic_hypothesis ||
-                          c.draft_id ||
-                          c.candidate_id}
+                        {formatCandidateOptionLabel(c, zh)}
                       </option>
                     ))}
                   </optgroup>
@@ -227,9 +226,7 @@ export function StrategyEvolutionLineage({
                   <optgroup label={copy.candidateHistory}>
                     {historicalCandidates.map((c) => (
                       <option value={c.candidate_id} key={c.candidate_id}>
-                        {c.comparison?.economic_hypothesis ||
-                          c.draft_id ||
-                          c.candidate_id}
+                        {formatCandidateOptionLabel(c, zh)}
                       </option>
                     ))}
                   </optgroup>

@@ -1,9 +1,11 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 
+import { usePreferences } from '../../../shared/preferences/context';
 import {
   useStrategyPromotionStatesQuery,
   type ShadowResearchCandidate,
 } from '../api';
+import { formatCandidateOptionLabel } from '../candidate-display';
 import { SHADOW_RESEARCH_COPY } from './shadow-research-copy';
 import { CandidateCard } from './shadow-research-view';
 import { StrategyEvolutionLineage } from './strategy-evolution-lineage';
@@ -48,6 +50,8 @@ export function ShadowResearchCandidateWorkspace({
   verifiedResearchWinnerCandidateIds: Set<string>;
   verifiedWinnerCandidateIds: Set<string>;
 }) {
+  const { locale } = usePreferences();
+  const zh = locale === 'zh';
   const publication = usePublicationPolicy();
   const usableSources = publication.isSuccess
     ? (publication.data.usable_current_sources ?? [])
@@ -195,9 +199,7 @@ export function ShadowResearchCandidateWorkspace({
                 value={candidate.candidate_id}
                 key={candidate.candidate_id}
               >
-                {candidate.comparison?.economic_hypothesis ||
-                  candidate.draft_id ||
-                  candidate.candidate_id}
+                {formatCandidateOptionLabel(candidate, zh)}
               </option>
             ))}
           </optgroup>
@@ -209,9 +211,7 @@ export function ShadowResearchCandidateWorkspace({
                 value={candidate.candidate_id}
                 key={candidate.candidate_id}
               >
-                {candidate.comparison?.economic_hypothesis ||
-                  candidate.draft_id ||
-                  candidate.candidate_id}
+                {formatCandidateOptionLabel(candidate, zh)}
               </option>
             ))}
           </optgroup>
