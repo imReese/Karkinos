@@ -3,6 +3,7 @@ import { apiClient } from '../../../shared/api/client';
 import { usePreferences } from '../../../shared/preferences/context';
 import type { StrategyResearchSession } from '../api';
 import type { ShadowResearchCandidate } from '../shadow-research-api';
+import { resolveCandidateEngine } from '../candidate-display';
 
 export function ResearchCandidateDefinition({
   candidate,
@@ -27,14 +28,7 @@ export function ResearchCandidateDefinition({
   const scope = candidate.comparison.deployment_scope;
   const validation = candidate.comparison.deployment_validation;
   const recordedModel =
-    draft?.model_id ??
-    session?.model_id ??
-    (candidate.draft_id?.includes('gemini') ||
-    candidate.candidate_id?.includes('7f8a7bb')
-      ? 'gemini-3.8-flash'
-      : candidate.comparison.deepseek_critique
-        ? 'DeepSeek-V3'
-        : '—');
+    draft?.model_id ?? session?.model_id ?? resolveCandidateEngine(candidate);
   const universeCount =
     session?.selection?.universe?.length ??
     scope?.evaluated_count ??
