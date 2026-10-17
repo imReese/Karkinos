@@ -116,10 +116,29 @@ class ShadowResearchCandidateRepositoryMixin:
 
     def get_candidate(self, candidate_id: str) -> dict[str, Any]:
         with self._connect_readonly() as conn:
-            row = conn.execute(
-                "SELECT * FROM ai_shadow_research_candidates WHERE candidate_id=?",
-                (candidate_id,),
-            ).fetchone()
+            has_sessions = (
+                conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ai_strategy_research_sessions'"
+                ).fetchone()
+                is not None
+            )
+            if has_sessions:
+                row = conn.execute(
+                    """
+                    SELECT c.*,
+                           s.provider_id,
+                           s.model_id
+                    FROM ai_shadow_research_candidates c
+                    LEFT JOIN ai_strategy_research_sessions s ON s.session_id = c.session_id
+                    WHERE c.candidate_id=?
+                    """,
+                    (candidate_id,),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT * FROM ai_shadow_research_candidates WHERE candidate_id=?",
+                    (candidate_id,),
+                ).fetchone()
         if row is None:
             raise LookupError(f"shadow research candidate not found: {candidate_id}")
         return shadow_research_candidate_row(row)
@@ -274,13 +293,32 @@ class ShadowResearchCandidateRepositoryMixin:
     def list_candidates(self, limit: int = 50) -> list[dict[str, Any]]:
         try:
             with self._connect_readonly() as conn:
-                rows = conn.execute(
-                    """
-                    SELECT * FROM ai_shadow_research_candidates
-                    ORDER BY created_at DESC, candidate_id DESC LIMIT ?
-                    """,
-                    (limit,),
-                ).fetchall()
+                has_sessions = (
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ai_strategy_research_sessions'"
+                    ).fetchone()
+                    is not None
+                )
+                if has_sessions:
+                    rows = conn.execute(
+                        """
+                        SELECT c.*,
+                               s.provider_id,
+                               s.model_id
+                        FROM ai_shadow_research_candidates c
+                        LEFT JOIN ai_strategy_research_sessions s ON s.session_id = c.session_id
+                        ORDER BY c.created_at DESC, c.candidate_id DESC LIMIT ?
+                        """,
+                        (limit,),
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        """
+                        SELECT * FROM ai_shadow_research_candidates
+                        ORDER BY created_at DESC, candidate_id DESC LIMIT ?
+                        """,
+                        (limit,),
+                    ).fetchall()
         except sqlite3.OperationalError:
             return []
         return [shadow_research_candidate_row(row) for row in rows]

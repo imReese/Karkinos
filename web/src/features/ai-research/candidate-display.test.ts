@@ -12,12 +12,14 @@ function makeMockCandidate(
   draftId: string,
   iteration?: number,
   hypothesis?: string,
+  modelId?: string,
 ): ShadowResearchCandidate {
   return {
     candidate_id: `cand-${draftId}`,
     run_id: 'run-1',
     session_id: 'session-1',
     draft_id: draftId,
+    model_id: modelId ?? null,
     backtest_run_id: null,
     critique_id: null,
     baseline_result_id: 1,
@@ -130,6 +132,24 @@ describe('candidate-display', () => {
     expect(formatModelDisplayName(null, 'DeepSeek V4 Pro')).toBe(
       'DeepSeek V4 Pro',
     );
+  });
+
+  it('prefers authoritative model_id directly from candidate over heuristics', () => {
+    const candidate = makeMockCandidate(
+      'ai-strategy-draft-opaque-hash-1234',
+      1,
+      undefined,
+      'karkinos.strategy_research.hypothesis.deepseek.v1:deepseek-v4-pro',
+    );
+    expect(resolveCandidateEngine(candidate)).toBe('DeepSeek V4 Pro');
+
+    const geminiCandidate = makeMockCandidate(
+      'ai-strategy-draft-opaque-hash-5678',
+      1,
+      undefined,
+      'gemini-3.8-flash',
+    );
+    expect(resolveCandidateEngine(geminiCandidate)).toBe('Gemini 3.8 Flash');
   });
 
   it('handles generic candidates gracefully with clean fallback', () => {

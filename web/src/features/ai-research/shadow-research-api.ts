@@ -26,6 +26,8 @@ export type ShadowResearchCandidate = {
   run_id: string;
   session_id: string;
   draft_id: string;
+  provider_id?: string | null;
+  model_id?: string | null;
   backtest_run_id: string | null;
   critique_id: string | null;
   baseline_result_id: number;
