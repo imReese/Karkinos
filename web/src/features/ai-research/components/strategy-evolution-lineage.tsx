@@ -53,30 +53,46 @@ export function StrategyEvolutionLineage({
   }, [candidates, activeCandidate?.run_id]);
 
   const lineageChain = useMemo(() => {
-    // 1. If run has multiple candidates, sort by iteration_number
+    // 1. Trace connected lineage tree via parent_candidate_id (both backwards to root and forwards to latest child)
+    let root: ShadowResearchCandidate | undefined = activeCandidate;
+    const visitedUp = new Set<string>();
+    while (root && !visitedUp.has(root.candidate_id)) {
+      visitedUp.add(root.candidate_id);
+      const parentId: string | null | undefined =
+        root.comparison?.iteration_lineage?.parent_candidate_id;
+      const parent: ShadowResearchCandidate | undefined = parentId
+        ? candidates.find((c) => c.candidate_id === parentId)
+        : undefined;
+      if (!parent) break;
+      root = parent;
+    }
+
+    if (root) {
+      const chain: ShadowResearchCandidate[] = [];
+      let curr: ShadowResearchCandidate | undefined = root;
+      const visitedDown = new Set<string>();
+      while (curr && !visitedDown.has(curr.candidate_id)) {
+        visitedDown.add(curr.candidate_id);
+        chain.push(curr);
+        const next: ShadowResearchCandidate | undefined = candidates.find(
+          (c) =>
+            c.comparison?.iteration_lineage?.parent_candidate_id ===
+            curr!.candidate_id,
+        );
+        curr = next;
+      }
+      if (chain.length > 1) {
+        return chain;
+      }
+    }
+
+    // 2. Fallback: if run has multiple candidates, sort by iteration_number
     if (runCandidates.length > 1) {
       return [...runCandidates].sort(
         (a, b) =>
           (a.comparison?.iteration_lineage?.iteration_number ?? 0) -
           (b.comparison?.iteration_lineage?.iteration_number ?? 0),
       );
-    }
-
-    // 2. Try tracing parent chain backwards in all candidates
-    const chain: ShadowResearchCandidate[] = [];
-    let curr: ShadowResearchCandidate | undefined = activeCandidate;
-    const visited = new Set<string>();
-    while (curr && !visited.has(curr.candidate_id)) {
-      visited.add(curr.candidate_id);
-      chain.unshift(curr);
-      const parentId: string | null | undefined =
-        curr.comparison?.iteration_lineage?.parent_candidate_id;
-      curr = parentId
-        ? candidates.find((c) => c.candidate_id === parentId)
-        : undefined;
-    }
-    if (chain.length > 1) {
-      return chain;
     }
 
     // 3. Fallback: group candidates by run_id to find the run with the longest evolutionary sequence
@@ -269,51 +285,59 @@ export function StrategyEvolutionLineage({
           );
         })}
 
-        {/* Gen 6 Queued Beacon */}
-        <div
-          className="group relative z-10 flex min-w-[210px] max-w-[250px] shrink-0 flex-col justify-between rounded-[var(--app-radius-control)] border border-dashed border-[color-mix(in_srgb,var(--app-accent)_40%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-surface-raised)_60%,transparent)] p-3 text-left transition-colors"
-          title={
-            zh
-              ? 'Gen 6 计划在今晚低谷期（21:00后）由 DeepSeek V4.1 Flash 执行下一轮因式变异与探索'
-              : 'Gen 6 scheduled to be explored by DeepSeek V4.1 Flash during off-peak window'
-          }
-        >
-          <div>
-            <div className="flex items-center justify-between gap-1.5">
-              <span className="app-type-micro inline-flex items-center gap-1.5 font-mono font-bold text-[var(--app-text-tertiary)]">
-                <span className="size-1.5 rounded-full bg-[var(--app-accent)] opacity-60" />
-                Gen 6
-                <span className="font-normal text-[var(--app-text-tertiary)]">
-                  /{totalIterations + 1}
+        {/* Next Generation Queued Beacon */}
+        {(() => {
+          const nextGenNumber = lineageChain.length + 1;
+          const prevGenNumber = lineageChain.length;
+          return (
+            <div
+              className="group relative z-10 flex min-w-[210px] max-w-[250px] shrink-0 flex-col justify-between rounded-[var(--app-radius-control)] border border-dashed border-[color-mix(in_srgb,var(--app-accent)_40%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-surface-raised)_60%,transparent)] p-3 text-left transition-colors"
+              title={
+                zh
+                  ? `Gen ${nextGenNumber} 计划在今晚低谷期（21:00后）由 DeepSeek V4.1 Flash 执行下一轮因式变异与探索`
+                  : `Gen ${nextGenNumber} scheduled to be explored by DeepSeek V4.1 Flash during off-peak window`
+              }
+            >
+              <div>
+                <div className="flex items-center justify-between gap-1.5">
+                  <span className="app-type-micro inline-flex items-center gap-1.5 font-mono font-bold text-[var(--app-text-tertiary)]">
+                    <span className="size-1.5 rounded-full bg-[var(--app-accent)] opacity-60" />
+                    Gen {nextGenNumber}
+                    <span className="font-normal text-[var(--app-text-tertiary)]">
+                      /{Math.max(totalIterations, nextGenNumber)}
+                    </span>
+                  </span>
+                  <span className="app-type-micro rounded-full border border-[color-mix(in_srgb,var(--app-accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)] px-1.5 py-0.2 font-sans font-semibold text-[var(--app-accent)]">
+                    {zh ? '今晚待启动' : 'Queued'}
+                  </span>
+                </div>
+
+                <div className="mt-2 text-xs font-semibold leading-snug text-[var(--app-text)] font-sans">
+                  {zh
+                    ? 'DeepSeek V4.1 Flash 待命中'
+                    : 'DeepSeek V4.1 Flash Scheduled'}
+                </div>
+                <p className="mt-1 app-type-micro text-[var(--app-text-tertiary)] line-clamp-2 leading-relaxed font-sans">
+                  {zh
+                    ? `将在低谷调度窗口根据 Gen ${prevGenNumber} 评议启动下一轮探索。`
+                    : `Will evolve based on Gen ${prevGenNumber} critique during off-peak window.`}
+                </p>
+              </div>
+
+              <div className="mt-3 flex items-center justify-between border-t border-[var(--app-divider)] pt-2 app-type-micro text-[var(--app-text-tertiary)]">
+                <span className="font-sans">
+                  {zh ? '执行模型: ' : 'Engine: '}
+                  <span className="font-mono font-semibold text-[var(--app-accent)]">
+                    DeepSeek
+                  </span>
                 </span>
-              </span>
-              <span className="app-type-micro rounded-full border border-[color-mix(in_srgb,var(--app-accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)] px-1.5 py-0.2 font-sans font-semibold text-[var(--app-accent)]">
-                {zh ? '今晚待启动' : 'Queued'}
-              </span>
+                <span className="font-mono text-xs opacity-60">
+                  Standby &rarr;
+                </span>
+              </div>
             </div>
-
-            <div className="mt-2 text-xs font-semibold leading-snug text-[var(--app-text)] font-sans">
-              {zh
-                ? 'DeepSeek V4.1 Flash 待命中'
-                : 'DeepSeek V4.1 Flash Scheduled'}
-            </div>
-            <p className="mt-1 app-type-micro text-[var(--app-text-tertiary)] line-clamp-2 leading-relaxed font-sans">
-              {zh
-                ? '将在低谷调度窗口根据 Gen 5 评议启动下一轮探索。'
-                : 'Will evolve based on Gen 5 critique during off-peak window.'}
-            </p>
-          </div>
-
-          <div className="mt-3 flex items-center justify-between border-t border-[var(--app-divider)] pt-2 app-type-micro text-[var(--app-text-tertiary)]">
-            <span className="font-sans">
-              {zh ? '执行模型: ' : 'Engine: '}
-              <span className="font-mono font-semibold text-[var(--app-accent)]">
-                DeepSeek
-              </span>
-            </span>
-            <span className="font-mono text-xs opacity-60">Standby &rarr;</span>
-          </div>
-        </div>
+          );
+        })()}
       </div>
     </section>
   );
