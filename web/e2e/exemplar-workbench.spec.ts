@@ -524,9 +524,6 @@ test('overview prioritizes account value, performance, holdings and risk across 
     const recommendation = (await page
       .getByTestId('overview-strategy-recommendation')
       .boundingBox())!;
-    const attention = (await page
-      .getByTestId('overview-attention-area')
-      .boundingBox())!;
     const overflow = await page.evaluate(() => {
       const content = document.querySelector(
         '.app-shell-content',
@@ -546,13 +543,12 @@ test('overview prioritizes account value, performance, holdings and risk across 
     expect(holdings.y).toBeGreaterThanOrEqual(
       performance.y + performance.height,
     );
-    expect(attention.y).toBeGreaterThanOrEqual(holdings.y + holdings.height);
-    expect(recommendation.y).toBeGreaterThanOrEqual(attention.y);
-    expect(recommendation.y).toBeLessThanOrEqual(
-      attention.y + attention.height,
-    );
     expect(allocationRisk.y).toBeGreaterThanOrEqual(
-      attention.y + attention.height,
+      holdings.y + holdings.height,
+    );
+    expect(recommendation.y).toBeGreaterThanOrEqual(performance.y);
+    expect(recommendation.y).toBeLessThanOrEqual(
+      performance.y + performance.height,
     );
     expect(
       Math.abs(performance.x - holdings.x),
@@ -2336,7 +2332,7 @@ test('exemplar routes remain task-reordered and overflow safe on mobile themes',
           .getByTestId('overview-strategy-recommendation')
           .boundingBox();
         const queue = page.getByTestId('overview-today-queue');
-        expect(holdingsBox?.y ?? 0).toBeLessThan(decisionBox?.y ?? 0);
+        expect(decisionBox?.y ?? 0).toBeLessThan(holdingsBox?.y ?? 0);
         if ((await queue.count()) > 0) {
           const queueBox = await queue.boundingBox();
           expect(queueBox?.y ?? 0).toBeGreaterThanOrEqual(

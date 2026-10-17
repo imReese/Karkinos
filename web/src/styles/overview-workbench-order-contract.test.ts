@@ -20,7 +20,7 @@ function indexOfRequired(fragment: string) {
   return index;
 }
 
-test('overview keeps a clear summary, performance, holdings, attention, then supporting analysis hierarchy', () => {
+test('overview keeps a clear hero, spotlight, holdings, then supporting detail hierarchy', () => {
   const summary = indexOfRequired('<OverviewSummary');
   const performance = indexOfRequired(
     'data-testid="overview-performance-card"',
@@ -32,11 +32,11 @@ test('overview keeps a clear summary, performance, holdings, attention, then sup
   const attention = indexOfRequired('<DashboardTodayQueue');
 
   expect(summary).toBeLessThan(performance);
-  expect(performance).toBeLessThan(holdings);
-  expect(holdings).toBeLessThan(recommendation);
-  expect(recommendation).toBeLessThan(attention);
-  expect(attention).toBeLessThan(todayDigest);
+  expect(performance).toBeLessThan(recommendation);
+  expect(recommendation).toBeLessThan(holdings);
+  expect(holdings).toBeLessThan(todayDigest);
   expect(todayDigest).toBeLessThan(allocationRisk);
+  expect(allocationRisk).toBeLessThan(attention);
   expect(source).not.toContain('<OverviewDataStatus');
   expect(source).not.toContain('<OverviewDataTrustStrip');
   expect(source).not.toContain('<OverviewValuationCoverage');

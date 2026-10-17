@@ -93,7 +93,7 @@ export function OverviewResolvedWorkspace({
       <ReturnCalendarCard
         timeline={explainability.data?.timeline ?? []}
         positions={state.snapshot.positions}
-        marketCalendar={marketCalendar.data}
+        marketCalendar={marketCalendar?.data}
         compact
       />
     );
@@ -103,15 +103,15 @@ export function OverviewResolvedWorkspace({
       <OverviewSummary summary={state.summary} />
 
       <section
-        className="min-w-0 border-b border-[var(--app-divider)] pb-4"
+        className="min-w-0 border-b border-[var(--app-divider)] pb-6"
         data-testid="overview-performance-card"
       >
-        <div className="min-w-0">
+        <div className="grid min-w-0 items-stretch gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
           <div className="flex h-full min-w-0 flex-col">
             <div
               role="tablist"
               aria-label={copy.overview.dashboard.equityPanel}
-              className="mb-2 flex max-w-full shrink-0 overflow-x-auto border-b border-[var(--app-divider)]"
+              className="mb-4 flex max-w-full shrink-0 overflow-x-auto border-b border-[var(--app-divider)]"
               data-testid="overview-analysis-view-tabs"
             >
               <button
@@ -177,6 +177,15 @@ export function OverviewResolvedWorkspace({
               )}
             </div>
           </div>
+
+          <OverviewStrategyRecommendation
+            marketClosed={controller.marketClosed}
+            nextTradingDate={state.overview.market_session.next_trading_date}
+            planQuery={controller.tradingPlan}
+            todayQuery={controller.todayDecision}
+            positions={state.snapshot.positions}
+            currentWeightBySymbol={weightBySymbol}
+          />
         </div>
       </section>
 
@@ -186,28 +195,6 @@ export function OverviewResolvedWorkspace({
         weightBySymbol={weightBySymbol}
         className="border-b border-[var(--app-divider)] pb-6"
       />
-
-      <section
-        className="min-w-0 space-y-6"
-        data-testid="overview-attention-area"
-      >
-        <OverviewStrategyRecommendation
-          marketClosed={controller.marketClosed}
-          nextTradingDate={state.overview.market_session.next_trading_date}
-          planQuery={controller.tradingPlan}
-          todayQuery={controller.todayDecision}
-          positions={state.snapshot.positions}
-          currentWeightBySymbol={weightBySymbol}
-        />
-        {showAttention ? (
-          <div data-testid="overview-research-actions">
-            <DashboardTodayQueue
-              overview={state.overview}
-              className="border-b-0 py-0"
-            />
-          </div>
-        ) : null}
-      </section>
 
       {hasPerformanceDrivers ? (
         <section
@@ -219,6 +206,18 @@ export function OverviewResolvedWorkspace({
       ) : null}
 
       <OverviewAllocationRiskSection state={state} />
+
+      {showAttention ? (
+        <section
+          className="min-w-0 border-b border-[var(--app-divider)] py-4"
+          data-testid="overview-research-actions"
+        >
+          <DashboardTodayQueue
+            overview={state.overview}
+            className="border-b-0 py-0"
+          />
+        </section>
+      ) : null}
     </div>
   );
 }

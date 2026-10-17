@@ -342,25 +342,23 @@ test('shows the canonical daily strategy recommendation separately from operatio
   ).toHaveAttribute('href', '/decision');
 });
 
-test('keeps account value and holdings ahead of action context without calling value history an investment return', async () => {
+test('keeps account value and performance curve with strategy recommendation ahead of holdings without calling value history an investment return', async () => {
   installFetch();
   renderPage('en');
   const summary = await screen.findByTestId('overview-summary');
   const performance = screen.getByTestId('overview-performance-card');
   const holdings = screen.getByTestId('overview-holdings-section');
-  const attention = screen.getByTestId('overview-attention-area');
   for (const [before, after] of [
     [summary, performance],
     [performance, holdings],
-    [holdings, attention],
   ]) {
     expect(
       before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   }
   expect(
-    within(performance).queryByTestId('overview-strategy-recommendation'),
-  ).toBeNull();
+    within(performance).getByTestId('overview-strategy-recommendation'),
+  ).toBeVisible();
   expect(screen.getByTestId('overview-value-curve-basis')).toHaveTextContent(
     'not a cash-flow-adjusted investment return',
   );
