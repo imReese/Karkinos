@@ -36,6 +36,14 @@ export function Button({
         className,
       )}
       {...props}
-    />
+    >
+      {loading ? (
+        <span
+          className="app-button-spinner inline-block size-3 shrink-0"
+          aria-hidden="true"
+        />
+      ) : null}
+      {props.children}
+    </button>
   );
 }
