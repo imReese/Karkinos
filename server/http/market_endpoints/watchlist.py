@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
-from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
+from core.types import AssetClass, BarFrequency, InstrumentKey, InstrumentType, Symbol
 from server.contracts.http.market_models import (
     KlineBar,
     MarketQuote,
@@ -15,6 +15,7 @@ from server.contracts.http.market_models import (
     WatchlistItem,
 )
 from server.http.market_endpoints.dependencies import WatchlistEndpointDependencies
+from server.services.market_views.health_inputs import instrument_key_from_mapping
 
 WatchlistLoader = Callable[[], Awaitable[list[WatchlistItem]]]
 
@@ -62,14 +63,35 @@ def create_router(
         from server.dependencies import get_app_state
 
         state = get_app_state()
-        _, positions, _, latest_quotes = _extract_runtime_portfolio(state)
+        _, positions, instruments, latest_quotes = _extract_runtime_portfolio(state)
 
         items: list[WatchlistItem] = []
         for asset_cfg in _merged_watchlist_assets(state):
             sym = asset_cfg["symbol"]
             ac = asset_cfg["asset_class"]
-            position = _position_for_symbol(positions, sym)
+            try:
+                key = InstrumentKey.from_values(sym, asset_cfg.get("instrument_type"))
+            except (TypeError, ValueError):
+                key = None
+            instrument = instruments.get(Symbol(sym))
+            try:
+                position_key = InstrumentKey.from_values(
+                    getattr(instrument, "symbol", ""),
+                    getattr(instrument, "instrument_type", None),
+                )
+            except (TypeError, ValueError):
+                position_key = None
+            position = (
+                _position_for_symbol(positions, sym)
+                if key is not None and key == position_key
+                else None
+            )
             quote = latest_quotes.get(sym)
+            if key is None or (
+                quote is not None
+                and instrument_key_from_mapping(quote, symbol=sym) != key
+            ):
+                quote = None
             items.append(
                 WatchlistItem(
                     symbol=sym,

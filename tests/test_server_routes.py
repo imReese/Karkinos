@@ -3607,6 +3607,7 @@ def test_market_quote_refresh_times_out_without_blocking_request(monkeypatch):
 
 
 def test_market_research_board_merges_watchlist_and_health(monkeypatch):
+    from domain.instrument import make_stock
     from server.routes import market as market_routes
 
     router = market_routes.create_router()
@@ -3637,6 +3638,7 @@ def test_market_research_board_merges_watchlist_and_health(monkeypatch):
                 }
             },
             portfolio=SimpleNamespace(positions={"600519": fake_position}),
+            instruments={Symbol("600519"): make_stock("600519", "synthetic stock")},
         ),
         db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
     )
@@ -3936,6 +3938,7 @@ def test_market_quote_falls_back_to_persisted_snapshot(monkeypatch):
 
 
 def test_market_watchlist_includes_holding_fields(monkeypatch):
+    from domain.instrument import make_stock
     from server.routes import market as market_routes
 
     router = market_routes.create_router()
@@ -3961,6 +3964,7 @@ def test_market_watchlist_includes_holding_fields(monkeypatch):
             is_running=True,
             latest_quotes={"600519": {"timestamp": "2026-04-18T10:00:00"}},
             portfolio=SimpleNamespace(positions={"600519": fake_position}),
+            instruments={Symbol("600519"): make_stock("600519", "synthetic stock")},
         ),
         db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
     )
