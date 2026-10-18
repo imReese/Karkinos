@@ -12,7 +12,7 @@ from core.types import BarFrequency, InstrumentType
 from data.store import DataStore
 from data.universe import CORE_ETF_UNIVERSE
 from server.routes.analytics import create_router
-from server.services import factor_analytics
+from server.services.research import factors
 
 
 def _save_prices(root, *, omitted_symbol=None, gap_symbol=None):
@@ -48,7 +48,7 @@ def _save_prices(root, *, omitted_symbol=None, gap_symbol=None):
 def isolated_local_data(tmp_path, monkeypatch):
     # Every route uses an isolated sanitized store. Never access user cache data.
     root = tmp_path / "factor-data"
-    monkeypatch.setattr(factor_analytics, "resolve_data_dir", lambda: str(root))
+    monkeypatch.setattr(factors, "resolve_data_dir", lambda: str(root))
     return root
 
 
@@ -151,14 +151,14 @@ def test_entire_typed_universe_is_required_without_forward_filling(
     with pytest.raises(
         ValueError, match="factor_price_data_missing|factor_price_history_incomplete"
     ):
-        factor_analytics.run_factor_evaluation(data_dir=isolated_local_data)
+        factors.run_factor_evaluation(data_dir=isolated_local_data)
 
 
 def test_etf_prices_are_not_resolved_from_other_instrument_identity(
     isolated_local_data,
 ):
     store = _save_prices(isolated_local_data)
-    expected = factor_analytics.run_factor_evaluation(data_dir=isolated_local_data)
+    expected = factors.run_factor_evaluation(data_dir=isolated_local_data)
     member = CORE_ETF_UNIVERSE.members[0]
     frame = store.load_bars(member.symbol, instrument_type=InstrumentType.ETF)
     for column in ("open", "high", "low", "close"):
@@ -166,9 +166,7 @@ def test_etf_prices_are_not_resolved_from_other_instrument_identity(
     store.save_bars(
         member.symbol, BarFrequency.DAILY, frame, instrument_type=InstrumentType.STOCK
     )
-    assert (
-        factor_analytics.run_factor_evaluation(data_dir=isolated_local_data) == expected
-    )
+    assert factors.run_factor_evaluation(data_dir=isolated_local_data) == expected
 
 
 def test_insufficient_horizon_is_not_replaced_with_longer_fake_history(
@@ -176,6 +174,4 @@ def test_insufficient_horizon_is_not_replaced_with_longer_fake_history(
 ):
     _save_prices(isolated_local_data)
     with pytest.raises(ValueError, match="factor_price_history_insufficient"):
-        factor_analytics.run_factor_evaluation(
-            forward_period=60, data_dir=isolated_local_data
-        )
+        factors.run_factor_evaluation(forward_period=60, data_dir=isolated_local_data)

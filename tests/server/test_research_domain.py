@@ -8,7 +8,6 @@ from types import SimpleNamespace
 
 import pytest
 
-import server.services.factor_analytics as legacy_factors
 import server.services.research_datasets as legacy_datasets
 import server.services.research_observation_forecasts as legacy_forecasts
 import server.services.research_operation_instruments as legacy_instruments
@@ -26,7 +25,6 @@ from server.services.research import (
     build_observation_forecasts,
     build_research_operation_instruments,
     build_strategy_research_write_service,
-    compute_factor_panel,
     database_path,
     dataset_summary,
     get_curated_universe,
@@ -71,9 +69,6 @@ def test_research_facades_maintain_symbol_identity() -> None:
         is legacy_factory.strategy_research_model_timeout_seconds
     )
     assert database_path is legacy_factory.database_path
-    assert compute_factor_panel is legacy_factors.compute_factor_panel
-    assert get_curated_universe is legacy_factors.get_curated_universe
-    assert list_curated_universes is legacy_factors.list_curated_universes
     assert ResearchDatasetService is legacy_datasets.ResearchDatasetService
     assert ResearchDatasetError is legacy_datasets.ResearchDatasetError
     assert prepare_daily_dataset is legacy_datasets.prepare_daily_dataset
