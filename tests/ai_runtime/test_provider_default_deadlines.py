@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import socket
 import sqlite3
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from threading import Event, Thread
+from threading import Event, Thread, current_thread
 from types import SimpleNamespace
 
 import pytest
@@ -134,6 +135,96 @@ def test_default_connectivity_transport_times_out_drip_and_keeps_exact_retry(
     assert result.finished_at is not None
     assert service.run(request) == result
     assert drip_endpoint.request_count == 1
+
+
+def test_dns_block_does_not_delay_failure_audit_or_resume_request(
+    tmp_path, monkeypatch
+):
+    for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
+        monkeypatch.delenv(key, raising=False)
+        monkeypatch.delenv(key.lower(), raising=False)
+    path = tmp_path / "connectivity-dns.db"
+    ai_store = AiAuditStore(path)
+    audit_store = ProviderConnectivityAuditStore(path)
+    ai_store.init()
+    audit_store.init()
+    service = ProviderConnectivityService(
+        settings=replace(connectivity_settings(), timeout_seconds=0.1),
+        audit_store=audit_store,
+        ai_store=ai_store,
+        now=lambda: NOW,
+    )
+    request = connectivity_request()
+    resolving, release, finished = Event(), Event(), Event()
+    resolver_threads = []
+    results, errors = [], []
+
+    def resolve(*_args, **_kwargs):
+        resolver_threads.append(current_thread())
+        resolving.set()
+        release.wait(timeout=5)
+        return [
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                socket.IPPROTO_TCP,
+                "",
+                ("127.0.0.1", 9),
+            )
+        ]
+
+    connections = []
+
+    def connect(*args, **_kwargs):
+        connections.append(args)
+        raise AssertionError("A timed-out request must not connect after DNS returns")
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
+    monkeypatch.setattr(socket.socket, "connect", connect)
+
+    def invoke():
+        try:
+            results.append(service.run(request))
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            finished.set()
+
+    worker = Thread(target=invoke, daemon=True)
+    worker.start()
+    try:
+        assert resolving.wait(timeout=2)
+        assert finished.wait(timeout=1.5), "DNS cleanup exceeded the request deadline"
+        assert not release.is_set()
+        assert errors == []
+        result = results[0]
+        assert result.status == ConnectivityStatus.FAILED
+        assert result.error_code == "provider_timeout"
+        assert result.finished_at is not None
+        with sqlite3.connect(path) as connection:
+            before = connection.execute(
+                "SELECT * FROM ai_provider_connectivity_checks"
+            ).fetchall()
+        assert len(before) == 1
+        assert service.run(request) == result
+        assert len(resolver_threads) == 1
+    finally:
+        release.set()
+        worker.join(timeout=3)
+        for thread in resolver_threads:
+            thread.join(timeout=2)
+    assert not worker.is_alive()
+    assert all(not thread.is_alive() for thread in resolver_threads)
+    assert connections == []
+    assert service.run(request) == result
+    with sqlite3.connect(path) as connection:
+        assert (
+            connection.execute(
+                "SELECT * FROM ai_provider_connectivity_checks"
+            ).fetchall()
+            == before
+        )
+    assert len(resolver_threads) == 1
 
 
 @pytest.mark.asyncio

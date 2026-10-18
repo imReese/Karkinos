@@ -149,27 +149,43 @@ def _sync_full_market_daily(
     end_year = int(end_date[:4])
     all_trade_dates: list[str] = []
 
-    if app_db.is_file():
-        repo = MarketCalendarRepository(str(app_db))
+    repo = MarketCalendarRepository(str(app_db)) if app_db.is_file() else None
+    provider = None
+    try:
         for y in range(start_year, end_year + 1):
-            snap = repo.get_snapshot(exchange="SSE", year=y)
-            if snap and snap.get("days_json"):
-                days = json.loads(snap["days_json"])
-                for d in days:
-                    dt = d.get("date")
-                    if dt and d.get("is_trading_day") and start_date <= dt <= end_date:
-                        all_trade_dates.append(dt)
+            cached = repo.get_snapshot(exchange="SSE", year=y) if repo else None
+            days = (
+                json.loads(cached["days_json"])
+                if cached and cached.get("days_json")
+                else []
+            )
+            if not days:
+                from data.market_calendar import build_market_calendar_provider
 
-    if not all_trade_dates:
-        from data.market_calendar import build_market_calendar_provider
-
-        provider = build_market_calendar_provider("akshare")
-        for y in range(start_year, end_year + 1):
-            snap = provider.fetch_snapshot(exchange="SSE", year=y)
-            for d in snap.days:
-                dt = d.date
-                if d.is_trading_day and start_date <= dt <= end_date:
+                if provider is None:
+                    provider = build_market_calendar_provider("akshare")
+                snap = provider.fetch_snapshot(exchange="SSE", year=y)
+                if (
+                    snap.year != y
+                    or snap.exchange != "SSE"
+                    or snap.status != "available"
+                    or not snap.days
+                ):
+                    raise ValueError(f"market calendar unavailable for SSE/{y}")
+                days = [day.to_payload() for day in snap.days]
+            for d in days:
+                dt = d.get("date")
+                if dt and d.get("is_trading_day") and start_date <= dt <= end_date:
                     all_trade_dates.append(dt)
+    except KeyboardInterrupt:
+        return 130
+    except Exception:
+        logger.exception(
+            "Unable to resolve complete trading calendar for %s ~ %s",
+            start_date,
+            end_date,
+        )
+        return 1
 
     all_trade_dates.sort()
     logger.info(

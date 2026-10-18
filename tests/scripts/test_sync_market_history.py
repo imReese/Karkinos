@@ -476,3 +476,180 @@ def test_full_market_calendar_fallback_uses_canonical_snapshot_and_saves_receipt
     )
     assert bars is not None
     assert bars["timestamp"].dt.strftime("%Y-%m-%d").tolist() == fetched_dates
+
+
+@pytest.mark.parametrize("local_years", [(2025,), (2026,), (), (2025, 2026)])
+def test_full_market_fills_each_missing_calendar_year_and_reuses_receipts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, local_years: tuple[int, ...]
+) -> None:
+    from core.types import BarFrequency, InstrumentType
+    from data.market_calendar import build_static_market_calendar_snapshot
+    from data.store import DataStore
+    from scripts.data import sync_market_history
+    from server.db import AppDatabase
+    from server.persistence.market_calendar import MarketCalendarRepository
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    AppDatabase(data_dir / "app.db").init_sync()
+    repo = MarketCalendarRepository(str(data_dir / "app.db"))
+    snapshots = {
+        year: build_static_market_calendar_snapshot(
+            exchange="SSE",
+            year=year,
+            provider="synthetic",
+            open_dates=[day],
+            fetched_at="2026-01-06T00:00:00+08:00",
+        )
+        for year, day in [(2025, "2025-12-31"), (2026, "2026-01-05")]
+    }
+    for year in local_years:
+        repo.upsert_snapshot(snapshots[year])
+    monkeypatch.setattr(sync_market_history, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(sync_market_history.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(sync_market_history, "_load_tushare_token", lambda: "fixture")
+    calendar_requests = []
+
+    def fetch_calendar(*, exchange, year):
+        assert exchange == "SSE"
+        calendar_requests.append(year)
+        return snapshots[year]
+
+    monkeypatch.setattr(
+        "data.market_calendar.build_market_calendar_provider",
+        lambda _name: SimpleNamespace(fetch_snapshot=fetch_calendar),
+    )
+    bar_requests = []
+
+    def fetch_bars(_source, trade_date):
+        bar_requests.append(trade_date)
+        return pd.DataFrame(
+            [
+                {
+                    "symbol": "600000",
+                    "timestamp": pd.Timestamp(trade_date),
+                    "open": 10.0,
+                    "high": 11.0,
+                    "low": 9.0,
+                    "close": 10.5,
+                    "volume": 1000.0,
+                    "amount": 10500.0,
+                }
+            ]
+        )
+
+    monkeypatch.setattr(
+        "data.providers.tushare.TushareSource.fetch_market_daily_bars", fetch_bars
+    )
+    arguments = [
+        "--universe",
+        "full-market",
+        "--start",
+        "2025-12-31",
+        "--end",
+        "2026-01-05",
+        "--throttle",
+        "0",
+        "--data-dir",
+        str(data_dir),
+    ]
+    main(arguments)
+    assert calendar_requests == [
+        year for year in (2025, 2026) if year not in local_years
+    ]
+    assert bar_requests == ["2025-12-31", "2026-01-05"]
+    store = DataStore(data_dir)
+    receipts = {
+        day: store.get_market_daily_ingestion_receipt(
+            trade_date=day, provider_name="tushare"
+        )
+        for day in bar_requests
+    }
+    assert all(
+        receipt is not None and receipt["row_count"] == 1
+        for receipt in receipts.values()
+    )
+    bars = store.load_bars(
+        "600000", BarFrequency.DAILY, instrument_type=InstrumentType.STOCK
+    )
+    assert bars is not None
+    assert bars["timestamp"].dt.strftime("%Y-%m-%d").tolist() == bar_requests
+    bar_requests.clear()
+    main(arguments)
+    assert bar_requests == []
+    assert {
+        day: store.get_market_daily_ingestion_receipt(
+            trade_date=day, provider_name="tushare"
+        )
+        for day in receipts
+    } == receipts
+
+
+@pytest.mark.parametrize(
+    "calendar_state", ["closed", "empty-cache", "provider-fails", "provider-empty"]
+)
+def test_full_market_calendar_distinguishes_closed_days_from_missing_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, calendar_state: str
+) -> None:
+    from dataclasses import replace
+
+    from data.market_calendar import build_static_market_calendar_snapshot
+    from scripts.data import sync_market_history
+    from server.db import AppDatabase
+    from server.persistence.market_calendar import MarketCalendarRepository
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    AppDatabase(data_dir / "app.db").init_sync()
+    repo = MarketCalendarRepository(str(data_dir / "app.db"))
+    snapshot = build_static_market_calendar_snapshot(
+        exchange="SSE",
+        year=2026,
+        provider="synthetic",
+        open_dates=["2026-01-05"],
+        fetched_at="2026-01-06T00:00:00+08:00",
+    )
+    if calendar_state in {"closed", "empty-cache"}:
+        repo.upsert_snapshot(
+            snapshot if calendar_state == "closed" else replace(snapshot, days=())
+        )
+    monkeypatch.setattr(sync_market_history, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(sync_market_history.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(sync_market_history, "_load_tushare_token", lambda: "fixture")
+    fetch_calendar = MagicMock(
+        return_value=replace(snapshot, days=())
+        if calendar_state == "provider-empty"
+        else snapshot
+    )
+    if calendar_state == "provider-fails":
+        fetch_calendar.side_effect = OSError("synthetic calendar unavailable")
+    monkeypatch.setattr(
+        "data.market_calendar.build_market_calendar_provider",
+        lambda _name: SimpleNamespace(fetch_snapshot=fetch_calendar),
+    )
+    fetch_bars = MagicMock(
+        side_effect=AssertionError("No bars without an open session")
+    )
+    monkeypatch.setattr(
+        "data.providers.tushare.TushareSource.fetch_market_daily_bars", fetch_bars
+    )
+    arguments = [
+        "--universe",
+        "full-market",
+        "--start",
+        "2026-01-03",
+        "--end",
+        "2026-01-04",
+        "--throttle",
+        "0",
+        "--data-dir",
+        str(data_dir),
+    ]
+    if calendar_state in {"provider-fails", "provider-empty"}:
+        with pytest.raises(SystemExit) as result:
+            main(arguments)
+        assert result.value.code == 1
+    else:
+        main(arguments)
+    assert fetch_calendar.call_count == int(calendar_state != "closed")
+    fetch_bars.assert_not_called()

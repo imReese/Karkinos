@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import datetime
 from types import SimpleNamespace
@@ -602,9 +603,38 @@ def test_http_etf_sync_does_not_overwrite_same_code_fund_close(
                 "timestamp": "2026-10-13T15:00:00+08:00",
                 "quote_source": "eastmoney_fund_page",
             },
-            None,
-            id="confirmed-source-missing-nav-date",
+            "2026-10-13",
+            id="published-page-date-from-source-timestamp",
         ),
+        pytest.param(
+            InstrumentType.OPEN_END_FUND,
+            {
+                "quote_timestamp": "2026-10-12T16:30:00Z",
+                "quote_source": "eastmoney_fund_page",
+            },
+            "2026-10-13",
+            id="published-nav-quote-timestamp-only",
+        ),
+        *[
+            pytest.param(
+                InstrumentType.OPEN_END_FUND,
+                {
+                    "timestamp": "2026-10-13T15:00:00+08:00",
+                    "nav_date": "2026-10-12",
+                    "quote_source": "eastmoney_fund_page",
+                    **failure,
+                },
+                None,
+                id=name,
+            )
+            for name, failure in [
+                ("published-nav-provider-failed", {"provider_status": "failed"}),
+                ("published-nav-stale-status", {"quote_status": "stale"}),
+                ("published-nav-stale-reason", {"stale_reason": "cached"}),
+                ("published-nav-future-economic-date", {"nav_date": "2026-10-14"}),
+                ("unconfirmed-source", {"quote_source": "unknown_source"}),
+            ]
+        ],
         pytest.param(
             InstrumentType.OPEN_END_FUND,
             {
@@ -703,7 +733,7 @@ def test_quote_sync_daily_close_requires_source_session_evidence(
     )
     quote = db.get_latest_quote_sync("510300", kind.value)
     assert quote is not None and quote["price"] == 3.25
-    if "timestamp" not in evidence:
+    if not evidence.get("timestamp") and not evidence.get("quote_timestamp"):
         # The existing latest-quote capture fallback does not grant close authority.
         assert (
             quote["quote_timestamp"]
@@ -721,3 +751,60 @@ def test_quote_sync_daily_close_requires_source_session_evidence(
             "synthetic_provider",
         )
         assert all(row in closes for row in prior_closes)
+
+
+def test_real_akshare_page_nav_writes_dated_close_and_estimate_cannot_replace_it(
+    temp_data_env, sync_quote_clock, monkeypatch
+):
+    from data.providers.akshare import AKShareSource
+
+    source = AKShareSource()
+    monkeypatch.setattr(
+        source, "_fetch_open_end_fund_latest_from_estimate", lambda _code: None
+    )
+    trend = [
+        {
+            "x": int(datetime(2026, 10, 9, tzinfo=_SHANGHAI).timestamp() * 1000),
+            "y": 1.2,
+        },
+        {
+            "x": int(datetime(2026, 10, 12, tzinfo=_SHANGHAI).timestamp() * 1000),
+            "y": 1.25,
+        },
+    ]
+    monkeypatch.setattr(
+        "data.providers.akshare.eastmoney_upstream.fetch_eastmoney_fund_page",
+        lambda **_kwargs: (
+            'var fS_name = "Synthetic Fund";\nvar Data_netWorthTrend = '
+            + json.dumps(trend)
+            + ";"
+        ),
+    )
+    raw = source.fetch_latest(Symbol("018125"), asset_class=AssetClass.FUND)
+    assert raw["quote_source"] == "eastmoney_fund_page"
+    assert not {"nav_date", "provider_status", "quote_status"}.intersection(raw)
+    db = AppDatabase(temp_data_env / "app.db")
+    service = MarketSyncService(data_dir=temp_data_env, db=db, ak_source=source)
+    target = SyncTarget(
+        "018125", AssetClass.FUND, InstrumentType.OPEN_END_FUND, "Synthetic Fund"
+    )
+    for _ in range(2):
+        assert service.sync_latest_quotes([target]) == 1
+        assert _daily_closes(db) == [
+            ("018125", "open_end_fund", "2026-10-12", 1.25, "akshare")
+        ]
+    assert db.get_latest_quote_sync("018125", "open_end_fund")["price"] == 1.25
+    closes = _daily_closes(db)
+    monkeypatch.setattr(
+        source,
+        "_fetch_open_end_fund_latest_from_estimate",
+        lambda _code: {
+            "price": 9.0,
+            "timestamp": "2026-10-13T15:00:00+08:00",
+            "quote_source": "sina_fund_estimate",
+            "source": "sina",
+        },
+    )
+    assert service.sync_latest_quotes([target]) == 1
+    assert db.get_latest_quote_sync("018125", "open_end_fund")["price"] == 9.0
+    assert _daily_closes(db) == closes

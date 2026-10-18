@@ -85,14 +85,25 @@ class HttpxDeadlineJsonTransport:
             pass
         else:
             raise ProviderProbeError("provider_transport_requires_worker_thread")
-        return asyncio.run(
-            self._post_json(
-                url=url,
-                headers=headers,
-                payload=payload,
-                timeout_seconds=timeout_seconds,
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(
+                self._post_json(
+                    url=url,
+                    headers=headers,
+                    payload=payload,
+                    timeout_seconds=timeout_seconds,
+                )
             )
-        )
+        finally:
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            finally:
+                # The timed-out HTTP coroutine and client are already closed.
+                # Native DNS cannot be interrupted; unlike asyncio.run, close
+                # does not join its executor. A late DNS result cannot resume
+                # the cancelled request on this closed loop.
+                loop.close()
 
     async def _post_json(
         self,

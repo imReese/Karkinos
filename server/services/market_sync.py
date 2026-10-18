@@ -28,7 +28,10 @@ from data.store import DataStore
 from server.persistence.market_calendar import MarketCalendarRepository
 from server.projections.quote_status import parse_quote_timestamp
 from server.runtime_paths import resolve_data_dir
-from server.services.fund_nav_sync import is_confirmed_fund_nav_quote
+from server.services.fund_nav_sync import (
+    _normalize_snapshot,
+    is_confirmed_fund_nav_quote,
+)
 
 logger = logging.getLogger(__name__)
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -129,7 +132,22 @@ def _daily_close_trade_date(
     if observed_at is None or observed_at > captured_at:
         return None
     if target.instrument_type is InstrumentType.OPEN_END_FUND:
-        nav_date = str(snapshot.get("nav_date") or "").strip()
+        # Provider payloads have no persisted quote statuses. Normalize through
+        # the NAV owner, but never promote explicit failure or stale evidence.
+        if (
+            str(snapshot.get("provider_status") or "live").strip().lower() != "live"
+            or str(snapshot.get("quote_status") or "live").strip().lower()
+            not in {"live", "confirmed"}
+            or snapshot.get("stale_reason") not in {None, ""}
+        ):
+            return None
+        quote = _normalize_snapshot(
+            symbol=target.symbol,
+            snapshot={**snapshot, "timestamp": observed_at.isoformat()},
+            source_name="akshare",
+            now=captured_at,
+        )
+        nav_date = str(quote.get("nav_date") or "").strip()
         try:
             nav_day = date.fromisoformat(nav_date)
         except ValueError:
@@ -138,7 +156,7 @@ def _daily_close_trade_date(
             return None
         return (
             nav_date
-            if is_confirmed_fund_nav_quote(snapshot, target_date=nav_date)
+            if is_confirmed_fund_nav_quote(quote, target_date=nav_date)
             else None
         )
     if (
