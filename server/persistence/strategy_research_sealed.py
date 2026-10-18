@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
 from typing import Any
+from uuid import uuid4
 
 from server.ai_runtime.contracts import JsonObject, canonical_json, content_fingerprint
 from server.ai_runtime.store import IdempotencyConflict
+from server.contracts.jobs import JobLease, job_time
 from server.contracts.strategy_research import (
     SealedTestRequest,
     StrategyResearchRejected,
 )
+from server.persistence.jobs import SQLiteJobStore, job_id_for, require_job_lease
+
+_FINAL_EVALUATION_JOB_KIND = "research_final_evaluation"
 
 
 class StrategyResearchSealedRepositoryMixin:
@@ -103,6 +110,8 @@ class StrategyResearchSealedRepositoryMixin:
         failure_code: str | None,
         updated_at: str,
         challenger_comparison: JsonObject | None = None,
+        evaluation_lease: JobLease | None = None,
+        lease_clock: Callable[[], datetime] | None = None,
     ) -> None:
         evidence_json = canonical_json(evidence) if evidence is not None else None
         challenger_json = (
@@ -111,6 +120,25 @@ class StrategyResearchSealedRepositoryMixin:
             else None
         )
         with self._connect(immediate=True) as conn:
+            row = conn.execute(
+                "SELECT status FROM ai_strategy_sealed_tests WHERE sealed_test_id=?",
+                (sealed_test_id,),
+            ).fetchone()
+            if row is None or row["status"] != "running":
+                raise StrategyResearchRejected("sealed_test_already_terminal")
+            if (
+                sealed_test_id.startswith("ai-sealed-auto-")
+                and evaluation_lease is None
+            ):
+                raise StrategyResearchRejected("sealed_evaluation_lease_required")
+            if evaluation_lease is not None:
+                expected_job_id = job_id_for(
+                    _FINAL_EVALUATION_JOB_KIND, {"sealed_test_id": sealed_test_id}
+                )
+                if evaluation_lease.job_id != expected_job_id:
+                    raise ValueError("job_lease_lost")
+                checked = (lease_clock or (lambda: datetime.now(timezone.utc)))()
+                require_job_lease(conn, evaluation_lease, now=checked)
             cursor = conn.execute(
                 """
                 UPDATE ai_strategy_sealed_tests
@@ -128,6 +156,25 @@ class StrategyResearchSealedRepositoryMixin:
                     sealed_test_id,
                 ),
             )
+            if evaluation_lease is not None:
+                # The reservation and its operational lease change together. A
+                # retry keeps the same consumed scientific test and budget.
+                conn.execute(
+                    "UPDATE job_runs SET status=?, result_ref=?, error=?, "
+                    "max_attempts=MAX(max_attempts, attempt+1), "
+                    "available_at=?, lease_owner=NULL, lease_expires_at=NULL, updated_at=? "
+                    "WHERE job_id=?",
+                    (
+                        "queued"
+                        if status == "reserved"
+                        else ("succeeded" if status == "completed" else "failed"),
+                        sealed_test_id if status == "completed" else None,
+                        failure_code,
+                        job_time(checked),
+                        job_time(checked),
+                        evaluation_lease.job_id,
+                    ),
+                )
         if cursor.rowcount != 1:
             raise StrategyResearchRejected("sealed_test_already_terminal")
         self.append_event(
@@ -350,15 +397,59 @@ class StrategyResearchSealedRepositoryMixin:
         )
         return self.get_sealed_test(sealed_id)
 
-    def claim_reserved_sealed_test(self, sealed_test_id: str, *, now: str) -> bool:
-        """Exactly one evaluator may consume a reservation; retries read its result."""
+    def claim_reserved_sealed_test(
+        self,
+        sealed_test_id: str,
+        *,
+        now: str,
+        lease_owner: str | None = None,
+        lease_seconds: int = 90,
+    ) -> JobLease | None:
+        """Lease a frozen test, including a crashed evaluator's original attempt."""
+        instant = datetime.fromisoformat(now)
+        at = job_time(instant)
+        owner = lease_owner or uuid4().hex
+        if not owner.strip() or lease_seconds <= 0:
+            raise ValueError("job_lease_invalid")
+        job = SQLiteJobStore(self._path).enqueue(
+            _FINAL_EVALUATION_JOB_KIND, {"sealed_test_id": sealed_test_id}, now=instant
+        )
         with self._connect(immediate=True) as conn:
+            row = conn.execute(
+                "SELECT status FROM ai_strategy_sealed_tests WHERE sealed_test_id=?",
+                (sealed_test_id,),
+            ).fetchone()
+            if row is None or row["status"] not in {"reserved", "running"}:
+                return None
+            # Operational interruption must not exhaust a different scientific
+            # test allowance. The attempt remains monotonic and fences old owners.
             cursor = conn.execute(
+                "UPDATE job_runs SET status='running', attempt=attempt+1, "
+                "max_attempts=MAX(max_attempts, attempt+1), lease_owner=?, "
+                "lease_expires_at=?, heartbeat_at=?, updated_at=? "
+                "WHERE job_id=? AND ((status='queued' AND available_at<=?) "
+                "OR (status='running' AND lease_expires_at<=?))",
+                (
+                    owner,
+                    job_time(instant + timedelta(seconds=lease_seconds)),
+                    at,
+                    at,
+                    job.job_id,
+                    at,
+                    at,
+                ),
+            )
+            if cursor.rowcount != 1:
+                return None
+            conn.execute(
                 "UPDATE ai_strategy_sealed_tests SET status='running',updated_at=? "
-                "WHERE sealed_test_id=? AND status='reserved'",
+                "WHERE sealed_test_id=?",
                 (now, sealed_test_id),
             )
-            return cursor.rowcount == 1
+            attempt = conn.execute(
+                "SELECT attempt FROM job_runs WHERE job_id=?", (job.job_id,)
+            ).fetchone()[0]
+            return JobLease(job.job_id, owner, attempt)
 
     @staticmethod
     def _sealed_row(row: dict[str, Any]) -> dict[str, Any]:

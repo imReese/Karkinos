@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
-from datetime import datetime
+from collections.abc import Callable, Mapping
+from datetime import datetime, timezone
 from decimal import Decimal
+from threading import Event, Thread
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -30,9 +31,15 @@ from server.contracts.ai_shadow_research_automation import (
     SHADOW_RESEARCH_RUNTIME_CONTRACT,
 )
 from server.contracts.content_identity import content_fingerprint
+from server.contracts.jobs import JobLease
 from server.contracts.strategy_research import StrategyResearchRejected
+from server.persistence.jobs import SQLiteJobStore
 
 FINAL_EVALUATION_SCHEMA = "karkinos.research_final_evaluation.v1"
+
+
+class _FinalEvaluationLeaseUnavailable(ValueError):
+    """An interrupted operational owner is not a scientific final-test failure."""
 
 
 def sealed_execution_code_binding() -> dict[str, Any]:
@@ -139,6 +146,8 @@ def sealed_execution_code_binding() -> dict[str, Any]:
         "server/services/ai_shadow_research_commands.py",
         "server/services/ai_shadow_research_workflow.py",
         "server/persistence/strategy_research_sealed.py",
+        "server/persistence/jobs.py",
+        "server/contracts/jobs.py",
         "server/persistence/research_observations.py",
         "server/services/ai_shadow_research_qualification.py",
         "server/projections/daily_strategy_research_candidates.py",
@@ -559,6 +568,8 @@ async def evaluate_reserved_champion(
     adapter: Any,
     now: datetime,
     calendar_db: Any,
+    lease_clock: Callable[[], datetime] | None = None,
+    lease_seconds: int = 90,
 ) -> dict[str, Any]:
     row = require_final_reservation(
         research_store=research_store, source=source, now=now
@@ -569,11 +580,119 @@ async def evaluate_reserved_champion(
             evidence=row["evidence"],
             store_root=adapter._data_store._root,
         )
-    if not research_store.claim_reserved_sealed_test(
-        row["sealed_test_id"], now=now.isoformat()
-    ):
+    clock = lease_clock or (lambda: datetime.now(timezone.utc))
+    lease = research_store.claim_reserved_sealed_test(
+        row["sealed_test_id"], now=clock().isoformat(), lease_seconds=lease_seconds
+    )
+    if lease is None:
         raise StrategyResearchRejected("independent_final_evaluation_in_progress")
+    jobs = SQLiteJobStore(research_store._path)
+    stopped = Event()
+    lease_lost = Event()
+
+    def require_current():
+        if lease_lost.is_set():
+            raise _FinalEvaluationLeaseUnavailable("job_lease_lost")
+        try:
+            jobs.heartbeat(lease, now=clock(), lease_seconds=lease_seconds)
+        except Exception as exc:
+            code = (
+                "job_lease_lost"
+                if str(exc) == "job_lease_lost"
+                else "independent_final_evaluation_lease_unavailable"
+            )
+            raise _FinalEvaluationLeaseUnavailable(code) from exc
+
+    def heartbeat():
+        # Dataset reopening can also block the event loop. Keep the existing job
+        # lease alive independently until every replay thread has stopped.
+        interval = lease_seconds / 3
+        while not stopped.wait(interval):
+            try:
+                require_current()
+            except ValueError as exc:
+                if str(exc) == "job_lease_lost":
+                    lease_lost.set()
+                    return
+                interval = min(1, lease_seconds / 6)
+            except Exception:
+                # A temporary storage failure is not proof the owner has died.
+                # Retry within the current lease; its SQL guard detects expiry.
+                interval = min(1, lease_seconds / 6)
+            else:
+                interval = lease_seconds / 3
+
+    keeper = Thread(target=heartbeat, name="research-final-lease", daemon=True)
+    keeper.start()
+    try:
+        return await _evaluate_claimed_champion(
+            research_store=research_store,
+            source=source,
+            adapter=adapter,
+            now=now,
+            calendar_db=calendar_db,
+            row=row,
+            lease=lease,
+            lease_clock=clock,
+            require_current=require_current,
+        )
+    finally:
+        stopped.set()
+        keeper.join()
+
+
+async def _run_final_replay(adapter, *, require_current, **kwargs):
+    """Cancellation cannot abandon a thread that is still measuring this test."""
+    require_current()
+    replay = asyncio.create_task(asyncio.to_thread(adapter.run_sealed, **kwargs))
+    try:
+        result = await asyncio.shield(replay)
+        require_current()
+        return result
+    except asyncio.CancelledError:
+        while not replay.done():
+            try:
+                await asyncio.shield(replay)
+            except asyncio.CancelledError:
+                continue
+            except Exception:
+                break
+        if not replay.cancelled():
+            replay.exception()
+        raise
+
+
+async def _evaluate_claimed_champion(
+    *,
+    research_store: Any,
+    source: Any,
+    adapter: Any,
+    now: datetime,
+    calendar_db: Any,
+    row: dict[str, Any],
+    lease: JobLease,
+    lease_clock: Callable[[], datetime],
+    require_current: Callable[[], None],
+) -> dict[str, Any]:
     binding = row["evidence"]["reservation"]
+
+    def finish(**kwargs):
+        try:
+            research_store.finish_sealed_test(
+                row["sealed_test_id"],
+                updated_at=now.isoformat(),
+                evaluation_lease=lease,
+                lease_clock=lease_clock,
+                **kwargs,
+            )
+        except Exception as exc:
+            code = (
+                "job_lease_lost"
+                if str(exc) == "job_lease_lost"
+                else "independent_final_evaluation_lease_unavailable"
+            )
+            raise _FinalEvaluationLeaseUnavailable(code) from exc
+
     result = None
     try:
         selection = source.source_selection
@@ -661,11 +780,15 @@ async def evaluate_reserved_champion(
             ):
                 raise StrategyResearchRejected("independent_final_fresh_book_mismatch")
 
-        result = await asyncio.to_thread(
-            adapter.run_sealed, draft=source.source_draft, **common
+        result = await _run_final_replay(
+            adapter,
+            require_current=require_current,
+            draft=source.source_draft,
+            **common,
         )
-        baseline = await asyncio.to_thread(
-            adapter.run_sealed,
+        baseline = await _run_final_replay(
+            adapter,
+            require_current=require_current,
             draft={"formula_ast": binding["baseline_formula_ast"]},
             **common,
         )
@@ -688,8 +811,8 @@ async def evaluate_reserved_champion(
         comparator_accounting = {"frozen_baseline": baseline.cash_dividend_accounting}
         challenger_results = []
         for challenger in binding["challenger_family"]:
-            measured = await asyncio.to_thread(
-                adapter.run_sealed, draft=challenger, **common
+            measured = await _run_final_replay(
+                adapter, require_current=require_current, draft=challenger, **common
             )
             require_fresh_book(measured)
             if getattr(measured, "dataset_snapshot", None) != candidate_snapshot:
@@ -712,8 +835,9 @@ async def evaluate_reserved_champion(
             )
         incumbent_result = None
         if binding.get("incumbent"):
-            incumbent_result = await asyncio.to_thread(
-                adapter.run_sealed,
+            incumbent_result = await _run_final_replay(
+                adapter,
+                require_current=require_current,
                 draft={"formula_ast": binding["incumbent"]["formula_ast"]},
                 **common,
             )
@@ -812,15 +936,17 @@ async def evaluate_reserved_champion(
                 forward_book=forward_book,
             )
         payload = {**core, "evidence_fingerprint": content_fingerprint(core)}
-        research_store.finish_sealed_test(
-            row["sealed_test_id"],
+        finish(
             status="completed",
             evidence=payload,
             evidence_fingerprint=payload["evidence_fingerprint"],
             failure_code=None,
-            updated_at=now.isoformat(),
         )
         return payload
+    except _FinalEvaluationLeaseUnavailable:
+        # Losing the execution lease or its storage never refunds the frozen
+        # test's budget and never fabricates a failed scientific measurement.
+        raise
     except Exception as exc:
         # These errors are emitted by the input loader before any simulation.
         # A missing delivery can be retried without consuming a measured result.
@@ -843,13 +969,11 @@ async def evaluate_reserved_champion(
                 )
             )
         )
-        research_store.finish_sealed_test(
-            row["sealed_test_id"],
+        finish(
             status="reserved" if pending_inputs else "failed",
             evidence={"reservation": binding},
             evidence_fingerprint=content_fingerprint({"reservation": binding}),
             failure_code=str(exc),
-            updated_at=now.isoformat(),
         )
         raise
 

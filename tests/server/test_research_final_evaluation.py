@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import sqlite3
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
+from threading import Event
 from types import SimpleNamespace
 
 import pandas as pd
@@ -30,6 +33,7 @@ from server.contracts.strategy_research import (
 )
 from server.db import AppDatabase
 from server.persistence.backtest_results import insert_backtest_result
+from server.persistence.jobs import SQLiteJobStore
 from server.persistence.strategy_research import StrategyResearchAuditStore
 from server.services.research_final_evaluation import (
     evaluate_reserved_champion,
@@ -310,14 +314,293 @@ async def _reserve(h, *, now=FREEZE):
     )
 
 
-async def _evaluate(h, *, now=MATURE):
+async def _evaluate(h, *, now=MATURE, **kwargs):
     return await evaluate_reserved_champion(
         research_store=h.store,
         source=h.source,
         adapter=h.adapter,
         now=now,
         calendar_db=h.db,
+        **kwargs,
     )
+
+
+@pytest.mark.asyncio
+async def test_cancelled_final_drains_thread_then_reopens_same_reservation(harness):
+    h = harness
+    reserved = await _reserve(h)
+    clock = [MATURE]
+    started, release, finished = Event(), Event(), Event()
+    original = h.adapter.run_sealed
+
+    def replay(**kwargs):
+        started.set()
+        try:
+            assert release.wait(5), "test did not release the sealed replay"
+            return original(**kwargs)
+        finally:
+            finished.set()
+
+    h.adapter.run_sealed = replay
+    task = asyncio.create_task(_evaluate(h, lease_clock=lambda: clock[0]))
+    try:
+        assert await asyncio.to_thread(started.wait, 5)
+        task.cancel()
+        await asyncio.sleep(0)
+        assert not task.done(), "cancellation must not abandon a running replay thread"
+        with pytest.raises(
+            StrategyResearchRejected, match="independent_final_evaluation_in_progress"
+        ):
+            await _evaluate(h, lease_clock=lambda: clock[0])
+    finally:
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert finished.is_set()
+    assert h.store.get_sealed_test(reserved["sealed_test_id"])["status"] == "running"
+
+    # A restart can recover the operational lease without another scientific test.
+    clock[0] += timedelta(minutes=5)
+    h.store = StrategyResearchAuditStore(h.db.path)
+    h.adapter.run_sealed = original
+    evidence = await _evaluate(h, lease_clock=lambda: clock[0])
+    completed = h.store.get_sealed_test(reserved["sealed_test_id"])
+    assert evidence["sealed_test_id"] == reserved["sealed_test_id"]
+    for field in ("request_fingerprint", "consumed_at", "partition_fingerprint"):
+        assert completed[field] == reserved[field]
+    assert evidence["reservation"] == reserved["evidence"]["reservation"]
+    assert len(h.store.list_sealed_tests(h.candidate["session_id"])) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("transient_heartbeat_failure", [False, True])
+async def test_live_final_heartbeat_keeps_concurrent_evaluator_out(
+    harness, monkeypatch, transient_heartbeat_failure
+):
+    h = harness
+    await _reserve(h)
+    started, release = Event(), Event()
+    original = h.adapter.run_sealed
+
+    def replay(**kwargs):
+        started.set()
+        assert release.wait(5), "test did not release the sealed replay"
+        return original(**kwargs)
+
+    h.adapter.run_sealed = replay
+    task = asyncio.create_task(_evaluate(h, lease_seconds=1))
+    try:
+        assert await asyncio.to_thread(started.wait, 5)
+        if transient_heartbeat_failure:
+            heartbeat = SQLiteJobStore.heartbeat
+            attempts = []
+
+            def retry_once(*args, **kwargs):
+                attempts.append(True)
+                if len(attempts) == 1:
+                    raise OSError("temporary heartbeat storage unavailability")
+                return heartbeat(*args, **kwargs)
+
+            monkeypatch.setattr(SQLiteJobStore, "heartbeat", retry_once)
+        await asyncio.sleep(1.2)
+        with pytest.raises(
+            StrategyResearchRejected, match="independent_final_evaluation_in_progress"
+        ):
+            await _evaluate(h, lease_seconds=1)
+    finally:
+        release.set()
+        outcomes = await asyncio.gather(task, return_exceptions=True)
+    evidence = outcomes[0]
+    assert isinstance(evidence, dict), evidence
+    assert h.store.get_sealed_test(evidence["sealed_test_id"])["status"] == "completed"
+    assert len(h.calls) == 10
+
+
+@pytest.mark.asyncio
+async def test_fenced_final_owner_does_not_start_remaining_replays(harness):
+    h = harness
+    row = await _reserve(h)
+    clock = [MATURE]
+    original = h.adapter.run_sealed
+    owners = []
+
+    def replay(**kwargs):
+        clock[0] += timedelta(seconds=2)
+        owners.append(
+            StrategyResearchAuditStore(h.db.path).claim_reserved_sealed_test(
+                row["sealed_test_id"],
+                now=clock[0].isoformat(),
+                lease_owner="replacement-process",
+            )
+        )
+        assert owners[-1] is not None
+        return original(**kwargs)
+
+    h.adapter.run_sealed = replay
+    with pytest.raises(ValueError, match="job_lease_lost"):
+        await _evaluate(h, lease_clock=lambda: clock[0], lease_seconds=1)
+    assert len(h.calls) == 1
+    assert h.store.get_sealed_test(row["sealed_test_id"])["status"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_expired_final_owner_cannot_finish_after_restart_takeover(harness):
+    h = harness
+    reserved = await _reserve(h)
+    identity = reserved["sealed_test_id"]
+    old = h.store.claim_reserved_sealed_test(
+        identity, now=MATURE.isoformat(), lease_owner="lost-process", lease_seconds=1
+    )
+    assert old is not None
+    reopened = StrategyResearchAuditStore(h.db.path)
+    resumed_at = MATURE + timedelta(seconds=2)
+    current = reopened.claim_reserved_sealed_test(
+        identity, now=resumed_at.isoformat(), lease_owner="new-process"
+    )
+    assert current is not None
+    assert current.job_id == old.job_id
+    assert current.attempt == old.attempt + 1
+    before = reopened.get_sealed_test(identity)
+    with pytest.raises(ValueError, match="job_lease_lost"):
+        h.store.finish_sealed_test(
+            identity,
+            status="completed",
+            evidence={"stale": True},
+            evidence_fingerprint="stale",
+            failure_code=None,
+            updated_at=resumed_at.isoformat(),
+            evaluation_lease=old,
+            lease_clock=lambda: resumed_at,
+        )
+    assert reopened.get_sealed_test(identity) == before
+    # A legacy tokenless callback cannot evade the new owner check either.
+    with pytest.raises(
+        StrategyResearchRejected, match="sealed_evaluation_lease_required"
+    ):
+        h.store.finish_sealed_test(
+            identity,
+            status="failed",
+            evidence=None,
+            evidence_fingerprint=None,
+            failure_code="late-owner",
+            updated_at=resumed_at.isoformat(),
+        )
+    assert reopened.get_sealed_test(identity) == before
+
+
+@pytest.mark.asyncio
+async def test_running_final_without_legacy_job_can_resume(harness):
+    h = harness
+    reserved = await _reserve(h)
+    with sqlite3.connect(h.db.path) as conn:
+        conn.execute(
+            "UPDATE ai_strategy_sealed_tests SET status='running' WHERE sealed_test_id=?",
+            (reserved["sealed_test_id"],),
+        )
+    h.store = StrategyResearchAuditStore(h.db.path)
+    evidence = await _evaluate(h)
+    assert evidence["sealed_test_id"] == reserved["sealed_test_id"]
+    assert evidence["reservation"] == reserved["evidence"]["reservation"]
+
+
+@pytest.mark.asyncio
+async def test_final_finish_checks_expiry_after_acquiring_write_lock(
+    harness, monkeypatch
+):
+    h = harness
+    row = await _reserve(h)
+    clock = [MATURE]
+    lease = h.store.claim_reserved_sealed_test(
+        row["sealed_test_id"], now=clock[0].isoformat(), lease_seconds=1
+    )
+    original_connect = h.store._connect
+
+    @contextmanager
+    def delayed_lock(**kwargs):
+        with original_connect(**kwargs) as conn:
+            clock[0] += timedelta(seconds=2)
+            yield conn
+
+    monkeypatch.setattr(h.store, "_connect", delayed_lock)
+    with pytest.raises(ValueError, match="job_lease_lost"):
+        h.store.finish_sealed_test(
+            row["sealed_test_id"],
+            status="completed",
+            evidence={"expired": True},
+            evidence_fingerprint="expired",
+            failure_code=None,
+            updated_at=MATURE.isoformat(),
+            evaluation_lease=lease,
+            lease_clock=lambda: clock[0],
+        )
+    assert h.store.get_sealed_test(row["sealed_test_id"])["status"] == "running"
+
+
+@pytest.mark.asyncio
+async def test_repeated_process_loss_preserves_the_one_frozen_test(harness):
+    h = harness
+    reserved = await _reserve(h)
+    for attempt in range(5):
+        lease = StrategyResearchAuditStore(h.db.path).claim_reserved_sealed_test(
+            reserved["sealed_test_id"],
+            now=(MATURE + timedelta(seconds=2 * attempt)).isoformat(),
+            lease_owner=f"interrupted-process-{attempt}",
+            lease_seconds=1,
+        )
+        assert lease is not None
+        assert lease.attempt == attempt + 1
+    evidence = await _evaluate(h, lease_clock=lambda: MATURE + timedelta(seconds=12))
+    assert evidence["reservation"] == reserved["evidence"]["reservation"]
+    assert evidence["sealed_test_id"] == reserved["sealed_test_id"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_point", ["before_replay", "after_replay", "commit"])
+async def test_lease_storage_interruption_keeps_the_frozen_test_retryable(
+    harness, monkeypatch, failure_point
+):
+    h = harness
+    reserved = await _reserve(h)
+    clock = [MATURE]
+    with monkeypatch.context() as patch:
+        if failure_point == "commit":
+            finish = h.store.finish_sealed_test
+            attempts = []
+
+            def unavailable(*args, **kwargs):
+                attempts.append(True)
+                if len(attempts) == 1:
+                    raise OSError("temporary final commit storage unavailability")
+                return finish(*args, **kwargs)
+
+            patch.setattr(h.store, "finish_sealed_test", unavailable)
+        else:
+            heartbeat = SQLiteJobStore.heartbeat
+
+            def unavailable(*args, **kwargs):
+                if failure_point == "before_replay" or h.calls:
+                    raise OSError("temporary lease storage unavailability")
+                return heartbeat(*args, **kwargs)
+
+            patch.setattr(SQLiteJobStore, "heartbeat", unavailable)
+        with pytest.raises(ValueError, match="final_evaluation_lease_unavailable"):
+            await _evaluate(h, lease_clock=lambda: clock[0])
+    interrupted = h.store.get_sealed_test(reserved["sealed_test_id"])
+    assert interrupted["status"] == "running"
+    assert interrupted["evidence"] == reserved["evidence"]
+    assert (
+        len(h.calls)
+        == {
+            "before_replay": 0,
+            "after_replay": 1,
+            "commit": 10,
+        }[failure_point]
+    )
+    clock[0] += timedelta(minutes=5)
+    h.store = StrategyResearchAuditStore(h.db.path)
+    evidence = await _evaluate(h, lease_clock=lambda: clock[0])
+    assert evidence["sealed_test_id"] == reserved["sealed_test_id"]
+    assert evidence["reservation"] == reserved["evidence"]["reservation"]
 
 
 @pytest.mark.asyncio

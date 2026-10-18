@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -632,9 +633,10 @@ def _seed_approved_final_evaluation(
         "authority_effect": "none",
     }
     reservation = audit.reserve_research_champion(binding=binding, created_at=frozen_at)
-    assert audit.claim_reserved_sealed_test(
+    evaluation_lease = audit.claim_reserved_sealed_test(
         reservation["sealed_test_id"], now=evaluated_at
     )
+    assert evaluation_lease is not None
     # Artificial returns are isolated to this test-only linkage fixture.  The
     # future book starts from the same fixed cash, with no research NAV carried
     # across the split; this is not adapter or profitability evidence.
@@ -695,6 +697,8 @@ def _seed_approved_final_evaluation(
         evidence_fingerprint=evidence["evidence_fingerprint"],
         failure_code=None,
         updated_at=evaluated_at,
+        evaluation_lease=evaluation_lease,
+        lease_clock=lambda: datetime.fromisoformat(evaluated_at),
     )
     metrics["formula_binding"] = {
         **formula.to_dict(),
