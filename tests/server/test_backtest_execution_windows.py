@@ -3,25 +3,31 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from datetime import date
 from decimal import Decimal
 
+import pandas as pd
 import pytest
 
 from analytics.dataset_snapshot import verify_backtest_dataset_snapshot_replay
+from core.types import AssetClass, BarFrequency, InstrumentType
 from server.contracts.content_identity import content_fingerprint
 from server.services.backtest_views.execution import (
+    _windowed_data_handlers,
     prepare_dataset_backtest_inputs,
     run_single_backtest,
     write_backtest_report_file,
 )
 from server.services.research_datasets import ResearchDatasetError
 from tests.server.test_backtest_cash_dividends import _capture, _cash_response
+from tests.server.test_backtest_dataset_inputs import _mixed
 from tests.server.test_backtest_share_distributions import _share_response
 from tests.server.test_dataset_corporate_actions import (
     client_context as client_context,
 )
 from tests.server.test_research_datasets import _backtest_request
+from tests.server.test_verified_interval_dataset import DAYS
 
 
 def _request(ref, **changes):
@@ -120,6 +126,96 @@ def test_prepared_source_is_read_once_but_each_window_has_its_own_metrics(
     assert report["config"]["start_date"] == "2026-09-07"
     assert report["config"]["end_date"] == "2026-09-11"
     assert report["metrics_json"]["execution_window"] == window
+
+
+def test_mixed_dataset_window_rebuild_preserves_replay_inputs_and_full_source(
+    client_context, tmp_path
+):
+    _, state, _, _ = client_context
+    restored = _mixed(tmp_path / "research")
+    request = _request(
+        restored.ref,
+        start_date=DAYS[0].isoformat(),
+        end_date=DAYS[-1].isoformat(),
+        assets=[
+            {"symbol": key.symbol, "instrument_type": key.instrument_type.value}
+            for key in restored.snapshot.instruments
+        ],
+    )
+    _, handlers, binding, snapshot = prepare_dataset_backtest_inputs(request, state.db)
+    source_frames = {
+        symbol: handler._df.copy(deep=True) for symbol, handler in handlers.items()
+    }
+    source_binding, source_snapshot = deepcopy(binding), deepcopy(snapshot)
+    columns = [
+        "timestamp",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "amount",
+        "available_at",
+        "captured_at",
+    ]
+    metadata = {
+        "600000": (AssetClass.STOCK, InstrumentType.STOCK),
+        "510300": (AssetClass.FUND, InstrumentType.ETF),
+    }
+
+    for history_end, evaluation_start, retained, metric_day in (
+        (DAYS[0], None, 1, DAYS[0]),
+        (None, DAYS[-1], 2, DAYS[-1]),
+    ):
+        rebuilt, window = _windowed_data_handlers(
+            request,
+            handlers,
+            snapshot,
+            history_end=history_end,
+            evaluation_start=evaluation_start,
+        )
+        assert set(rebuilt) == set(metadata)
+        for symbol, handler in rebuilt.items():
+            expected = source_frames[symbol].iloc[:retained].reset_index(drop=True)
+            assert list(handler._df.columns) == columns
+            pd.testing.assert_frame_equal(handler._df, expected, check_exact=True)
+            assert (
+                handler._df.attrs
+                == expected.attrs
+                == {
+                    "provider_name": "tdx",
+                    "data_source": "tdx",
+                    "adjustment_mode": "none",
+                    "dataset_id": restored.ref.dataset_id,
+                }
+            )
+            for column in columns[1:7]:
+                assert all(isinstance(value, Decimal) for value in handler._df[column])
+            assert handler._frequency is BarFrequency.DAILY
+            assert (handler._asset_class, handler.instrument_type) == metadata[symbol]
+            expected_events = tuple(handlers[symbol])[:retained]
+            assert tuple(handler) == expected_events
+            assert tuple(handler.stream()) == expected_events
+            assert [event.timestamp.date() for event in expected_events] == list(
+                DAYS[:retained]
+            )
+            pd.testing.assert_frame_equal(handlers[symbol]._df, source_frames[symbol])
+            assert handlers[symbol]._df.attrs == source_frames[symbol].attrs
+        assert window["source_dataset_id"] == restored.ref.dataset_id
+        assert window["source_snapshot_id"] == source_snapshot["snapshot_id"]
+        assert (
+            window["metric_start_date"]
+            == window["metric_end_date"]
+            == metric_day.isoformat()
+        )
+        assert window["warmup_policy"] == "strategy_state_only_no_orders_or_book_carry"
+        assert window["independent_initial_cash"] is True
+        assert binding == source_binding
+        assert snapshot == source_snapshot
+        assert snapshot["date_range"] == {
+            "start": DAYS[0].isoformat(),
+            "end": DAYS[-1].isoformat(),
+        }
 
 
 @pytest.mark.parametrize(
