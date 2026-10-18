@@ -17,87 +17,37 @@ from server.services.strategy_promotion_pipeline import (
 
 # Stable private compatibility names are intentionally retained because route and
 # integration tests patch these seams. Split modules never import this facade.
-_ACCOUNT_STRATEGY_CONTROL_KEY = contracts.ACCOUNT_STRATEGY_CONTROL_KEY
-_STRATEGY_ATTRIBUTION_READY_STATUSES = contracts.STRATEGY_ATTRIBUTION_READY_STATUSES
 _READY_MANUAL_CONFIRMATION_STATUS = contracts.READY_MANUAL_CONFIRMATION_STATUS
-_TRUSTED_DATA_STATUSES = contracts.TRUSTED_DATA_STATUSES
-_REVIEW_DATA_STATUSES = contracts.REVIEW_DATA_STATUSES
-_BLOCKING_DATA_STATUSES = contracts.BLOCKING_DATA_STATUSES
 _SHANGHAI_TZ = contracts.SHANGHAI_TZ
 
 _read_action_tasks = action_application.read_action_tasks
-_action_sort_key = contracts.action_sort_key
 _allocate_decision_actions = action_application.allocate_decision_actions
 _blocked_batch_pre_trade_risk_response = (
     action_application.blocked_batch_pre_trade_risk_response
 )
 
 _decision_portfolio_context = portfolio_projection.decision_portfolio_context
-_decision_date_from_context = portfolio_projection.decision_date_from_context
 _action_filter_date = portfolio_projection.action_filter_date
-_response_decision_date = portfolio_projection.response_decision_date
 _action_trade_date = contracts.action_trade_date
-_parse_action_timestamp = contracts.parse_action_timestamp
 _journal_by_signal_id = portfolio_projection.journal_by_signal_id
 _portfolio_state_summary = portfolio_projection.portfolio_state_summary
-_portfolio_total_equity = portfolio_projection.portfolio_total_equity
 _position_market_value = portfolio_projection.position_market_value
-_float_or_zero = contracts.float_or_zero
-_market_data_summary = portfolio_projection.market_data_summary
 _decision_symbols = portfolio_projection.decision_symbols
-_append_unique_symbol = portfolio_projection.append_unique_symbol
-_collect_decision_quotes = portfolio_projection.collect_decision_quotes
 _normalize_quote = portfolio_projection.normalize_quote
 _latest_quote_timestamp = portfolio_projection.latest_quote_timestamp
-_has_persistent_quote_cache = portfolio_projection.has_persistent_quote_cache
 
 _decision_summary = workflow_projection.decision_summary
-_action_task_summary = workflow_projection.action_task_summary
-_audit_summary = workflow_projection.audit_summary
-_workflow_tasks = workflow_projection.workflow_tasks
-_data_refresh_workflow_task = workflow_projection.data_refresh_workflow_task
-_account_truth_workflow_task = workflow_projection.account_truth_workflow_task
-_risk_review_workflow_task = workflow_projection.risk_review_workflow_task
-_strategy_evidence_workflow_task = workflow_projection.strategy_evidence_workflow_task
-_paper_shadow_workflow_task = workflow_projection.paper_shadow_workflow_task
-_manual_confirmation_workflow_task = (
-    workflow_projection.manual_confirmation_workflow_task
-)
 _workflow_task = workflow_projection.workflow_task
 
 _validation_by_strategy_id = candidate_projection.validation_by_strategy_id
-_normalize_decision_action = contracts.normalize_decision_action
-_is_intraday_action = contracts.is_intraday_action
-_looks_exchange_traded_fund_symbol = contracts.looks_exchange_traded_fund_symbol
-_overall_decision = contracts.overall_decision
-_has_ready_manual_confirmation = contracts.has_ready_manual_confirmation
-_signal_evidence = candidate_projection.signal_evidence
-_risk_gate_evidence = candidate_projection.risk_gate_evidence
-_after_cost_oos_validation_evidence = (
-    candidate_projection.after_cost_oos_validation_evidence
-)
-_manual_confirmation_evidence = candidate_projection.manual_confirmation_evidence
-_cost_impact_evidence = candidate_projection.cost_impact_evidence
-_uncertainty_evidence = candidate_projection.uncertainty_evidence
-_append_unique_text = contracts.append_unique_text
 _float_or_none = contracts.float_or_none
 _journal_evidence = candidate_projection.journal_evidence
-_backtest_strategy_id = candidate_projection.backtest_strategy_id
-_backtest_validation_row = candidate_projection.backtest_validation_row
-_validation_limitations = candidate_projection.validation_limitations
 _json_object = contracts.json_object
 _int_or_none = contracts.int_or_none
 
 _account_truth_gate_evidence = gate_evidence.account_truth_gate_evidence
 _strategy_attribution_gate_evidence = gate_evidence.strategy_attribution_gate_evidence
-_first_action_strategy_id = gate_evidence.first_action_strategy_id
-_account_truth_manual_confirmation_status = (
-    contracts.account_truth_manual_confirmation_status
-)
 _data_freshness_evidence = gate_evidence.data_freshness_evidence
-_data_quality_manual_confirmation_status = (
-    contracts.data_quality_manual_confirmation_status
-)
 _paper_shadow_evidence = gate_evidence.paper_shadow_evidence
 _paper_shadow_allows_manual_ticket = gate_evidence.paper_shadow_allows_manual_ticket
 

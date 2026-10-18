@@ -2,39 +2,54 @@
 
 from __future__ import annotations
 
-import server.services.decision_application as legacy_decision_app
-import server.services.decision_projection as legacy_decision_projection
-from server.services import decision
-from server.services.decision import (
-    build_decision_quality_target,
-    daily_candidate_generation_status,
-    decision_portfolio_context,
-    intraday_decision_payload,
-    run_batch_pre_trade_risk_for_state,
-    suppress_unverified_daily_scan_candidates,
-    today_decision_payload,
+import subprocess
+import sys
+from pathlib import Path
+
+from server.services.decision.quality import build_decision_quality_target
+
+
+def test_cold_quality_import_isolates_application_and_preserves_account_plan() -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            "-c",
+            """
+import sys
+import server.services.decision.quality
+
+unexpected = {
+    "server.services.decision.plan",
+    "server.services.decision_application",
+    "server.services.decision_projection",
+    "server.services.decision_action_application",
+    "server.services.strategy_promotion_pipeline",
+    "server.ai_runtime.strategy_research",
+}.intersection(sys.modules)
+assert not unexpected, sorted(unexpected)
+
+from server.services import account_paper_shadow
+
+plan = account_paper_shadow.decision_plan.build_daily_trading_plan(
+    decision_payload={"decision_date": "2026-09-01"},
+    config=None,
 )
-
-
-def test_decision_domain_exports_canonical_symbols() -> None:
-    assert today_decision_payload is legacy_decision_app.today_decision_payload
-    assert intraday_decision_payload is legacy_decision_app.intraday_decision_payload
-    assert decision_portfolio_context is legacy_decision_app.decision_portfolio_context
-    assert (
-        run_batch_pre_trade_risk_for_state
-        is legacy_decision_app.run_batch_pre_trade_risk_for_state
+assert plan["plan_date"] == "2026-09-01"
+assert plan["conclusion_status"] == "account_truth_blocked"
+assert plan["order_intents"] == []
+assert plan["broker_bridge_status"] == "disabled"
+""",
+        ],
+        cwd=Path(__file__).resolve().parents[2],
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
-    assert (
-        suppress_unverified_daily_scan_candidates
-        is legacy_decision_projection.suppress_unverified_daily_scan_candidates
-    )
-    assert (
-        daily_candidate_generation_status
-        is legacy_decision_projection.daily_candidate_generation_status
-    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
-def test_decision_quality_target_via_domain() -> None:
+def test_decision_quality_target() -> None:
     payload = {
         "decision_date": "2026-09-01",
         "market_data": {
