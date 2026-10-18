@@ -6,6 +6,7 @@ import json
 import sqlite3
 
 from server.db import AppDatabase
+from server.services.daily_operations import build_daily_operations_summary
 from server.services.paper_shadow_run import run_paper_shadow_from_trading_plan
 
 
@@ -711,6 +712,45 @@ def test_paper_shadow_run_marks_cancelled_and_expired_orders_as_diverged(
     assert expired_item["required_action"] == "resolve_shadow_divergence"
     assert expired_item["does_not_submit_broker_order"] is True
     assert expired_item["does_not_mutate_production_ledger"] is True
+
+
+def test_cancelled_shadow_order_is_counted_in_daily_operations(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    plan = _trading_plan()
+
+    run = run_paper_shadow_from_trading_plan(
+        db=db,
+        trading_plan=plan,
+        generated_at="2026-07-02T09:35:00",
+        outcome_overrides={
+            "600519": {"outcome": "cancelled", "reason": "operator_cancelled"}
+        },
+    )
+    orders, fills = db.list_orders_sync(), db.list_fills_sync()
+    assert len(orders) == 1
+    assert orders[0]["status"] == "cancelled"
+    assert run["status"] == "diverged"
+    assert run["review_queue"][0]["required_action"] == "resolve_shadow_divergence"
+
+    summary = build_daily_operations_summary(
+        decision_summary={
+            "account_truth": plan["account_truth"],
+            "market_data": {"source_health": "live"},
+        },
+        candidates=[],
+        pending_manual_orders=[],
+        order_facts=orders,
+        fill_facts=fills,
+    )
+
+    assert summary.execution_record_count == 1
+    assert summary.execution_exception_count == 1
+    assert summary.conclusion_status == "execution_exception"
+    assert summary.primary_target == "trading"
+    assert db.list_orders_sync() == orders
+    assert fills == db.list_fills_sync() == []
+    assert db.get_ledger_entries_sync() == []
 
 
 def test_paper_shadow_run_records_failed_run_when_simulation_errors(tmp_path) -> None:

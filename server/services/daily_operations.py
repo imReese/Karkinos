@@ -16,7 +16,14 @@ _TRUSTED_STATUSES = {
     "passed",
 }
 _BLOCKING_MARKET_STATUSES = {"blocked", "error", "missing", "unavailable"}
-_EXCEPTION_ORDER_STATUSES = {"blocked", "canceled", "error", "failed", "rejected"}
+_EXCEPTION_ORDER_STATUSES = {
+    "blocked",
+    "canceled",
+    "cancelled",
+    "error",
+    "failed",
+    "rejected",
+}
 _READY_MANUAL_STATUS = "ready_for_manual_confirmation"
 
 

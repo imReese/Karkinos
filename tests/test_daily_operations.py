@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from server.services.daily_operations import build_daily_operations_summary
 
 
@@ -129,3 +131,22 @@ def test_risk_block_routes_to_risk_before_candidate_watch() -> None:
     assert summary.risk_blocked_count == 1
     assert summary.conclusion_status == "risk_blocked"
     assert summary.primary_target == "risk"
+
+
+@pytest.mark.parametrize("status", ["cancelled", "canceled"])
+def test_summary_counts_canonical_and_legacy_cancelled_orders(status: str) -> None:
+    summary = build_daily_operations_summary(
+        decision_summary={
+            "market_data": {"source_health": "live"},
+            "account_truth": {"gate_status": "pass"},
+        },
+        candidates=[],
+        pending_manual_orders=[],
+        order_facts=[{"order_id": "SHADOW-1", "status": status}],
+        fill_facts=[],
+    )
+
+    assert summary.execution_record_count == 1
+    assert summary.execution_exception_count == 1
+    assert summary.conclusion_status == "execution_exception"
+    assert summary.primary_target == "trading"
