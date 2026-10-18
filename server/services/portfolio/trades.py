@@ -25,6 +25,7 @@ from server.services.manual_trade_fees import (
     manual_fee_input_payload,
     resolve_manual_trade_fee_breakdown,
 )
+from server.services.market.hours import get_shanghai_now
 from server.services.portfolio.ledger import rebuild_portfolio_from_ledger
 
 logger = logging.getLogger(__name__)
@@ -240,7 +241,7 @@ def resolve_display_name(state: Any, symbol: str, fallback: str | None = None) -
 
 
 def fund_target_trade_date(timestamp: str) -> str:
-    submitted_at = datetime.fromisoformat(timestamp)
+    submitted_at = get_shanghai_now(datetime.fromisoformat(timestamp))
     target_date = submitted_at.date()
     if submitted_at.time() >= _FUND_SUBSCRIPTION_CUTOFF:
         target_date += timedelta(days=1)
