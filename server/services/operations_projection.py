@@ -43,7 +43,7 @@ async def build_today_operations_payload(state: Any) -> dict[str, Any]:
     if state.db is None:
         raise HTTPException(status_code=503, detail="Database is not initialized")
 
-    decision_payload, trading_plan = await _current_decision_and_trading_plan(state)
+    decision_payload, trading_plan = await current_decision_and_trading_plan(state)
     return await asyncio.to_thread(
         _build_today_operations_from_facts,
         state,
@@ -133,7 +133,7 @@ def _build_today_operations_from_facts(
     return {
         **summary,
         "controlled_per_order_pilot_readiness": (
-            _build_controlled_per_order_pilot_readiness(
+            build_controlled_per_order_pilot_readiness(
                 state,
                 broker_adapter_readiness=broker_adapter_readiness,
             )
@@ -141,7 +141,7 @@ def _build_today_operations_from_facts(
     }
 
 
-async def _current_decision_and_trading_plan(
+async def current_decision_and_trading_plan(
     state: Any,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     portfolio_context = await asyncio.to_thread(
@@ -201,7 +201,7 @@ def _latest_paper_shadow_run(
         return reader()
 
 
-def _build_controlled_per_order_pilot_readiness(
+def build_controlled_per_order_pilot_readiness(
     state: Any,
     *,
     broker_adapter_readiness: dict[str, Any] | None = None,
@@ -304,23 +304,3 @@ def _safe_pilot_source_list(reader: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     return [dict(item) for item in value if isinstance(item, dict)]
-
-
-async def current_decision_and_trading_plan(
-    state: Any,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Compatibility port for non-HTTP composition callers."""
-
-    return await _current_decision_and_trading_plan(state)
-
-
-def build_controlled_per_order_pilot_readiness(
-    state: Any,
-    *,
-    broker_adapter_readiness: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Build the canonical controlled per-order pilot admission projection."""
-    return _build_controlled_per_order_pilot_readiness(
-        state,
-        broker_adapter_readiness=broker_adapter_readiness,
-    )
