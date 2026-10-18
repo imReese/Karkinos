@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
+from core.types import InstrumentKey
 from server.contracts.http.market_models import (
     ResearchBoardItem,
     ResearchBoardResponse,
@@ -52,32 +53,43 @@ def create_router(
             else {}
         )
 
-        latest_quotes = {item.symbol: item for item in health.quotes}
+        latest_prices: dict[InstrumentKey, float | None] = {}
+        for quote in health.quotes:
+            try:
+                key = InstrumentKey.from_values(quote.symbol, quote.instrument_type)
+            except (TypeError, ValueError):
+                continue
+            latest_prices[key] = quote.price
 
-        items = [
-            ResearchBoardItem(
-                symbol=item.symbol,
-                asset_class=item.asset_class,
-                name=item.name,
-                is_holding=item.is_holding,
-                quantity=item.quantity,
-                avg_cost=item.avg_cost,
-                market_value=item.market_value,
-                unrealized_pnl=item.unrealized_pnl,
-                realized_pnl=item.realized_pnl,
-                last_snapshot_at=item.last_snapshot_at,
-                price=(
-                    latest_quotes.get(item.symbol).price
-                    if latest_quotes.get(item.symbol)
-                    else None
-                ),
-                volume=None,
-                research_count=int(note_stats.get(item.symbol, {}).get("count", 0)),
-                last_research_at=str(note_stats.get(item.symbol, {}).get("latest", ""))
-                or None,
+        items = []
+        for item in watchlist:
+            try:
+                key = InstrumentKey.from_values(item.symbol, item.instrument_type)
+            except (TypeError, ValueError):
+                price = None
+            else:
+                price = latest_prices.get(key)
+            items.append(
+                ResearchBoardItem(
+                    symbol=item.symbol,
+                    asset_class=item.asset_class,
+                    name=item.name,
+                    is_holding=item.is_holding,
+                    quantity=item.quantity,
+                    avg_cost=item.avg_cost,
+                    market_value=item.market_value,
+                    unrealized_pnl=item.unrealized_pnl,
+                    realized_pnl=item.realized_pnl,
+                    last_snapshot_at=item.last_snapshot_at,
+                    price=price,
+                    volume=None,
+                    research_count=int(note_stats.get(item.symbol, {}).get("count", 0)),
+                    last_research_at=str(
+                        note_stats.get(item.symbol, {}).get("latest", "")
+                    )
+                    or None,
+                )
             )
-            for item in watchlist
-        ]
 
         return ResearchBoardResponse(items=items, health=health)
 
