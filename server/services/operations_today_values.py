@@ -64,8 +64,6 @@ def _paper_shadow_default_next_step(
         return "wait_for_paper_shadow_run"
     if status == "within_expectations":
         return "review_manual_confirmation"
-    if status == "failed":
-        return "inspect_failed_run"
     if status == "diverged":
         return "resolve_shadow_divergence"
     if status in {"not_required", "not_run"}:

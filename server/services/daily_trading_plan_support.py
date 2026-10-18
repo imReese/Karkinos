@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-_ORDERABLE_ACTIONS = {"buy", "sell", "rebalance"}
 _BLOCKER_CATEGORY_ORDER = {
     "account_truth": 0,
     "market_data": 1,
@@ -106,8 +105,6 @@ def side(candidate: dict[str, Any]) -> str | None:
         return "sell"
     if action == "rebalance":
         return "buy" if float_value(candidate.get("target_weight"), 0.0) > 0 else "sell"
-    if action in _ORDERABLE_ACTIONS:
-        return action
     return None
 
 
