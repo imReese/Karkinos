@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-from datetime import datetime
-
-from fastapi import BackgroundTasks
-
 from core.types import AssetClass, InstrumentKey
 from server.models import (
     MarketDataHealthResponse,
@@ -20,22 +15,12 @@ from server.services.market_refresh import (
     MANUAL_REFRESH_TIMEOUT_SECONDS as _MANUAL_REFRESH_TIMEOUT_SECONDS,
 )
 from server.services.market_refresh import (
-    QUOTE_REFRESH_ATTEMPTS as _QUOTE_REFRESH_ATTEMPTS,
-)
-from server.services.market_refresh import (
     is_real_persistent_quote as _is_real_persistent_quote,
-)
-from server.services.market_refresh import (
-    load_latest_snapshot_from_provider as _load_latest_snapshot_from_provider,
 )
 from server.services.market_refresh import (
     parse_quote_timestamp as _parse_quote_timestamp,
 )
-from server.services.market_refresh import (
-    persist_latest_snapshot as _persist_latest_snapshot,
-)
 from server.services.market_refresh import quote_metadata as _quote_metadata
-from server.services.market_refresh import run_blocking_fetch as _run_blocking_fetch
 from server.services.market_refresh import shanghai_now as _shanghai_now
 from server.services.market_views.health_inputs import (
     adapt_latest_quote_for_health,
@@ -49,8 +34,6 @@ from server.services.market_views.health_inputs import (
     provider_supports_funds,
 )
 
-logger = logging.getLogger(__name__)
-
 
 def build_research_note_stats(rows: list[dict]) -> dict[str, dict[str, int | str]]:
     stats: dict[str, dict[str, int | str]] = {}
@@ -62,44 +45,6 @@ def build_research_note_stats(rows: list[dict]) -> dict[str, dict[str, int | str
         if updated_at and updated_at > str(current["latest"]):
             current["latest"] = updated_at
     return stats
-
-
-async def refresh_quote_snapshot(state, symbol: str, asset_class: AssetClass) -> None:
-    try:
-        snapshot = await _run_blocking_fetch(
-            _load_latest_snapshot_from_provider,
-            state,
-            symbol,
-            asset_class,
-        )
-        if snapshot:
-            _persist_latest_snapshot(state, symbol, snapshot)
-    except Exception:
-        logger.warning("Async quote refresh failed for %s", symbol, exc_info=True)
-
-
-def quote_refresh_due(state, symbol: str, asset_class: AssetClass) -> bool:
-    if not is_cn_trading_session():
-        return False
-
-    ttl = max(int(getattr(state.config, "live_poll_interval", 60) or 60), 15)
-    key = (symbol, asset_class.value)
-    now = datetime.now()
-    last_attempt = _QUOTE_REFRESH_ATTEMPTS.get(key)
-    if last_attempt is not None and (now - last_attempt).total_seconds() < ttl:
-        return False
-    _QUOTE_REFRESH_ATTEMPTS[key] = now
-    return True
-
-
-def maybe_schedule_quote_refresh(
-    state,
-    background_tasks: BackgroundTasks,
-    symbol: str,
-    asset_class: AssetClass,
-) -> None:
-    if quote_refresh_due(state, symbol, asset_class):
-        background_tasks.add_task(refresh_quote_snapshot, state, symbol, asset_class)
 
 
 def build_market_data_health_response(
@@ -288,7 +233,4 @@ def build_market_data_health_response(
 __all__ = (
     "build_market_data_health_response",
     "build_research_note_stats",
-    "maybe_schedule_quote_refresh",
-    "quote_refresh_due",
-    "refresh_quote_snapshot",
 )

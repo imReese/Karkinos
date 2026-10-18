@@ -238,15 +238,6 @@ from server.services.market_views.health_projection import (
 from server.services.market_views.health_projection import (
     build_research_note_stats as _build_research_note_stats,
 )
-from server.services.market_views.health_projection import (
-    maybe_schedule_quote_refresh as _maybe_schedule_quote_refresh,
-)
-from server.services.market_views.health_projection import (
-    quote_refresh_due as _quote_refresh_due,
-)
-from server.services.market_views.health_projection import (
-    refresh_quote_snapshot as _refresh_quote_snapshot,
-)
 from server.services.portfolio.ledger import rebuild_portfolio_from_ledger
 from server.services.verified_source_health import (
     build_verified_source_health_response as _build_verified_source_health_response,
