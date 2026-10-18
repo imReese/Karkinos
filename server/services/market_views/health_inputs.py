@@ -414,6 +414,7 @@ def ledger_position_assets(state) -> list[dict[str, str]]:
             state,
             symbol,
             asset_class=asset_class,
+            instrument_type=instrument_type,
             fallback_name=symbol,
         )
         assets.append(
@@ -461,6 +462,7 @@ def merged_watchlist_assets(state) -> list[dict[str, str]]:
             state,
             symbol,
             asset_class=display_asset_class,
+            instrument_type=instrument_type,
             fallback_name=str(asset_cfg.get("display_name") or symbol),
         )
         merged.append(
@@ -545,6 +547,7 @@ def merged_watchlist_assets(state) -> list[dict[str, str]]:
             state,
             symbol,
             asset_class=asset_class,
+            instrument_type=instrument_type,
             fallback_name=getattr(instrument, "name", None) or symbol,
         )
         merged.append(

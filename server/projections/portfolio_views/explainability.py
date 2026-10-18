@@ -102,6 +102,8 @@ def ledger_entry_display_label(state, entry: dict) -> str | None:
     display_name = resolve_asset_metadata(
         state,
         symbol_text,
+        asset_class=entry.get("asset_class"),
+        instrument_type=entry.get("instrument_type") or entry.get("asset_class"),
         fallback_name=entry.get("display_name") or symbol_text,
     ).display_name
     if display_name and display_name != symbol_text:

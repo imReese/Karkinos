@@ -370,6 +370,7 @@ def build_portfolio_snapshot_sync(
             state,
             symbol,
             asset_class=asset_class,
+            instrument_type=instrument_type or None,
             quote=quote,
             fallback_name=getattr(instrument, "name", None) or symbol,
         )

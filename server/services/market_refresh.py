@@ -9,7 +9,7 @@ from datetime import datetime
 from functools import partial
 from zoneinfo import ZoneInfo
 
-from core.types import AssetClass
+from core.types import AssetClass, InstrumentType
 from data.source_policy import MarketDataUseCase
 from data.source_routing import preferred_legacy_provider
 from server.contracts.http.market import QuoteRefreshSymbolResult
@@ -180,11 +180,15 @@ def quote_metadata(
     market_open: bool,
     refresh_policy: str,
     now: datetime | None = None,
+    instrument_type: InstrumentType | str | None = None,
 ) -> dict:
     metadata = resolve_asset_metadata(
         state,
         symbol,
         asset_class=asset_class,
+        instrument_type=instrument_type
+        or (quote or {}).get("instrument_type")
+        or (quote or {}).get("asset_type"),
         quote=quote,
         fallback_name=symbol,
     )

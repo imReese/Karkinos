@@ -256,6 +256,7 @@ def build_live_holdings_response(
             state,
             symbol,
             asset_class=asset_class,
+            instrument_type=instrument_type or None,
             quote=latest_quote,
             fallback_name=getattr(instrument, "name", symbol),
         )

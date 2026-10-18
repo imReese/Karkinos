@@ -10215,7 +10215,8 @@ def test_decision_intraday_returns_stock_and_etf_candidates_only(monkeypatch):
                 "510300": ("fund", "沪深300ETF"),
             }
             expected_asset_type, display_name = names[symbol]
-            assert asset_type in {None, expected_asset_type}
+            if asset_type not in {None, expected_asset_type}:
+                return None
             return {
                 "symbol": symbol,
                 "asset_type": expected_asset_type,

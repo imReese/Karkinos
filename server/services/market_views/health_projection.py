@@ -100,6 +100,7 @@ def build_market_data_health_response(
             market_open=market_open,
             refresh_policy=refresh_policy,
             now=now,
+            instrument_type=key.instrument_type if key is not None else None,
         )
         health_quotes.append(
             MarketHealthQuote(

@@ -63,6 +63,7 @@ def decision_candidate(
         state,
         symbol,
         asset_class=str(action.get("asset_class") or "") or None,
+        instrument_type=action.get("instrument_type"),
         quote=quotes.get(symbol),
         fallback_name=(
             action.get("display_name")
