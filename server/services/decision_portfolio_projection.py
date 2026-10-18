@@ -281,10 +281,16 @@ def market_data_summary(
 ) -> dict[str, Any]:
     context = portfolio_context or decision_portfolio_context(state)
     symbols = decision_symbols(state, actions, portfolio_context=context)
+    candidate_quotes = dict(context.get("candidate_quotes") or {})
     quotes = {
         **dict(context.get("quotes") or {}),
-        **dict(context.get("candidate_quotes") or {}),
+        **candidate_quotes,
     }
+    if context.get("authority") == "persisted_valuation_snapshot":
+        for action in actions:
+            symbol = str(action.get("symbol") or "")
+            if symbol not in candidate_quotes:
+                quotes.pop(symbol, None)
     relevant_quotes = {symbol: quotes[symbol] for symbol in symbols if symbol in quotes}
     statuses = [
         str(quote.get("quote_status") or quote.get("provider_status") or "live")

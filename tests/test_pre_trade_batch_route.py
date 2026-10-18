@@ -225,6 +225,19 @@ def test_decision_identity_conflict_has_no_allocation_or_risk_writes(
     assert candidate["allocation_status"] == "missing_price_or_equity"
     assert candidate["allocation_evidence"]["price"] is None
     assert candidate["evidence"]["data_freshness"]["status"] == "missing"
+    market_data = displayed["summary"]["market_data"]
+    assert market_data["source_health"] == "missing"
+    assert market_data["quote_count"] == 0
+    assert market_data["trusted_quote_count"] == 0
+    assert market_data["missing_symbols"] == ["159915"]
+    data_refresh = next(
+        task
+        for task in displayed["summary"]["workflow_tasks"]
+        if task["id"] == "data_refresh"
+    )
+    assert data_refresh["status"] == "blocked"
+    assert data_refresh["required_actions"] == ["refresh_market_data"]
+    assert data_refresh["blocking_reasons"] == ["market_data_missing"]
     assert displayed["decision"] == "review_required"
     assert displayed["requires_manual_confirmation"] is False
 
