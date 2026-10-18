@@ -19,7 +19,7 @@ from server.config import BrokerFeeScheduleConfig
 from server.ledger.models import LedgerEntry
 from server.projections.service import build_portfolio_projection
 from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
-from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
+from server.services.portfolio.ledger import rebuild_portfolio_from_ledger
 
 pytestmark = [pytest.mark.unit, pytest.mark.trading_safety]
 

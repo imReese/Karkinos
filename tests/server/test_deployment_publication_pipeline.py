@@ -827,7 +827,7 @@ def _prepare_real_scan_consumer(data, state, valuation):
 
     from data.dataset.reader import read_daily_bar_dataset
     from server.services.decision_portfolio_projection import portfolio_state_summary
-    from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
+    from server.services.portfolio.ledger import rebuild_portfolio_from_ledger
     from server.services.promoted_strategy_universe_scan import (
         PromotedStrategyUniverseScanService,
     )

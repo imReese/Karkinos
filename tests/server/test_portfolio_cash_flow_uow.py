@@ -18,7 +18,7 @@ from server.persistence.initializer import initialize_database
 from server.persistence.portfolio_cash_flow_uow import PortfolioCashFlowUnitOfWork
 from server.persistence.schema_v1 import initialize_v1_baseline_schema
 from server.projections.service import build_portfolio_projection
-from server.services.portfolio_cash_flow_commands import PortfolioCashFlowCommandService
+from server.services.portfolio.cash_flows import PortfolioCashFlowCommandService
 from tests.out_of_band_corruption import allow_out_of_band_update
 
 pytestmark = pytest.mark.unit

@@ -36,7 +36,7 @@ from server.services.market_quote_ingestion import (
     build_quote_ingestion_command,
     persist_quote_ingestion,
 )
-from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
+from server.services.portfolio.ledger import rebuild_portfolio_from_ledger
 from server.services.trading_controls import TradingControlState
 
 if TYPE_CHECKING:

@@ -85,7 +85,6 @@ from server.projections.portfolio_snapshot_projection import (
 from server.services.account_state import build_account_state_projection
 from server.services.asset_metadata import resolve_asset_metadata
 from server.services.market_hours import get_shanghai_now
-from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
 from server.services.position_presence import (
     classify_position_presence,
 )

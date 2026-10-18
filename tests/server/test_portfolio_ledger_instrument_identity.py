@@ -9,7 +9,7 @@ import pytest
 
 from core.types import CommissionType, InstrumentType, Settlement, Symbol
 from server.projections.valuation_snapshot import build_current_valuation_snapshot
-from server.services.portfolio_ledger import rebuild_portfolio_from_entries
+from server.services.portfolio.ledger import rebuild_portfolio_from_entries
 
 
 def _legacy_etf_rows() -> list[dict[str, object]]:

@@ -29,7 +29,7 @@ from server.services.execution_batch_reconciliation import (
     EXECUTION_BATCH_RECONCILIATION_ACKNOWLEDGEMENT,
     ExecutionBatchReconciliationService,
 )
-from server.services.portfolio_cash_flow_commands import (
+from server.services.portfolio.cash_flows import (
     PortfolioCashFlowCommandService,
 )
 from tests.order_state_fixtures import insert_historical_oms_order

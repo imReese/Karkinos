@@ -251,7 +251,7 @@ class EtfRotationAutomationService:
         """Resolve available cash, total equity, and current ETF holdings from account ledger."""
         try:
             from server.db import AppDatabase
-            from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
+            from server.services.portfolio.ledger import rebuild_portfolio_from_ledger
 
             db = AppDatabase(self._database_path)
             rebuilt = rebuild_portfolio_from_ledger(None, db)

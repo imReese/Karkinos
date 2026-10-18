@@ -324,13 +324,6 @@ def _bind_extracted_application_dependencies(monkeypatch):
     )
     monkeypatch.setattr(
         portfolio_application,
-        "rebuild_portfolio_from_ledger",
-        lambda *args, **kwargs: portfolio_routes.rebuild_portfolio_from_ledger(
-            *args, **kwargs
-        ),
-    )
-    monkeypatch.setattr(
-        portfolio_application,
         "resolve_position_today_change",
         lambda *args, **kwargs: portfolio_routes._resolve_position_today_change(
             *args, **kwargs

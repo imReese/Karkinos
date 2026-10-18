@@ -154,7 +154,7 @@ def allocate_decision_actions(
     portfolio = portfolio_context.get("portfolio")
     if portfolio is None:
         return actions
-    from server.services.portfolio_allocation import allocate_action_tasks
+    from server.services.portfolio.allocation import allocate_action_tasks
 
     return allocate_action_tasks(
         actions,

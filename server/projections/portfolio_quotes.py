@@ -47,7 +47,7 @@ from server.projections.valuation_snapshot import (
 )
 from server.projections.valuation_snapshot import select_authoritative_valuation_marks
 from server.services.market_hours import get_shanghai_now, is_cn_trading_session
-from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
+from server.services.portfolio.ledger import rebuild_portfolio_from_ledger
 from server.services.valuation_snapshot import (
     load_persisted_quote_rows,
     select_latest_observation_rows,

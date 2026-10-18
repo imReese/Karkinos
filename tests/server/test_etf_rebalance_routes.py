@@ -2,6 +2,7 @@ import json
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -9,10 +10,16 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from core.types import Symbol
+from server.contracts.portfolio_cash_flows import CashFlowWrite
 from server.db import AppDatabase
 from server.persistence.backtest_results import insert_backtest_result
 from server.routes.etf_rebalance import create_router
 from server.services.etf_rotation_automation import EtfRotationAutomationService
+from server.services.portfolio.trades import (
+    ManualTradeRequest,
+    PortfolioTradeCommandService,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -62,6 +69,55 @@ def client():
     app = FastAPI()
     app.include_router(create_router())
     return TestClient(app)
+
+
+@pytest.mark.parametrize("funded", [False, True])
+def test_account_capital_and_etf_holdings_are_rebuilt_from_persisted_ledger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, funded: bool
+) -> None:
+    database = AppDatabase(tmp_path / "account.db")
+    database.init_sync()
+    if funded:
+        database.record_cash_flow_sync(
+            CashFlowWrite(
+                command_id="synthetic-deposit",
+                operator_id="synthetic-owner",
+                timestamp="2026-09-01T09:00:00+08:00",
+                amount=10_000.0,
+                flow_type="deposit",
+            )
+        )
+        trades = PortfolioTradeCommandService(
+            SimpleNamespace(
+                db=database, config=SimpleNamespace(assets=[]), scheduler=None
+            )
+        )
+        for symbol, asset_class, price, commission in (
+            ("510300", "etf", 4.0, 1.0),
+            ("600000", "stock", 10.0, 2.0),
+        ):
+            trades.create(
+                ManualTradeRequest(
+                    command_id=f"synthetic-buy-{symbol}",
+                    operator_id="synthetic-owner",
+                    timestamp="2026-09-01T10:00:00+08:00",
+                    symbol=symbol,
+                    asset_class=asset_class,
+                    direction="buy",
+                    quantity=100.0,
+                    price=price,
+                    commission=commission,
+                )
+            )
+    monkeypatch.setattr(EtfRotationAutomationService, "_database_path", database.path)
+
+    cash, _, holdings, available = (
+        EtfRotationAutomationService().resolve_account_capital_and_holdings()
+    )
+
+    assert available is True
+    assert cash == (Decimal("8597") if funded else Decimal("0"))
+    assert holdings == ({Symbol("510300"): 100} if funded else {})
 
 
 def test_cold_reads_do_not_calculate_or_initialize_market_data(

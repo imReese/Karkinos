@@ -20,7 +20,7 @@ from server.services.market_indices import (
     default_market_index_assets,
 )
 from server.services.market_refresh import optional_float as _optional_float
-from server.services.portfolio_ledger import rebuild_portfolio_from_ledger
+from server.services.portfolio.ledger import rebuild_portfolio_from_ledger
 from server.services.position_presence import is_economically_zero_quantity
 
 _ASSET_CLASS_MAP = {
