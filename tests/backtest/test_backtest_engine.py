@@ -11,7 +11,13 @@ import pytest
 from backtest.engine import BacktestEngine, BacktestExecutionConfig
 from backtest.result import BacktestResult
 from core.event_bus import EventBus
-from core.events import MarketEvent, OrderEvent, RiskDecisionEvent, SignalEvent
+from core.events import (
+    FillEvent,
+    MarketEvent,
+    OrderEvent,
+    RiskDecisionEvent,
+    SignalEvent,
+)
 from core.types import ZERO, BarFrequency, CommissionType, OrderSide, OrderType, Symbol
 from data.handler import DataHandler
 from domain.instrument import make_etf, make_gold_spot, make_stock
@@ -473,6 +479,55 @@ def test_pending_exit_fills_after_t_plus_one_settlement():
 
 
 @pytest.mark.parametrize(
+    ("instrument", "expected_sides", "remaining_quantity"),
+    [
+        (make_gold_spot(), [OrderSide.BUY, OrderSide.SELL], ZERO),
+        (make_stock("600000", "fixture"), [OrderSide.BUY], Decimal("100")),
+    ],
+    ids=["t_plus_zero_target_exit", "t_plus_one_target_exit_waits"],
+)
+def test_target_same_day_sell_respects_instrument_settlement(
+    instrument, expected_sides, remaining_quantity
+):
+    class IntradayTargets(Strategy):
+        def on_init(self, symbols):
+            self.count = 0
+
+        def on_data(self, event):
+            self._last_timestamp = event.timestamp
+            self.count += 1
+            if self.count <= 2:
+                self.emit_signal(
+                    event.symbol,
+                    Decimal("0.5") if self.count == 1 else ZERO,
+                    event.close,
+                )
+
+    frame = _timing_frame([400, 400, 400])
+    frame["timestamp"] = pd.date_range("2026-04-09 10:00", periods=3, freq="min")
+    result = BacktestEngine(
+        strategy=IntradayTargets("targets", EventBus()),
+        instruments={instrument.symbol: instrument},
+        data_handlers={
+            instrument.symbol: DataHandler(
+                frame, instrument.symbol, frequency=BarFrequency.MIN_1
+            )
+        },
+        initial_cash=Decimal("100000"),
+        strict_event_errors=True,
+    ).run()
+
+    assert [fill.side for fill in result.fills] == expected_sides
+    assert result.fills[0].timestamp == frame.iloc[1]["timestamp"]
+    if len(expected_sides) == 2:
+        assert result.fills[1].timestamp == frame.iloc[2]["timestamp"]
+    position = result.positions[instrument.symbol]
+    assert position.quantity == remaining_quantity
+    assert position.frozen_qty == remaining_quantity
+    assert position.available_qty == ZERO
+
+
+@pytest.mark.parametrize(
     ("instrument", "expected_sides", "remaining_quantity", "blocked"),
     [
         (make_gold_spot(), [OrderSide.BUY, OrderSide.SELL], ZERO, 0),
@@ -521,8 +576,63 @@ def test_direct_same_day_sell_respects_instrument_settlement(
         result.fills[-1].timestamp == frame.iloc[len(expected_sides) - 1]["timestamp"]
     )
     assert result.positions[instrument.symbol].quantity == remaining_quantity
+    assert result.positions[instrument.symbol].frozen_qty == remaining_quantity
+    assert result.positions[instrument.symbol].available_qty == ZERO
     assert result.execution_timing["risk_blocked_count"] == blocked
     assert "Handler" not in caplog.text
+
+
+def test_t_plus_zero_target_and_direct_orders_preserve_unlisted_share_lock():
+    instrument = make_gold_spot()
+    engine = BacktestEngine(
+        strategy=SimpleBuyStrategy(EventBus()),
+        instruments={instrument.symbol: instrument},
+        data_handlers={instrument.symbol: []},
+        initial_cash=Decimal("100000"),
+    )
+    engine.portfolio.on_fill(
+        FillEvent(
+            timestamp=datetime(2026, 4, 9, 10),
+            fill_id="original-buy",
+            order_id="buy",
+            symbol=instrument.symbol,
+            side=OrderSide.BUY,
+            fill_price=Decimal("400"),
+            fill_quantity=Decimal("100"),
+            commission=ZERO,
+            slippage=ZERO,
+        )
+    )
+    # A synthetic award isolates the lock independently of asset settlement.
+    engine.portfolio.accrue_share_distribution(
+        "unlisted-award",
+        symbol=instrument.symbol,
+        eligible_quantity=Decimal("100"),
+        shares_per_share=Decimal("0.3"),
+    )
+    position = engine.portfolio.positions[instrument.symbol]
+    assert position.quantity == Decimal("130")
+    assert position.available_qty == Decimal("100")
+    assert position.frozen_qty == ZERO
+    assert engine.portfolio._calculate_sell_quantity(
+        instrument, Decimal("400"), Decimal("52000")
+    ) == Decimal("100")
+
+    def sell(quantity):
+        return OrderEvent(
+            timestamp=datetime(2026, 4, 9, 10, 1),
+            order_id=f"sell-{quantity}",
+            symbol=instrument.symbol,
+            side=OrderSide.SELL,
+            order_type=OrderType.MARKET,
+            quantity=Decimal(quantity),
+            price=Decimal("400"),
+        )
+
+    assert engine._approved_order(sell("130")) is None
+    assert engine._approved_order(sell("100")) is not None
+    assert position.quantity == Decimal("130")
+    assert position.unlisted_qty == Decimal("30")
 
 
 def test_execution_time_risk_rejection_prevents_fill():

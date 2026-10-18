@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from core.types import Symbol
+from core.types import Settlement, Symbol
 from domain.position import Position
 
 
@@ -99,6 +99,28 @@ class TestTPlus1:
         # available = 0, 尝试卖出会因 quantity 不足报错（实际业务层应在发单前检查）
         # 但底层 update_on_fill 只检查总持仓，不检查可卖
         # 这里仅验证 frozen_qty 逻辑
+
+
+def test_t_plus_zero_fill_keeps_unlisted_awards_locked() -> None:
+    position = Position(Symbol("fixture"))
+    position.update_on_fill(
+        "buy", Decimal("100"), Decimal("13"), settlement=Settlement.T_PLUS_0
+    )
+    assert position.frozen_qty == Decimal("0")
+    assert position.available_qty == Decimal("100")
+
+    position.accrue_share_distribution(Decimal("30"))
+    position.advance_settlement_day()
+    assert position.available_qty == Decimal("100")
+    assert position.unlisted_qty == Decimal("30")
+
+    position.update_on_fill(
+        "sell", Decimal("100"), Decimal("10"), settlement=Settlement.T_PLUS_0
+    )
+    assert position.quantity == position.unlisted_qty == Decimal("30")
+    assert position.frozen_qty == position.available_qty == Decimal("0")
+    position.release_share_distribution(Decimal("30"))
+    assert position.available_qty == Decimal("30")
 
 
 class TestMarkToMarket:

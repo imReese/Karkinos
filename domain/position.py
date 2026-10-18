@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal, DecimalException, Inexact, localcontext
 
-from core.types import ZERO, Money, Symbol
+from core.types import ZERO, Money, Settlement, Symbol
 from domain.portfolio_accounting import (
     average_cost_after_share_distribution,
     moving_average_cost_after_buy,
@@ -51,6 +51,8 @@ class Position:
         fill_quantity: Decimal,
         fill_price: Decimal,
         commission: Decimal = ZERO,
+        *,
+        settlement: Settlement = Settlement.T_PLUS_1,
     ) -> None:
         """根据成交更新持仓。
 
@@ -59,15 +61,27 @@ class Position:
 
         ``commission`` is retained for API compatibility and represents the
         fill's already-resolved total fee at this domain boundary.
+        Settlement controls the buy lock; unlisted share awards remain separate.
         """
+        if not isinstance(settlement, Settlement):
+            raise ValueError("position_fill_settlement_invalid")
         if side == "buy":
-            self._handle_buy(fill_quantity, fill_price, commission)
+            self._handle_buy(
+                fill_quantity, fill_price, commission, settlement=settlement
+            )
         elif side == "sell":
             self._handle_sell(fill_quantity, fill_price, commission)
         else:
             raise ValueError(f"Unknown side: {side}")
 
-    def _handle_buy(self, qty: Decimal, price: Decimal, commission: Decimal) -> None:
+    def _handle_buy(
+        self,
+        qty: Decimal,
+        price: Decimal,
+        commission: Decimal,
+        *,
+        settlement: Settlement,
+    ) -> None:
         """买入更新：加权平均计算新均价，冻结 T+1 数量。"""
         self.avg_cost = moving_average_cost_after_buy(
             current_quantity=self.quantity,
@@ -78,7 +92,8 @@ class Position:
         )
 
         self.quantity += qty
-        self.frozen_qty += qty  # 当日买入冻结
+        if settlement is Settlement.T_PLUS_1:
+            self.frozen_qty += qty
         self.commission_paid += commission
 
     def _handle_sell(self, qty: Decimal, price: Decimal, commission: Decimal) -> None:

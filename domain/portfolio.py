@@ -8,7 +8,7 @@ from decimal import Decimal, DecimalException, localcontext
 
 from core.event_bus import EventBus
 from core.events import FillEvent, OrderIntentEvent, SignalEvent
-from core.types import ZERO, InstrumentType, OrderSide, Symbol
+from core.types import ZERO, InstrumentType, OrderSide, Settlement, Symbol
 from domain.instrument import Instrument
 from domain.portfolio_accounting import share_distribution_quantity, total_trade_fee
 from domain.position import Position
@@ -157,11 +157,13 @@ class Portfolio:
             fee_breakdown=event.fee_breakdown,
         )
         pos = self.positions[symbol]
+        instrument = self.instruments.get(symbol)
         pos.update_on_fill(
             side=event.side.value,
             fill_quantity=event.fill_quantity,
             fill_price=event.fill_price,
             commission=total_fee,
+            settlement=instrument.settlement if instrument else Settlement.T_PLUS_1,
         )
 
         # 更新资金

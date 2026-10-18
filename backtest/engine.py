@@ -452,12 +452,7 @@ class BacktestEngine:
                 event = result.modified_order
         if event.side is OrderSide.SELL:
             position = self.portfolio.positions.get(event.symbol)
-            instrument = self.instruments.get(event.symbol)
-            available = ZERO
-            if position is not None:
-                available = position.available_qty
-                if instrument is not None and not instrument.is_t_plus_1:
-                    available = position.quantity - position.unlisted_qty
+            available = position.available_qty if position is not None else ZERO
             # Direct orders and risk-modified quantities must respect the same
             # T+1 and unlisted-share locks as target sizing.
             if event.quantity > available:
