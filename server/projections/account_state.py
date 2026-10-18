@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import threading
 from contextlib import nullcontext
 from datetime import datetime
-from typing import Any
 
 from server.contracts.http.ledger_models import EquitySeriesPoint
 from server.contracts.http.portfolio_models import (
@@ -170,38 +168,9 @@ def _performance_date(position) -> str | None:
     )
 
 
-_DRAWDOWN_CACHE: dict[tuple[str, int | None, str | None], dict[str, Any]] = {}
-_DRAWDOWN_CACHE_LOCK = threading.Lock()
-_MAX_DRAWDOWN_CACHE_SIZE = 64
-
-
-def clear_overview_drawdown_cache() -> None:
-    with _DRAWDOWN_CACHE_LOCK:
-        _DRAWDOWN_CACHE.clear()
-
-
 def _overview_drawdown_update(
     state, snapshot: PortfolioSnapshot, now: datetime
 ) -> dict:
-    snapshot_id = snapshot.valuation_snapshot_id
-    cache_key = (
-        (
-            snapshot_id,
-            getattr(snapshot, "ledger_cutoff_id", None),
-            snapshot.valuation_as_of,
-        )
-        if snapshot_id
-        else None
-    )
-    if cache_key is not None:
-        with _DRAWDOWN_CACHE_LOCK:
-            cached = _DRAWDOWN_CACHE.get(cache_key)
-            if cached is not None:
-                return {
-                    **cached,
-                    "drawdown_blockers": list(cached.get("drawdown_blockers") or []),
-                }
-
     current = EquitySeriesPoint(
         timestamp=snapshot.valuation_as_of or now.isoformat(),
         total=snapshot.total_equity,
@@ -225,7 +194,7 @@ def _overview_drawdown_update(
         snapshot, history.equity_curve, historical_blockers=history.blockers
     )
     drawdown = risk.drawdown
-    result = {
+    return {
         "current_drawdown": None if drawdown is None else drawdown.current_drawdown,
         "current_drawdown_amount": (
             None
@@ -239,12 +208,3 @@ def _overview_drawdown_update(
         else drawdown.peak_timestamp,
         "drawdown_blockers": risk.blockers,
     }
-    if cache_key is not None:
-        with _DRAWDOWN_CACHE_LOCK:
-            if len(_DRAWDOWN_CACHE) >= _MAX_DRAWDOWN_CACHE_SIZE:
-                _DRAWDOWN_CACHE.pop(next(iter(_DRAWDOWN_CACHE)), None)
-            _DRAWDOWN_CACHE[cache_key] = {
-                **result,
-                "drawdown_blockers": list(result.get("drawdown_blockers") or []),
-            }
-    return result

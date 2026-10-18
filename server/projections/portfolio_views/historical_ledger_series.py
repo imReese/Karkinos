@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import threading
 from calendar import monthrange
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -314,16 +313,6 @@ def _aggregate_quote_status(
     return "missing"
 
 
-_SERIES_CACHE: dict[tuple[str, int | None, str], list[EquitySeriesPoint]] = {}
-_SERIES_CACHE_LOCK = threading.Lock()
-_MAX_SERIES_CACHE_SIZE = 64
-
-
-def clear_daily_equity_series_cache() -> None:
-    with _SERIES_CACHE_LOCK:
-        _SERIES_CACHE.clear()
-
-
 def build_daily_equity_series_from_ledger_history(
     state,
     *,
@@ -331,6 +320,7 @@ def build_daily_equity_series_from_ledger_history(
     current_point: EquitySeriesPoint | None,
     now: datetime,
 ) -> list[EquitySeriesPoint]:
+    """Replay current history from the canonical identity-bound cached inputs."""
     if (
         selected_range == "1d"
         or state.db is None
@@ -341,46 +331,6 @@ def build_daily_equity_series_from_ledger_history(
     ):
         return []
 
-    snapshot_id = (
-        current_point.valuation_snapshot_id if current_point is not None else None
-    )
-    cache_key = (
-        (
-            snapshot_id,
-            getattr(current_point, "ledger_cutoff_id", None),
-            selected_range,
-        )
-        if snapshot_id
-        else None
-    )
-    if cache_key is not None:
-        with _SERIES_CACHE_LOCK:
-            cached = _SERIES_CACHE.get(cache_key)
-            if cached is not None:
-                return list(cached)
-
-    points = _reconstruct_daily_equity_series(
-        state,
-        selected_range=selected_range,
-        current_point=current_point,
-        now=now,
-    )
-
-    if cache_key is not None:
-        with _SERIES_CACHE_LOCK:
-            if len(_SERIES_CACHE) >= _MAX_SERIES_CACHE_SIZE:
-                _SERIES_CACHE.pop(next(iter(_SERIES_CACHE)), None)
-            _SERIES_CACHE[cache_key] = list(points)
-    return points
-
-
-def _reconstruct_daily_equity_series(
-    state,
-    *,
-    selected_range: str,
-    current_point: EquitySeriesPoint | None,
-    now: datetime,
-) -> list[EquitySeriesPoint]:
     read_snapshot = portfolio_read_snapshot_for_state(state)
     entries = (
         sorted(
@@ -550,7 +500,6 @@ def _reconstruct_daily_equity_series(
 
 __all__ = (
     "build_daily_equity_series_from_ledger_history",
-    "clear_daily_equity_series_cache",
     "equity_series_bucket",
     "historical_quote_for_equity_day",
     "ledger_entry_timestamp",

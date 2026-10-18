@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from server.models import PortfolioSnapshot, PositionResponse
 from server.services.current_holding_market_evidence_review import (
     build_current_holding_market_evidence_review,
@@ -276,6 +278,49 @@ def test_review_groups_non_stock_and_non_fund_holdings_in_other_lane() -> None:
     }
     assert report.quote_refresh_symbols == ["510300"]
     assert report.confirmed_fund_nav_refresh_symbols == []
+
+
+@pytest.mark.parametrize("asset_class", ["gold", "bond", "index", "etf"])
+def test_review_keeps_healthy_other_holdings_without_review_items(asset_class):
+    report = build_current_holding_market_evidence_review(
+        _snapshot(
+            [
+                _position(
+                    "HEALTHY", quantity=1, quote_status="fresh", asset_class=asset_class
+                )
+            ]
+        )
+    )
+
+    assert report.status == "complete"
+    assert report.items == []
+    assert report.refreshable_symbols == []
+    assert report.evidence_lanes[-1].model_dump() == {
+        "asset_class": "other",
+        "status": "complete",
+        "current_holding_count": 1,
+        "confirmed_holding_count": 1,
+        "review_required_count": 0,
+        "blocker_statuses": [],
+    }
+
+
+def test_review_keeps_healthy_and_stale_other_holdings_in_one_lane():
+    report = build_current_holding_market_evidence_review(
+        _snapshot(
+            [
+                _position("GOLD", quantity=1, quote_status="fresh", asset_class="gold"),
+                _position("BOND", quantity=2, quote_status="stale", asset_class="bond"),
+            ]
+        )
+    )
+
+    lane = report.evidence_lanes[-1]
+    assert lane.asset_class == "other"
+    assert lane.status == "degraded"
+    assert lane.current_holding_count == 2
+    assert lane.confirmed_holding_count == lane.review_required_count == 1
+    assert report.refreshable_symbols == ["BOND"]
 
 
 def test_published_nav_wait_preserves_decision_block_without_user_attention() -> None:

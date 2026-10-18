@@ -232,7 +232,7 @@ def _evidence_lanes(
     lanes: list[CurrentHoldingMarketEvidenceLane] = []
     for asset_class in ordered_asset_classes:
         positions = positions_by_asset_class[asset_class]
-        lane_items = items_by_asset_class[asset_class]
+        lane_items = items_by_asset_class.get(asset_class, [])
         if not positions:
             status = "not_applicable"
         elif identity_blockers:

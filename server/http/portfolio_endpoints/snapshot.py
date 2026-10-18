@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
+from server.contracts.content_identity import content_fingerprint
 from server.contracts.http.portfolio_models import (
     AccountOverview,
     AccountStateResponse,
@@ -30,6 +31,30 @@ from server.http.portfolio_endpoints.dependencies import (
 class PortfolioSnapshotEndpoints:
     router: APIRouter
     operations: PortfolioSnapshotOperations
+
+
+def portfolio_response_not_modified(
+    value: object,
+    request: Request | None,
+    response: Response | None,
+    *,
+    scope: object = None,
+) -> Response | None:
+    """Revalidate only after the complete provider-free representation is built."""
+    if request is None and response is None:
+        return None
+    fingerprint = content_fingerprint({"scope": scope, "response": value})
+    headers = {"ETag": f'"{fingerprint}"', "Cache-Control": "no-cache"}
+    if request is not None:
+        for raw in request.headers.get("if-none-match", "").split(","):
+            token = raw.strip()
+            if token.startswith("W/"):
+                token = token[2:]
+            if token == "*" or token == headers["ETag"]:
+                return Response(status_code=304, headers=headers)
+    if response is not None:
+        response.headers.update(headers)
+    return None
 
 
 def create_router(
@@ -187,22 +212,6 @@ def create_router(
             }
         )
 
-    def _matches_etag(if_none_match: str | None, etag: str) -> bool:
-        if not if_none_match or not etag:
-            return False
-        normalized_etag = etag.strip('"')
-        if normalized_etag.startswith("W/"):
-            normalized_etag = normalized_etag[2:].strip('"')
-        for raw_token in if_none_match.split(","):
-            token = raw_token.strip()
-            if token == "*":
-                return True
-            if token.startswith("W/"):
-                token = token[2:]
-            if token.strip('"') == normalized_etag:
-                return True
-        return False
-
     @r.get("/state", response_model=AccountStateResponse)
     async def get_account_state(
         request: Request = None,  # type: ignore[assignment]
@@ -210,44 +219,11 @@ def create_router(
     ) -> AccountStateResponse | Response:
         """获取规范化账户状态投影。"""
         state = dependencies.get_state()
-        if request is not None and getattr(state, "db", None) is not None:
-            publication_reader = getattr(state.db, "get_runtime_control_sync", None)
-            if callable(publication_reader):
-                try:
-                    pub = publication_reader("valuation_snapshot_publication")
-                    if isinstance(pub, dict) and pub.get("status") == "ready":
-                        published_id = str(pub.get("snapshot_id") or "")
-                        if published_id and _matches_etag(
-                            request.headers.get("if-none-match"), published_id
-                        ):
-                            return Response(
-                                status_code=304,
-                                headers={
-                                    "ETag": f'"{published_id}"',
-                                    "Cache-Control": "no-cache",
-                                },
-                            )
-                except Exception:
-                    pass
-
         account = await build_account_state_response(state)
-        snapshot_id = account.snapshot.valuation_snapshot_id
-        if snapshot_id:
-            etag = f'"{snapshot_id}"'
-            if request is not None and _matches_etag(
-                request.headers.get("if-none-match"), snapshot_id
-            ):
-                return Response(
-                    status_code=304,
-                    headers={
-                        "ETag": etag,
-                        "Cache-Control": "no-cache",
-                    },
-                )
-            if response is not None:
-                response.headers["ETag"] = etag
-                response.headers["Cache-Control"] = "no-cache"
-        return account
+        not_modified = portfolio_response_not_modified(
+            account.model_dump(mode="json"), request, response
+        )
+        return not_modified if not_modified is not None else account
 
     @r.get("/cockpit", response_model=PortfolioCockpitResponse)
     async def get_portfolio_cockpit() -> PortfolioCockpitResponse:
