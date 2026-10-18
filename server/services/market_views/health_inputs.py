@@ -16,7 +16,7 @@ from server.models import (
 from server.services.asset_metadata import (
     resolve_asset_metadata,
 )
-from server.services.market_indices import (
+from server.services.market.indices import (
     default_market_index_assets,
 )
 from server.services.market_refresh import optional_float as _optional_float

@@ -13,7 +13,7 @@ from fastapi.routing import APIRoute
 
 from server.db import AppDatabase
 from server.routes import decision as decision_routes
-from server.services.decision_quality import build_decision_quality_target
+from server.services.decision.quality import build_decision_quality_target
 
 
 def _endpoint(path: str, method: str = "GET"):

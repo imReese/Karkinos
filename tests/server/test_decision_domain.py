@@ -5,10 +5,8 @@ from __future__ import annotations
 import server.services.daily_trading_plan as legacy_plan
 import server.services.decision_application as legacy_decision_app
 import server.services.decision_projection as legacy_decision_projection
-import server.services.decision_quality as legacy_quality
 from server.services import decision
 from server.services.decision import (
-    DecisionQualityService,
     build_daily_trading_plan,
     build_decision_quality_target,
     daily_candidate_generation_status,
@@ -21,8 +19,6 @@ from server.services.decision import (
 
 
 def test_decision_domain_exports_canonical_symbols() -> None:
-    assert DecisionQualityService is legacy_quality.DecisionQualityService
-    assert build_decision_quality_target is legacy_quality.build_decision_quality_target
     assert build_daily_trading_plan is legacy_plan.build_daily_trading_plan
     assert today_decision_payload is legacy_decision_app.today_decision_payload
     assert intraday_decision_payload is legacy_decision_app.intraday_decision_payload

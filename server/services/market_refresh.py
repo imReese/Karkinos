@@ -14,8 +14,8 @@ from data.source_policy import MarketDataUseCase
 from data.source_routing import preferred_legacy_provider
 from server.contracts.http.market import QuoteRefreshSymbolResult
 from server.services.asset_metadata import resolve_asset_metadata
+from server.services.market.indices import market_index_display_name
 from server.services.market_hours import is_cn_trading_session
-from server.services.market_indices import market_index_display_name
 from server.services.market_quote_ingestion import (
     build_quote_ingestion_command,
     persist_quote_ingestion,

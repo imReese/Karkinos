@@ -9,7 +9,6 @@ import server.services.market_calendar_automation as legacy_automation
 import server.services.market_calendar_dates as legacy_dates
 import server.services.market_calendar_evidence as legacy_evidence
 import server.services.market_hours as legacy_hours
-import server.services.market_indices as legacy_indices
 
 pytestmark = pytest.mark.unit
 
@@ -65,17 +64,9 @@ def test_market_domain_exports_preserve_facade_identity() -> None:
         == legacy_automation.MARKET_CALENDAR_AUTOMATION_SCHEMA_VERSION
     )
 
-    # Hours & Indices
+    # Hours
     assert market_domain.get_shanghai_now is legacy_hours.get_shanghai_now
     assert market_domain.is_cn_trading_session is legacy_hours.is_cn_trading_session
-    assert (
-        market_domain.default_market_index_assets
-        is legacy_indices.default_market_index_assets
-    )
-    assert (
-        market_domain.market_index_display_name
-        is legacy_indices.market_index_display_name
-    )
 
 
 def test_market_calendar_validation_fails_closed_on_none() -> None:

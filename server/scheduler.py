@@ -30,8 +30,8 @@ from server.scheduler_post_close import SchedulerPostCloseMixin
 from server.scheduler_quote_runs import SchedulerQuoteRunMixin
 from server.scheduler_signals import handle_scheduler_signal
 from server.scheduler_values import optional_float
+from server.services.market.indices import default_market_index_assets
 from server.services.market_hours import is_cn_trading_session
-from server.services.market_indices import default_market_index_assets
 from server.services.market_quote_ingestion import (
     build_quote_ingestion_command,
     persist_quote_ingestion,
