@@ -2,51 +2,61 @@
 
 from __future__ import annotations
 
-from datetime import date
-from decimal import Decimal
+import subprocess
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
-import server.services.research_datasets as legacy_datasets
-import server.services.research_observation_forecasts as legacy_forecasts
-from core.types import InstrumentKey, InstrumentType
-from data.market.model import DailyBarObservation
-from server.services import research
-from server.services.research import (
-    FORECAST_POLICY_ID,
-    RESEARCH_OPERATION_INSTRUMENTS_SCHEMA_VERSION,
-    ResearchDatasetError,
-    ResearchDatasetService,
-    build_observation_forecasts,
-    build_research_operation_instruments,
-    dataset_summary,
+from server.services.research.factors import (
     get_curated_universe,
     list_curated_universes,
-    prepare_daily_dataset,
-    publish_verified_interval_dataset,
-    require_supported_snapshot,
-    run_factor_evaluation,
-    verified_dataset_dates,
+)
+from server.services.research.instruments import (
+    RESEARCH_OPERATION_INSTRUMENTS_SCHEMA_VERSION,
+    build_research_operation_instruments,
 )
 
 
-def test_research_domain_exports_canonical_symbols() -> None:
-    assert FORECAST_POLICY_ID == legacy_forecasts.FORECAST_POLICY_ID
+def test_cold_dataset_import_isolates_ai_and_preserves_strategy_bootstrap() -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            "-c",
+            """
+import sys
+import server.services.research.datasets
 
+unexpected = {
+    "server.services.research.factory",
+    "server.ai_runtime.strategy_research",
+    "server.ai_runtime.strategy_research_backtest",
+    "server.ai_runtime.capture",
+    "server.ai_runtime.store",
+}.intersection(sys.modules)
+assert not unexpected, sorted(unexpected)
 
-def test_research_facades_maintain_symbol_identity() -> None:
-    assert build_observation_forecasts is legacy_forecasts.build_observation_forecasts
-    assert ResearchDatasetService is legacy_datasets.ResearchDatasetService
-    assert ResearchDatasetError is legacy_datasets.ResearchDatasetError
-    assert prepare_daily_dataset is legacy_datasets.prepare_daily_dataset
-    assert dataset_summary is legacy_datasets.dataset_summary
-    assert (
-        publish_verified_interval_dataset
-        is legacy_datasets.publish_verified_interval_dataset
+from strategy.registry import StrategyRegistry
+assert StrategyRegistry.get("dual_ma") is None
+
+from core.event_bus import EventBus
+from server.bootstrap import build_strategy
+from types import SimpleNamespace
+
+strategy = build_strategy(
+    SimpleNamespace(strategy="dual_ma", params={"short_period": 2, "long_period": 5}),
+    EventBus(),
+)
+assert strategy.short_period == 2
+assert strategy.long_period == 5
+""",
+        ],
+        cwd=Path(__file__).resolve().parents[2],
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
-    assert require_supported_snapshot is legacy_datasets.require_supported_snapshot
-    assert verified_dataset_dates is legacy_datasets.verified_dataset_dates
+    assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
 def test_curated_universes_via_domain() -> None:
