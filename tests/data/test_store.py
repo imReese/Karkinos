@@ -33,6 +33,113 @@ def sample_df() -> pd.DataFrame:
     )
 
 
+@pytest.mark.parametrize("failure_stage", ["write", "replace"])
+def test_mirror_failure_keeps_committed_bars_and_metadata_consistent(
+    store, sample_df, monkeypatch, caplog, failure_stage
+):
+    symbol = Symbol("600519")
+    store.save_bars(
+        symbol, BarFrequency.DAILY, sample_df.iloc[:1], instrument_type="stock"
+    )
+    mirror = store._root / "bars/1d/stock/600519.parquet"
+    previous_mirror = mirror.read_bytes()
+
+    def fail_write(frame, path, **kwargs):
+        Path(path).write_bytes(b"partial parquet bytes")
+        raise OSError("synthetic mirror write failure")
+
+    def fail_replace(path, target):
+        raise OSError("synthetic mirror replace failure")
+
+    if failure_stage == "write":
+        monkeypatch.setattr(pd.DataFrame, "to_parquet", fail_write)
+    else:
+        monkeypatch.setattr(Path, "replace", fail_replace)
+
+    store.append_bars(
+        symbol,
+        BarFrequency.DAILY,
+        sample_df.iloc[1:],
+        instrument_type="stock",
+    )
+
+    loaded = store.load_bars(symbol, BarFrequency.DAILY, instrument_type="stock")
+    metadata = store.get_meta(symbol, BarFrequency.DAILY, instrument_type="stock")
+    assert loaded is not None and metadata is not None
+    assert len(loaded) == metadata["row_count"] == len(sample_df)
+    assert loaded["close"].tolist() == sample_df["close"].tolist()
+    assert metadata["end_date"] == str(sample_df["timestamp"].max())
+    assert mirror.read_bytes() == previous_mirror
+    assert list(mirror.parent.iterdir()) == [mirror]
+    assert "mirror" in caplog.text.lower()
+
+
+@pytest.mark.parametrize("writer", ["append", "parquet_import"])
+def test_metadata_failure_rolls_back_bars_and_preserves_existing_metadata(
+    store, sample_df, monkeypatch, writer
+):
+    symbol = Symbol("600519")
+    store.save_bars(
+        symbol, BarFrequency.DAILY, sample_df.iloc[:1], instrument_type="stock"
+    )
+    before = store.get_meta(symbol, BarFrequency.DAILY, instrument_type="stock")
+    mirror = store._root / "bars/1d/stock/600519.parquet"
+    if writer == "parquet_import":
+        sample_df.to_parquet(mirror, index=False)
+    previous_mirror = mirror.read_bytes()
+    save_metadata = store._save_bar_meta
+
+    def fail_metadata(*args, **kwargs):
+        save_metadata(*args, **kwargs)
+        raise sqlite3.OperationalError("synthetic metadata write failure")
+
+    monkeypatch.setattr(store, "_save_bar_meta", fail_metadata)
+    with pytest.raises(sqlite3.OperationalError, match="metadata write failure"):
+        if writer == "append":
+            store.append_bars(
+                symbol,
+                BarFrequency.DAILY,
+                sample_df.iloc[1:],
+                instrument_type="stock",
+            )
+        else:
+            store.sync_parquet_bars_to_database(instrument_type="stock")
+
+    loaded = store.load_bars(symbol, BarFrequency.DAILY, instrument_type="stock")
+    assert loaded is not None
+    assert loaded["close"].tolist() == sample_df.iloc[:1]["close"].tolist()
+    assert store.get_meta(symbol, BarFrequency.DAILY, instrument_type="stock") == before
+    assert mirror.read_bytes() == previous_mirror
+
+
+def test_interrupted_mirror_is_not_imported_as_a_new_instrument(
+    store, sample_df, monkeypatch
+):
+    symbol = Symbol("600519")
+    store.save_bars(symbol, BarFrequency.DAILY, sample_df, instrument_type="stock")
+    directory = store._root / "bars/1d/stock"
+
+    def fail_publication(*args, **kwargs):
+        raise OSError("synthetic interrupted mirror publication")
+
+    with monkeypatch.context() as failure:
+        failure.setattr(Path, "replace", fail_publication)
+        failure.setattr(Path, "unlink", fail_publication)
+        store.save_bars(symbol, BarFrequency.DAILY, sample_df, instrument_type="stock")
+
+    leftovers = [path for path in directory.iterdir() if path.name != "600519.parquet"]
+    assert len(leftovers) == 1
+    assert len(pd.read_parquet(leftovers[0])) == len(sample_df)
+    imported = store.sync_parquet_bars_to_database(instrument_type="stock")
+    assert [row["symbol"] for row in imported["files"]] == ["600519"]
+    assert (
+        store.get_meta(
+            Symbol(leftovers[0].stem), BarFrequency.DAILY, instrument_type="stock"
+        )
+        is None
+    )
+
+
 class TestDataStore:
     def test_save_and_load_bars(self, store: DataStore, sample_df: pd.DataFrame):
         symbol = Symbol("600519")

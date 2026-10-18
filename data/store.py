@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import sqlite3
+import tempfile
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -28,6 +30,7 @@ from data.meta_store_schema import (
 )
 
 build_bar_diagnostics = _build_bar_diagnostics
+logger = logging.getLogger(__name__)
 
 
 def normalize_stock_master_metadata(
@@ -253,24 +256,52 @@ class DataStore(MarketDailyIngestionMixin):
         adjustment_mode: str | None = None,
         instrument_type: InstrumentType | str,
     ) -> None:
-        """Persist bars under an exact instrument identity."""
+        """Commit canonical bars and metadata together, then refresh their mirror."""
         key = InstrumentKey.from_values(symbol, instrument_type)
-        freq_dir = self._root / "bars" / frequency.value / key.instrument_type.value
-        freq_dir.mkdir(parents=True, exist_ok=True)
-        path = freq_dir / f"{key.symbol}.parquet"
-        self._save_bars_to_db(key, frequency, df)
-        df.to_parquet(path, index=False)
         provider_name = _metadata_value(df, "provider_name", provider_name)
         data_source = _metadata_value(df, "data_source", data_source or provider_name)
         adjustment_mode = _metadata_value(df, "adjustment_mode", adjustment_mode)
-        self._save_bar_meta(
-            key,
-            frequency,
-            df,
-            provider_name=provider_name,
-            data_source=data_source,
-            adjustment_mode=adjustment_mode,
-        )
+        with connect_meta_sqlite(self._meta_path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._save_bars_to_db(key, frequency, df, connection=connection)
+            self._save_bar_meta(
+                key,
+                frequency,
+                df,
+                connection=connection,
+                provider_name=provider_name,
+                data_source=data_source,
+                adjustment_mode=adjustment_mode,
+            )
+        self._write_bar_mirror(key, frequency, df)
+
+    def _write_bar_mirror(
+        self, key: InstrumentKey, frequency: BarFrequency, df: pd.DataFrame
+    ) -> None:
+        temporary = None
+        try:
+            directory = (
+                self._root / "bars" / frequency.value / key.instrument_type.value
+            )
+            directory.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                dir=directory, prefix=f".{key.symbol}.", suffix=".tmp", delete=False
+            ) as stream:
+                temporary = Path(stream.name)
+            df.to_parquet(temporary, index=False)
+            temporary.replace(directory / f"{key.symbol}.parquet")
+        except Exception:
+            # SQLite is authoritative; a derived mirror failure cannot turn a
+            # committed canonical write into a reported failed ingestion.
+            logger.warning("Bar mirror refresh failed for %s", key, exc_info=True)
+        finally:
+            if temporary is not None:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    logger.warning(
+                        "Could not remove incomplete bar mirror", exc_info=True
+                    )
 
     def load_bars(
         self,
@@ -384,18 +415,21 @@ class DataStore(MarketDailyIngestionMixin):
                 symbol = Symbol(path.stem)
                 df = pd.read_parquet(path)
                 key = InstrumentKey(str(symbol), resolved_type)
-                self._save_bars_to_db(key, bar_frequency, df)
                 provider_name = _metadata_value(df, "provider_name", None)
                 frame_data_source = _metadata_value(df, "data_source", None)
                 adjustment_mode = _metadata_value(df, "adjustment_mode", None)
-                self._save_bar_meta(
-                    key,
-                    bar_frequency,
-                    df,
-                    provider_name=provider_name,
-                    data_source=frame_data_source or data_source,
-                    adjustment_mode=adjustment_mode,
-                )
+                with connect_meta_sqlite(self._meta_path) as connection:
+                    connection.execute("BEGIN IMMEDIATE")
+                    self._save_bars_to_db(key, bar_frequency, df, connection=connection)
+                    self._save_bar_meta(
+                        key,
+                        bar_frequency,
+                        df,
+                        connection=connection,
+                        provider_name=provider_name,
+                        data_source=frame_data_source or data_source,
+                        adjustment_mode=adjustment_mode,
+                    )
                 row_count = len(df)
                 synced_rows += row_count
                 files.append(
@@ -451,6 +485,7 @@ class DataStore(MarketDailyIngestionMixin):
         frequency: BarFrequency,
         df: pd.DataFrame,
         *,
+        connection: sqlite3.Connection,
         provider_name: str,
         data_source: str,
         adjustment_mode: str,
@@ -464,50 +499,50 @@ class DataStore(MarketDailyIngestionMixin):
         else:
             start = end = ""
 
-        with connect_meta_sqlite(self._meta_path) as conn:
-            table = _resolve_market_table(conn, "bar_meta")
-            conn.execute(
-                f"""INSERT OR REPLACE INTO {table}
-                   (
-                       symbol, instrument_type, frequency,
-                       start_date, end_date, last_updated,
-                       row_count, provider_name, data_source, adjustment_mode,
-                       fetched_at, dataset_id, diagnostics_json,
-                       duplicate_timestamp_count, missing_ohlcv_count,
-                       is_monotonic, identity_provenance
-                   )
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    key.symbol,
-                    key.instrument_type.value,
-                    frequency.value,
-                    start,
-                    end,
-                    fetched_at,
-                    len(df),
-                    provider_name,
-                    data_source,
-                    adjustment_mode,
-                    fetched_at,
-                    _build_dataset_id(
-                        Symbol(key.symbol),
-                        frequency,
-                        df,
-                        provider_name=provider_name,
-                        data_source=data_source,
-                        adjustment_mode=adjustment_mode,
-                        start=start,
-                        end=end,
-                        diagnostics=diagnostics,
-                        instrument_type=key.instrument_type,
-                    ),
-                    json.dumps(diagnostics, sort_keys=True),
-                    diagnostics["duplicate_timestamp_count"],
-                    diagnostics["missing_ohlcv_count"],
-                    int(diagnostics["is_monotonic"]),
-                    "explicit_canonical",
+        conn = connection
+        table = _resolve_market_table(conn, "bar_meta")
+        conn.execute(
+            f"""INSERT OR REPLACE INTO {table}
+               (
+                   symbol, instrument_type, frequency,
+                   start_date, end_date, last_updated,
+                   row_count, provider_name, data_source, adjustment_mode,
+                   fetched_at, dataset_id, diagnostics_json,
+                   duplicate_timestamp_count, missing_ohlcv_count,
+                   is_monotonic, identity_provenance
+               )
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                key.symbol,
+                key.instrument_type.value,
+                frequency.value,
+                start,
+                end,
+                fetched_at,
+                len(df),
+                provider_name,
+                data_source,
+                adjustment_mode,
+                fetched_at,
+                _build_dataset_id(
+                    Symbol(key.symbol),
+                    frequency,
+                    df,
+                    provider_name=provider_name,
+                    data_source=data_source,
+                    adjustment_mode=adjustment_mode,
+                    start=start,
+                    end=end,
+                    diagnostics=diagnostics,
+                    instrument_type=key.instrument_type,
                 ),
-            )
+                json.dumps(diagnostics, sort_keys=True),
+                diagnostics["duplicate_timestamp_count"],
+                diagnostics["missing_ohlcv_count"],
+                int(diagnostics["is_monotonic"]),
+                "explicit_canonical",
+            ),
+        )
 
     # ---------- 辅助 ----------
 
@@ -761,6 +796,8 @@ class DataStore(MarketDailyIngestionMixin):
         key: InstrumentKey,
         frequency: BarFrequency,
         df: pd.DataFrame,
+        *,
+        connection: sqlite3.Connection,
     ) -> None:
         if df.empty or "timestamp" not in df.columns or "close" not in df.columns:
             return
@@ -788,35 +825,34 @@ class DataStore(MarketDailyIngestionMixin):
                 )
             )
 
-        with connect_meta_sqlite(self._meta_path) as conn:
-            conn.execute("BEGIN IMMEDIATE")
-            table = _resolve_market_table(conn, "market_bars")
-            if (
-                key.instrument_type is InstrumentType.STOCK
-                and frequency is BarFrequency.DAILY
-            ):
-                require_frozen_stock_bars_unchanged(
-                    conn, [(row[0], row[3], *row[4:10]) for row in rows]
-                )
-            conn.executemany(
-                f"""
-                INSERT INTO {table} (
-                    symbol, instrument_type, frequency, timestamp,
-                    open, high, low, close, volume, amount,
-                    created_at, updated_at, identity_provenance
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(symbol, instrument_type, frequency, timestamp)
-                DO UPDATE SET
-                    open = excluded.open,
-                    high = excluded.high,
-                    low = excluded.low,
-                    close = excluded.close,
-                    volume = excluded.volume,
-                    amount = excluded.amount,
-                    updated_at = excluded.updated_at
-                """,
-                rows,
+        conn = connection
+        table = _resolve_market_table(conn, "market_bars")
+        if (
+            key.instrument_type is InstrumentType.STOCK
+            and frequency is BarFrequency.DAILY
+        ):
+            require_frozen_stock_bars_unchanged(
+                conn, [(row[0], row[3], *row[4:10]) for row in rows]
             )
+        conn.executemany(
+            f"""
+            INSERT INTO {table} (
+                symbol, instrument_type, frequency, timestamp,
+                open, high, low, close, volume, amount,
+                created_at, updated_at, identity_provenance
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(symbol, instrument_type, frequency, timestamp)
+            DO UPDATE SET
+                open = excluded.open,
+                high = excluded.high,
+                low = excluded.low,
+                close = excluded.close,
+                volume = excluded.volume,
+                amount = excluded.amount,
+                updated_at = excluded.updated_at
+            """,
+            rows,
+        )
 
     def _load_bars_from_db(
         self,
