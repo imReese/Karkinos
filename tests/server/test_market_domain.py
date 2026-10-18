@@ -2,76 +2,53 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
-import server.services.market as market_domain
-import server.services.market_calendar_automation as legacy_automation
-import server.services.market_calendar_dates as legacy_dates
-import server.services.market_calendar_evidence as legacy_evidence
-import server.services.market_hours as legacy_hours
+from server.services.market.calendar import validate_verified_market_calendar
 
 pytestmark = pytest.mark.unit
 
 
-def test_market_domain_exports_preserve_facade_identity() -> None:
-    """Ensure facades re-export exact canonical domain symbols."""
-    # Calendar & evidence
-    assert (
-        market_domain.validate_verified_market_calendar
-        is legacy_evidence.validate_verified_market_calendar
-    )
-    assert (
-        market_domain.MarketCalendarEvidenceValidation
-        is legacy_evidence.MarketCalendarEvidenceValidation
-    )
-    assert market_domain.project_market_session is legacy_dates.project_market_session
-    assert (
-        market_domain.VerifiedClosedTradingDate
-        is legacy_dates.VerifiedClosedTradingDate
-    )
-    assert (
-        market_domain.resolve_latest_verified_closed_trading_date
-        is legacy_dates.resolve_latest_verified_closed_trading_date
-    )
-    assert (
-        market_domain.resolve_verified_closed_trading_dates
-        is legacy_dates.resolve_verified_closed_trading_dates
-    )
-    assert (
-        market_domain.resolve_verified_closed_trading_dates_in_range
-        is legacy_dates.resolve_verified_closed_trading_dates_in_range
-    )
-    assert (
-        market_domain.latest_verified_closed_trading_date
-        is legacy_dates.latest_verified_closed_trading_date
-    )
-    assert (
-        market_domain.POST_CLOSE_INGESTION_TIME
-        is legacy_dates.POST_CLOSE_INGESTION_TIME
-    )
+def test_cold_hours_import_does_not_load_calendar_automation() -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            "-c",
+            """
+import sys
+from datetime import datetime, timezone
+from server.services.market.hours import get_shanghai_now, is_cn_trading_session
 
-    # Automation
-    assert (
-        market_domain.MarketCalendarAutomationService
-        is legacy_automation.MarketCalendarAutomationService
-    )
-    assert (
-        market_domain.market_calendar_automation_years
-        is legacy_automation.market_calendar_automation_years
-    )
-    assert (
-        market_domain.MARKET_CALENDAR_AUTOMATION_SCHEMA_VERSION
-        == legacy_automation.MARKET_CALENDAR_AUTOMATION_SCHEMA_VERSION
-    )
+unexpected = {
+    "server.services.market.calendar",
+    "server.services.market.calendar_automation",
+    "server.services.market.indices",
+    "data.market_calendar",
+    "pandas",
+}.intersection(sys.modules)
+assert not unexpected, sorted(unexpected)
 
-    # Hours
-    assert market_domain.get_shanghai_now is legacy_hours.get_shanghai_now
-    assert market_domain.is_cn_trading_session is legacy_hours.is_cn_trading_session
+opening = datetime(2026, 10, 19, 1, 30, tzinfo=timezone.utc)
+assert get_shanghai_now(opening).isoformat() == "2026-10-19T09:30:00+08:00"
+assert is_cn_trading_session(opening)
+""",
+        ],
+        cwd=Path(__file__).resolve().parents[2],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
 def test_market_calendar_validation_fails_closed_on_none() -> None:
     """Missing calendar row must fail closed with explicit blockers."""
-    validation = market_domain.validate_verified_market_calendar(None)
+    validation = validate_verified_market_calendar(None)
     assert not validation.verified
     assert "market_calendar_missing" in validation.blockers
     assert validation.evidence_ref is None
