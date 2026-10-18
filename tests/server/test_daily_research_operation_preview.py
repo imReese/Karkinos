@@ -23,7 +23,7 @@ from server.services.daily_research_operation_preview import (
     project_daily_research_operation_preview,
     resolve_latest_verified_research_operation_preview,
 )
-from server.services.daily_trading_plan import build_daily_trading_plan
+from server.services.decision.plan import build_daily_trading_plan
 
 
 def _formula() -> dict:

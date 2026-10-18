@@ -25,7 +25,7 @@ from server.services.daily_decision_evidence_automation import (
     project_daily_candidate_background_schedule,
 )
 from server.services.daily_operations import build_daily_operations_summary
-from server.services.daily_trading_plan import build_daily_trading_plan
+from server.services.decision.plan import build_daily_trading_plan
 from server.services.decision_application import (
     decision_portfolio_context as _decision_portfolio_context,
 )

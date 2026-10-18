@@ -1023,7 +1023,7 @@ def test_daily_shadow_route_delegates_to_canonical_decision_plan_and_service(
         lambda state, *, portfolio_context: {"600519": {"quantity": 100}},
     )
     monkeypatch.setattr(
-        "server.services.daily_trading_plan.build_daily_trading_plan",
+        "server.services.decision.plan.build_daily_trading_plan",
         fake_build_plan,
     )
     monkeypatch.setattr(

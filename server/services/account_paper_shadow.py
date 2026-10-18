@@ -13,11 +13,11 @@ from typing import Any
 from fastapi import HTTPException
 
 from server.services import (
-    daily_trading_plan,
     decision_application,
     decision_projection,
     paper_shadow_run,
 )
+from server.services.decision import plan as decision_plan
 
 
 async def orchestrate_account_paper_shadow(
@@ -55,7 +55,7 @@ async def orchestrate_account_paper_shadow(
                 decision_payload
             )
         )
-        trading_plan = daily_trading_plan.build_daily_trading_plan(
+        trading_plan = decision_plan.build_daily_trading_plan(
             decision_payload=decision_payload,
             config=getattr(state, "config", None),
             positions=decision_application.trading_plan_positions(

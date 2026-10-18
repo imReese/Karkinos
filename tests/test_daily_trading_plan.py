@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from server.services.daily_trading_plan import build_daily_trading_plan
+from server.services.decision.plan import build_daily_trading_plan
 
 
 def _fee_config() -> SimpleNamespace:
