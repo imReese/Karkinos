@@ -45,14 +45,14 @@ from server.persistence.market_daily_call_budget import (
     reserve_market_daily_provider_call,
 )
 from server.routes import market
-from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
 from server.services.daily_market_collection import (
     DAILY_MARKET_COLLECTION_JOB,
     DailyMarketCollectionJobRequest,
     DailyMarketCollectionService,
     collection_capture_completed_at,
 )
-from server.services.research_datasets import dataset_summary
+from server.services.research.dataset_inputs import load_dataset_backtest_inputs
+from server.services.research.datasets import dataset_summary
 from server.services.verified_daily_market_data import (
     VERIFIED_DAILY_MARKET_JOB_SCHEMA_VERSION,
     VerifiedDailyMarketDataNotPublishable,

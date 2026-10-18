@@ -28,7 +28,7 @@ from server.services.ai_shadow_research_baseline import (
 from server.services.ai_shadow_research_qualification import (
     AiShadowResearchQualificationService,
 )
-from server.services.research_datasets import (
+from server.services.research.datasets import (
     MAX_VERIFIED_DAILY_JOB_INSTRUMENTS,
     ResearchDatasetError,
     ResearchDatasetService,
@@ -258,7 +258,7 @@ def test_prepare_daily_dataset_accepts_more_than_one_provider_batch(
     called = []
     monkeypatch.setattr(TdxRuntimeSettings, "require_credentials", lambda self: None)
     monkeypatch.setattr(
-        "server.services.research_datasets.verified_dataset_dates",
+        "server.services.research.datasets.verified_dataset_dates",
         lambda *_args: (date(2026, 9, 1),),
     )
     monkeypatch.setattr(

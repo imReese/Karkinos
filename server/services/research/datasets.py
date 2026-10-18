@@ -97,38 +97,6 @@ _POLICY = DailyBarDatasetResolverPolicy(
 )
 
 
-def _active_reader() -> Any:
-    legacy = sys.modules.get("server.services.research_datasets")
-    return (
-        getattr(legacy, "read_daily_bar_dataset", read_daily_bar_dataset)
-        if legacy
-        else read_daily_bar_dataset
-    )
-
-
-def _active_verified_dataset_dates() -> Any:
-    legacy = sys.modules.get("server.services.research_datasets")
-    return (
-        getattr(legacy, "verified_dataset_dates", verified_dataset_dates)
-        if legacy
-        else verified_dataset_dates
-    )
-
-
-def _active_prepare_tdx_runtime() -> Any:
-    legacy = sys.modules.get("server.services.research_datasets")
-    return (
-        getattr(legacy, "prepare_tdx_runtime", prepare_tdx_runtime)
-        if legacy
-        else prepare_tdx_runtime
-    )
-
-
-def _active_subprocess() -> Any:
-    legacy = sys.modules.get("server.services.research_datasets")
-    return getattr(legacy, "subprocess", subprocess) if legacy else subprocess
-
-
 class ResearchDatasetError(RuntimeError):
     """只包含可公开的错误码，不携带 SDK 自由文本或凭据。"""
 
@@ -346,7 +314,7 @@ class ResearchDatasetService:
             store = ContentAddressedObjectStore(self.root / "objects")
             try:
                 original_ref = DatasetRef(store.resolve_ref(dataset_id))
-                original = _active_reader()(store, original_ref).snapshot
+                original = read_daily_bar_dataset(store, original_ref).snapshot
                 require_supported_snapshot(original)
             except Exception:
                 raise ResearchDatasetError(
@@ -433,7 +401,7 @@ class ResearchDatasetService:
                     try:
                         snapshot = read_daily_bar_dataset_manifest(store, entry.ref)
                         if snapshot.instruments == request.instruments:
-                            _active_reader()(store, entry.ref)
+                            read_daily_bar_dataset(store, entry.ref)
                             return {
                                 **dataset_summary(self.root, entry.ref),
                                 "reused": True,
@@ -445,7 +413,7 @@ class ResearchDatasetService:
                             type(exc).__name__,
                         )
             self._settings.require_credentials()
-            dates = _active_verified_dataset_dates()(
+            dates = verified_dataset_dates(
                 db, request.start_date, request.end_date, config
             )
             return self._prepare_in_child(request, dates, refresh)
@@ -458,7 +426,7 @@ class ResearchDatasetService:
         dates: tuple[date, ...],
         refresh: bool,
     ) -> dict[str, Any]:
-        with _active_prepare_tdx_runtime()(self._settings) as library:
+        with prepare_tdx_runtime(self._settings) as library:
             environment = {
                 key: value
                 for key, value in os.environ.items()
@@ -477,7 +445,7 @@ class ResearchDatasetService:
                     "refresh": refresh,
                 }
                 try:
-                    completed = _active_subprocess().run(
+                    completed = subprocess.run(
                         [sys.executable, "-m", "server.workers.dataset_ingestion"],
                         input=json.dumps(message),
                         text=True,
@@ -507,7 +475,7 @@ class ResearchDatasetService:
                     raise ResearchDatasetError(code)
                 store = ContentAddressedObjectStore(self.root / "objects")
                 ref = DatasetRef(store.resolve_ref(payload["dataset_id"]))
-                _active_reader()(
+                read_daily_bar_dataset(
                     ContentAddressedObjectStore(self.root / "objects"), ref
                 )
                 return {**dataset_summary(self.root, ref), "reused": False}
@@ -545,9 +513,7 @@ def publish_verified_interval_dataset(
     if close > datetime.now(timezone.utc):
         raise ResearchDatasetError("verified_interval_session_not_closed")
 
-    expected_dates = _active_verified_dataset_dates()(
-        db, request.start_date, request.end_date
-    )
+    expected_dates = verified_dataset_dates(db, request.start_date, request.end_date)
     if dated_scope and len(expected_dates) > 2000:
         raise ResearchDatasetError("verified_interval_session_budget_exceeded")
     root = root.resolve()
@@ -555,7 +521,7 @@ def publish_verified_interval_dataset(
     prefix = None
     if prefix_dataset_id is not None:
         try:
-            prefix = _active_reader()(
+            prefix = read_daily_bar_dataset(
                 store, DatasetRef(store.resolve_ref(prefix_dataset_id))
             ).snapshot
         except (
@@ -649,12 +615,8 @@ def publish_verified_interval_dataset(
             planned = VerifiedDailyMarketJobRequest.from_payload(job.payload)
         except (TypeError, ValueError, VerifiedDailyMarketDataRequestError) as exc:
             raise ResearchDatasetError("verified_interval_job_payload_invalid") from exc
-        if (
-            planned.is_range
-            and planned.expected_sessions()
-            != _active_verified_dataset_dates()(
-                db, planned.range_start_date, planned.range_end_date
-            )
+        if planned.is_range and planned.expected_sessions() != verified_dataset_dates(
+            db, planned.range_start_date, planned.range_end_date
         ):
             raise ResearchDatasetError("verified_interval_job_calendar_mismatch")
         for planned_day in planned.expected_sessions():
@@ -798,7 +760,7 @@ def publish_verified_interval_dataset(
     )
     ref = publish_daily_bar_dataset_manifest(store, snapshot)
     try:
-        replayed = _active_reader()(store, ref)
+        replayed = read_daily_bar_dataset(store, ref)
     except Exception:
         raise ResearchDatasetError("verified_interval_replay_failed") from None
     if replayed.snapshot != snapshot:

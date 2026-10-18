@@ -171,15 +171,32 @@ def create_router(dependencies: ExecutionEndpointDependencies) -> APIRouter:
             parameter_payloads = [item.params for item in chronology["requests"]]
 
         sweep_results: list[BacktestSweepResult] = []
+        dataset_inputs = None
         for index, params in enumerate(parameter_payloads):
             bt_request = candidate_request(params)
 
             try:
+                if chronology is None and request.dataset_id and dataset_inputs is None:
+                    from server.services.research.dataset_inputs import (
+                        prepare_dataset_backtest_inputs,
+                    )
+
+                    dataset_inputs = await asyncio.to_thread(
+                        prepare_dataset_backtest_inputs, bt_request, state.db
+                    )
                 bt_result = (
                     chronology["training"][index]
                     if chronology is not None
                     else await asyncio.to_thread(
-                        _run_backtest, bt_request, config, state.db
+                        _run_backtest,
+                        bt_request,
+                        config,
+                        state.db,
+                        **(
+                            {"preloaded_dataset_inputs": dataset_inputs}
+                            if dataset_inputs is not None
+                            else {}
+                        ),
                     )
                 )
             except ResearchDatasetError as exc:

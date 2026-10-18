@@ -108,7 +108,6 @@ def paper_book_code_binding():
         "risk/manager.py",
         "risk/rules.py",
         "server/services/research_observation_inputs.py",
-        "server/services/research_datasets.py",
         "server/services/research/datasets.py",
         "server/services/research_corporate_action_jobs.py",
         "server/services/research_observation_data_preparation.py",

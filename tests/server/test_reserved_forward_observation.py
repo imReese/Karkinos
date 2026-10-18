@@ -387,7 +387,7 @@ def exercise_and_compare_forward(
         NORMALIZED_RESEARCH_NOTIONAL,
     )
     from server.contracts.strategy_research import StrategyResearchSelection
-    from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
+    from server.services.research.dataset_inputs import load_dataset_backtest_inputs
     from server.services.research_paper_books import verify_reserved_forward_book
     from tests.server.test_research_observation_inputs import calendar
     from tests.server.test_verified_interval_dataset import _verified_day

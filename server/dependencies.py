@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from server.services.execution_gateway_verification import (
         ExecutionGatewayRuntimeProtocol,
     )
-    from server.services.research_datasets import ResearchDatasetService
+    from server.services.research.datasets import ResearchDatasetService
     from server.services.trading_controls import TradingControlState
     from server.ws.hub import ConnectionHub
 

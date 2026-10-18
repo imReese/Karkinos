@@ -1,4 +1,4 @@
-"""把固定 Dataset 转成现有回测引擎的输入，不接触远程数据源或 Serving。"""
+"""Admit immutable research Datasets and prepare their engine inputs offline."""
 
 from __future__ import annotations
 
@@ -14,7 +14,8 @@ from data.handler import DataHandler
 from data.market.verification_evidence import read_market_verification_evidence
 from data.storage.objects import ContentAddressedObjectStore
 from domain.instrument import make_etf, make_stock
-from server.services.research_datasets import (
+from server.contracts.http.strategy_models import BacktestRequest
+from server.services.research.datasets import (
     ResearchDatasetError,
     require_supported_snapshot,
 )
@@ -192,3 +193,31 @@ def _decision_availability_summary(store, restored) -> dict:
         "first_late_bar": first_late_bar,
         "first_late_verification": first_late_verification,
     }
+
+
+def prepare_dataset_backtest_inputs(
+    request: BacktestRequest, db=None
+) -> tuple[dict, dict, dict, dict]:
+    """Read and bind one full immutable source for repeated sequential runs."""
+    from analytics.dataset_snapshot import build_backtest_dataset_snapshot
+    from server.runtime_paths import resolve_data_dir
+
+    if not request.dataset_id:
+        raise ResearchDatasetError("backtest_execution_window_dataset_required")
+    root = (
+        db.path.resolve().parent
+        if db is not None
+        else Path(resolve_data_dir()).resolve()
+    ) / "research"
+    instruments, handlers, binding = load_dataset_backtest_inputs(root, request)
+    sources = binding["source_names"]
+    snapshot = build_backtest_dataset_snapshot(
+        start_date=request.start_date,
+        end_date=request.end_date,
+        configured_source=sources[0] if len(sources) == 1 else None,
+        data_handlers=handlers,
+        store=None,
+        source_names=sources,
+        research_dataset_binding=binding,
+    )
+    return instruments, handlers, binding, snapshot

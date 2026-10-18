@@ -37,8 +37,8 @@ from server.config import ServerConfig
 from server.db import AppDatabase
 from server.dependencies import AppState, AppStateContextMiddleware
 from server.routes.backtest import create_router
-from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
-from server.services.research_datasets import (
+from server.services.research.dataset_inputs import load_dataset_backtest_inputs
+from server.services.research.datasets import (
     ResearchDatasetError,
     ResearchDatasetService,
     prepare_daily_dataset,

@@ -153,6 +153,7 @@ def create_router(dependencies: ResultEndpointDependencies) -> APIRouter:
         prepared_runs: list[tuple[dict[str, Any], BacktestRequest, dict[str, Any]]] = []
         snapshots: list[dict[str, Any]] = []
         snapshot_ids: list[str | None] = []
+        dataset_inputs = None
         for run_spec in run_specs:
             strat_name = str(run_spec["strategy"])
             strat_info = strategy_by_name.get(strat_name) or strategy_by_id.get(
@@ -194,8 +195,24 @@ def create_router(dependencies: ResultEndpointDependencies) -> APIRouter:
             )
 
             try:
+                if request.dataset_id and dataset_inputs is None:
+                    from server.services.research.dataset_inputs import (
+                        prepare_dataset_backtest_inputs,
+                    )
+
+                    dataset_inputs = await asyncio.to_thread(
+                        prepare_dataset_backtest_inputs, bt_request, state.db
+                    )
                 bt_result = await asyncio.to_thread(
-                    _run_single_backtest, bt_request, config, state.db
+                    _run_single_backtest,
+                    bt_request,
+                    config,
+                    state.db,
+                    **(
+                        {"preloaded_dataset_inputs": dataset_inputs}
+                        if dataset_inputs is not None
+                        else {}
+                    ),
                 )
             except ResearchDatasetError as exc:
                 raise HTTPException(409, str(exc)) from None

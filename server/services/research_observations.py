@@ -71,7 +71,6 @@ def observation_code_binding() -> dict[str, Any]:
         "server/ai_runtime/formula_portfolio.py",
         "server/services/research_observation_inputs.py",
         "server/services/market_calendar_evidence.py",
-        "server/services/research_datasets.py",
         "server/services/research/datasets.py",
         "server/services/research_corporate_action_jobs.py",
         "server/services/research_observation_data_preparation.py",

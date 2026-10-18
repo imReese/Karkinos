@@ -15,7 +15,7 @@ from core.types import InstrumentKey, InstrumentType
 from data.market.contracts import DailyBarRequest
 from data.market.ingestion import DailyBarIngestionNoData
 from data.providers.tdx import TdxDailyBarProvider
-from server.services.research_datasets import (
+from server.services.research.datasets import (
     ResearchDatasetError,
     prepare_daily_dataset,
 )

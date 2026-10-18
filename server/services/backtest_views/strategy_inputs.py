@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException
@@ -284,9 +283,7 @@ def _load_bound_dataset_preview_bars(
     request: StrategySignalPreviewRequest,
     db: Any | None,
 ) -> tuple[tuple[MarketEvent, ...], dict[str, Any], dict[str, Any]]:
-    from analytics.dataset_snapshot import build_backtest_dataset_snapshot
-    from server.runtime_paths import resolve_data_dir
-    from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
+    from server.services.research.dataset_inputs import prepare_dataset_backtest_inputs
 
     if not request.start_date or not request.end_date:
         raise HTTPException(422, "dataset_preview_dates_required")
@@ -305,21 +302,8 @@ def _load_bound_dataset_preview_bars(
             }
         ],
     )
-    root = (
-        db.path.resolve().parent
-        if db is not None
-        else Path(resolve_data_dir()).resolve()
-    ) / "research"
-    _, handlers, binding = load_dataset_backtest_inputs(root, dataset_request)
-    source_names = binding["source_names"]
-    snapshot = build_backtest_dataset_snapshot(
-        start_date=request.start_date,
-        end_date=request.end_date,
-        configured_source=source_names[0] if len(source_names) == 1 else None,
-        data_handlers=handlers,
-        store=None,
-        source_names=source_names,
-        research_dataset_binding=binding,
+    _, handlers, binding, snapshot = prepare_dataset_backtest_inputs(
+        dataset_request, db
     )
     return tuple(handlers[symbol]), snapshot, binding["decision_availability"]
 

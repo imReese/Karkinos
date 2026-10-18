@@ -26,6 +26,11 @@ def test_cold_dataset_import_isolates_ai_and_preserves_strategy_bootstrap() -> N
             """
 import sys
 import server.services.research.datasets
+import server.services.research.dataset_inputs
+from importlib.util import find_spec
+
+assert find_spec("server.services.research_datasets") is None
+assert find_spec("server.services.backtest_dataset_inputs") is None
 
 unexpected = {
     "server.services.research.factory",

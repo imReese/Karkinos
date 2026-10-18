@@ -72,7 +72,7 @@ def _small_verified_snapshots(h):
     )
     from data.storage.objects import ContentAddressedObjectStore
     from server.contracts.http.strategy_models import BacktestRequest
-    from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
+    from server.services.research.dataset_inputs import load_dataset_backtest_inputs
     from tests.server.test_verified_interval_dataset import _verified_day
 
     root = h.db.path.parent / "research"

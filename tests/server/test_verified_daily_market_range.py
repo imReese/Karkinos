@@ -21,7 +21,7 @@ from data.providers.baostock import BAOSTOCK_DAILY_BAR_DESCRIPTOR
 from data.providers.tencent import AKSHARE_TENCENT_DAILY_BAR_DESCRIPTOR
 from data.storage.objects import ContentAddressedObjectStore
 from server.persistence.jobs import SQLiteJobStore, job_id_for
-from server.services.research_datasets import (
+from server.services.research.datasets import (
     ResearchDatasetError,
     publish_verified_interval_dataset,
 )

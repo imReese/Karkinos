@@ -12,11 +12,11 @@ from zoneinfo import ZoneInfo
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.http.strategy_models import BacktestRequest, BacktestSweepRequest
 from server.services.backtest_views.execution import (
-    prepare_dataset_backtest_inputs,
     run_single_backtest,
 )
 from server.services.backtest_views.strategy_inputs import backtest_metrics_from_payload
-from server.services.research_datasets import ResearchDatasetError
+from server.services.research.dataset_inputs import prepare_dataset_backtest_inputs
+from server.services.research.datasets import ResearchDatasetError
 
 
 def run_chronological_sweep(

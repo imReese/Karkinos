@@ -19,8 +19,8 @@ from core.types import (
 from data.dataset.manifest import publish_daily_bar_dataset_manifest
 from data.dataset.reader import read_daily_bar_dataset
 from data.storage.objects import ContentAddressedObjectStore
-from server.services import backtest_dataset_inputs as inputs
-from server.services.research_datasets import ResearchDatasetError
+from server.services.research import dataset_inputs as inputs
+from server.services.research.datasets import ResearchDatasetError
 from tests.server.test_dataset_corporate_actions import CAPTURED, _observe
 from tests.server.test_deployment_scope_datasets import _composed
 from tests.server.test_verified_interval_dataset import DAYS, _verified_day

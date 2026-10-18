@@ -46,13 +46,13 @@ from server.dependencies import AppState, AppStateContextMiddleware
 from server.http.backtest_endpoints.datasets import create_router
 from server.persistence.jobs import SQLiteJobStore
 from server.routes.backtest import create_router as create_backtest_router
-from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
 from server.services.backtest_views.strategy_inputs import (
     load_signal_preview_bars,
     run_strategy_signal_preview,
 )
 from server.services.market_calendar_evidence import validate_verified_market_calendar
-from server.services.research_datasets import (
+from server.services.research.dataset_inputs import load_dataset_backtest_inputs
+from server.services.research.datasets import (
     ResearchDatasetError,
     publish_verified_interval_dataset,
 )
@@ -543,7 +543,7 @@ def test_verified_interval_limits_explicit_range_to_366_natural_days(
 ) -> None:
     db = _db(tmp_path)
     monkeypatch.setattr(
-        "server.services.research_datasets.verified_dataset_dates",
+        "server.services.research.datasets.verified_dataset_dates",
         lambda *_args: (DAYS[-1],),
     )
     start = DAYS[-1] - timedelta(days=365)

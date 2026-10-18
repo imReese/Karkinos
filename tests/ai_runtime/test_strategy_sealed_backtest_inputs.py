@@ -309,7 +309,7 @@ def test_sealed_replay_cannot_replace_immutable_dataset_with_current_store_rows(
 ):
     # Reuse the deterministic published-Dataset fixture: its provider is local,
     # while capture, revisions, manifests and DatasetReader are real.
-    from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
+    from server.services.research.dataset_inputs import load_dataset_backtest_inputs
     from tests.server.test_research_datasets import _backtest_request, _publish
 
     store = DataStore(tmp_path / "market")
@@ -361,7 +361,7 @@ def test_formula_adapter_consumes_immutable_dataset_regardless_of_mutated_cache_
     tmp_path,
 ):
     from server.ai_runtime.strategy_research_backtest import _load_bound_inputs
-    from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
+    from server.services.research.dataset_inputs import load_dataset_backtest_inputs
     from tests.server.test_research_datasets import _backtest_request, _publish
 
     store = DataStore(tmp_path / "market")
@@ -427,7 +427,7 @@ def test_formula_adapter_consumes_immutable_dataset_regardless_of_mutated_cache_
 def test_explicit_application_research_root_is_independent_of_market_cache(tmp_path):
     import shutil
 
-    from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
+    from server.services.research.dataset_inputs import load_dataset_backtest_inputs
     from tests.server.test_research_datasets import _backtest_request, _publish
 
     market = DataStore(tmp_path / "external-market-data")
@@ -468,7 +468,7 @@ def test_explicit_application_research_root_is_independent_of_market_cache(tmp_p
 
 def test_formula_adapter_rejects_missing_or_corrupted_immutable_dataset(tmp_path):
     from server.ai_runtime.strategy_research_backtest import _load_bound_inputs
-    from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
+    from server.services.research.dataset_inputs import load_dataset_backtest_inputs
     from tests.server.test_research_datasets import _backtest_request, _publish
 
     store = DataStore(tmp_path / "market")

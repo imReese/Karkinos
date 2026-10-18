@@ -38,12 +38,12 @@ from server.services.ai_shadow_research_commands import simulation_validation_de
 from server.services.ai_shadow_research_support import (
     shadow_research_backtest_source_fingerprint,
 )
-from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
 from server.services.market_universe_truth import (
     MarketUniversePolicy,
     market_deployment_scope,
     normalize_a_share_members,
 )
+from server.services.research.dataset_inputs import load_dataset_backtest_inputs
 from server.services.research_final_evaluation import (
     _simulation_reviewed_assessment,
     _verify_simulation_account_applicability,

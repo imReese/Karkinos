@@ -31,7 +31,7 @@ from server.services import research_observation_data_preparation as preparation
 from server.services.market_calendar_dates import (
     resolve_verified_closed_trading_dates_in_range,
 )
-from server.services.research_datasets import (
+from server.services.research.datasets import (
     ResearchDatasetService,
     publish_verified_interval_dataset,
 )

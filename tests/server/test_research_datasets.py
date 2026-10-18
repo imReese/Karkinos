@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import subprocess
+import sys
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -30,8 +32,8 @@ from server.contracts.http.strategy_models import BacktestRequest
 from server.db import AppDatabase
 from server.dependencies import AppState, AppStateContextMiddleware
 from server.routes.backtest import create_router
-from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
-from server.services.research_datasets import (
+from server.services.research.dataset_inputs import load_dataset_backtest_inputs
+from server.services.research.datasets import (
     ResearchDatasetError,
     ResearchDatasetService,
     dataset_summary,
@@ -113,6 +115,7 @@ def _backtest_request(ref, **changes):
 
 def test_persistent_publication_survives_restart_and_reuses_without_credentials(
     tmp_path,
+    monkeypatch,
 ):
     provider = _Provider()
     ref = _publish(tmp_path, provider)
@@ -120,6 +123,19 @@ def test_persistent_publication_survives_restart_and_reuses_without_credentials(
     catalog = DatasetCatalog(tmp_path)
     assert catalog.path.is_file()
     assert MarketServingStore(tmp_path).path.is_file()
+    legacy = ModuleType("server.services.research_datasets")
+
+    def reject_legacy(*_args, **_kwargs):
+        pytest.fail("Canonical Dataset preparation must not consult a legacy module")
+
+    for name in (
+        "read_daily_bar_dataset",
+        "verified_dataset_dates",
+        "prepare_tdx_runtime",
+        "subprocess",
+    ):
+        setattr(legacy, name, reject_legacy)
+    monkeypatch.setitem(sys.modules, legacy.__name__, legacy)
     restarted = ResearchDatasetService(tmp_path, TdxRuntimeSettings())
     assert restarted.status()["datasets"][0]["dataset_id"] == ref.dataset_id
     assert restarted.prepare(_REQUEST, db=None)["reused"] is True
@@ -129,6 +145,48 @@ def test_persistent_publication_survives_restart_and_reuses_without_credentials(
     )
     assert replay.row_count == len(_DAYS)
     assert _publish(tmp_path, _Provider(fail_day=_DAYS[0])) == ref
+
+
+def test_dataset_worker_publishes_replayable_inputs_and_preserves_them_after_failure(
+    tmp_path, monkeypatch
+):
+    from server.workers import dataset_ingestion
+
+    root, report = tmp_path / "research", tmp_path / "worker-result.json"
+    payload = {
+        "root": str(root),
+        "report": str(report),
+        "request": _REQUEST.to_capture_request(),
+        "dates": [day.isoformat() for day in _DAYS],
+        "refresh": False,
+    }
+    provider = _Provider()
+    monkeypatch.setattr(dataset_ingestion, "TdxDailyBarProvider", lambda: provider)
+
+    def invoke():
+        monkeypatch.setattr(
+            dataset_ingestion.sys, "stdin", io.StringIO(json.dumps(payload))
+        )
+        return dataset_ingestion.main(), json.loads(report.read_text())
+
+    status, published = invoke()
+    assert status == 0 and published["status"] == "ok"
+    assert provider.calls == list(_DAYS)
+    service = ResearchDatasetService(root, TdxRuntimeSettings())
+    reused = service.prepare(_REQUEST, db=None)
+    assert reused["reused"] is True
+    assert reused["dataset_id"] == published["dataset_id"]
+    provider.calls.clear()
+    assert invoke() == (status, published)
+    assert provider.calls == []
+
+    payload["refresh"] = True
+    provider.fail_day = _DAYS[0]
+    status, failure = invoke()
+    assert status == 1
+    assert failure == {"status": "error", "error_code": "dataset_preparation_failed"}
+    assert service.prepare(_REQUEST, db=None) == reused
+    assert service.status()["datasets"][0]["dataset_id"] == published["dataset_id"]
 
 
 def test_catalog_status_isolates_one_corrupt_dataset_manifest(tmp_path):
@@ -216,7 +274,7 @@ def test_prepare_without_healthy_cache_enters_explicit_preparation(
     path.write_bytes(b"broken")
     service = ResearchDatasetService(tmp_path, TdxRuntimeSettings("test-key"))
     monkeypatch.setattr(
-        "server.services.research_datasets.verified_dataset_dates", lambda *_: _DAYS
+        "server.services.research.datasets.verified_dataset_dates", lambda *_: _DAYS
     )
     calls = []
 
@@ -237,7 +295,7 @@ def test_prepare_does_not_swallow_unexpected_reader_failure(tmp_path, monkeypatc
         raise TypeError("unexpected reader defect")
 
     monkeypatch.setattr(
-        "server.services.research_datasets.read_daily_bar_dataset", broken_reader
+        "server.services.research.datasets.read_daily_bar_dataset", broken_reader
     )
     with pytest.raises(TypeError, match="unexpected reader defect"):
         service.prepare(_REQUEST, db=None)
@@ -690,6 +748,16 @@ def test_compare_and_sweep_replay_one_dataset_without_remote_fallback(
     db.init_sync()
     provider = _Provider()
     ref = _publish(tmp_path / "research", provider)
+    from server.services.research import dataset_inputs
+
+    original_load = dataset_inputs.load_dataset_backtest_inputs
+    loads = []
+
+    def counted_load(root, request):
+        loads.append(request.dataset_id)
+        return original_load(root, request)
+
+    monkeypatch.setattr(dataset_inputs, "load_dataset_backtest_inputs", counted_load)
 
     def deny_remote(*args, **kwargs):
         raise AssertionError("A bound backtest must never fetch legacy data")
@@ -731,6 +799,7 @@ def test_compare_and_sweep_replay_one_dataset_without_remote_fallback(
     with TestClient(app) as client:
         compared = client.post("/api/backtest/compare", json=compare_request)
         assert compared.status_code == 200, compared.text
+        assert loads == [ref.dataset_id]
         comparison = compared.json()
         assert comparison["compared_count"] == 2
         assert comparison["dataset_snapshot"]["immutable_dataset_id"] == ref.dataset_id
@@ -743,6 +812,7 @@ def test_compare_and_sweep_replay_one_dataset_without_remote_fallback(
 
         swept = client.post("/api/backtest/sweep", json=sweep_request)
         assert swept.status_code == 200, swept.text
+        assert loads == [ref.dataset_id, ref.dataset_id]
         sweep = swept.json()
         assert sweep["tested_count"] == 2
         assert all(
@@ -810,7 +880,7 @@ def test_worker_delivery_is_private_and_cleanup_survives_failure(
             library.parent.rmdir()
 
     monkeypatch.setattr(
-        "server.services.research_datasets.prepare_tdx_runtime", prepare
+        "server.services.research.datasets.prepare_tdx_runtime", prepare
     )
     monkeypatch.setenv("KARKINOS_AI_API_KEY", "must-not-leak")
 
@@ -831,7 +901,7 @@ def test_worker_delivery_is_private_and_cleanup_survives_failure(
         )
         return SimpleNamespace(returncode=1)
 
-    monkeypatch.setattr("server.services.research_datasets.subprocess.run", run)
+    monkeypatch.setattr("server.services.research.datasets.subprocess.run", run)
     with pytest.raises(ResearchDatasetError, match=expected):
         service._prepare_in_child(_REQUEST, _DAYS, False)
     assert not library.parent.exists()

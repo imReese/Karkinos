@@ -22,7 +22,7 @@ from server.services.market_universe_truth import (
     build_market_universe_truth,
     normalize_a_share_members,
 )
-from server.services.research_datasets import (
+from server.services.research.datasets import (
     ResearchDatasetError,
     ensure_forward_seed_for_source,
     publish_verified_interval_dataset,
@@ -273,7 +273,7 @@ def test_final_resolver_waits_then_consumes_real_dated_scope_inputs(tmp_path):
     from server.persistence.automation_runs import AutomationRunRepository
     from server.persistence.research_observations import ResearchObservationsRepository
     from server.services.market_universe_truth import market_deployment_scope
-    from server.services.research_datasets import resolve_deployment_evaluation_dataset
+    from server.services.research.datasets import resolve_deployment_evaluation_dataset
 
     objects, original = _composed(tmp_path)
     db = _db(tmp_path, trading_days=(*DAYS, date(2026, 9, 21)))
@@ -377,7 +377,7 @@ def test_final_dataset_manifest_is_only_a_rejection_prefilter(
     from server.persistence.automation_runs import AutomationRunRepository
     from server.persistence.research_observations import ResearchObservationsRepository
     from server.services.market_universe_truth import market_deployment_scope
-    from server.services.research_datasets import resolve_deployment_evaluation_dataset
+    from server.services.research.datasets import resolve_deployment_evaluation_dataset
 
     objects, original = _composed(tmp_path)
     db = _db(tmp_path, trading_days=(*DAYS, date(2026, 9, 21)))
@@ -466,7 +466,7 @@ def test_dated_scope_has_a_bounded_longer_range_without_changing_legacy(
     membership = DailyBarDatasetMembership(DAYS[-1], (STOCK,), NOW)
     request = DailyBarRequest((STOCK,), DAYS[-1] - timedelta(days=700), DAYS[-1])
     monkeypatch.setattr(
-        "server.services.research_datasets.verified_dataset_dates",
+        "server.services.research.datasets.verified_dataset_dates",
         lambda *_args: (DAYS[-1],),
     )
     with pytest.raises(ResearchDatasetError, match="range_exceeds_366_days"):
@@ -493,7 +493,7 @@ def test_dated_scope_has_a_bounded_longer_range_without_changing_legacy(
             universe_policy_id="fixture.scope",
         )
     monkeypatch.setattr(
-        "server.services.research_datasets.verified_dataset_dates",
+        "server.services.research.datasets.verified_dataset_dates",
         lambda *_args: tuple(DAYS[-1] - timedelta(days=index) for index in range(2001)),
     )
     with pytest.raises(ResearchDatasetError, match="session_budget_exceeded"):

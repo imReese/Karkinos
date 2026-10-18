@@ -214,7 +214,7 @@ async def lifespan(app: FastAPI):
         TdxRuntimeConfigurationError,
         TdxRuntimeSettings,
     )
-    from server.services.research_datasets import ResearchDatasetService
+    from server.services.research.datasets import ResearchDatasetService
 
     # 数据与当前应用的数据库共用 workspace，但不进入账户数据库。
     # 一个可选数据源配置错误不能阻断其他页面或已发布数据集的离线读取。

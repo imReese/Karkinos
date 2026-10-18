@@ -11,7 +11,7 @@ from core.types import InstrumentKey, InstrumentType
 from data.handler import DataHandler
 from data.market.contracts import DailyBarRequest
 from data.providers.tdx import TdxDailyBarProvider
-from server.services.research_datasets import prepare_daily_dataset
+from server.services.research.datasets import prepare_daily_dataset
 from strategy.risk_budget import risk_budget_weights
 from tests.server.test_dataset_corporate_actions import client_context as client_context
 

@@ -26,7 +26,7 @@ from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
 from server.ai_runtime.contracts import content_fingerprint
 from server.ai_runtime.formula_dsl import FORMULA_BINDING_CONTRACT, FormulaBinding
 from server.services.market_calendar_evidence import validate_verified_market_calendar
-from server.services.research_datasets import require_supported_snapshot
+from server.services.research.datasets import require_supported_snapshot
 from strategy.schema import STRATEGY_PARAMETER_SCHEMAS, validate_strategy_params
 
 _SHANGHAI = ZoneInfo("Asia/Shanghai")

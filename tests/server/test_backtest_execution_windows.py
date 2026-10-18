@@ -17,11 +17,11 @@ from server.contracts.content_identity import content_fingerprint
 from server.contracts.http import strategy_models
 from server.services.backtest_views.execution import (
     _windowed_data_handlers,
-    prepare_dataset_backtest_inputs,
     run_single_backtest,
     write_backtest_report_file,
 )
-from server.services.research_datasets import ResearchDatasetError
+from server.services.research.dataset_inputs import prepare_dataset_backtest_inputs
+from server.services.research.datasets import ResearchDatasetError
 from tests.server.test_backtest_cash_dividends import _capture, _cash_response
 from tests.server.test_backtest_dataset_inputs import _mixed
 from tests.server.test_backtest_share_distributions import _share_response
@@ -56,7 +56,7 @@ def test_prepared_source_is_read_once_but_each_window_has_its_own_metrics(
         pytest.fail("A prepared immutable source must not be reloaded or replaced")
 
     monkeypatch.setattr(
-        "server.services.backtest_dataset_inputs.load_dataset_backtest_inputs", no_read
+        "server.services.research.dataset_inputs.load_dataset_backtest_inputs", no_read
     )
     monkeypatch.setattr("data.manager.DataManager.get_bars", no_read)
     train = run_single_backtest(

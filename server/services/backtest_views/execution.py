@@ -179,7 +179,8 @@ def run_single_backtest(
     from data.store import DataStore
     from server.contracts.http.strategy_models import BacktestCostAssumptions
     from server.services.backtest_costs import resolve_backtest_costs
-    from server.services.research_datasets import ResearchDatasetError
+    from server.services.research.dataset_inputs import prepare_dataset_backtest_inputs
+    from server.services.research.datasets import ResearchDatasetError
 
     dataset_binding = None
     cash_dividend_mode = getattr(request, "corporate_action_mode", "price_only")
@@ -441,38 +442,8 @@ def prepare_retrieved_dataset_backtest_inputs(
     return instruments, data_handlers, dataset_binding, dataset_snapshot_json
 
 
-def prepare_dataset_backtest_inputs(
-    request: BacktestRequest, db=None
-) -> tuple[dict, dict, dict, dict]:
-    """Read and bind one full immutable source for repeated sequential runs."""
-    from analytics.dataset_snapshot import build_backtest_dataset_snapshot
-    from server.runtime_paths import resolve_data_dir
-    from server.services.backtest_dataset_inputs import load_dataset_backtest_inputs
-    from server.services.research_datasets import ResearchDatasetError
-
-    if not request.dataset_id:
-        raise ResearchDatasetError("backtest_execution_window_dataset_required")
-    root = (
-        db.path.resolve().parent
-        if db is not None
-        else Path(resolve_data_dir()).resolve()
-    ) / "research"
-    instruments, handlers, binding = load_dataset_backtest_inputs(root, request)
-    sources = binding["source_names"]
-    snapshot = build_backtest_dataset_snapshot(
-        start_date=request.start_date,
-        end_date=request.end_date,
-        configured_source=sources[0] if len(sources) == 1 else None,
-        data_handlers=handlers,
-        store=None,
-        source_names=sources,
-        research_dataset_binding=binding,
-    )
-    return instruments, handlers, binding, snapshot
-
-
 def _require_preloaded_dataset_request(request, inputs):
-    from server.services.research_datasets import ResearchDatasetError
+    from server.services.research.datasets import ResearchDatasetError
 
     instruments, _, binding, snapshot = inputs
     matches = (
@@ -501,7 +472,7 @@ def _windowed_data_handlers(
 ):
     from data.handler import DataHandler
     from server.contracts.content_identity import content_fingerprint
-    from server.services.research_datasets import ResearchDatasetError
+    from server.services.research.datasets import ResearchDatasetError
 
     if history_end is None and evaluation_start is None:
         return handlers, None
@@ -558,7 +529,6 @@ def _windowed_data_handlers(
 __all__ = (
     "backtest_report_dir",
     "normalize_backtest_payload_from_equity_curve",
-    "prepare_dataset_backtest_inputs",
     "prepare_retrieved_dataset_backtest_inputs",
     "run_single_backtest",
     "write_backtest_report_file",

@@ -50,7 +50,7 @@ from server.services.market_universe_truth import (
     market_master_buy_instruments,
     require_complete_market_universe_snapshot,
 )
-from server.services.research_datasets import (
+from server.services.research.datasets import (
     dataset_summary,
     publish_verified_interval_dataset,
     verified_dataset_dates,
