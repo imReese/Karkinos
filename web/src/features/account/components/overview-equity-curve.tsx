@@ -139,9 +139,9 @@ export function OverviewEquityCurve({
           onClick={() => onRangeChange(value)}
           className={
             compact
-              ? 'min-h-11 rounded px-2.5 text-xs font-semibold transition-colors sm:min-h-8 ' +
+              ? 'app-type-micro min-h-9 rounded px-2 font-medium transition-colors sm:min-h-7 sm:h-7 ' +
                 (range === value
-                  ? 'bg-[var(--app-accent-bg)] text-[var(--app-accent)]'
+                  ? 'bg-[var(--app-accent-bg)] text-[var(--app-accent)] font-semibold'
                   : 'text-[var(--app-text-secondary)] hover:bg-[var(--app-surface-overlay)] hover:text-[var(--app-text)]')
               : 'app-inline-segmented-btn ' +
                 (range === value ? 'app-inline-segmented-btn-active' : '')
@@ -174,7 +174,7 @@ export function OverviewEquityCurve({
             onClick={() => setSelectedSeries(seriesKey)}
             className={
               (compact
-                ? 'app-chart-control inline-flex min-h-11 items-center gap-1.5 rounded px-2.5 text-xs font-medium transition-colors sm:min-h-8 '
+                ? 'app-chart-control app-type-micro inline-flex min-h-9 items-center gap-1.5 rounded px-2 py-0.5 font-medium transition-colors sm:min-h-7 sm:h-7 '
                 : 'app-chart-control app-type-micro inline-flex min-h-7 items-center gap-1.5 rounded-full border px-3 py-0.5 font-medium transition-colors ') +
               (active
                 ? (compact

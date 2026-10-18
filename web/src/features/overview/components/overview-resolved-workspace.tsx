@@ -121,7 +121,7 @@ export function OverviewResolvedWorkspace({
                 aria-selected={analysisView === 'curve'}
                 aria-controls="overview-analysis-panel-curve"
                 onClick={() => setAnalysisView('curve')}
-                className={`flex h-9 shrink-0 items-center border-b-2 px-3 text-xs font-semibold transition-colors ${
+                className={`app-type-subsection-title flex h-9 shrink-0 items-center border-b-2 px-3 transition-colors ${
                   analysisView === 'curve'
                     ? 'border-[var(--app-accent)] text-[var(--app-accent)]'
                     : 'border-transparent text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
@@ -136,7 +136,7 @@ export function OverviewResolvedWorkspace({
                 aria-selected={analysisView === 'calendar'}
                 aria-controls="overview-analysis-panel-calendar"
                 onClick={() => setAnalysisView('calendar')}
-                className={`flex h-9 shrink-0 items-center border-b-2 px-3 text-xs font-semibold transition-colors ${
+                className={`app-type-subsection-title flex h-9 shrink-0 items-center border-b-2 px-3 transition-colors ${
                   analysisView === 'calendar'
                     ? 'border-[var(--app-accent)] text-[var(--app-accent)]'
                     : 'border-transparent text-[var(--app-text-secondary)] hover:text-[var(--app-text)]'
@@ -148,7 +148,7 @@ export function OverviewResolvedWorkspace({
 
             {analysisView === 'curve' ? (
               <p
-                className="mb-2 text-xs leading-5 text-[var(--app-text-tertiary)]"
+                className="app-type-micro mb-2 text-[var(--app-text-tertiary)]"
                 data-testid="overview-value-curve-basis"
               >
                 {copy.overview.dashboard.valueCurveBasis}

@@ -594,7 +594,7 @@ export function OverviewStrategyRecommendation({
         >
           <p
             role="status"
-            className="app-type-body font-semibold text-[var(--app-text)]"
+            className="app-type-subsection-title text-[var(--app-text)]"
           >
             {dashboard.strategyRecommendationMarketClosed}
           </p>

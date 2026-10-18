@@ -90,13 +90,13 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
       <div className="flex flex-col gap-5 py-2">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-baseline sm:justify-between">
           <div className="space-y-1">
-            <div className="app-type-label font-semibold uppercase tracking-wider text-[var(--app-text-secondary)]">
+            <div className="app-type-compact font-medium text-[var(--app-text-secondary)]">
               {copy.overview.cards.totalAssets}
             </div>
             <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2">
               <span
                 data-testid="overview-total-value"
-                className="app-type-overview-hero whitespace-nowrap tabular-nums text-[var(--app-text)] font-extrabold tracking-tight"
+                className="app-type-overview-hero whitespace-nowrap tabular-nums text-[var(--app-text)] font-bold tracking-tight"
               >
                 {financialValue(
                   showIndicativeTotal
@@ -126,18 +126,24 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
                     }
                   >
                     {metric.isPending ? (
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--app-warning-text)]">
+                      <span className="app-type-compact inline-flex items-center gap-1.5 rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-2.5 py-1 font-semibold text-[var(--app-warning-text)]">
                         <span className="h-1.5 w-1.5 rounded-full bg-[var(--app-warning-indicator)]" />
                         {metric.value}
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/70 px-2.5 py-0.5 text-xs font-semibold text-[var(--app-text)]">
-                        <span className="text-[var(--app-text-secondary)]">
+                      <span className="app-type-compact inline-flex items-center gap-1.5 rounded-full border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/70 px-2.5 py-1 text-[var(--app-text)]">
+                        <span className="app-type-label font-normal text-[var(--app-text-secondary)]">
                           {metric.label}
                         </span>
-                        <span className={metric.tone}>{metric.value}</span>
+                        <span
+                          className={
+                            'app-type-compact font-semibold ' + metric.tone
+                          }
+                        >
+                          {metric.value}
+                        </span>
                         {metric.returnValue ? (
-                          <span className="text-[var(--app-text-tertiary)]">
+                          <span className="app-type-label font-normal text-[var(--app-text-tertiary)]">
                             {metric.returnValue}
                           </span>
                         ) : null}
@@ -148,7 +154,7 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
               </div>
             </div>
             {summary.latest_session_date ? (
-              <p className="text-xs tabular-nums text-[var(--app-text-tertiary)]">
+              <p className="text-xs tabular-nums text-[var(--app-text-tertiary)] pt-0.5">
                 {summary.latest_session_date}
               </p>
             ) : null}

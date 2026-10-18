@@ -68,7 +68,7 @@ export type ShadowResearchCandidate = {
       fee_cost_model_reference: string | null;
       blockers: string[];
     };
-    economic_hypothesis?: string;
+    economic_hypothesis?: string | null;
     risk_impact?: string;
     failure_conditions?: string[];
     limitations?: string[];
@@ -90,7 +90,7 @@ export type ShadowResearchCandidate = {
       parent_formula_fingerprint: string | null;
       iteration_context_fingerprint: string;
       sequential_feedback_bound: boolean;
-    };
+    } | null;
     recommendation?: string;
     research_capital_mode?: 'normalized_notional' | 'account_bound';
     account_qualification_status?: 'not_evaluated' | 'passed' | 'blocked';
