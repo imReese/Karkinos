@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 PORTFOLIO_ARCHITECTURE_MODULES = (
     "server/routes/portfolio.py",
@@ -109,7 +111,7 @@ def test_portfolio_http_dependencies_are_explicit_and_have_no_service_locator() 
 
 
 def test_runtime_portfolio_rebuild_uses_only_canonical_ledger_facts() -> None:
-    source = _source("server/services/portfolio_ledger.py")
+    source = _source("server/services/portfolio/ledger.py")
     source += _source("server/projections/portfolio_positions.py")
 
     assert "build_portfolio_projection" in source
@@ -122,7 +124,7 @@ def test_portfolio_and_account_truth_ledger_projections_never_seed_config_cash()
     None
 ):
     sources = [
-        _source("server/services/portfolio_ledger.py"),
+        _source("server/services/portfolio/ledger.py"),
         _source("server/http/portfolio_endpoints/performance.py"),
         _source("server/projections/portfolio_quotes.py"),
         _source("server/projections/portfolio_views/historical_series.py"),
@@ -161,7 +163,7 @@ def test_manual_and_pending_trade_uows_own_immediate_transactions() -> None:
 
 
 def test_pending_confirmation_requires_human_selected_persisted_nav_evidence() -> None:
-    application_source = _source("server/services/portfolio_trade_commands.py")
+    application_source = _source("server/services/portfolio/trades.py")
     pending_source = _source("server/persistence/pending_fund_confirmation_uow.py")
     app_source = _source("server/app.py")
 
@@ -209,9 +211,9 @@ def test_legacy_trade_projection_is_never_hard_deleted_in_production() -> None:
 def test_cash_flow_mutations_are_ledger_owned_append_only_units_of_work() -> None:
     route_source = _source("server/http/portfolio_endpoints/cash_flows.py")
     composition_source = _source("server/routes/portfolio.py")
-    service_source = _source("server/services/portfolio_cash_flow_commands.py")
+    service_source = _source("server/services/portfolio/cash_flows.py")
     uow_source = _source("server/persistence/portfolio_cash_flow_uow.py")
-    ledger_source = _source("server/services/portfolio_ledger.py")
+    ledger_source = _source("server/services/portfolio/ledger.py")
 
     assert "dependencies.command_service_factory" in route_source
     assert "PortfolioCashFlowCommandService" in composition_source
@@ -227,7 +229,7 @@ def test_cash_flow_mutations_are_ledger_owned_append_only_units_of_work() -> Non
     assert "portfolio_cash_flow_correction" in uow_source
     assert "valuation_transaction_writer" in uow_source
     assert "_valuation_publisher" not in uow_source
-    assert "install_runtime_portfolio" in service_source
+    assert "scheduler.install_runtime_portfolio(" in service_source
     assert "scheduler._" not in service_source
     assert "get_cash_flows" not in ledger_source
     assert "/cash-flow/{flow_id}/corrections" in route_source
@@ -263,3 +265,69 @@ def test_financial_facts_trade_surface_exposes_commands_not_split_writes() -> No
     assert "add_cash_flow" not in methods
     assert "delete_cash_flow" not in methods
     assert "mark_pending_fund_order_confirmed_sync" not in methods
+
+
+@pytest.mark.parametrize(
+    ("guard", "relative_path", "original", "replacement"),
+    [
+        pytest.param(
+            test_runtime_portfolio_rebuild_uses_only_canonical_ledger_facts,
+            "server/services/portfolio/ledger.py",
+            'reader = getattr(db, "get_ledger_entries_sync", None)',
+            'reader = getattr(db, "get_trades_sync", None)',
+            id="legacy-trade-reader",
+        ),
+        pytest.param(
+            test_portfolio_and_account_truth_ledger_projections_never_seed_config_cash,
+            "server/services/portfolio/ledger.py",
+            'initial_cash=Decimal("0")',
+            "initial_cash=config.initial_cash",
+            id="configuration-cash-seed",
+        ),
+        pytest.param(
+            test_pending_confirmation_requires_human_selected_persisted_nav_evidence,
+            "server/services/portfolio/trades.py",
+            "        result = self._db.confirm_pending_fund_order_sync(",
+            "        fetch_bars()\n"
+            "        result = self._db.confirm_pending_fund_order_sync(",
+            id="automatic-nav-fetch",
+        ),
+        pytest.param(
+            test_cash_flow_mutations_are_ledger_owned_append_only_units_of_work,
+            "server/services/portfolio/cash_flows.py",
+            "scheduler.install_runtime_portfolio(rebuilt.portfolio)",
+            "scheduler.portfolio = rebuilt.portfolio",
+            id="runtime-installer-bypassed",
+        ),
+        pytest.param(
+            test_cash_flow_mutations_are_ledger_owned_append_only_units_of_work,
+            "server/services/portfolio/cash_flows.py",
+            "scheduler.install_runtime_portfolio(rebuilt.portfolio)",
+            "scheduler._portfolio = rebuilt.portfolio",
+            id="private-runtime-write",
+        ),
+        pytest.param(
+            test_cash_flow_mutations_are_ledger_owned_append_only_units_of_work,
+            "server/services/portfolio/ledger.py",
+            'reader = getattr(db, "get_ledger_entries_sync", None)',
+            'reader = getattr(db, "get_cash_flows_sync", None)',
+            id="legacy-cash-flow-reader",
+        ),
+    ],
+)
+def test_portfolio_architecture_guards_reject_invalid_canonical_implementations(
+    monkeypatch, guard, relative_path, original, replacement
+) -> None:
+    read_source = _source
+    source = read_source(relative_path)
+    assert original in source
+    invalid_source = source.replace(original, replacement)
+    ast.parse(invalid_source, filename=relative_path)
+
+    def source_with_invalid_implementation(path: str) -> str:
+        return invalid_source if path == relative_path else read_source(path)
+
+    # Mutate only the guard's in-memory input; production files stay untouched.
+    monkeypatch.setitem(globals(), "_source", source_with_invalid_implementation)
+    with pytest.raises(AssertionError):
+        guard()
