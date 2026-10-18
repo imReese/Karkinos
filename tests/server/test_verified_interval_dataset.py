@@ -12,7 +12,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from core.types import InstrumentKey, InstrumentType
+from core.types import AssetClass, InstrumentKey, InstrumentType
 from data.dataset.catalog import DatasetCatalog
 from data.dataset.manifest import publish_daily_bar_dataset_manifest
 from data.dataset.model import (
@@ -432,6 +432,109 @@ def test_v2_decision_audit_fails_closed_on_unreadable_bound_verification(
                 assets=[{"symbol": STOCK.symbol, "asset_class": "stock"}],
             ),
         )
+
+
+@pytest.mark.parametrize(
+    "instrument_type,symbols",
+    [
+        (InstrumentType.STOCK, ("600000",)),
+        (InstrumentType.ETF, ("510300",)),
+        (InstrumentType.STOCK, ("600000", "600001")),
+    ],
+)
+def test_dataset_signal_preview_preserves_instrument_identity_and_exact_scope(
+    tmp_path: Path, instrument_type: InstrumentType, symbols: tuple[str, ...]
+) -> None:
+    day = DAYS[0]
+    instruments = tuple(InstrumentKey(symbol, instrument_type) for symbol in symbols)
+    root = tmp_path / "research"
+    ref = _verified_day(root, day, instruments=instruments, close="10.12345678")
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    state = AppState()
+    state.db, state.config = db, ServerConfig()
+    app = FastAPI()
+    app.add_middleware(AppStateContextMiddleware, app_state=state)
+    app.include_router(create_backtest_router())
+    payload = {
+        "strategy": "dual_ma",
+        "symbol": symbols[0],
+        "asset_class": instrument_type.value,
+        "dataset_id": ref.dataset_id,
+        "start_date": day.isoformat(),
+        "end_date": day.isoformat(),
+    }
+
+    with TestClient(app) as client:
+        response = client.post("/api/backtest/signal-preview", json=payload)
+        if len(instruments) > 1:
+            assert response.status_code == 409, response.text
+            assert response.json()["detail"] == "dataset_request_universe_mismatch"
+            return
+        assert response.status_code == 200, response.text
+        preview = response.json()
+        bars, snapshot = load_signal_preview_bars(
+            StrategySignalPreviewRequest(**payload), None, db
+        )
+        _, _, binding = load_dataset_backtest_inputs(
+            root,
+            BacktestRequest(
+                dataset_id=ref.dataset_id,
+                start_date=day.isoformat(),
+                end_date=day.isoformat(),
+                assets=[
+                    {"symbol": symbols[0], "instrument_type": instrument_type.value}
+                ],
+            ),
+        )
+        assert len(bars) == 1
+        assert bars[0].instrument_type is instrument_type
+        assert bars[0].asset_class is (
+            AssetClass.FUND
+            if instrument_type is InstrumentType.ETF
+            else AssetClass.STOCK
+        )
+        assert bars[0].close == Decimal("10.12345678")
+        assert bars[0].available_at.isoformat() == f"{day.isoformat()}T08:00:00+00:00"
+        assert snapshot["immutable_dataset_id"] == ref.dataset_id
+        assert (
+            snapshot["symbol_universe"][0]["instrument_type"] == instrument_type.value
+        )
+        assert snapshot["cross_source_verified"] is True
+        assert snapshot["point_in_time_verified"] is False
+        assert snapshot["price_basis"] == "unadjusted"
+        assert preview["dataset_snapshot_id"] == snapshot["snapshot_id"]
+        assert preview["decision_availability"] == binding["decision_availability"]
+        assert preview["outputs"][0]["evidence"]["bar_count"] == 1
+        assert preview["does_not_enable_execution"] is True
+        for changes, code in (
+            (
+                {
+                    "asset_class": "stock"
+                    if instrument_type is InstrumentType.ETF
+                    else "etf"
+                },
+                "dataset_request_universe_mismatch",
+            ),
+            ({"symbol": "600009"}, "dataset_request_universe_mismatch"),
+            (
+                {"end_date": DAYS[1].isoformat()},
+                "dataset_request_date_mismatch",
+            ),
+        ):
+            rejected = client.post(
+                "/api/backtest/signal-preview", json={**payload, **changes}
+            )
+            assert rejected.status_code == 409, rejected.text
+            assert rejected.json()["detail"] == code
+        for conflict in ({"bars": []}, {"dataset_snapshot": {}}):
+            rejected = client.post(
+                "/api/backtest/signal-preview", json={**payload, **conflict}
+            )
+            assert rejected.status_code == 422, rejected.text
+            assert rejected.json()["detail"] == "dataset_preview_input_conflict"
+    assert db.get_ledger_entries_sync(limit=10) == []
+    assert db.list_manual_orders_sync() == []
 
 
 def test_verified_interval_limits_explicit_range_to_366_natural_days(

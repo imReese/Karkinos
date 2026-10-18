@@ -298,14 +298,20 @@ def _load_bound_dataset_preview_bars(
 
     if not request.start_date or not request.end_date:
         raise HTTPException(422, "dataset_preview_dates_required")
-    symbol, asset_class = signal_preview_symbol_asset_class(
+    symbol, asset_class, instrument_type = signal_preview_symbol_identity(
         request.symbol, request.asset_class
     )
     dataset_request = BacktestRequest(
         dataset_id=request.dataset_id,
         start_date=request.start_date,
         end_date=request.end_date,
-        assets=[{"symbol": request.symbol, "asset_class": asset_class.value}],
+        assets=[
+            {
+                "symbol": request.symbol,
+                "asset_class": asset_class.value,
+                "instrument_type": instrument_type.value,
+            }
+        ],
     )
     root = (
         db.path.resolve().parent
