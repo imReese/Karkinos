@@ -125,6 +125,7 @@ async def test_clean_workspace_cold_start_full_journey(tmp_path, monkeypatch):
     preparer = QualificationBaselinePreparer(
         db=db,
         data_store=DataStore(tmp_path / "data"),
+        now=lambda: NOW,
     )
     with pytest.raises(ShadowResearchRejected) as exc_info:
         preparer._prepare_baseline(policy)

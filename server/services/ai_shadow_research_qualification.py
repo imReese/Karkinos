@@ -140,6 +140,7 @@ class AiShadowResearchQualificationService:
             QualificationBaselinePreparer(
                 db=db,
                 data_store=data_store,
+                now=self._now,
             )._prepare_baseline
         )
         self._backtest_adapter = backtest_adapter or (

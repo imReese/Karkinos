@@ -49,9 +49,16 @@ class FrozenQualificationSource:
 
 
 class QualificationBaselinePreparer(AiShadowResearchBaselineMixin):
-    def __init__(self, *, db: Any, data_store: Any) -> None:
+    def __init__(
+        self,
+        *,
+        db: Any,
+        data_store: Any,
+        now: Callable[[], datetime | str],
+    ) -> None:
         self._db = db
         self._data_store = data_store
+        self._now = lambda: qualification_clock_time(now)
 
     def _resolve_reviewed_fee_schedule(self, **_: Any) -> Any:
         raise ShadowResearchQualificationRejected(
