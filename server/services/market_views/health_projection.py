@@ -59,10 +59,10 @@ def build_market_data_health_response(
 
     latest_quotes: dict[InstrumentKey, dict] = {}
     persistent_quotes: dict[InstrumentKey, dict] = {}
-    persistent_reader_available = state.db is not None and (
-        hasattr(state.db, "list_latest_quotes_sync")
-        or hasattr(state.db, "get_latest_quotes_sync")
-    )
+    latest_quote_reader = getattr(state.db, "list_latest_quotes_sync", None)
+    if not callable(latest_quote_reader):
+        latest_quote_reader = getattr(state.db, "get_latest_quotes_sync", None)
+    persistent_reader_available = callable(latest_quote_reader)
     scheduler = state.scheduler
     if (
         not persistent_reader_available
@@ -74,25 +74,15 @@ def build_market_data_health_response(
             key = instrument_key_from_mapping(quote, symbol=symbol)
             if key is not None:
                 latest_quotes[key] = quote
-    if state.db is not None:
-        if hasattr(state.db, "list_latest_quotes_sync"):
-            for row in state.db.list_latest_quotes_sync():
-                quote = adapt_latest_quote_for_health(row)
-                key = instrument_key_from_mapping(quote)
-                if key is None:
-                    continue
-                if _is_real_persistent_quote(quote):
-                    persistent_quotes.setdefault(key, quote)
-                latest_quotes.setdefault(key, quote)
-        if hasattr(state.db, "get_latest_quotes_sync"):
-            for row in state.db.get_latest_quotes_sync():
-                quote = adapt_latest_quote_for_health(row)
-                key = instrument_key_from_mapping(quote)
-                if key is None:
-                    continue
-                if _is_real_persistent_quote(quote):
-                    persistent_quotes.setdefault(key, quote)
-                latest_quotes.setdefault(key, quote)
+    if persistent_reader_available:
+        for row in latest_quote_reader():
+            quote = adapt_latest_quote_for_health(row)
+            key = instrument_key_from_mapping(quote)
+            if key is None:
+                continue
+            if _is_real_persistent_quote(quote):
+                persistent_quotes.setdefault(key, quote)
+            latest_quotes.setdefault(key, quote)
     market_open = is_cn_trading_session()
     refresh_policy = "live" if market_open else "cache_only"
     now = _shanghai_now()

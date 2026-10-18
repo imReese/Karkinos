@@ -298,17 +298,12 @@ def extract_runtime_portfolio(state):
     instruments = getattr(scheduler, "instruments", {}) if scheduler else {}
     latest_quotes_by_key: dict[InstrumentKey, dict] = {}
     db = getattr(state, "db", None)
-    persistent_reader_available = db is not None and (
-        hasattr(db, "get_latest_quotes_sync") or hasattr(db, "list_latest_quotes_sync")
-    )
-    if db is not None and hasattr(db, "list_latest_quotes_sync"):
-        for row in db.list_latest_quotes_sync():
-            quote = adapt_latest_quote_for_health(row)
-            key = instrument_key_from_mapping(quote)
-            if key is not None:
-                latest_quotes_by_key.setdefault(key, quote)
-    if db is not None and hasattr(db, "get_latest_quotes_sync"):
-        for row in db.get_latest_quotes_sync():
+    latest_quote_reader = getattr(db, "list_latest_quotes_sync", None)
+    if not callable(latest_quote_reader):
+        latest_quote_reader = getattr(db, "get_latest_quotes_sync", None)
+    persistent_reader_available = callable(latest_quote_reader)
+    if persistent_reader_available:
+        for row in latest_quote_reader():
             quote = adapt_latest_quote_for_health(row)
             key = instrument_key_from_mapping(quote)
             if key is not None:

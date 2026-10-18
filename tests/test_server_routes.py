@@ -2257,7 +2257,7 @@ def test_market_data_health_prefers_materialized_quote_over_runtime(monkeypatch)
     assert response.quotes[0].quote_source == "tushare_daily"
 
 
-def test_market_data_health_falls_back_to_quote_snapshots(monkeypatch):
+def test_market_data_health_supports_legacy_only_quote_reader(monkeypatch):
     from server.routes import market as market_routes
 
     router = market_routes.create_router()
@@ -2268,9 +2268,6 @@ def test_market_data_health_falls_back_to_quote_snapshots(monkeypatch):
     )
 
     class FakeDb:
-        def list_latest_quotes_sync(self):
-            return []
-
         def get_latest_quotes_sync(self):
             return [
                 {
