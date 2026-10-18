@@ -156,18 +156,19 @@ def allocate_decision_actions(
         return actions
     from server.services.portfolio.allocation import allocate_action_tasks
 
+    require_persisted_quote_price = (
+        portfolio_context.get("authority") == "persisted_valuation_snapshot"
+    )
+    quotes = portfolio_context.get("candidate_quotes")
+    if not require_persisted_quote_price:
+        quotes = quotes or portfolio_context.get("quotes")
+
     return allocate_action_tasks(
         actions,
         portfolio=portfolio,
-        quotes=dict(
-            portfolio_context.get("candidate_quotes")
-            or portfolio_context.get("quotes")
-            or {}
-        ),
+        quotes=dict(quotes or {}),
         config=getattr(state, "config", None),
-        require_persisted_quote_price=(
-            portfolio_context.get("authority") == "persisted_valuation_snapshot"
-        ),
+        require_persisted_quote_price=require_persisted_quote_price,
     )
 
 

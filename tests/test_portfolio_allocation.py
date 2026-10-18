@@ -183,18 +183,14 @@ def test_decision_allocation_consumes_bound_persisted_candidate_price(
                 total_equity=50_000.0,
                 positions={},
             ),
-            # A different account quote must not replace a bound candidate.
-            "quotes": (
-                {
-                    "600001": {
-                        "symbol": "600001",
-                        "instrument_type": "stock",
-                        "price": 5.0,
-                    }
+            # Account quotes must not replace a missing or invalid candidate.
+            "quotes": {
+                "600001": {
+                    "symbol": "600001",
+                    "instrument_type": "stock",
+                    "price": 5.0,
                 }
-                if persisted_price is not None
-                else {}
-            ),
+            },
         },
         evidence,
     )
@@ -216,6 +212,59 @@ def test_decision_allocation_consumes_bound_persisted_candidate_price(
     assert "allocation_quantity" not in action
     assert action["price"] == 10.0
     assert db.get_ledger_entries_sync(limit=10) == []
+
+
+@pytest.mark.parametrize("candidate_map_present", [False, True])
+def test_persisted_decision_allocation_does_not_use_account_quotes_without_candidates(
+    candidate_map_present,
+) -> None:
+    action = _action(1, "600001", "buy", 0.2, "stock")
+    action["price"] = 10.0
+    context = {
+        "authority": "persisted_valuation_snapshot",
+        "portfolio": SimpleNamespace(
+            cash=30_000.0, total_equity=50_000.0, positions={}
+        ),
+        "quotes": {"600001": {"price": 5.0}},
+    }
+    if candidate_map_present:
+        context["candidate_quotes"] = {}
+
+    allocated = allocate_decision_actions(
+        SimpleNamespace(config=None), context, [action]
+    )
+
+    assert allocated[0]["allocation_price"] is None
+    assert allocated[0]["allocation_quantity"] == 0.0
+    assert allocated[0]["allocation_status"] == "missing_price_or_equity"
+
+
+@pytest.mark.parametrize("account_price", [None, 5.0])
+def test_legacy_decision_allocation_preserves_account_and_action_price_fallback(
+    account_price,
+) -> None:
+    action = _action(1, "600001", "buy", 0.2, "stock")
+    action["price"] = 10.0
+    context = {
+        "authority": "legacy_runtime_fallback",
+        "portfolio": SimpleNamespace(
+            cash=30_000.0, total_equity=50_000.0, positions={}
+        ),
+        "candidate_quotes": {},
+        "quotes": (
+            {"600001": {"price": account_price}} if account_price is not None else {}
+        ),
+    }
+
+    allocated = allocate_decision_actions(
+        SimpleNamespace(config=None), context, [action]
+    )
+
+    assert allocated[0]["allocation_price"] == (account_price or 10.0)
+    assert allocated[0]["allocation_quantity"] == (
+        2000.0 if account_price is not None else 1000.0
+    )
+    assert allocated[0]["allocation_status"] == "allocated"
 
 
 def _action(

@@ -157,6 +157,93 @@ def test_decision_batch_pre_trade_risk_route_runs_without_creating_orders(
     assert db.list_manual_orders_sync() == []
 
 
+def test_decision_identity_conflict_has_no_allocation_or_risk_writes(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from server.routes import decision as decision_routes
+    from server.services.decision_portfolio_projection import decision_portfolio_context
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    now = datetime(2026, 7, 2, 1, 31, tzinfo=timezone.utc)
+    _freeze_valuation_clock(monkeypatch, now)
+    _publish_complete_valuation(db, existing_position_value=100.0)
+    db.upsert_latest_quote_sync(
+        symbol="159915",
+        asset_type="fund",
+        price=2.0,
+        quote_timestamp="2026-07-02T09:30:00+08:00",
+        quote_source="deterministic_fixture",
+        quote_status="confirmed",
+        nav_date="2026-07-01",
+    )
+    published = db.publish_current_valuation_snapshot_sync(now=now)
+    signal_id = db.save_signal_sync(
+        timestamp="2026-07-02T09:30:00+08:00",
+        strategy_id="fund_rotation",
+        symbol="159915",
+        direction="buy",
+        target_weight=0.2,
+        price=2.0,
+        asset_class="fund",
+    )
+    db.upsert_action_task_sync(
+        source_signal_id=signal_id,
+        symbol="159915",
+        title="Synthetic fund candidate",
+        detail="Account holds a stock with the same symbol",
+        direction="buy",
+        urgency="normal",
+        target_weight=0.2,
+        price=2.0,
+        strategy_id="fund_rotation",
+        timestamp="2026-07-02T09:30:00+08:00",
+        asset_class="fund",
+    )
+    state = SimpleNamespace(
+        db=db,
+        config=SimpleNamespace(initial_cash=0.0, assets=[]),
+        trading_controls=TradingControlState(db=db),
+        scheduler=SimpleNamespace(portfolio=None, instruments={}),
+    )
+    context = decision_portfolio_context(state)
+    assert published["status"] == "complete"
+    assert context["quotes"]["159915"]["asset_class"] == "stock"
+    assert context["quotes"]["159915"]["price"] == 1.0
+    ledger_before = db.get_ledger_entries_sync(limit=100)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
+    router = decision_routes.create_router()
+
+    displayed = asyncio.run(_route(router, "/api/decision/today", "GET").endpoint())
+
+    assert len(displayed["candidates"]) == 1
+    candidate = displayed["candidates"][0]
+    assert candidate["asset_class"] == "fund"
+    assert candidate["price"] == 2.0
+    assert candidate["allocation_quantity"] == 0.0
+    assert candidate["allocation_status"] == "missing_price_or_equity"
+    assert candidate["allocation_evidence"]["price"] is None
+    assert candidate["evidence"]["data_freshness"]["status"] == "missing"
+    assert displayed["decision"] == "review_required"
+    assert displayed["requires_manual_confirmation"] is False
+
+    risk = asyncio.run(_route(router, "/api/decision/pre-trade-risk/batch").endpoint())
+
+    assert risk["status"] == "blocked_by_data_quality"
+    assert {blocker["code"] for blocker in risk["blockers"]} >= {
+        "candidate_instrument_identity_ambiguous",
+        "candidate_market_data_not_complete",
+    }
+    assert risk["processed_count"] == 0
+    assert risk["risk_decision_writes_performed"] is False
+    assert risk["database_writes_performed"] is False
+    assert db.get_risk_decisions_sync() == []
+    assert db.get_ledger_entries_sync(limit=100) == ledger_before
+    assert db.list_manual_orders_sync() == []
+    assert db.get_action_tasks_sync()[0]["risk_gate_status"] == "not_checked"
+
+
 def test_decision_batch_pre_trade_risk_route_applies_cash_bounded_allocation(
     tmp_path,
     monkeypatch,
