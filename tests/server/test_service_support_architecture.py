@@ -54,7 +54,7 @@ SERVICE_MODULES = (
     "server/services/controlled_submission_ledger_posting_support.py",
     "server/services/daily_candidate_production_readiness.py",
     "server/services/daily_candidate_readiness_support.py",
-    "server/services/daily_trading_plan.py",
+    "server/services/decision/plan.py",
     "server/services/daily_trading_plan_support.py",
     "server/services/market_refresh.py",
     "server/services/market_refresh_errors.py",
@@ -114,6 +114,27 @@ def test_extracted_service_modules_remain_bounded() -> None:
                     )
 
     assert violations == []
+
+
+def test_service_boundary_guard_rejects_oversized_canonical_daily_plan(
+    monkeypatch,
+) -> None:
+    canonical_path = PROJECT_ROOT / "server/services/decision/plan.py"
+    probe_name = "_oversized_daily_plan_guard_probe"
+    invalid_source = (
+        canonical_path.read_text(encoding="utf-8")
+        + f"\n\ndef {probe_name}():\n"
+        + "    pass\n" * 351
+    )
+    invalid_tree = ast.parse(invalid_source, filename=str(canonical_path))
+    read_tree = _tree
+
+    def tree_with_oversized_canonical_plan(path: Path) -> ast.Module:
+        return invalid_tree if path == canonical_path else read_tree(path)
+
+    monkeypatch.setitem(globals(), "_tree", tree_with_oversized_canonical_plan)
+    with pytest.raises(AssertionError, match=probe_name):
+        test_extracted_service_modules_remain_bounded()
 
 
 def test_pure_support_modules_do_not_own_runtime_or_database_dependencies() -> None:
