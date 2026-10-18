@@ -103,7 +103,7 @@ from server.services import account_strategy_projections, operations_projection
 from server.services.ai_context_capture_factory import (
     build_human_context_capture_service as _build_context_capture_service,
 )
-from server.services.strategy_research_factory import (
+from server.services.research.factory import (
     build_strategy_research_write_service as _build_strategy_research_write_service,
 )
 

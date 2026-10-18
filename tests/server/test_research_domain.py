@@ -10,22 +10,16 @@ import pytest
 
 import server.services.research_datasets as legacy_datasets
 import server.services.research_observation_forecasts as legacy_forecasts
-import server.services.research_operation_instruments as legacy_instruments
-import server.services.strategy_research_factory as legacy_factory
 from core.types import InstrumentKey, InstrumentType
 from data.market.model import DailyBarObservation
 from server.services import research
 from server.services.research import (
-    DEEPSEEK_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS,
-    DEFAULT_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS,
     FORECAST_POLICY_ID,
     RESEARCH_OPERATION_INSTRUMENTS_SCHEMA_VERSION,
     ResearchDatasetError,
     ResearchDatasetService,
     build_observation_forecasts,
     build_research_operation_instruments,
-    build_strategy_research_write_service,
-    database_path,
     dataset_summary,
     get_curated_universe,
     list_curated_universes,
@@ -33,42 +27,16 @@ from server.services.research import (
     publish_verified_interval_dataset,
     require_supported_snapshot,
     run_factor_evaluation,
-    strategy_research_model_timeout_seconds,
     verified_dataset_dates,
 )
 
 
 def test_research_domain_exports_canonical_symbols() -> None:
     assert FORECAST_POLICY_ID == legacy_forecasts.FORECAST_POLICY_ID
-    assert (
-        RESEARCH_OPERATION_INSTRUMENTS_SCHEMA_VERSION
-        == legacy_instruments.RESEARCH_OPERATION_INSTRUMENTS_SCHEMA_VERSION
-    )
-    assert (
-        DEFAULT_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS
-        == legacy_factory.DEFAULT_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS
-    )
-    assert (
-        DEEPSEEK_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS
-        == legacy_factory.DEEPSEEK_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS
-    )
 
 
 def test_research_facades_maintain_symbol_identity() -> None:
     assert build_observation_forecasts is legacy_forecasts.build_observation_forecasts
-    assert (
-        build_research_operation_instruments
-        is legacy_instruments.build_research_operation_instruments
-    )
-    assert (
-        build_strategy_research_write_service
-        is legacy_factory.build_strategy_research_write_service
-    )
-    assert (
-        strategy_research_model_timeout_seconds
-        is legacy_factory.strategy_research_model_timeout_seconds
-    )
-    assert database_path is legacy_factory.database_path
     assert ResearchDatasetService is legacy_datasets.ResearchDatasetService
     assert ResearchDatasetError is legacy_datasets.ResearchDatasetError
     assert prepare_daily_dataset is legacy_datasets.prepare_daily_dataset

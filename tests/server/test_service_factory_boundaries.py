@@ -8,7 +8,7 @@ from server.ai_runtime.provider_connectivity import ConnectivityConfigurationErr
 from server.services.ai_context_capture_factory import (
     database_path as capture_database_path,
 )
-from server.services.strategy_research_factory import (
+from server.services.research.factory import (
     database_path as research_database_path,
 )
 

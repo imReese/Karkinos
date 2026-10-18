@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from server.services.research_operation_instruments import (
+from server.services.research.instruments import (
     build_research_operation_instruments,
 )
 
