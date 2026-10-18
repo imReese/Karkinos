@@ -17,7 +17,6 @@ from server.services.market_views.fetch_runs import (
     quote_fetch_run_response,
 )
 from server.services.market_views.health_inputs import (
-    extract_runtime_portfolio,
     merged_watchlist_assets,
     normalize_refresh_symbols,
 )
@@ -78,7 +77,6 @@ async def refresh_confirmed_fund_nav(
             },
         )
 
-    _, _, _, latest_quotes = extract_runtime_portfolio(state)
     watchlist = [
         (Symbol(symbol), InstrumentType.OPEN_END_FUND) for symbol in requested_symbols
     ]
@@ -89,7 +87,7 @@ async def refresh_confirmed_fund_nav(
                 state.config,
                 db,
                 watchlist,
-                latest_quotes,
+                {},
                 now=shanghai_now(),
                 ttl_seconds=0,
                 confirmation_only=True,

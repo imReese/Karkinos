@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -160,6 +161,30 @@ def test_confirmed_fund_nav_refresh_replays_same_request_without_provider_contac
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        timestamp="2026-06-16T10:00:00+08:00",
+        symbol="FUND-A",
+        direction="buy",
+        quantity=10,
+        price=2.0,
+        asset_class="fund",
+    )
+    ledger_before = db.get_ledger_entries_sync(limit=100)
+    reads = {"quotes": 0, "portfolio_ledger": 0}
+    read_quotes = db.list_latest_quotes_sync
+    read_ledger = db.get_all_ledger_entries_sync
+
+    def latest_quotes():
+        reads["quotes"] += 1
+        return read_quotes()
+
+    def portfolio_ledger():
+        reads["portfolio_ledger"] += 1
+        return read_ledger()
+
+    monkeypatch.setattr(db, "list_latest_quotes_sync", latest_quotes)
+    monkeypatch.setattr(db, "get_all_ledger_entries_sync", portfolio_ledger)
     source = DeterministicConfirmedFundNavSource()
     monkeypatch.setattr(
         fund_nav_sync,
@@ -169,7 +194,9 @@ def test_confirmed_fund_nav_refresh_replays_same_request_without_provider_contac
             "akshare": source,
         },
     )
-    monkeypatch.setattr("server.dependencies.get_app_state", lambda: _state(db))
+    state = _state(db)
+    state.config.initial_cash = 1000
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
     request = ConfirmedFundNavRefreshRequest(
         symbols=["FUND-A"],
         request_id="confirmed-nav-route-replay-0001",
@@ -179,6 +206,7 @@ def test_confirmed_fund_nav_refresh_replays_same_request_without_provider_contac
     replay = asyncio.run(_route_endpoint()(request))
 
     assert source.calls == ["FUND-A"]
+    assert first.status == "success"
     assert replay.request_id == request.request_id
     assert replay.run.run_id == first.run.run_id
     assert replay.status == "success"
@@ -187,6 +215,17 @@ def test_confirmed_fund_nav_refresh_replays_same_request_without_provider_contac
     assert replay.provider_contact_performed is False
     assert len(db.list_quote_fetch_runs(trigger="fund_nav_sync")) == 1
     assert len(db.get_recent_quote_snapshots_sync("FUND-A", limit=10)) == 1
+    assert first.valuation_snapshot_id
+    assert replay.valuation_snapshot_id == first.valuation_snapshot_id
+    snapshot = db.get_valuation_snapshot_sync(first.valuation_snapshot_id)
+    assert snapshot is not None
+    assert [
+        (quote["symbol"], quote["price"])
+        for quote in json.loads(snapshot["quotes_json"])
+    ] == [("FUND-A", 2.75)]
+    assert db.get_ledger_entries_sync(limit=100) == ledger_before
+    # Each request still resolves known funds from its one canonical portfolio read.
+    assert reads == {"quotes": 2, "portfolio_ledger": 2}
 
 
 def test_confirmed_fund_nav_refresh_maps_request_payload_drift_to_conflict(
