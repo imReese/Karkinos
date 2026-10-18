@@ -216,3 +216,76 @@ def test_portfolio_endpoint_preserves_explicit_etf_identity_from_legacy_ledger(
     assert payload["positions"][0]["symbol"] == "510300"
     assert payload["positions"][0]["instrument_type"] == "etf"
     assert payload["positions"][0]["market_value"] == 410.0
+
+
+def test_portfolio_state_endpoint_supports_etag_and_304(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    state = _build_etf_state(tmp_path)
+    now = datetime.fromisoformat("2026-09-04T16:00:00+08:00")
+    state.require_database().publish_current_valuation_snapshot_sync(now=now)
+    monkeypatch.setattr(portfolio_routes, "get_shanghai_now", lambda: now)
+
+    with TestClient(_test_app(state)) as client:
+        # First request: 200 OK with ETag
+        response = client.get("/api/portfolio/state")
+        assert response.status_code == 200, response.text
+        etag = response.headers.get("etag")
+        assert etag is not None
+        assert response.headers.get("cache-control") == "no-cache"
+        assert response.json()["snapshot"]["valuation_snapshot_id"] in etag
+
+        # Second request with matching If-None-Match: 304 Not Modified
+        conditional_response = client.get(
+            "/api/portfolio/state",
+            headers={"If-None-Match": etag},
+        )
+        assert conditional_response.status_code == 304
+        assert conditional_response.text == ""
+        assert conditional_response.headers.get("etag") == etag
+
+        # Weak ETag format is also accepted
+        weak_response = client.get(
+            "/api/portfolio/state",
+            headers={"If-None-Match": f"W/{etag}"},
+        )
+        assert weak_response.status_code == 304
+
+        # Non-matching ETag returns 200
+        mismatch_response = client.get(
+            "/api/portfolio/state",
+            headers={"If-None-Match": '"different-snapshot-id"'},
+        )
+        assert mismatch_response.status_code == 200
+
+
+def test_portfolio_equity_curve_series_endpoint_supports_etag_and_304(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    state = _build_etf_state(tmp_path)
+    now = datetime.fromisoformat("2026-09-04T16:00:00+08:00")
+    state.require_database().publish_current_valuation_snapshot_sync(now=now)
+    monkeypatch.setattr(portfolio_routes, "get_shanghai_now", lambda: now)
+
+    with TestClient(_test_app(state)) as client:
+        response = client.get("/api/portfolio/equity-curve/series?range=all")
+        assert response.status_code == 200, response.text
+        etag = response.headers.get("etag")
+        assert etag is not None
+        assert ":all" in etag
+
+        conditional_response = client.get(
+            "/api/portfolio/equity-curve/series?range=all",
+            headers={"If-None-Match": etag},
+        )
+        assert conditional_response.status_code == 304
+        assert conditional_response.text == ""
+
+        # Different range has different etag and returns 200
+        diff_range_response = client.get(
+            "/api/portfolio/equity-curve/series?range=1m",
+            headers={"If-None-Match": etag},
+        )
+        assert diff_range_response.status_code == 200

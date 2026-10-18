@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from server.contracts.http.historical_coverage_models import HistoricalCoverageReport
 from server.contracts.http.ledger_models import (
@@ -194,11 +194,51 @@ def create_router(
             for ts, eq in legacy_equity_curve
         ]
 
+    def _matches_etag(if_none_match: str | None, etag: str) -> bool:
+        if not if_none_match or not etag:
+            return False
+        normalized_etag = etag.strip('"')
+        if normalized_etag.startswith("W/"):
+            normalized_etag = normalized_etag[2:].strip('"')
+        for raw_token in if_none_match.split(","):
+            token = raw_token.strip()
+            if token == "*":
+                return True
+            if token.startswith("W/"):
+                token = token[2:]
+            if token.strip('"') == normalized_etag:
+                return True
+        return False
+
     @r.get("/equity-curve/series", response_model=list[EquitySeriesPoint])
-    async def get_equity_curve_series(range: str = "1m") -> list[EquitySeriesPoint]:
+    async def get_equity_curve_series(
+        range: str = "1m",
+        request: Request = None,  # type: ignore[assignment]
+        response: Response = None,  # type: ignore[assignment]
+    ) -> list[EquitySeriesPoint] | Response:
         """获取按资产类别拆分的权益曲线。"""
         state = dependencies.get_state()
         selected_range = str(range).lower()
+        if request is not None and getattr(state, "db", None) is not None:
+            publication_reader = getattr(state.db, "get_runtime_control_sync", None)
+            if callable(publication_reader):
+                try:
+                    pub = publication_reader("valuation_snapshot_publication")
+                    if isinstance(pub, dict) and pub.get("status") == "ready":
+                        published_id = str(pub.get("snapshot_id") or "")
+                        expected_tag = f"{published_id}:{selected_range}"
+                        if published_id and _matches_etag(
+                            request.headers.get("if-none-match"), expected_tag
+                        ):
+                            return Response(
+                                status_code=304,
+                                headers={
+                                    "ETag": f'"{expected_tag}"',
+                                    "Cache-Control": "no-cache",
+                                },
+                            )
+                except Exception:
+                    pass
         if selected_range == "1d":
             valuation_snapshot = _current_valuation_snapshot(
                 state,
@@ -297,12 +337,49 @@ def create_router(
                 ],
                 valuation_snapshot,
             )
+        else:
+            series = await async_runtime.to_thread(
+                _build_historical_equity_curve_series,
+                state,
+                selected_range,
+            )
 
-        return await async_runtime.to_thread(
-            _build_historical_equity_curve_series,
-            state,
-            selected_range,
-        )
+        snapshot_id = None
+        if series:
+            snapshot_id = next(
+                (
+                    p.valuation_snapshot_id
+                    for p in reversed(series)
+                    if p.valuation_snapshot_id
+                ),
+                None,
+            )
+        if not snapshot_id and getattr(state, "db", None) is not None:
+            publication_reader = getattr(state.db, "get_runtime_control_sync", None)
+            if callable(publication_reader):
+                try:
+                    pub = publication_reader("valuation_snapshot_publication")
+                    if isinstance(pub, dict) and pub.get("status") == "ready":
+                        snapshot_id = str(pub.get("snapshot_id") or "")
+                except Exception:
+                    pass
+        if snapshot_id:
+            expected_tag = f"{snapshot_id}:{selected_range}"
+            etag = f'"{expected_tag}"'
+            if request is not None and _matches_etag(
+                request.headers.get("if-none-match"), expected_tag
+            ):
+                return Response(
+                    status_code=304,
+                    headers={
+                        "ETag": etag,
+                        "Cache-Control": "no-cache",
+                    },
+                )
+            if response is not None:
+                response.headers["ETag"] = etag
+                response.headers["Cache-Control"] = "no-cache"
+        return series
 
     @r.get("/equity-curve/coverage", response_model=HistoricalCoverageReport)
     async def get_historical_coverage(

@@ -306,6 +306,7 @@ export function useEquityCurveSeriesQuery(
         `/api/portfolio/equity-curve/series?range=${range}`,
       ),
     staleTime: 15_000,
+    placeholderData: (previousData) => previousData,
     enabled,
     refetchInterval: visiblePersistedProjectionRefetchInterval,
     refetchOnWindowFocus: true,
@@ -317,6 +318,7 @@ export function useAccountStateQuery() {
     queryKey: ['account-state'],
     queryFn: () => apiClient<AccountStateResponse>('/api/portfolio/state'),
     staleTime: 10_000,
+    placeholderData: (previousData) => previousData,
     refetchInterval: visiblePersistedProjectionRefetchInterval,
     refetchOnWindowFocus: true,
   });
