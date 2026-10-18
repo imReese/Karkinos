@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from decimal import ROUND_FLOOR, Decimal
+from decimal import Decimal
 from typing import Any
 
 from core.events import OrderIntentEvent, RiskDecisionEvent
@@ -15,7 +15,6 @@ from risk.pre_trade import (
     preview_pre_trade_risk,
 )
 
-_BOARD_LOT_ASSET_CLASSES = {"stock", "etf"}
 _CHECKED_RISK_STATUSES = {"passed", "blocked"}
 _DEFAULT_MIN_CASH_BUFFER_RATIO = Decimal("0.03")
 _DEFAULT_MAX_SINGLE_SYMBOL_WEIGHT = Decimal("0.35")
@@ -61,7 +60,7 @@ def run_pre_trade_risk_batch(
             results.append(_skipped_result(task, "already_checked"))
             continue
 
-        intent_result = _intent_from_action_task(task, context)
+        intent_result = _intent_from_action_task(task)
         if intent_result["status"] != "ready":
             skipped_count += 1
             results.append(
@@ -234,7 +233,6 @@ def default_pre_trade_batch_policy(
 
 def _intent_from_action_task(
     task: dict[str, Any],
-    context,
 ) -> dict[str, Any]:
     side = _order_side(task)
     if side is None:
@@ -246,13 +244,7 @@ def _intent_from_action_task(
     if price <= 0:
         return {"status": "skipped", "reason": "missing_reference_price"}
     target_weight = _decimal(task.get("target_weight"))
-    quantity = _estimated_quantity(
-        task,
-        side=side,
-        price=price,
-        target_weight=target_weight,
-        context=context,
-    )
+    quantity = _decimal(task.get("allocation_quantity"))
     if quantity <= 0:
         return {"status": "skipped", "reason": "estimated_quantity_not_positive"}
 
@@ -291,43 +283,6 @@ def _intent_from_action_task(
     return {"status": "ready", "intent": intent}
 
 
-def _estimated_quantity(
-    task: dict[str, Any],
-    *,
-    side: OrderSide,
-    price: Decimal,
-    target_weight: Decimal,
-    context,
-) -> Decimal:
-    if "allocation_quantity" in task:
-        return _decimal(task.get("allocation_quantity"))
-    explicit_quantity = _decimal(
-        task.get("quantity") or task.get("estimated_quantity") or task.get("shares")
-    )
-    if explicit_quantity > 0:
-        return explicit_quantity
-
-    if side == OrderSide.SELL:
-        position = context.positions.get(Symbol(str(task.get("symbol"))))
-        return _position_quantity(position)
-
-    position = context.positions.get(Symbol(str(task.get("symbol"))))
-    current_quantity = _position_total_quantity(position)
-    target_notional = context.total_equity * target_weight
-    if target_notional <= 0:
-        return Decimal("0")
-    raw_quantity = target_notional / price
-    if str(task.get("asset_class") or "").lower() in _BOARD_LOT_ASSET_CLASSES:
-        lots = (raw_quantity / Decimal("100")).to_integral_value(rounding=ROUND_FLOOR)
-        target_quantity = lots * Decimal("100")
-    else:
-        target_quantity = raw_quantity.quantize(
-            Decimal("0.000001"),
-            rounding=ROUND_FLOOR,
-        )
-    return max(target_quantity - current_quantity, Decimal("0"))
-
-
 def _order_side(task: dict[str, Any]) -> OrderSide | None:
     direction = str(task.get("direction") or "").strip().lower()
     if direction == "buy":
@@ -359,33 +314,6 @@ def _instrument_type(task: dict[str, Any]) -> str | None:
         ).instrument_type.value
     except (TypeError, ValueError):
         return None
-
-
-def _position_quantity(position: Any) -> Decimal:
-    if position is None:
-        return Decimal("0")
-    for name in (
-        "t1_available_quantity",
-        "sellable_quantity",
-        "available_quantity",
-        "quantity",
-        "shares",
-    ):
-        value = getattr(position, name, None)
-        quantity = _decimal(value)
-        if quantity > 0:
-            return quantity
-    return Decimal("0")
-
-
-def _position_total_quantity(position: Any) -> Decimal:
-    if position is None:
-        return Decimal("0")
-    for name in ("quantity", "shares"):
-        value = getattr(position, name, None)
-        if value is not None:
-            return max(_decimal(value), Decimal("0"))
-    return Decimal("0")
 
 
 def _decimal(value: Any) -> Decimal:

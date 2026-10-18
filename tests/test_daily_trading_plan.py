@@ -65,6 +65,7 @@ def _candidate(
     asset_class: str = "stock",
     target_weight: float = 0.2,
     price: float = 10.0,
+    allocation_quantity: float | None = 1000.0,
     risk_status: str = "passed",
     manual_status: str = "ready_for_manual_confirmation",
     risk_reasons: list[str] | None = None,
@@ -80,6 +81,7 @@ def _candidate(
         "title": f"{action} candidate",
         "target_weight": target_weight,
         "price": price,
+        "allocation_quantity": allocation_quantity,
         "risk_gate_status": risk_status,
         "risk_gate_reasons": risk_reasons or [],
         "manual_confirmation_required": True,
@@ -203,7 +205,7 @@ def test_trading_plan_turns_manual_ready_candidate_into_order_intent_preview() -
                 "account_truth": {"gate_status": "pass"},
                 "market_data": {"source_health": "live"},
             },
-            "candidates": [_candidate()],
+            "candidates": [_candidate(allocation_quantity=300.0)],
         },
         config=_fee_config(),
         positions={
@@ -234,19 +236,19 @@ def test_trading_plan_turns_manual_ready_candidate_into_order_intent_preview() -
     assert intent["market_quote_price"] == pytest.approx(10.0)
     assert intent["market_quote_timestamp"] == "2026-07-01T09:30:00+08:00"
     assert intent["market_quote_source"] == "fixture"
-    assert intent["estimated_quantity"] == pytest.approx(800.0)
-    assert intent["estimated_gross_amount"] == pytest.approx(8000.0)
+    assert intent["estimated_quantity"] == pytest.approx(300.0)
+    assert intent["estimated_gross_amount"] == pytest.approx(3000.0)
     assert intent["fee_breakdown"]["commission"] == "5.00"
-    assert intent["fee_breakdown"]["transfer_fee"] == "0.080000"
-    assert intent["estimated_total_fee"] == pytest.approx(5.08)
-    assert intent["estimated_net_cash_impact"] == pytest.approx(-8005.08)
-    assert intent["quantity_basis"] == "target_position_delta_lot_rounded"
+    assert intent["fee_breakdown"]["transfer_fee"] == "0.030000"
+    assert intent["estimated_total_fee"] == pytest.approx(5.03)
+    assert intent["estimated_net_cash_impact"] == pytest.approx(-3005.03)
+    assert intent["quantity_basis"] == "portfolio_allocation_quantity"
     assert intent["position_effect"] == {
         "current_quantity": 200.0,
         "current_avg_cost": 8.0,
         "current_market_value": 2000.0,
-        "estimated_quantity_after": 1000.0,
-        "estimated_avg_cost_after": pytest.approx(9.6),
+        "estimated_quantity_after": 500.0,
+        "estimated_avg_cost_after": pytest.approx(9.2),
         "cost_basis_method": "weighted_average_preview",
     }
     assert intent["submission_status"] == "manual_confirmation_required"
@@ -260,8 +262,42 @@ def test_trading_plan_turns_manual_ready_candidate_into_order_intent_preview() -
     assert intent["does_not_submit_broker_order"] is True
 
 
-def test_trading_plan_sizes_from_current_quote_instead_of_signal_price() -> None:
-    candidate = _candidate(price=10.0)
+@pytest.mark.parametrize("action", ["buy", "sell"])
+@pytest.mark.parametrize("allocation_quantity", ["missing", None, 0.0])
+def test_trading_plan_does_not_replace_missing_or_zero_allocation(
+    action: str, allocation_quantity: str | float | None
+) -> None:
+    candidate = _candidate(action=action) | {
+        "quantity": 1000.0,
+        "shares": 1000.0,
+        "current_quantity": 1000.0,
+        "position_quantity": 1000.0,
+    }
+    if allocation_quantity == "missing":
+        candidate.pop("allocation_quantity")
+    else:
+        candidate["allocation_quantity"] = allocation_quantity
+
+    plan = _plan(
+        candidate=candidate,
+        positions={
+            "600519": {
+                "quantity": 200.0,
+                "avg_cost": 8.0,
+                "market_value": 2000.0,
+            }
+        },
+    )
+
+    assert plan["order_intents"] == []
+    assert plan["manual_ready_count"] == 0
+    assert plan["conclusion_status"] == "no_manual_action"
+    assert plan["blocked_count"] == 1
+    assert plan["blockers"][0]["reason"] == "insufficient_order_intent_inputs"
+
+
+def test_trading_plan_prices_allocated_quantity_with_current_quote() -> None:
+    candidate = _candidate(price=10.0, allocation_quantity=800.0)
     candidate["evidence"]["data_freshness"]["price"] = 12.5
 
     plan = _plan(candidate=candidate)
@@ -375,7 +411,7 @@ def test_trading_plan_blocks_intent_when_concentration_limit_would_be_breached()
     None
 ):
     plan = _plan(
-        candidate=_candidate(target_weight=0.5),
+        candidate=_candidate(target_weight=0.5, allocation_quantity=1500.0),
         cash=40000.0,
         positions={
             "600519": {
@@ -397,7 +433,9 @@ def test_trading_plan_blocks_intent_when_concentration_limit_would_be_breached()
 
 def test_trading_plan_blocks_sell_when_t1_available_quantity_is_insufficient() -> None:
     plan = _plan(
-        candidate=_candidate(action="sell", target_weight=0.0, price=12.0),
+        candidate=_candidate(
+            action="sell", target_weight=0.0, price=12.0, allocation_quantity=300.0
+        ),
         positions={
             "600519": {
                 "quantity": 300.0,
@@ -421,7 +459,9 @@ def test_trading_plan_blocks_sell_when_candidate_explicitly_has_zero_t1_availabl
 ):
     for field in ("t1_available_quantity", "sellable_quantity", "available_quantity"):
         plan = _plan(
-            candidate=_candidate(action="sell", target_weight=0.0, price=12.0)
+            candidate=_candidate(
+                action="sell", target_weight=0.0, price=12.0, allocation_quantity=100.0
+            )
             | {field: 0, "quantity": 100.0},
             positions={
                 "600519": {
@@ -449,7 +489,7 @@ def test_trading_plan_blocks_china_market_price_and_status_constraints() -> None
             "limit_up_blocked",
         ),
         (
-            _candidate(action="sell", symbol="600002")
+            _candidate(action="sell", symbol="600002", allocation_quantity=100.0)
             | {
                 "limit_status": "limit_down",
                 "quantity": 100,
@@ -551,7 +591,13 @@ def test_trading_plan_sell_intent_uses_current_position_for_remaining_quantity()
                 "market_data": {"source_health": "live"},
             },
             "candidates": [
-                _candidate(action_id=3, action="sell", target_weight=0.0, price=12.0)
+                _candidate(
+                    action_id=3,
+                    action="sell",
+                    target_weight=0.0,
+                    price=12.0,
+                    allocation_quantity=300.0,
+                )
             ],
         },
         config=_fee_config(),

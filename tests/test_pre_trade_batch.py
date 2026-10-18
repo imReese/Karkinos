@@ -46,12 +46,13 @@ def _add_action(
     target_weight: float,
     price: float,
     asset_class: str = "stock",
+    direction: str = "buy",
 ) -> None:
     db.save_signal_sync(
         timestamp="2026-07-02T09:30:00",
         strategy_id="dual_ma",
         symbol=symbol,
-        direction="buy",
+        direction=direction,
         target_weight=target_weight,
         price=price,
         asset_class=asset_class,
@@ -61,7 +62,7 @@ def _add_action(
         symbol=symbol,
         title=f"候选买入 {symbol}",
         detail="batch pre-trade risk test",
-        direction="buy",
+        direction=direction,
         urgency="normal",
         target_weight=target_weight,
         price=price,
@@ -69,6 +70,13 @@ def _add_action(
         timestamp="2026-07-02T09:30:00",
         asset_class=asset_class,
     )
+
+
+def _allocated_tasks(db: AppDatabase, *, quantity: int = 100) -> list[dict]:
+    return [
+        {**task, "allocation_quantity": quantity}
+        for task in db.get_action_tasks_sync(limit=50)
+    ]
 
 
 def _persisted_evidence_binding(db: AppDatabase) -> dict:
@@ -111,6 +119,147 @@ def _persisted_evidence_binding(db: AppDatabase) -> dict:
     }
 
 
+@pytest.mark.parametrize("direction", ["buy", "sell"])
+@pytest.mark.parametrize("allocation", ["missing", None, 0])
+def test_batch_pre_trade_risk_requires_explicit_positive_allocation_without_writes(
+    tmp_path, direction, allocation
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _add_action(
+        db,
+        source_signal_id=1,
+        symbol="600001",
+        target_weight=0.2,
+        price=10,
+        direction=direction,
+    )
+    evidence = _persisted_evidence_binding(db)
+    task = {
+        **db.get_action_tasks_sync()[0],
+        "quantity": 300,
+        "estimated_quantity": 400,
+        "shares": 500,
+    }
+    if allocation != "missing":
+        task["allocation_quantity"] = allocation
+    context = _context(cash="100000")
+    context.positions[Symbol("600001")] = SimpleNamespace(
+        quantity=Decimal("200"),
+        market_value=Decimal("2000"),
+        t1_available_quantity=Decimal("200"),
+    )
+    ledger_before = db.get_ledger_entries_sync()
+
+    result = run_pre_trade_risk_batch(
+        db=db,
+        context_provider=StaticContextProvider(context),
+        tasks=[task],
+        evidence_binding=evidence,
+    )
+
+    assert result["processed_count"] == 0
+    assert result["skipped_count"] == 1
+    assert result["results"][0]["reasons"] == ["estimated_quantity_not_positive"]
+    _assert_no_risk_batch_writes(db)
+    assert db.get_action_tasks_sync()[0]["risk_gate_status"] == "not_checked"
+    assert db.get_ledger_entries_sync() == ledger_before
+    assert db.list_manual_orders_sync() == []
+
+
+def test_batch_pre_trade_risk_consumes_allocated_delta_without_subtracting_position(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _add_action(
+        db,
+        source_signal_id=1,
+        symbol="600001",
+        target_weight=0.2,
+        price=10,
+    )
+    evidence = _persisted_evidence_binding(db)
+    context = _context(cash="100000")
+    context.positions[Symbol("600001")] = SimpleNamespace(
+        quantity=Decimal("200"), market_value=Decimal("2000")
+    )
+    task = {
+        **db.get_action_tasks_sync()[0],
+        "allocation_quantity": 300,
+        "quantity": 900,
+    }
+
+    result = run_pre_trade_risk_batch(
+        db=db,
+        context_provider=StaticContextProvider(context),
+        tasks=[task],
+        evidence_binding=evidence,
+    )
+
+    assert result["passed_count"] == 1
+    stored_payload = json.loads(db.get_risk_decisions_sync()[0]["payload_json"])
+    assert Decimal(stored_payload["intent"]["quantity"]) == Decimal("300")
+    assert stored_payload["decision"]["metadata"]["quantity"] == "300"
+
+
+def test_batch_pre_trade_risk_does_not_size_raw_tasks_read_from_database(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    for signal_id, symbol in enumerate(("600001", "600002"), start=1):
+        _add_action(
+            db,
+            source_signal_id=signal_id,
+            symbol=symbol,
+            target_weight=0.2,
+            price=10,
+        )
+
+    result = run_pre_trade_risk_batch(
+        db=db,
+        context_provider=StaticContextProvider(_context(cash="100000")),
+        statuses=["pending"],
+        limit=1,
+    )
+
+    assert result["processed_count"] == 0
+    assert result["skipped_count"] == 1
+    assert result["results"][0]["reasons"] == ["estimated_quantity_not_positive"]
+    _assert_no_risk_batch_writes(db)
+
+
+def test_batch_pre_trade_risk_checks_concentration_for_allocated_quantity(
+    tmp_path,
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _add_action(
+        db,
+        source_signal_id=1,
+        symbol="600001",
+        target_weight=0.2,
+        price=10,
+    )
+    evidence = _persisted_evidence_binding(db)
+
+    result = run_pre_trade_risk_batch(
+        db=db,
+        context_provider=StaticContextProvider(_context(cash="100000")),
+        tasks=_allocated_tasks(db, quantity=4000),
+        evidence_binding=evidence,
+    )
+
+    assert result["processed_count"] == 1
+    assert result["blocked_count"] == 1
+    assert result["results"][0]["reasons"] == [
+        "projected position weight exceeds max_position_weight"
+    ]
+    assert db.get_action_tasks_sync()[0]["risk_gate_status"] == "blocked"
+    assert len(db.get_risk_decisions_sync()) == 1
+
+
 def test_batch_pre_trade_risk_persists_passed_and_blocked_action_results(
     tmp_path,
 ) -> None:
@@ -137,6 +286,7 @@ def test_batch_pre_trade_risk_persists_passed_and_blocked_action_results(
         context_provider=StaticContextProvider(_context()),
         policy=PreTradePolicy(execution_mode="manual"),
         evidence_binding=evidence_binding,
+        tasks=_allocated_tasks(db),
     )
 
     assert result["schema_version"] == "karkinos.pre_trade_risk_batch.v1"
@@ -184,6 +334,7 @@ def test_batch_pre_trade_risk_binds_exact_etf_candidate_identity(tmp_path) -> No
         context_provider=StaticContextProvider(_context(cash="100000")),
         policy=PreTradePolicy(execution_mode="manual"),
         evidence_binding=evidence_binding,
+        tasks=_allocated_tasks(db),
     )
 
     assert result["status"] == "completed"
@@ -210,11 +361,13 @@ def test_batch_pre_trade_risk_skips_already_checked_actions(tmp_path) -> None:
         context_provider=provider,
         policy=PreTradePolicy(execution_mode="manual"),
         evidence_binding=evidence_binding,
+        tasks=_allocated_tasks(db),
     )
     second = run_pre_trade_risk_batch(
         db=db,
         context_provider=provider,
         policy=PreTradePolicy(execution_mode="manual"),
+        tasks=_allocated_tasks(db),
     )
 
     assert first["processed_count"] == 1
@@ -241,6 +394,7 @@ def test_batch_pre_trade_risk_defaults_match_daily_portfolio_controls(tmp_path) 
             _context(cash="5000", total_equity="100000")
         ),
         evidence_binding=evidence_binding,
+        tasks=_allocated_tasks(db, quantity=300),
     )
 
     assert result["processed_count"] == 1
@@ -269,6 +423,7 @@ def test_batch_pre_trade_risk_accepts_configured_cash_buffer(tmp_path) -> None:
         ),
         config=SimpleNamespace(trading_plan_min_cash_buffer_ratio=0.05),
         evidence_binding=evidence_binding,
+        tasks=_allocated_tasks(db),
     )
 
     assert result["processed_count"] == 1
@@ -289,7 +444,7 @@ def test_batch_pre_trade_risk_rejects_invalid_action_timestamp_without_write(
         target_weight=0.01,
         price=10.0,
     )
-    task = {**db.get_action_tasks_sync()[0], "timestamp": "not-a-timestamp"}
+    task = {**_allocated_tasks(db)[0], "timestamp": "not-a-timestamp"}
 
     result = run_pre_trade_risk_batch(
         db=db,
@@ -322,7 +477,7 @@ def test_batch_pre_trade_risk_rolls_back_whole_batch_on_action_drift(tmp_path) -
         target_weight=0.10,
         price=100.0,
     )
-    stale_tasks = db.get_action_tasks_sync(limit=10)
+    stale_tasks = _allocated_tasks(db)
     evidence_binding = _persisted_evidence_binding(db)
 
     db.upsert_action_task_sync(
@@ -364,7 +519,7 @@ def test_batch_pre_trade_risk_rolls_back_whole_batch_on_quote_drift(tmp_path) ->
         target_weight=0.01,
         price=10.0,
     )
-    stale_tasks = db.get_action_tasks_sync(limit=10)
+    stale_tasks = _allocated_tasks(db)
     evidence_binding = _persisted_evidence_binding(db)
 
     db.upsert_latest_quote_sync(
@@ -432,6 +587,7 @@ def test_final_risk_transaction_observes_failure_after_capture_without_quote_dri
         context_provider=StaticContextProvider(_context(cash="100000")),
         policy=PreTradePolicy(execution_mode="manual"),
         evidence_binding=evidence,
+        tasks=_allocated_tasks(db),
     )
     assert result["status"] == "blocked_by_evidence_drift"
     assert {"code": "valuation_publication_recovery_required"} in result["blockers"]
@@ -500,6 +656,7 @@ def test_final_risk_cannot_enter_between_candidate_rollback_and_failure_commit(
             context_provider=StaticContextProvider(_context(cash="100000")),
             policy=PreTradePolicy(execution_mode="manual"),
             evidence_binding=evidence,
+            tasks=_allocated_tasks(db),
         )
 
     def after_candidate_rollback():
@@ -581,6 +738,7 @@ def test_final_risk_transaction_rejects_intent_instrument_type_drift(
         context_provider=StaticContextProvider(_context(cash="100000")),
         policy=PreTradePolicy(execution_mode="manual"),
         evidence_binding=evidence,
+        tasks=_allocated_tasks(db),
     )
     assert result["status"] == "blocked_by_evidence_drift"
     assert "risk_batch_action_intent_drift" in {
@@ -647,6 +805,7 @@ def test_final_etf_risk_does_not_miss_an_unresolved_broad_fund_request(
         context_provider=StaticContextProvider(_context(cash="100000")),
         policy=PreTradePolicy(execution_mode="manual"),
         evidence_binding=evidence,
+        tasks=_allocated_tasks(db),
     )
     assert result["status"] == "blocked_by_evidence_drift"
     assert {"code": "valuation_publication_recovery_required"} in result["blockers"]
@@ -665,7 +824,7 @@ def test_batch_pre_trade_risk_rolls_back_whole_batch_on_valuation_drift(
         target_weight=0.01,
         price=10.0,
     )
-    stale_tasks = db.get_action_tasks_sync(limit=10)
+    stale_tasks = _allocated_tasks(db)
     evidence_binding = _persisted_evidence_binding(db)
 
     db.insert_ledger_entry_sync(
@@ -723,6 +882,7 @@ def test_batch_pre_trade_risk_rejects_duplicate_decision_identity_before_writes(
         context_provider=StaticContextProvider(_context(cash="100000")),
         policy=PreTradePolicy(execution_mode="manual"),
         evidence_binding=evidence_binding,
+        tasks=_allocated_tasks(db),
     )
 
     assert result["status"] == "blocked_by_evidence_drift"
@@ -768,6 +928,7 @@ def test_batch_pre_trade_risk_rolls_back_first_write_when_second_insert_fails(
             context_provider=StaticContextProvider(_context(cash="100000")),
             policy=PreTradePolicy(execution_mode="manual"),
             evidence_binding=evidence_binding,
+            tasks=_allocated_tasks(db),
         )
 
     _assert_no_risk_batch_writes(db)
@@ -785,7 +946,7 @@ def test_batch_pre_trade_risk_rejects_prior_risk_decision_without_new_writes(
         target_weight=0.01,
         price=10.0,
     )
-    stale_tasks = db.get_action_tasks_sync(limit=10)
+    stale_tasks = _allocated_tasks(db)
     evidence_binding = _persisted_evidence_binding(db)
     first = run_pre_trade_risk_batch(
         db=db,

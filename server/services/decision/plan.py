@@ -16,9 +16,6 @@ from server.services.daily_trading_plan_constraints import (
     constraint_summary as _constraint_summary,
 )
 from server.services.daily_trading_plan_constraints import (
-    estimated_quantity as _estimated_quantity,
-)
-from server.services.daily_trading_plan_constraints import (
     intent_blocker as _intent_blocker,
 )
 from server.services.daily_trading_plan_constraints import (
@@ -242,14 +239,7 @@ def _order_intent_preview(
         else _float(candidate.get("price"), 0.0)
     )
     target_weight = _float(candidate.get("target_weight"), 0.0)
-    quantity, quantity_basis = _estimated_quantity(
-        candidate,
-        position=position,
-        side=side,
-        price=price,
-        target_weight=target_weight,
-        total_equity=total_equity,
-    )
+    quantity = _float(candidate.get("allocation_quantity"), 0.0)
     if side is None or price <= 0 or quantity <= 0:
         return None
 
@@ -327,7 +317,7 @@ def _order_intent_preview(
         "market_quote_timestamp": market_quote.get("quote_timestamp"),
         "market_quote_source": market_quote.get("quote_source"),
         "estimated_quantity": float(quantity),
-        "quantity_basis": quantity_basis,
+        "quantity_basis": "portfolio_allocation_quantity",
         "allocation_status": candidate.get("allocation_status"),
         "allocation_evidence": dict(candidate.get("allocation_evidence") or {}),
         "estimated_gross_amount": gross_amount,

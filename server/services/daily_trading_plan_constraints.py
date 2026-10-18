@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from math import floor
 from typing import Any
 
 from server.services.daily_trading_plan_support import blocker as _blocker
@@ -281,43 +280,6 @@ def fund_nav_latency_check(
     }
 
 
-def estimated_quantity(
-    candidate: dict[str, Any],
-    *,
-    position: Any,
-    side: str | None,
-    price: float,
-    target_weight: float,
-    total_equity: float,
-) -> tuple[float, str]:
-    if price <= 0:
-        return 0.0, "price_unavailable"
-    if "allocation_quantity" in candidate:
-        return (
-            _float(candidate.get("allocation_quantity"), 0.0),
-            "portfolio_allocation_quantity",
-        )
-    if side == "sell":
-        quantity = _first_float(
-            candidate.get("current_quantity"),
-            candidate.get("position_quantity"),
-            candidate.get("quantity"),
-            fallback=position_float(position, "quantity", "shares"),
-        )
-        return quantity, "current_position_quantity"
-    target_total_quantity = (total_equity * target_weight) / price
-    asset_class = str(candidate.get("asset_class") or "").lower()
-    if asset_class in BOARD_LOT_ASSET_CLASSES:
-        target_total_quantity = float(floor(target_total_quantity / 100) * 100)
-    current_quantity = position_float(position, "quantity", "shares")
-    delta_quantity = max(target_total_quantity - current_quantity, 0.0)
-    return delta_quantity, (
-        "target_position_delta_lot_rounded"
-        if asset_class in BOARD_LOT_ASSET_CLASSES
-        else "target_position_delta"
-    )
-
-
 def intent_blocker(
     candidate: dict[str, Any],
     intent: dict[str, Any],
@@ -365,7 +327,6 @@ def position_float(position: Any, *names: str) -> float:
 __all__ = [
     "constraint_checks",
     "constraint_summary",
-    "estimated_quantity",
     "intent_blocker",
     "position_float",
 ]
