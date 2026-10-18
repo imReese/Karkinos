@@ -55,17 +55,21 @@ def instrument_metadata_targets(
     *,
     requested_instrument_type: str | None = None,
 ) -> list[dict[str, str]]:
-    by_symbol: dict[str, dict[str, str]] = {}
+    by_symbol: dict[str, list[dict[str, str]]] = {}
     for asset_cfg in merged_watchlist_assets(state):
         symbol = str(asset_cfg.get("symbol") or "").strip()
         if not symbol:
             continue
-        by_symbol.setdefault(
-            symbol,
+        instrument_type = InstrumentType.from_persisted(asset_cfg["instrument_type"])
+        by_symbol.setdefault(symbol, []).append(
             {
                 "symbol": symbol,
-                "asset_class": normalize_asset_class(asset_cfg.get("asset_class")),
-                "instrument_type": str(asset_cfg.get("instrument_type") or ""),
+                "asset_class": (
+                    AssetClass.FUND.value
+                    if instrument_type is InstrumentType.OPEN_END_FUND
+                    else instrument_type.value
+                ),
+                "instrument_type": instrument_type.value,
             },
         )
 
@@ -75,45 +79,39 @@ def instrument_metadata_targets(
         else InstrumentType.from_persisted(requested_instrument_type)
     )
 
-    def bind_requested_type(target: dict[str, str]) -> dict[str, str]:
-        if requested_type is None:
-            return target
-        existing_type = target.get("instrument_type")
-        if (
-            existing_type
-            and InstrumentType.from_persisted(existing_type) is not requested_type
-        ):
-            raise HTTPException(
-                status_code=422,
-                detail="requested instrument_type conflicts with persisted identity",
-            )
-        asset_class = (
-            AssetClass.FUND.value
-            if requested_type is InstrumentType.OPEN_END_FUND
-            else requested_type.value
-        )
-        return {
-            **target,
-            "asset_class": asset_class,
-            "instrument_type": requested_type.value,
-        }
-
-    symbols = normalize_refresh_symbols(requested_symbols)
-    if symbols:
-        return [
-            bind_requested_type(
-                by_symbol.get(
-                    symbol,
-                    {
-                        "symbol": symbol,
-                        "asset_class": "",
-                        "instrument_type": "",
-                    },
-                )
-            )
-            for symbol in symbols
+    symbols = normalize_refresh_symbols(requested_symbols) or list(by_symbol)
+    resolved: list[dict[str, str]] = []
+    for symbol in symbols:
+        candidates = by_symbol.get(symbol) or [
+            {"symbol": symbol, "asset_class": "", "instrument_type": ""}
         ]
-    return [bind_requested_type(target) for target in by_symbol.values()]
+        if requested_type is not None:
+            matching = [
+                target
+                for target in candidates
+                if target.get("instrument_type")
+                and InstrumentType.from_persisted(target["instrument_type"])
+                is requested_type
+            ]
+            if not matching and any(target["instrument_type"] for target in candidates):
+                raise HTTPException(
+                    status_code=422,
+                    detail="requested instrument_type conflicts with persisted identity",
+                )
+            candidates = [
+                {
+                    **target,
+                    "asset_class": (
+                        AssetClass.FUND.value
+                        if requested_type is InstrumentType.OPEN_END_FUND
+                        else requested_type.value
+                    ),
+                    "instrument_type": requested_type.value,
+                }
+                for target in matching or candidates
+            ]
+        resolved.extend(candidates)
+    return resolved
 
 
 def provider_asset_class(asset_class: str) -> AssetClass:
