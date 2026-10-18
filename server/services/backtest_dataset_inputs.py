@@ -69,6 +69,9 @@ def load_dataset_backtest_inputs(root: Path, request):
             raise ResearchDatasetError("dataset_request_universe_mismatch")
     source_names = sorted({partition.provider for partition in snapshot.partitions})
     single_source = source_names[0] if len(source_names) == 1 else None
+    bars_by_instrument = {}
+    for bar in restored.bars:
+        bars_by_instrument.setdefault(bar.instrument, []).append(bar)
     instruments, handlers = {}, {}
     for key in snapshot.instruments:
         symbol = Symbol(key.symbol)
@@ -89,8 +92,7 @@ def load_dataset_backtest_inputs(root: Path, request):
                     "available_at": bar.available_at,
                     "captured_at": bar.captured_at,
                 }
-                for bar in restored.bars
-                if bar.instrument == key
+                for bar in bars_by_instrument.get(key, ())
             ]
         )
         if frame.empty:
