@@ -389,6 +389,16 @@ def _ensure_canonical_market_tables(connection: sqlite3.Connection) -> None:
         connection.execute(f"DROP VIEW IF EXISTS {obj_name}")
         connection.execute(f"DROP TABLE IF EXISTS {obj_name}")
 
+    if "market_bars" in tables:
+        connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_market_bars_symbol_frequency_ts
+        ON market_bars(symbol, frequency, timestamp)
+        """)
+        connection.execute("""
+        CREATE INDEX IF NOT EXISTS idx_market_bars_updated_at
+        ON market_bars(updated_at)
+        """)
+
 
 def prepare_meta_database(database_path: str | Path) -> None:
     """Bootstrap or verify ``meta.db`` under one schema owner."""

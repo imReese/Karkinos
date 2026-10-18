@@ -268,10 +268,10 @@ def _matrix_sql(
                 NULL AS generation_id,
                 bars.identity_provenance,
                 0 AS source_priority
-            FROM market_store.{bars_table} AS bars
-            JOIN requested AS wanted
-              ON wanted.symbol = bars.symbol{type_join}
+            FROM requested AS wanted
             CROSS JOIN bounds
+            JOIN market_store.{bars_table} AS bars
+              ON bars.symbol = wanted.symbol{type_join}
             WHERE bars.frequency = '1d'
               AND substr(bars.timestamp, 1, 10) <= bounds.end_date
               AND bars.close > 0
@@ -306,10 +306,10 @@ def _matrix_sql(
                 NULL AS generation_id,
                 closes.identity_provenance,
                 1 AS source_priority
-            FROM daily_close_snapshots_v2 AS closes
-            JOIN requested AS wanted
-              ON wanted.symbol = closes.symbol{type_join}
+            FROM requested AS wanted
             CROSS JOIN bounds
+            JOIN daily_close_snapshots_v2 AS closes
+              ON closes.symbol = wanted.symbol{type_join}
             WHERE closes.trade_date <= bounds.end_date
               AND closes.close_price > 0
               AND (
@@ -364,10 +364,10 @@ def _matrix_sql(
                 NULL AS generation_id,
                 {provenance} AS identity_provenance,
                 2 AS source_priority
-            FROM quote_snapshots AS quotes
-            JOIN requested AS wanted
-              ON wanted.symbol = quotes.symbol{type_join}
+            FROM requested AS wanted
             CROSS JOIN bounds
+            JOIN quote_snapshots AS quotes
+              ON quotes.symbol = wanted.symbol{type_join}
             WHERE substr(quotes.timestamp, 1, 10) <= bounds.end_date
               AND quotes.price > 0
               AND (
