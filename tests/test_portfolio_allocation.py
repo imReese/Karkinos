@@ -1,8 +1,18 @@
 from __future__ import annotations
 
+from datetime import datetime
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
-from server.services.portfolio_allocation import allocate_action_tasks
+import pytest
+
+from server.db import AppDatabase
+from server.services.decision_action_application import allocate_decision_actions
+from server.services.decision_candidate_market_evidence import (
+    bind_candidate_market_evidence,
+    candidate_market_evidence,
+)
+from server.services.portfolio.allocation import allocate_action_tasks
 
 
 def test_portfolio_allocation_caps_targets_uses_deltas_and_shares_cash() -> None:
@@ -102,7 +112,8 @@ def test_portfolio_allocation_does_not_rebuy_existing_target_quantity() -> None:
     assert allocated["target_weight"] == 0.2
 
 
-def test_persisted_allocation_never_falls_back_to_action_price() -> None:
+@pytest.mark.parametrize("quote_price", [0.0, float("nan"), float("inf")])
+def test_persisted_allocation_never_falls_back_to_action_price(quote_price) -> None:
     action = _action(1, "600001", "buy", 0.2, "stock")
     action["price"] = 10.0
 
@@ -113,13 +124,98 @@ def test_persisted_allocation_never_falls_back_to_action_price() -> None:
             total_equity=50000.0,
             positions={},
         ),
-        quotes={"600001": {"price": 0.0}},
+        quotes={"600001": {"price": quote_price}},
         require_persisted_quote_price=True,
     )[0]
 
     assert allocated["allocation_price"] is None
     assert allocated["allocation_quantity"] == 0.0
     assert allocated["allocation_status"] == "missing_price_or_equity"
+
+
+@pytest.mark.parametrize("action_price", [float("nan"), float("inf")])
+def test_allocation_rejects_non_finite_action_price_without_quote(action_price) -> None:
+    action = _action(1, "600001", "buy", 0.2, "stock")
+    action["price"] = action_price
+
+    allocated = allocate_action_tasks(
+        [action],
+        portfolio=SimpleNamespace(
+            cash=30_000.0,
+            total_equity=50_000.0,
+            positions={},
+        ),
+        quotes={},
+    )[0]
+
+    assert allocated["allocation_price"] is None
+    assert allocated["allocation_quantity"] == 0.0
+    assert allocated["allocation_status"] == "missing_price_or_equity"
+
+
+@pytest.mark.parametrize("persisted_price", [None, 0.0, -1.0, float("inf"), 20.0])
+def test_decision_allocation_consumes_bound_persisted_candidate_price(
+    tmp_path, persisted_price
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    action = _action(1, "600001", "buy", 0.2, "stock")
+    action["price"] = 10.0
+    if persisted_price is not None:
+        db.upsert_latest_quote_sync(
+            symbol="600001",
+            asset_type="stock",
+            price=persisted_price,
+            quote_timestamp="2026-07-02T09:30:00+08:00",
+            quote_source="deterministic_fixture",
+            quote_status="confirmed",
+        )
+    evidence = candidate_market_evidence(
+        db,
+        [action],
+        now=datetime(2026, 7, 2, 9, 31, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+    context = bind_candidate_market_evidence(
+        {
+            "authority": "persisted_valuation_snapshot",
+            "portfolio": SimpleNamespace(
+                cash=30_000.0,
+                total_equity=50_000.0,
+                positions={},
+            ),
+            # A different account quote must not replace a bound candidate.
+            "quotes": (
+                {
+                    "600001": {
+                        "symbol": "600001",
+                        "instrument_type": "stock",
+                        "price": 5.0,
+                    }
+                }
+                if persisted_price is not None
+                else {}
+            ),
+        },
+        evidence,
+    )
+
+    allocated = allocate_decision_actions(
+        SimpleNamespace(config=None), context, [action]
+    )
+
+    assert len(allocated) == 1
+    result = allocated[0]
+    if persisted_price == 20.0:
+        assert result["allocation_price"] == 20.0
+        assert result["allocation_quantity"] == 500.0
+        assert result["allocation_status"] == "allocated"
+    else:
+        assert result["allocation_price"] is None
+        assert result["allocation_quantity"] == 0.0
+        assert result["allocation_status"] == "missing_price_or_equity"
+    assert "allocation_quantity" not in action
+    assert action["price"] == 10.0
+    assert db.get_ledger_entries_sync(limit=10) == []
 
 
 def _action(

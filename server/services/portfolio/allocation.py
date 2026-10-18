@@ -266,9 +266,12 @@ def _allocation_price(
     require_persisted_quote_price: bool,
 ) -> Decimal:
     quote_price = _decimal(quote.get("price"))
+    if not quote_price.is_finite():
+        quote_price = _ZERO
     if require_persisted_quote_price or quote_price > 0:
         return quote_price
-    return _decimal(action.get("price"))
+    action_price = _decimal(action.get("price"))
+    return action_price if action_price.is_finite() else _ZERO
 
 
 def _target_total_quantity(
