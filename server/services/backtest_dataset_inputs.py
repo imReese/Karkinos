@@ -141,7 +141,10 @@ def _decision_availability_summary(store, restored) -> dict:
             verification = read_market_verification_evidence(
                 store, store.resolve_ref(partition.verification_id)
             )
-            verification_times[partition.partition_date] = verification.checked_at
+            for instrument in partition.instruments or restored.snapshot.instruments:
+                verification_times[(partition.partition_date, instrument)] = (
+                    verification.checked_at
+                )
 
     late_bar_count = 0
     late_verification_count = 0
@@ -159,7 +162,7 @@ def _decision_availability_summary(store, restored) -> dict:
                     "decision_at": decision_at.isoformat(),
                     "available_at": bar.available_at.isoformat(),
                 }
-        checked_at = verification_times.get(bar.session_date)
+        checked_at = verification_times.get((bar.session_date, bar.instrument))
         if checked_at is not None and checked_at > decision_at:
             late_verification_count += 1
             if first_late_verification is None:

@@ -15,7 +15,12 @@ from fastapi.testclient import TestClient
 from core.types import InstrumentKey, InstrumentType
 from data.dataset.catalog import DatasetCatalog
 from data.dataset.manifest import publish_daily_bar_dataset_manifest
-from data.dataset.model import DailyBarDatasetPartition, DailyBarDatasetSnapshot
+from data.dataset.model import (
+    DailyBarDatasetMembership,
+    DailyBarDatasetPartition,
+    DailyBarDatasetSnapshot,
+    DatasetRef,
+)
 from data.dataset.reader import DatasetReaderIntegrityError, read_daily_bar_dataset
 from data.market.capture import capture_provider_payload
 from data.market.contracts import DailyBarRequest
@@ -293,6 +298,106 @@ def test_v2_decision_availability_checks_bound_verification_time(
     assert (availability["first_late_verification"] is None) is (late_checks == 0)
     assert binding["cross_source_verified"] is True
     assert binding["point_in_time_verified"] is False
+
+
+@pytest.mark.parametrize("late_symbol", ["600000", "600001"])
+def test_sharded_decision_availability_binds_each_instruments_verification(
+    tmp_path: Path, late_symbol: str
+) -> None:
+    day = DAYS[0]
+    root = tmp_path / "research"
+    db = _db(tmp_path, trading_days=(day,))
+    instruments = (STOCK, InstrumentKey("600001", InstrumentType.STOCK))
+    job_ids = []
+    for instrument in instruments:
+        ref = _verified_day(
+            root,
+            day,
+            instruments=(instrument,),
+            available_at_event=True,
+            verification_at_event=instrument.symbol != late_symbol,
+        )
+        job_ids.append(
+            _finished_job(db, day, ref.dataset_id, instruments=(instrument,))
+        )
+    summary = publish_verified_interval_dataset(
+        root,
+        DailyBarRequest(instruments, day, day),
+        db=db,
+        job_ids=tuple(job_ids),
+        session_memberships=(
+            DailyBarDatasetMembership(
+                day,
+                instruments,
+                datetime(day.year, day.month, day.day, 8, 5, tzinfo=timezone.utc),
+            ),
+        ),
+        universe_policy_id="fixture.dynamic.v1",
+    )
+    objects = ContentAddressedObjectStore(root / "objects")
+    restored = read_daily_bar_dataset(
+        objects, DatasetRef(objects.resolve_ref(summary["dataset_id"]))
+    )
+    assert len(restored.snapshot.partitions) == 2
+    assert all(len(part.instruments) == 1 for part in restored.snapshot.partitions)
+
+    _, _, binding = load_dataset_backtest_inputs(
+        root,
+        BacktestRequest(
+            dataset_id=summary["dataset_id"],
+            start_date=day.isoformat(),
+            end_date=day.isoformat(),
+        ),
+    )
+
+    availability = binding["decision_availability"]
+    assert availability["checked_bar_count"] == 2
+    assert availability["late_bar_count"] == 0
+    assert availability["late_verification_count"] == 1
+    assert availability["status"] == "blocked"
+    assert availability["first_late_verification"] == {
+        "instrument_type": "stock",
+        "symbol": late_symbol,
+        "session_date": day.isoformat(),
+        "decision_at": f"{day.isoformat()}T08:00:00+00:00",
+        "checked_at": f"{day.isoformat()}T08:05:00+00:00",
+    }
+
+
+@pytest.mark.parametrize("verification_at_event", [True, False])
+def test_unsharded_decision_availability_applies_verification_to_every_instrument(
+    tmp_path: Path, verification_at_event: bool
+) -> None:
+    day = DAYS[0]
+    ref = _verified_day(
+        tmp_path,
+        day,
+        instruments=(STOCK, InstrumentKey("600001", InstrumentType.STOCK)),
+        available_at_event=True,
+        verification_at_event=verification_at_event,
+    )
+    restored = read_daily_bar_dataset(
+        ContentAddressedObjectStore(tmp_path / "objects"), ref
+    )
+    assert len(restored.snapshot.partitions) == 1
+    assert restored.snapshot.partitions[0].instruments == ()
+
+    _, _, binding = load_dataset_backtest_inputs(
+        tmp_path,
+        BacktestRequest(
+            dataset_id=ref.dataset_id,
+            start_date=day.isoformat(),
+            end_date=day.isoformat(),
+        ),
+    )
+
+    availability = binding["decision_availability"]
+    assert availability["checked_bar_count"] == 2
+    assert availability["late_bar_count"] == 0
+    assert availability["late_verification_count"] == (
+        0 if verification_at_event else 2
+    )
+    assert availability["status"] == ("pass" if verification_at_event else "blocked")
 
 
 def test_v2_decision_audit_fails_closed_on_unreadable_bound_verification(
