@@ -71,6 +71,7 @@ class ResearchNotesRepository:
     async def list_notes(
         self,
         *,
+        note_id: int | None = None,
         symbol: str | None = None,
         entry_kind: str | None = None,
         priority: str | None = None,
@@ -84,6 +85,9 @@ class ResearchNotesRepository:
         query = "SELECT * FROM market_research_notes"
         clauses: list[str] = []
         params: list[Any] = []
+        if note_id is not None:
+            clauses.append("id = ?")
+            params.append(note_id)
         if symbol:
             clauses.append("symbol = ?")
             params.append(symbol)

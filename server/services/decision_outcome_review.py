@@ -98,7 +98,7 @@ class DecisionOutcomeReviewService:
 def build_decision_outcome_review_target(
     *, db: Any, signal_id: int
 ) -> DecisionOutcomeReviewTarget:
-    journal_entries = db.list_signal_journal_sync(limit=10_000, offset=0)
+    journal_entries = db.list_signal_journal_sync(limit=1, signal_id=signal_id)
     entry = next(
         (
             item

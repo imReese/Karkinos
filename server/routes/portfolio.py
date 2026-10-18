@@ -58,9 +58,6 @@ from server.projections.portfolio_application import (
 )
 from server.projections.portfolio_application import has_rows as _has_rows
 from server.projections.portfolio_application import (
-    hydrate_missing_position_quotes as _hydrate_missing_position_quotes,
-)
-from server.projections.portfolio_application import (
     position_quote_presentation as _position_quote_presentation,
 )
 from server.projections.portfolio_application import (
@@ -304,9 +301,6 @@ def build_portfolio_endpoint_dependencies() -> PortfolioEndpointDependencies:
                 _flat_intraday_equity_series_from_current(*args, **kwargs)
             ),
             has_rows=lambda *args, **kwargs: _has_rows(*args, **kwargs),
-            hydrate_missing_position_quotes=lambda *args, **kwargs: (
-                _hydrate_missing_position_quotes(*args, **kwargs)
-            ),
             parse_quote_timestamp=lambda *args, **kwargs: _parse_quote_timestamp(
                 *args, **kwargs
             ),

@@ -57,7 +57,7 @@ from .provider_connectivity_contracts import (
     JsonHttpTransport,
     ProviderConnectivitySettings,
 )
-from .provider_connectivity_transport import UrllibJsonTransport
+from .provider_connectivity_transport import HttpxDeadlineJsonTransport
 from .registry import AiRuntimeRegistry
 from .store import AiAuditStore
 
@@ -88,7 +88,7 @@ class HumanExternalMemoryAnalysisService:
         self._ai_store = ai_store
         self._evidence_repository = evidence_repository
         self._analysis_store = analysis_store
-        self._transport = transport or UrllibJsonTransport()
+        self._transport = transport or HttpxDeadlineJsonTransport()
         self._now = now or utc_now
         self._monotonic = monotonic or time.monotonic
         self._model_timeout_seconds = model_timeout_seconds

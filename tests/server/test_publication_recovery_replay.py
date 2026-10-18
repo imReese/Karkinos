@@ -486,6 +486,42 @@ def test_readiness_does_not_create_missing_database(tmp_path):
     assert not missing.exists()
 
 
+@pytest.mark.parametrize("status", ["partial_success", "partial", "failed", "error"])
+def test_readiness_reports_failed_acquisition_without_blocking_last_good_valuation(
+    tmp_path, status
+):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.persist_quote_ingestion_sync(_quote())
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        timestamp="2026-09-03T10:00:00+08:00",
+        symbol="600001",
+        direction="buy",
+        quantity=1,
+        price=10,
+        asset_class="stock",
+    )
+    db.publish_current_valuation_snapshot_sync(now=NOW)
+    before = build_system_readiness(db.path, now=NOW)
+    assert before["subsystems"]["market_data"]["status"] == "ready"
+    publication = db.get_runtime_control_sync("valuation_snapshot_publication")
+
+    _run(db, "acquisition-failure", ["600001", "600002"])
+    db.persist_quote_ingestion_sync(_quote(run="acquisition-failure"))
+    terminal = _finish(db, "acquisition-failure", status=status, success=1, failure=1)
+    assert terminal["status"] == status
+
+    readiness = build_system_readiness(db.path, now=NOW)
+    assert readiness["subsystems"]["market_data"]["status"] == "degraded"
+    assert readiness["subsystems"]["market_data"]["blockers"] == [
+        "latest_refresh_attempt_failed"
+    ]
+    assert readiness["subsystems"]["valuation_read"]["status"] == "ready"
+    assert readiness["valuation_snapshot_id"] == before["valuation_snapshot_id"]
+    assert db.get_runtime_control_sync("valuation_snapshot_publication") == publication
+
+
 def test_same_count_wrong_symbols_cannot_publish_or_redefine_failure_scope(tmp_path):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()

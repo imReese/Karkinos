@@ -43,7 +43,6 @@ class PortfolioPerformanceDependencies:
     daily_equity_series_from_ledger_history: Operation
     flat_intraday_equity_series_from_current: Operation
     has_rows: Operation
-    hydrate_missing_position_quotes: Operation
     parse_quote_timestamp: Operation
     quotes_from_valuation_snapshot: Operation
     resolve_projection_sources: Operation

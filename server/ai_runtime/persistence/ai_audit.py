@@ -618,6 +618,8 @@ class AiAuditStore:
         events = self.list_events(workflow_id)
         previous_hash = "0" * 64
         errors: list[str] = []
+        if not events:
+            errors.append("workflow_event_chain_missing")
         for expected_sequence, event in enumerate(events, start=1):
             if event["sequence_number"] != expected_sequence:
                 errors.append(f"sequence_gap:{expected_sequence}")

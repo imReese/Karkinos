@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from inspect import Parameter
+from math import isfinite
 from typing import Any
 
 
@@ -569,6 +570,8 @@ def _parse_value(
             if isinstance(value, bool):
                 raise ValueError
             parsed = float(value)
+            if not isfinite(parsed):
+                raise ValueError
         elif schema.type == "bool":
             parsed = _parse_bool(value)
         elif schema.type == "str":
@@ -579,7 +582,7 @@ def _parse_value(
             parsed = value
         else:
             parsed = value
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         errors.append(
             {
                 "field": schema.name,

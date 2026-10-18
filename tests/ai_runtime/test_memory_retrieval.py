@@ -101,6 +101,31 @@ async def _reviewed_memory(db_path):
     return capture, analysis, review
 
 
+@pytest.mark.asyncio
+async def test_missing_source_workflow_audit_blocks_existing_memory_recall(tmp_path):
+    db_path = tmp_path / "missing-source-audit.db"
+    capture, analysis, review = await _reviewed_memory(db_path)
+    context, _ = _new_current_context(db_path, capture.records)
+    retrieval = _retrieval_service(db_path).start(
+        _retrieval_request(review.review.review_id, context.snapshot_id)
+    )
+    assert retrieval.retrieval_eligible is True
+    with closing(sqlite3.connect(db_path)) as connection, connection:
+        connection.execute(
+            "DELETE FROM ai_workflow_events WHERE workflow_id = ?",
+            (analysis.workflow.workflow_id,),
+        )
+
+    reopened = _retrieval_service(db_path).get(retrieval.stored.retrieval_id)
+    assert reopened.retrieval_eligible is False
+    assert reopened.to_dict()["selected_memories"] == []
+    assert any(
+        "workflow_event_chain_missing" in reason
+        for reason in reopened.invalidation_reasons
+    )
+    assert reopened.to_dict()["authority_effect"] == "none"
+
+
 @pytest.mark.unit
 @pytest.mark.trading_safety
 @pytest.mark.asyncio

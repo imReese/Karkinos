@@ -49,8 +49,6 @@ def persist_recommendation_tasks(
                         "asset_class": "stock",
                     }
                 ],
-                available_cash=0,
-                existing_positions={},
             ).tasks[0]
             recommendations.append(
                 {

@@ -176,7 +176,7 @@ def _parse_runtime_environment_value(env_name: str, raw_value: str) -> Any:
             parsed_timeout = float(value)
         except ValueError as exc:
             raise ValueError(f"{env_name} must be numeric") from exc
-        if parsed_timeout <= 0 or parsed_timeout > 60:
+        if not 0 < parsed_timeout <= 60:
             raise ValueError(f"{env_name} is outside the supported range")
         return parsed_timeout
     if env_name == "KARKINOS_CORS_ALLOWED_ORIGINS":

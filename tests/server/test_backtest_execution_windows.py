@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from copy import deepcopy
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pandas as pd
@@ -13,6 +14,7 @@ import pytest
 from analytics.dataset_snapshot import verify_backtest_dataset_snapshot_replay
 from core.types import AssetClass, BarFrequency, InstrumentType
 from server.contracts.content_identity import content_fingerprint
+from server.contracts.http import strategy_models
 from server.services.backtest_views.execution import (
     _windowed_data_handlers,
     prepare_dataset_backtest_inputs,
@@ -375,3 +377,99 @@ def test_execution_window_cannot_fall_back_to_serving(client_context, monkeypatc
             state.db,
             history_end=date(2026, 9, 9),
         )
+
+
+@pytest.mark.parametrize(
+    "request_type,values",
+    [
+        (strategy_models.BacktestRequest, {}),
+        (strategy_models.BacktestSweepRequest, {"param_grid": {"short_period": [1]}}),
+        (strategy_models.CompareRequest, {}),
+    ],
+)
+def test_backtest_request_defaults_follow_request_date(
+    monkeypatch, request_type, values
+):
+    request_day = date.today()
+
+    class RequestDate(date):
+        current = request_day
+
+        @classmethod
+        def today(cls):
+            return cls.current
+
+    monkeypatch.setattr(strategy_models, "date", RequestDate)
+    first = request_type(**values)
+    assert first.end_date == (request_day - timedelta(days=1)).isoformat()
+    RequestDate.current = request_day + timedelta(days=1)
+    second = request_type(**values)
+    explicit = request_type(**values, end_date="2026-09-11")
+
+    assert second.end_date == request_day.isoformat()
+    assert first.end_date == (request_day - timedelta(days=1)).isoformat()
+    assert explicit.end_date == "2026-09-11"
+    assert request_type.model_validate_json(explicit.model_dump_json()).end_date == (
+        "2026-09-11"
+    )
+
+
+@pytest.mark.parametrize("endpoint", ["run", "sweep", "compare"])
+def test_backtest_http_omitted_end_date_follows_request_date_and_exact_dataset(
+    client_context, monkeypatch, endpoint
+):
+    client, state, ref, _ = client_context
+    body = _request(ref).model_dump(mode="json")
+    explicit_end = body.pop("end_date")
+    first_today = date.fromisoformat(explicit_end) + timedelta(days=1)
+
+    class RequestDate(date):
+        current = first_today
+
+        @classmethod
+        def today(cls):
+            return cls.current
+
+    monkeypatch.setattr(strategy_models, "date", RequestDate)
+
+    def no_provider(*_args, **_kwargs):
+        pytest.fail("Bound research must not fall back to a provider")
+
+    monkeypatch.setattr("data.manager.DataManager.get_bars", no_provider)
+    if endpoint == "sweep":
+        body["param_grid"] = {"short_period": [1]}
+    elif endpoint == "compare":
+        body["runs"] = [{"strategy": body["strategy"], "params": body["params"]}]
+
+    response = client.post(f"/api/backtest/{endpoint}", json=body)
+    assert response.status_code == 200, response.text
+    first = response.json()
+    result_ids = (
+        [first["id"]]
+        if endpoint == "run"
+        else [row["result_id"] for row in first["results"]]
+    )
+    assert len(result_ids) == 1
+    for result_id in result_ids:
+        saved = client.get(f"/api/backtest/results/{result_id}")
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["config"]["end_date"] == explicit_end
+
+    RequestDate.current = first_today + timedelta(days=1)
+    with sqlite3.connect(state.db.path) as conn:
+        before = conn.execute("SELECT COUNT(*) FROM backtest_results").fetchone()[0]
+    next_day = client.post(f"/api/backtest/{endpoint}", json=body)
+    assert next_day.status_code == 409, next_day.text
+    assert next_day.json()["detail"] == "dataset_request_date_mismatch"
+    with sqlite3.connect(state.db.path) as conn:
+        assert (
+            conn.execute("SELECT COUNT(*) FROM backtest_results").fetchone()[0]
+            == before
+        )
+
+    replay = client.post(
+        f"/api/backtest/{endpoint}", json={**body, "end_date": explicit_end}
+    )
+    assert replay.status_code == 200, replay.text
+    persisted = client.get(f"/api/backtest/results/{result_ids[0]}")
+    assert persisted.json()["config"]["end_date"] == explicit_end

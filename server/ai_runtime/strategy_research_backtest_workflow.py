@@ -63,43 +63,88 @@ class StrategyResearchBacktestWorkflowMixin:
                     research_capital_evidence if selection.has_account_binding else None
                 ),
             )
-            result_id = await self._db.save_backtest_result(
-                config_json=bt_request.model_dump_json(),
-                initial_cash=bt_result["initial_cash"],
-                final_equity=bt_result["final_equity"],
-                total_return=bt_result["total_return"],
-                sharpe=bt_result["sharpe"],
-                max_dd=bt_result["max_drawdown"],
-                equity_curve_json=json.dumps(bt_result["equity_curve"]),
-                annual_return=bt_result["annual_return"],
-                sortino=bt_result["sortino"],
-                win_rate=bt_result["win_rate"],
-                duration_days=bt_result["duration_days"],
-                metrics_json=json.dumps(bt_result["metrics_json"], ensure_ascii=False),
-                cost_summary_json=json.dumps(
-                    bt_result["cost_summary_json"], ensure_ascii=False
-                ),
-            )
-            evidence_fingerprint = content_fingerprint(
-                bt_result["metrics_json"]["research_evidence_bundle"]
-            )
-            self._research_store.finish_backtest(
-                backtest["backtest_run_id"],
-                status="completed",
-                result_id=result_id,
-                evidence_fingerprint=evidence_fingerprint,
-                failure_code=None,
-                updated_at=self._now(),
-            )
-        except Exception as exc:
+        except (asyncio.CancelledError, Exception) as exc:
             self._research_store.finish_backtest(
                 backtest["backtest_run_id"],
                 status="failed",
                 result_id=None,
                 evidence_fingerprint=None,
-                failure_code=strategy_research_failure_code(exc),
+                failure_code=(
+                    "formula_backtest_cancelled"
+                    if isinstance(exc, asyncio.CancelledError)
+                    else strategy_research_failure_code(exc)
+                ),
                 updated_at=self._now(),
             )
+            raise
+
+        async def save_and_finish() -> None:
+            result_id = None
+            evidence_fingerprint = None
+            try:
+                result_id = await self._db.save_backtest_result(
+                    config_json=bt_request.model_dump_json(),
+                    initial_cash=bt_result["initial_cash"],
+                    final_equity=bt_result["final_equity"],
+                    total_return=bt_result["total_return"],
+                    sharpe=bt_result["sharpe"],
+                    max_dd=bt_result["max_drawdown"],
+                    equity_curve_json=json.dumps(bt_result["equity_curve"]),
+                    annual_return=bt_result["annual_return"],
+                    sortino=bt_result["sortino"],
+                    win_rate=bt_result["win_rate"],
+                    duration_days=bt_result["duration_days"],
+                    metrics_json=json.dumps(
+                        bt_result["metrics_json"], ensure_ascii=False
+                    ),
+                    cost_summary_json=json.dumps(
+                        bt_result["cost_summary_json"], ensure_ascii=False
+                    ),
+                )
+                evidence_fingerprint = content_fingerprint(
+                    bt_result["metrics_json"]["research_evidence_bundle"]
+                )
+                self._research_store.finish_backtest(
+                    backtest["backtest_run_id"],
+                    status="completed",
+                    result_id=result_id,
+                    evidence_fingerprint=evidence_fingerprint,
+                    failure_code=None,
+                    updated_at=self._now(),
+                )
+            except (asyncio.CancelledError, Exception) as exc:
+                if isinstance(exc, asyncio.CancelledError) and result_id is None:
+                    # Without a returned ID, the save's outcome is unknown.
+                    raise
+                self._research_store.finish_backtest(
+                    backtest["backtest_run_id"],
+                    status="failed",
+                    result_id=result_id,
+                    evidence_fingerprint=evidence_fingerprint,
+                    failure_code=(
+                        "formula_backtest_cancelled"
+                        if isinstance(exc, asyncio.CancelledError)
+                        else strategy_research_failure_code(exc)
+                    ),
+                    updated_at=self._now(),
+                )
+                raise
+
+        completion = asyncio.create_task(save_and_finish())
+        try:
+            await asyncio.shield(completion)
+        except asyncio.CancelledError:
+            # Finish linking the scored result before propagating caller cancellation.
+            # Repeated cancellation must keep waiting for this same save attempt.
+            while not completion.done():
+                try:
+                    await asyncio.shield(completion)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            if not completion.cancelled():
+                completion.exception()
             raise
         return await self._backtest_response(
             self._research_store.get_backtest(backtest["backtest_run_id"]),

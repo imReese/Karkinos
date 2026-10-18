@@ -62,10 +62,24 @@ class SignalAutomationDatabaseFacade(DatabaseRepositoryAccess):
         return await self._signal_journal.list_signal_journal(limit, offset)
 
     def list_signal_journal_sync(
-        self, limit: int = 50, offset: int = 0
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        *,
+        signal_id: int | None = None,
+        strategy_id: str | None = None,
+        symbol: str | None = None,
+        asset_class: str | None = None,
     ) -> list[dict[str, Any]]:
         """List signal → action task → risk decision journal entries."""
-        return self._signal_journal.list_signal_journal_sync(limit, offset)
+        return self._signal_journal.list_signal_journal_sync(
+            limit,
+            offset,
+            signal_id=signal_id,
+            strategy_id=strategy_id,
+            symbol=symbol,
+            asset_class=asset_class,
+        )
 
     # ---------- Action Tasks ----------
 

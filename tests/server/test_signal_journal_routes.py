@@ -15,6 +15,8 @@ from fastapi.routing import APIRoute
 from core.events import OrderIntentEvent, RiskDecisionEvent
 from core.types import OrderSide, Symbol
 from server.db import AppDatabase
+from server.persistence.event_log import EventLogRepository
+from server.persistence.signal_journal import SignalJournalRepository
 from server.persistence.signal_journal_projection import (
     index_signal_journal_events,
     latest_signal_journal_event,
@@ -180,6 +182,55 @@ def test_indexed_signal_journal_preserves_null_source_ref_fallback(source: str) 
 
     assert indexed == linear
     assert indexed is not None and indexed["source"] == source
+
+
+@pytest.mark.parametrize(
+    ("source", "source_ref", "payload", "chain"),
+    (
+        ("decision_outcome_reviews", None, {"signal_id": 1}, "action"),
+        ("signal_reviews", "1", {}, "action"),
+        ("signal_reviews", None, {"payload": {"source_signal_id": 1}}, "action"),
+        ("manual_orders", None, {"source_signal_id": 1}, "action"),
+        ("orders", None, {"payload": {"source_signal_id": 1}}, "action"),
+        ("orders", None, {"payload": {"action_id": "1"}}, "action"),
+        ("risk_decisions", "RISK-REVIEW-1", {}, "risk"),
+        ("action_tasks", "1", {}, "action"),
+        ("risk_decisions", None, {}, "bare"),
+        ("action_tasks", None, {}, "bare"),
+    ),
+)
+def test_journal_filtered_read_preserves_legacy_event_links(
+    tmp_path, source, source_ref, payload, chain
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    if chain == "bare":
+        db.save_signal_sync(
+            timestamp="2026-04-18T09:30:00+08:00",
+            strategy_id="dual_ma",
+            symbol="510300",
+            direction="buy",
+            target_weight=0.2,
+            price=4.56,
+            asset_class="fund",
+        )
+    else:
+        _seed_signal_chain(db)
+        if chain == "risk":
+            _seed_bound_contribution_chain(db)
+    event_id = EventLogRepository(db._path).append(
+        event_type="order.status_changed",
+        timestamp="2026-04-20T10:00:00+08:00",
+        source=source,
+        source_ref=source_ref,
+        payload=payload,
+    )
+
+    exact_entry = db.list_signal_journal_sync(limit=1, signal_id=1)[0]
+    latest_entry = db.list_signal_journal_sync(limit=1)[0]
+
+    assert exact_entry["latest_event"]["id"] == event_id
+    assert latest_entry["latest_event"] == exact_entry["latest_event"]
 
 
 def _seed_signal_chain(db: AppDatabase) -> None:
@@ -591,6 +642,175 @@ def test_signal_review_binds_canonical_contribution_and_exposes_later_drift(
         revalidated["current_target"]["target_fingerprint"]
         != (preview["target_fingerprint"])
     )
+
+
+@pytest.mark.parametrize(
+    ("newer_signal_count", "same_assignment"),
+    ((500, False), (500, True), (10_000, False)),
+)
+def test_signal_review_keeps_exact_execution_after_unrelated_signal_history(
+    monkeypatch, tmp_path, newer_signal_count, same_assignment
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _seed_signal_chain(db)
+    _seed_bound_contribution_chain(db)
+    monkeypatch.setattr(
+        "server.dependencies.get_app_state", lambda: SimpleNamespace(db=db)
+    )
+    preview_endpoint = _endpoint(
+        "/api/signals/journal/{signal_id}/review/preview", method="POST"
+    )
+    review_endpoint = _endpoint(
+        "/api/signals/journal/{signal_id}/review", method="POST"
+    )
+    get_endpoint = _endpoint("/api/signals/journal/reviews/{review_id}")
+    preview = asyncio.run(preview_endpoint(1))
+    request = signal_routes.SignalJournalReviewRequest(
+        idempotency_key="review-historical-execution",
+        reviewed_by="portfolio-owner",
+        user_decision="acted",
+        outcome="evidence_supported",
+        note="The persisted posted fill supports this synthetic review.",
+        expected_target_fingerprint=preview["target_fingerprint"],
+        confirmation=(
+            "record_evidence_bound_decision_review_without_trade_or_capital_authority"
+        ),
+    )
+    recorded = asyncio.run(review_endpoint(1, request))
+    repository = SignalJournalRepository(db._path)
+    with sqlite3.connect(db._path) as conn:
+        for index in range(newer_signal_count):
+            repository.save_signal_sync(
+                timestamp="2026-04-19T09:30:00+08:00",
+                strategy_id="dual_ma" if same_assignment else "unrelated_strategy",
+                symbol="510300" if same_assignment else f"fixture-{index:06d}",
+                direction="buy",
+                target_weight=0.1,
+                price=1,
+                asset_class="stock",
+                _connection=conn,
+            )
+        conn.commit()
+
+    current = asyncio.run(preview_endpoint(1))
+    assert current["execution_evidence"]["status"] == "fills_linked"
+    assert current["execution_evidence"]["order_count"] == 1
+    assert current["execution_evidence"]["fill_count"] == 1
+    assert current["financial_evidence_status"] == "bound"
+    assert current["target_fingerprint"] == preview["target_fingerprint"]
+    revalidated = asyncio.run(get_endpoint(recorded["review"]["review_id"]))
+    assert revalidated["target_binding_valid"] is True
+    assert revalidated["audit_replay"]["valid"] is True
+    reused = asyncio.run(review_endpoint(1, request))
+    assert reused["reused"] is True
+    assert reused["review"]["review_id"] == recorded["review"]["review_id"]
+
+    with pytest.raises(HTTPException) as rejected:
+        asyncio.run(
+            review_endpoint(
+                1,
+                _review_request(
+                    current["target_fingerprint"], key="incorrect-not-executed"
+                ),
+            )
+        )
+    assert rejected.value.status_code == 422
+    with pytest.raises(HTTPException) as missing:
+        asyncio.run(preview_endpoint(newer_signal_count + 2))
+    assert missing.value.status_code == 404
+    with sqlite3.connect(db._path) as conn:
+        for table in ("orders", "fills", "ledger_entries", "decision_outcome_reviews"):
+            assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("newer_fact", ("orders", "fills"))
+def test_signal_review_keeps_execution_after_unrelated_execution_history(
+    monkeypatch, tmp_path, newer_fact
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _seed_signal_chain(db)
+    _seed_bound_contribution_chain(db)
+    monkeypatch.setattr(
+        "server.dependencies.get_app_state", lambda: SimpleNamespace(db=db)
+    )
+    preview_endpoint = _endpoint(
+        "/api/signals/journal/{signal_id}/review/preview", method="POST"
+    )
+    before = asyncio.run(preview_endpoint(1))
+    for index in range(1000):
+        common = {
+            "timestamp": "2026-04-19T09:30:00+08:00",
+            "symbol": "600000",
+            "side": "buy",
+            "asset_class": "stock",
+            "execution_mode": "manual",
+        }
+        if newer_fact == "orders":
+            db.record_order_sync(
+                order_id=f"unrelated-order-{index}",
+                order_type="market",
+                quantity=100,
+                price=1,
+                payload={"strategy_id": "unrelated_strategy"},
+                **common,
+            )
+        else:
+            db.record_fill_sync(
+                fill_id=f"unrelated-fill-{index}",
+                order_id=f"unrelated-order-{index}",
+                fill_price=1,
+                fill_quantity=100,
+                metadata={"strategy_id": "unrelated_strategy"},
+                **common,
+            )
+
+    after = asyncio.run(preview_endpoint(1))
+    assert after["execution_evidence"]["status"] == "fills_linked"
+    assert [row["order_id"] for row in after["execution_evidence"]["orders"]] == [
+        "ORDER-REVIEW-1"
+    ]
+    assert [row["fill_id"] for row in after["execution_evidence"]["fills"]] == [
+        "FILL-REVIEW-1"
+    ]
+    assert after["financial_evidence_status"] == "bound"
+    assert after["target_fingerprint"] == before["target_fingerprint"]
+
+
+def test_signal_review_keeps_conflicting_fill_identity_visible(monkeypatch, tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _seed_signal_chain(db)
+    _seed_bound_contribution_chain(db)
+    monkeypatch.setattr(
+        "server.dependencies.get_app_state", lambda: SimpleNamespace(db=db)
+    )
+    db.record_fill_sync(
+        fill_id="CONFLICTING-FILL",
+        order_id="ORDER-REVIEW-1",
+        timestamp="2026-04-19T09:35:00+08:00",
+        symbol="600000",
+        side="buy",
+        fill_price=1,
+        fill_quantity=100,
+        asset_class="stock",
+        execution_mode="manual",
+        metadata={"strategy_id": "dual_ma", "source_signal_id": 1},
+    )
+
+    preview_endpoint = _endpoint(
+        "/api/signals/journal/{signal_id}/review/preview", method="POST"
+    )
+    preview = asyncio.run(preview_endpoint(1))
+    assert preview["execution_evidence"]["status"] == "fills_linked"
+    assert any(
+        fill["fill_id"] == "CONFLICTING-FILL" and fill["symbol"] == "600000"
+        for fill in preview["execution_evidence"]["fills"]
+    )
+    assert preview["financial_evidence_status"] == "blocked"
+    assert "not_executed" not in preview["allowed_outcomes"]
+    assert "evidence_supported" not in preview["allowed_outcomes"]
 
 
 def test_signal_journal_resolves_instrument_display_name(tmp_path) -> None:

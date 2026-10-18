@@ -84,7 +84,8 @@ def decimal_text(
         return None
     if parsed == 0:
         return "0"
-    return format(parsed.normalize(), "f")
+    text = format(parsed, "f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
 
 
 @overload

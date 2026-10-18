@@ -10,21 +10,12 @@ def fetch_sina_index_spot(ak):
         return ak.stock_zh_index_spot_sina()
 
 
-legacy_index_spot = fetch_sina_index_spot
-
-
 def fetch_sina_bond_daily(ak, retry, *, symbol: str):
     return retry(ak.bond_zh_hs_daily, symbol=symbol)
 
 
-legacy_bond_daily = fetch_sina_bond_daily
-
-
 def fetch_sina_bond_spot(ak, retry):
     return retry(ak.bond_zh_hs_spot)
-
-
-legacy_bond_spot = fetch_sina_bond_spot
 
 
 def fetch_sina_fund_estimate(*, fund_code: str):
@@ -38,6 +29,3 @@ def fetch_sina_fund_estimate(*, fund_code: str):
         response = requests.get(url, params={"symbol": fund_code}, timeout=3)
     response.raise_for_status()
     return response.json()
-
-
-legacy_fund_estimate = fetch_sina_fund_estimate

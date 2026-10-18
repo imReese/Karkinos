@@ -9,7 +9,7 @@ from server.services.operations_today_values import list_value as _list
 from server.services.operations_today_values import payload as _payload
 
 
-def _scheduler_summary(
+def scheduler_summary(
     *,
     automation_runs: Iterable[dict[str, Any]] | None,
     plan_date: str,
@@ -106,7 +106,7 @@ def _latest_automation_run(
     )
 
 
-def _scheduler_operation_state(run_status: str) -> tuple[str, str]:
+def scheduler_operation_state(run_status: str) -> tuple[str, str]:
     status = run_status.strip().lower()
     if status.endswith("_failed") or status in {"failed", "error"}:
         return "blocked", "inspect_scheduler_failure"
@@ -148,10 +148,3 @@ def _scheduler_suggested_action(
     if value in {"pending_manual_confirmation", "not_recorded", ""}:
         return "none"
     return "review_scheduler_run"
-
-
-scheduler_summary = _scheduler_summary
-latest_automation_run = _latest_automation_run
-scheduler_operation_state = _scheduler_operation_state
-scheduler_run_failed = _scheduler_run_failed
-scheduler_suggested_action = _scheduler_suggested_action

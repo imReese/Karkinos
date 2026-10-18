@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
+from core.types import AssetClass, InstrumentType
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.http.portfolio_models import (
     AccountOverview,
@@ -25,12 +26,20 @@ from server.http.portfolio_endpoints.dependencies import (
     PortfolioSnapshotDependencies,
     PortfolioSnapshotOperations,
 )
+from server.services.market_refresh_identity import provider_asset_class
 
 
 @dataclass(frozen=True, slots=True)
 class PortfolioSnapshotEndpoints:
     router: APIRouter
     operations: PortfolioSnapshotOperations
+
+
+def _cockpit_asset_class(value: object) -> AssetClass | None:
+    try:
+        return provider_asset_class(InstrumentType.from_persisted(value))
+    except ValueError:
+        return None
 
 
 def portfolio_response_not_modified(
@@ -239,7 +248,11 @@ def create_router(
                 limit=10,
             )
         action_queue = [ActionCard(**row) for row in action_rows]
-        actions_by_symbol = {action.symbol: action for action in action_queue}
+        actions_by_identity = {
+            (action.symbol, asset_class): action
+            for row, action in zip(action_rows, action_queue, strict=True)
+            if (asset_class := _cockpit_asset_class(row.get("asset_class"))) is not None
+        }
 
         positions: list[PortfolioCockpitPosition] = []
         for position in snapshot.positions:
@@ -250,7 +263,14 @@ def create_router(
                 and snapshot.total_equity > 0
                 else None
             )
-            action = actions_by_symbol.get(position.symbol)
+            action = actions_by_identity.get(
+                (
+                    position.symbol,
+                    _cockpit_asset_class(
+                        position.instrument_type or position.asset_class
+                    ),
+                )
+            )
             target_weight = (
                 action.target_weight if action is not None else actual_weight
             )

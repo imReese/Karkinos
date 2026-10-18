@@ -243,6 +243,54 @@ def test_server_config_rejects_unsafe_broker_statement_collector(
         ServerConfig.from_json(config_path)
 
 
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize(
+    ("config_type", "field"),
+    [
+        (AIProviderConfig, "timeout_seconds"),
+        (BrokerStatementCollectorConfig, "poll_interval_seconds"),
+        (BrokerStatementCollectorConfig, "stability_delay_seconds"),
+    ],
+)
+def test_typed_runtime_config_rejects_nonfinite_timing(config_type, field, value):
+    with pytest.raises(ValueError, match=field):
+        config_type(**{field: value})
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize(
+    ("group", "field"),
+    [
+        ("ai", "timeout_seconds"),
+        ("collector", "poll_interval_seconds"),
+        ("collector", "stability_delay_seconds"),
+    ],
+)
+def test_json_runtime_config_rejects_nonfinite_timing(tmp_path, group, field, value):
+    fields = {field: value}
+    payload = (
+        {"ai": fields}
+        if group == "ai"
+        else {"account_truth": {"broker_statement_collector": fields}}
+    )
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=field):
+        ServerConfig.from_json(config_path)
+
+
+@pytest.mark.parametrize("value", ["NaN", "nan", "Infinity", "-Infinity"])
+def test_runtime_environment_rejects_nonfinite_ai_timeout(tmp_path, monkeypatch, value):
+    config_path = tmp_path / "config.json"
+    config_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("KARKINOS_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("KARKINOS_AI_TIMEOUT_SECONDS", value)
+
+    with pytest.raises(ValueError, match="KARKINOS_AI_TIMEOUT_SECONDS"):
+        load_runtime_config(ServerConfig)
+
+
 def test_server_config_loads_explicit_citic_history_xls_directory(tmp_path):
     export_path = tmp_path / "private-exports"
     config_path = tmp_path / "config.json"
@@ -823,7 +871,8 @@ def test_backtest_tool_uses_loaded_runtime_config_from_json(tmp_path, monkeypatc
         total_bars = 1
 
     class FakeManager:
-        def get_bars(self, *args, **kwargs):
+        def get_bars(self, symbol, *, start, end, asset_class, instrument_type):
+            captured["instrument_type"] = instrument_type
             return FakeHandler()
 
     class FakeEngine:
@@ -843,6 +892,7 @@ def test_backtest_tool_uses_loaded_runtime_config_from_json(tmp_path, monkeypatc
         data_manager=FakeManager(),
         watchlist=[(Symbol("600519"), AssetClass.STOCK)],
         instruments={Symbol("600519"): ("600519", AssetClass.STOCK)},
+        instrument_types={Symbol("600519"): InstrumentType.STOCK},
     )
 
     monkeypatch.setattr(run_backtest, "create_runtime_context", lambda config: runtime)
@@ -855,6 +905,74 @@ def test_backtest_tool_uses_loaded_runtime_config_from_json(tmp_path, monkeypatc
     run_backtest.main([])
 
     assert captured["initial_cash"] == Decimal("200000")
+    assert captured["instrument_type"] is InstrumentType.STOCK
+
+
+@pytest.mark.parametrize(
+    "instrument_type", [InstrumentType.ETF, InstrumentType.OPEN_END_FUND]
+)
+def test_backtest_tool_preserves_fund_identity_through_real_runtime(
+    tmp_path, monkeypatch, capsys, instrument_type
+):
+    import pandas as pd
+
+    from core.types import BarFrequency
+    from data.manager import DataManager
+    from data.store import DataStore
+    from server import bootstrap
+    from tools import run_backtest
+
+    root = tmp_path / "market-data"
+    symbol = Symbol("019999")
+    store = DataStore(root)
+    prices = {InstrumentType.ETF: 1.25, InstrumentType.OPEN_END_FUND: 2.75}
+    for kind, price in prices.items():
+        store.save_bars(
+            symbol,
+            BarFrequency.DAILY,
+            pd.DataFrame(
+                {
+                    "timestamp": pd.to_datetime(["2026-05-27", "2026-05-28"]),
+                    "open": [price, price],
+                    "high": [price, price],
+                    "low": [price, price],
+                    "close": [price, price],
+                    "volume": [100.0, 100.0],
+                }
+            ),
+            instrument_type=kind,
+        )
+    config = BacktestConfig(
+        initial_cash=Decimal("100000"),
+        start_date="2026-05-27",
+        end_date="2026-05-28",
+        assets=[{"symbol": symbol, "instrument_type": instrument_type.value}],
+    )
+    monkeypatch.setattr(bootstrap, "resolve_data_dir", lambda: root)
+    monkeypatch.setattr(bootstrap, "build_sources_for_config", lambda config: {})
+    monkeypatch.setattr(
+        run_backtest, "load_selected_runtime_environment_file", lambda: None
+    )
+    monkeypatch.setattr(run_backtest, "load_runtime_config", lambda: config)
+    consumed = []
+    real_get_bars = DataManager.get_bars
+
+    def get_bars(manager, *args, **kwargs):
+        handler = real_get_bars(manager, *args, **kwargs)
+        consumed.extend(list(handler))
+        return handler
+
+    monkeypatch.setattr(DataManager, "get_bars", get_bars)
+
+    run_backtest.main([])
+
+    assert len(consumed) == 2
+    assert all(event.asset_class is AssetClass.FUND for event in consumed)
+    assert all(event.instrument_type is instrument_type for event in consumed)
+    assert [event.close for event in consumed] == [
+        Decimal(str(prices[instrument_type]))
+    ] * 2
+    assert "2 根K线" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(

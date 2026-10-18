@@ -54,7 +54,6 @@ def test_scheduler_signal_projection_has_explicit_inputs() -> None:
     assert [argument.arg for argument in handler.args.kwonlyargs] == [
         "watchlist",
         "database",
-        "portfolio",
         "notifier",
     ]
     assert "scheduler._" not in source
@@ -71,8 +70,13 @@ def test_scheduler_quote_batch_uses_one_typed_ingestion_uow() -> None:
     assert "upsert_instrument_metadata_sync" not in source
 
 
-def test_runtime_quote_consumers_use_public_scheduler_command() -> None:
+def test_runtime_quote_consumers_do_not_access_private_scheduler_state() -> None:
     for path in (MARKET_REFRESH, PORTFOLIO_QUOTES):
         source = path.read_text(encoding="utf-8")
         assert "scheduler._latest_quotes" not in source
-        assert "publish_runtime_quote" in source
+
+
+def test_runtime_quote_publication_uses_public_scheduler_command() -> None:
+    source = MARKET_REFRESH.read_text(encoding="utf-8")
+
+    assert "publish_runtime_quote" in source

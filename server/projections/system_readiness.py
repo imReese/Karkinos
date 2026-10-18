@@ -157,6 +157,7 @@ def build_system_readiness(
                 "failed",
                 "error",
                 "partial",
+                "partial_success",
             }
             states["market_data"] = _state(
                 "degraded" if failures or failure_codes or refresh_failed else "ready",

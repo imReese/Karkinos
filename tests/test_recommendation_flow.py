@@ -29,8 +29,6 @@ def test_build_recommendation_cycle_normalizes_tasks_and_counts():
 
     cycle = build_recommendation_cycle(
         signals=signals,
-        available_cash=100000,
-        existing_positions={},
     )
 
     assert len(cycle.tasks) == 2
@@ -57,8 +55,6 @@ def test_build_recommendation_cycle_defaults_missing_asset_class():
                 "price": None,
             }
         ],
-        available_cash=1000,
-        existing_positions={"000001": 100},
     )
 
     assert cycle.tasks[0].asset_class == "stock"

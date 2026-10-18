@@ -29,6 +29,13 @@ MODULES = (
     "daily_decision_evidence_orchestration.py",
     "daily_decision_evidence_composition.py",
 )
+LOWER_CONSUMER_MODULES = (
+    "daily_candidate_runtime_status.py",
+    "daily_candidate_trial.py",
+    "daily_candidate_trial_evaluation.py",
+    "daily_candidate_trial_ticket_evaluation.py",
+    "daily_candidate_trial_values.py",
+)
 
 
 def _tree(module: str) -> ast.Module:
@@ -147,7 +154,7 @@ def test_split_modules_do_not_reverse_import_facade_or_own_delivery_and_sqlite()
 ):
     facade_module = "server.services.daily_decision_evidence_automation"
     violations: list[str] = []
-    for module in MODULES:
+    for module in (*MODULES, *LOWER_CONSUMER_MODULES):
         imports = _imports(module)
         if module != "daily_decision_evidence_automation.py" and (
             facade_module in imports

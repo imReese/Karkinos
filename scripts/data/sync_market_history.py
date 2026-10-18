@@ -166,9 +166,9 @@ def _sync_full_market_daily(
         provider = build_market_calendar_provider("akshare")
         for y in range(start_year, end_year + 1):
             snap = provider.fetch_snapshot(exchange="SSE", year=y)
-            for d in snap.trading_days:
-                dt = d.date.isoformat()
-                if start_date <= dt <= end_date:
+            for d in snap.days:
+                dt = d.date
+                if d.is_trading_day and start_date <= dt <= end_date:
                     all_trade_dates.append(dt)
 
     all_trade_dates.sort()
@@ -245,7 +245,7 @@ def _sync_full_market_daily(
             logger.warning(
                 "Interrupted by user. Progress saved up to last completed date."
             )
-            break
+            return 130
         except Exception as exc:
             logger.error(
                 "[%d/%d] Failed to ingest %s: %s",
@@ -277,9 +277,22 @@ def _maybe_mirror_to_repo(data_dir: Path) -> None:
         and dev_meta.resolve() != repo_meta.resolve()
     ):
         logger.info("Mirroring %s -> %s...", dev_meta, repo_meta)
-        import shutil
+        import time
+        from contextlib import closing
 
-        shutil.copy2(dev_meta, repo_meta)
+        from data.meta_store_connection import connect_meta_sqlite
+
+        deadline = time.monotonic() + 30
+
+        def progress(_status: int, _remaining: int, _total: int) -> None:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("market_meta_mirror_timeout")
+
+        with closing(connect_meta_sqlite(dev_meta, readonly=True)) as source:
+            with closing(connect_meta_sqlite(repo_meta)) as target:
+                # SQLite commits the snapshot to the existing target atomically,
+                # retaining valid WAL sidecars and snapshots of active readers.
+                source.backup(target, pages=256, progress=progress, sleep=0.05)
         logger.info("Mirror complete.")
 
 

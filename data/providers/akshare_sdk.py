@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
+from threading import Lock
 
 import pandas as pd
 
@@ -19,6 +21,10 @@ _PROXY_ENV_KEYS = (
     "all_proxy",
     "ALL_PROXY",
 )
+_PROVIDER_NETWORK_LOCK = Lock()
+_provider_network_users = 0
+_provider_original_proxy_env: dict[str, str | None] = {}
+_provider_original_getproxies: Callable[[], dict[str, str]] | None = None
 
 
 def _looks_like_open_end_fund_code(value: str) -> bool:
@@ -73,32 +79,43 @@ def _provider_uses_proxy() -> bool:
 @contextmanager
 def _provider_network_env():
     """Keep provider calls from inheriting broken local proxy settings by default."""
+    global _provider_network_users
+    global _provider_original_proxy_env, _provider_original_getproxies
+
     if _provider_uses_proxy():
         yield
         return
 
     import urllib.request
 
-    original_getproxies = urllib.request.getproxies
-    original = {key: os.environ.get(key) for key in _PROXY_ENV_KEYS}
-    original_no_proxy = os.environ.get("NO_PROXY")
-    for key in _PROXY_ENV_KEYS:
-        os.environ.pop(key, None)
-    os.environ["NO_PROXY"] = "*"
-    urllib.request.getproxies = lambda: {}
+    # The environment is process-global. Overlapping and nested calls share one
+    # snapshot; the lock must not serialize the provider network work itself.
+    with _PROVIDER_NETWORK_LOCK:
+        if _provider_network_users == 0:
+            _provider_original_getproxies = urllib.request.getproxies
+            _provider_original_proxy_env = {
+                key: os.environ.get(key) for key in (*_PROXY_ENV_KEYS, "NO_PROXY")
+            }
+            for key in _PROXY_ENV_KEYS:
+                os.environ.pop(key, None)
+            os.environ["NO_PROXY"] = "*"
+            urllib.request.getproxies = lambda: {}
+        _provider_network_users += 1
     try:
         yield
     finally:
-        urllib.request.getproxies = original_getproxies
-        if original_no_proxy is None:
-            os.environ.pop("NO_PROXY", None)
-        else:
-            os.environ["NO_PROXY"] = original_no_proxy
-        for key, value in original.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
+        with _PROVIDER_NETWORK_LOCK:
+            _provider_network_users -= 1
+            if _provider_network_users == 0:
+                assert _provider_original_getproxies is not None
+                urllib.request.getproxies = _provider_original_getproxies
+                for key, value in _provider_original_proxy_env.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+                _provider_original_proxy_env = {}
+                _provider_original_getproxies = None
 
 
 def call_with_retry(

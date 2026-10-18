@@ -113,7 +113,7 @@ class AIProviderConfig:
             self.timeout_seconds, int | float
         ):
             raise ValueError("ai.timeout_seconds must be numeric")
-        if self.timeout_seconds <= 0 or self.timeout_seconds > 60:
+        if not 0 < self.timeout_seconds <= 60:
             raise ValueError("ai.timeout_seconds must be within (0, 60]")
         if not _ENV_NAME_PATTERN.fullmatch(self.api_key_env):
             raise ValueError("ai.api_key_env name is invalid")
@@ -188,8 +188,7 @@ class BrokerStatementCollectorConfig:
             if (
                 isinstance(value, bool)
                 or not isinstance(value, int | float)
-                or value < minimum
-                or value > maximum
+                or not minimum <= value <= maximum
             ):
                 raise ValueError(
                     "account_truth.broker_statement_collector."

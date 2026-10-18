@@ -38,6 +38,7 @@ from server.scheduler_values import (
     scheduler_quote_evidence,
     scheduler_quote_provider_names,
 )
+from server.services.market_quote_ingestion import validated_previous_close_date
 
 logger = logging.getLogger(__name__)
 
@@ -619,7 +620,13 @@ class SchedulerLoop:
         evidence: SchedulerQuoteEvidence,
     ) -> QuoteIngestionCommand:
         previous_close = optional_float(snapshot.get("previous_close"))
-        previous_close_date = str(snapshot.get("previous_close_date") or "").strip()
+        reported_previous_close_date = str(
+            snapshot.get("previous_close_date") or ""
+        ).strip()
+        previous_close_date = validated_previous_close_date(
+            reported_previous_close_date, quote_timestamp=evidence.quote_timestamp
+        )
+        quote_timestamp = datetime.fromisoformat(evidence.quote_timestamp)
         daily_close_price: float | None = None
         daily_close_date: str | None = None
         daily_close_source: str | None = None
@@ -627,13 +634,22 @@ class SchedulerLoop:
             daily_close_price = previous_close
             daily_close_date = previous_close_date
             daily_close_source = "reported_previous_close"
-        elif market_event.timestamp.time() >= self._dependencies.afternoon_close:
+        elif quote_timestamp.time() >= self._dependencies.afternoon_close:
             daily_close_price = float(market_event.close)
-            daily_close_date = evidence.quote_timestamp.split("T")[0]
+            daily_close_date = quote_timestamp.date().isoformat()
             daily_close_source = "scheduler_close"
 
         raw_metadata = snapshot.get("metadata")
         metadata = dict(raw_metadata) if isinstance(raw_metadata, dict) else {}
+        if reported_previous_close_date and previous_close_date is None:
+            metadata.update(
+                {
+                    "discarded_previous_close_date": reported_previous_close_date,
+                    "discarded_previous_close_date_reason": (
+                        "not_strictly_before_quote_trade_date"
+                    ),
+                }
+            )
         if market_event.instrument_type is None:
             raise RuntimeError(
                 f"scheduler quote instrument type is unresolved: {market_event.symbol}"

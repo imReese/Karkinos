@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import datetime
 
 from core.types import Symbol
 from server.models import (
@@ -13,12 +13,6 @@ from server.models import (
 )
 from server.projections.portfolio_application import (
     current_valuation_snapshot as _current_valuation_snapshot,
-)
-from server.projections.portfolio_application import (
-    hydrate_missing_position_quotes as _hydrate_missing_position_quotes,
-)
-from server.projections.portfolio_application import (
-    ledger_entry_shanghai_date as _ledger_entry_shanghai_date,
 )
 from server.projections.portfolio_application import (
     normalize_asset_class as _normalize_asset_class,
@@ -46,9 +40,6 @@ from server.projections.portfolio_application import (
 from server.projections.portfolio_application import (
     using_persistent_cache as _using_persistent_cache,
 )
-from server.projections.portfolio_read_snapshot_persistence import (
-    portfolio_read_snapshot_for_state,
-)
 from server.projections.quote_status import (
     current_quote_valuation_evidence,
     quote_performance_session_date,
@@ -56,12 +47,9 @@ from server.projections.quote_status import (
     quote_valuation_blocker,
     quote_valuation_status,
 )
-from server.projections.quote_status import (
-    parse_quote_timestamp as _parse_quote_timestamp,
-)
 from server.services.asset_metadata import resolve_asset_metadata
 from server.services.market_calendar_dates import project_market_session
-from server.services.market_hours import get_shanghai_now, is_cn_trading_session
+from server.services.market_hours import get_shanghai_now
 from server.services.position_presence import (
     is_economically_zero_quantity,
 )
@@ -79,126 +67,9 @@ _ASSET_CLASS_LABELS = {
 }
 
 
-def session_closed_market_bar_price(
-    state,
-    *,
-    symbol: str,
-    instrument_type: str,
-    latest_quote: dict | None,
-) -> tuple[float | None, str | None]:
-    latest_timestamp = _parse_quote_timestamp(
-        None if latest_quote is None else latest_quote.get("timestamp")
-    )
-    trade_day = (
-        latest_timestamp.date()
-        if latest_timestamp is not None
-        else get_shanghai_now().date()
-    )
-    now = get_shanghai_now()
-    if trade_day != now.date() or is_cn_trading_session(now):
-        return None, None
-    read_snapshot = portfolio_read_snapshot_for_state(state)
-    if read_snapshot is not None:
-        candidates = [
-            dict(row)
-            for row in read_snapshot.price_matrix_rows
-            if str(row.get("symbol") or "").strip() == symbol
-            and str(row.get("trade_date") or "") == trade_day.isoformat()
-            and row.get("price") not in {None, ""}
-        ]
-        if not candidates:
-            return None, None
-        row = max(candidates, key=lambda item: str(item.get("timestamp") or ""))
-        return float(row["price"]), trade_day.isoformat()
-    if state.db is None or not hasattr(state.db, "get_market_bar_on_date_sync"):
-        return None, None
-    market_bar = state.db.get_market_bar_on_date_sync(
-        symbol,
-        trade_day.isoformat(),
-        instrument_type=instrument_type,
-    )
-    if not market_bar:
-        return None, None
-    close = market_bar.get("close", market_bar.get("price"))
-    if close in {None, ""}:
-        return None, None
-    return (
-        float(close),
-        market_bar.get("trade_date")
-        or str(market_bar.get("timestamp", "")).split("T")[0],
-    )
-
-
-def resolve_live_holding_latest_price(
-    state,
-    *,
-    symbol: str,
-    latest_quote: dict | None,
-    latest_price_value: float | None,
-) -> float | None:
-    _ = state, symbol, latest_quote
-    return latest_price_value
-
-
-def get_recent_quote_snapshots(
-    state,
-    symbol: str,
-    *,
-    instrument_type: str,
-    limit: int = 2,
-) -> list[dict]:
-    read_snapshot = portfolio_read_snapshot_for_state(state)
-    if read_snapshot is not None:
-        rows = [
-            dict(row)
-            for row in read_snapshot.intraday_quote_rows
-            if str(row.get("symbol") or "").strip() == symbol
-            and _live_instrument_type(
-                row.get("instrument_type")
-                or row.get("asset_type")
-                or row.get("asset_class")
-            )
-            == _live_instrument_type(instrument_type)
-        ]
-        rows.sort(
-            key=lambda row: (
-                str(row.get("timestamp") or ""),
-                int(row.get("id") or 0),
-            ),
-            reverse=True,
-        )
-        return rows[:limit]
-    if state.db is None or not hasattr(state.db, "get_recent_quote_snapshots_sync"):
-        return []
-    rows = state.db.get_recent_quote_snapshots_sync(
-        symbol,
-        limit=limit,
-        instrument_type=instrument_type,
-    )
-    return rows if isinstance(rows, list) else []
-
-
 def _live_instrument_type(value: object) -> str:
     normalized = str(value or "").strip().lower().replace("-", "_")
     return "open_end_fund" if normalized in {"fund", "openend_fund"} else normalized
-
-
-def has_same_day_sell(
-    state,
-    *,
-    symbol: str,
-    trade_day: date,
-    ledger_entries: list[dict] | None = None,
-) -> bool:
-    resolved_entries = (
-        _read_daily_ledger_entries(state) if ledger_entries is None else ledger_entries
-    )
-    return any(
-        str(entry.get("symbol") or "") == symbol
-        and str(entry.get("entry_type") or "").lower() == "trade_sell"
-        and _ledger_entry_shanghai_date(entry) == trade_day
-        for entry in resolved_entries
-    )
 
 
 def build_live_holdings_response(
@@ -219,11 +90,6 @@ def build_live_holdings_response(
     portfolio, instruments = _resolve_projection_sources(
         state,
         latest_quotes=latest_quotes,
-    )
-    portfolio, instruments, _ = _hydrate_missing_position_quotes(
-        state,
-        portfolio,
-        instruments,
     )
     if portfolio is None:
         return LiveHoldingsResponse(
@@ -263,12 +129,6 @@ def build_live_holdings_response(
         latest_price = latest_quote.get("price")
         latest_price_value = (
             float(latest_price) if latest_price not in {None, ""} else None
-        )
-        latest_price_value = resolve_live_holding_latest_price(
-            state,
-            symbol=symbol,
-            latest_quote=latest_quote if latest_quote else None,
-            latest_price_value=latest_price_value,
         )
         quote_evidence_status = (
             quote_valuation_status(latest_quote) if latest_quote else "missing"
@@ -413,10 +273,4 @@ def build_live_holdings_response(
     )
 
 
-__all__ = (
-    "build_live_holdings_response",
-    "get_recent_quote_snapshots",
-    "has_same_day_sell",
-    "resolve_live_holding_latest_price",
-    "session_closed_market_bar_price",
-)
+__all__ = ("build_live_holdings_response",)

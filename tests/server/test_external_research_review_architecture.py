@@ -218,10 +218,6 @@ def test_public_compatibility_types_and_aliases_remain_canonical() -> None:
     )
     assert external_analysis_reviews.IdempotencyConflict is IdempotencyConflict
 
-    assert external_research.edge_request_options is (
-        external_research._edge_request_options
-    )
-    assert external_research.message_text is external_research._message_text
     assert external_analysis_reviews.review_target is (
         external_analysis_reviews._review_target
     )

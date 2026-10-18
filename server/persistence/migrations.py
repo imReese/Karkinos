@@ -21,9 +21,6 @@ from server.persistence.migration_registry import (
     LEGACY_HISTORY_VARIANTS as _LEGACY_HISTORY_VARIANTS,
 )
 from server.persistence.migration_registry import (
-    LEGACY_MUTATED_V14 as _LEGACY_MUTATED_V14,
-)
-from server.persistence.migration_registry import (
     LEGACY_V1_MIGRATION_CHECKSUM as _LEGACY_V1_MIGRATION_CHECKSUM,
 )
 from server.persistence.migration_registry import (
@@ -261,19 +258,12 @@ def _assert_applied_schema_contract(
 
 _has_legacy_v1_repair_column = _schema_contracts.has_legacy_v1_repair_column
 _assert_known_legacy_v1_schema = _schema_contracts.assert_known_legacy_v1_schema
-_legacy_v1_schema_contract = _schema_contracts.legacy_v1_schema_contract
 _assert_no_unapplied_versioned_artifacts = (
     _schema_contracts.assert_no_unapplied_versioned_artifacts
 )
 _versioned_schema_artifacts_without_ledger = (
     _schema_contracts.versioned_schema_artifacts_without_ledger
 )
-_versioned_schema_artifacts = _schema_contracts.versioned_schema_artifacts
-_read_versioned_object_contracts = _schema_contracts.read_versioned_object_contracts
-_normalize_schema_sql = _schema_contracts.normalize_schema_sql
-_read_schema_contract = _schema_contracts.read_schema_contract
-_normalize_default = _schema_contracts.normalize_default
-_schema_contract_checksum = _schema_contracts.schema_contract_checksum
 _assert_required_schema_contract = _schema_contracts.assert_required_schema_contract
 
 

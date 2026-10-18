@@ -55,7 +55,6 @@ def create_router(
         dependencies.flat_intraday_equity_series_from_current
     )
     _has_rows = dependencies.has_rows
-    _hydrate_missing_position_quotes = dependencies.hydrate_missing_position_quotes
     _parse_quote_timestamp = dependencies.parse_quote_timestamp
     _quotes_from_valuation_snapshot = dependencies.quotes_from_valuation_snapshot
     _resolve_projection_sources = dependencies.resolve_projection_sources
@@ -100,11 +99,6 @@ def create_router(
         portfolio, instruments = _resolve_projection_sources(
             state,
             latest_quotes=latest_quotes,
-        )
-        portfolio, instruments, _ = _hydrate_missing_position_quotes(
-            state,
-            portfolio,
-            instruments,
         )
         current_point = _current_equity_series_point(
             state,
@@ -207,11 +201,6 @@ def create_router(
             portfolio, instruments = _resolve_projection_sources(
                 state,
                 latest_quotes=latest_quotes,
-            )
-            portfolio, instruments, _ = _hydrate_missing_position_quotes(
-                state,
-                portfolio,
-                instruments,
             )
             if portfolio is None:
                 return []

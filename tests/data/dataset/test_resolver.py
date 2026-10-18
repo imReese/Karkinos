@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
+from unittest.mock import patch
 
+import pyarrow.parquet as pq
 import pytest
 
 from core.types import InstrumentKey, InstrumentType
@@ -23,6 +26,7 @@ from data.market.quality import (
     MarketQualityStatus,
 )
 from data.market.revision import (
+    MarketRevisionIntegrityError,
     publish_daily_bar_revision,
 )
 from data.storage.objects import ContentAddressedObjectStore
@@ -361,10 +365,13 @@ def test_candidate_available_before_cutoff_is_selected(
         provider="tdx",
     )
 
-    snapshot = _resolve(
-        store,
-        candidates=(candidate,),
-    )
+    with patch.object(pq, "read_table", wraps=pq.read_table) as decode:
+        snapshot = _resolve(
+            store,
+            candidates=(candidate,),
+        )
+
+    assert decode.call_count == 1
 
     assert snapshot.partition_count == 1
 
@@ -376,6 +383,24 @@ def test_candidate_available_before_cutoff_is_selected(
     assert partition.revision_id == candidate.revision.ref.revision_id
 
     assert partition.materialization_id == candidate.materialization.materialization_id
+
+
+@pytest.mark.parametrize(
+    ("changed", "reason"),
+    [
+        ({"content_fingerprint": "sha256:" + "0" * 64}, "content_fingerprint_mismatch"),
+        ({"row_count": 3}, "row_count_mismatch"),
+    ],
+)
+def test_candidate_revision_integrity_is_checked_before_selection(
+    tmp_path, changed, reason
+) -> None:
+    store = ContentAddressedObjectStore(tmp_path / "objects")
+    candidate = _candidate(store)
+    candidate = replace(candidate, revision=replace(candidate.revision, **changed))
+
+    with pytest.raises(MarketRevisionIntegrityError, match=reason):
+        _resolve(store, candidates=(candidate,))
 
 
 def test_candidate_available_exactly_at_cutoff_is_eligible(

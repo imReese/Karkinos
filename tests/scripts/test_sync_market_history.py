@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import os
+import sqlite3
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -158,18 +161,318 @@ def test_sync_full_market_daily_success(monkeypatch, tmp_path):
             assert mock_ingest.called
 
 
-def test_maybe_mirror_to_repo(tmp_path):
-    dev_data = tmp_path / "dev"
-    dev_data.mkdir()
-    dev_meta = dev_data / "meta.db"
-    dev_meta.write_text("dev_data_content")
+@pytest.mark.parametrize("destination_locked", [False, True])
+def test_maybe_mirror_to_repo_keeps_committed_wal_and_active_snapshots(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, destination_locked: bool
+) -> None:
+    from data.store import DataStore
+    from scripts.data import sync_market_history
 
+    dev_data = tmp_path / "dev"
     repo_dir = tmp_path / "repo"
     repo_store = repo_dir / "data" / "store"
-    repo_store.mkdir(parents=True)
+    source = DataStore(dev_data)
+    target = DataStore(repo_store)
+    monkeypatch.setattr(sync_market_history, "REPO_ROOT", repo_dir)
+    first = pd.DataFrame(
+        [
+            {
+                "symbol": "600000",
+                "timestamp": pd.Timestamp("2026-10-12"),
+                "open": 10.0,
+                "high": 11.0,
+                "low": 9.0,
+                "close": 10.5,
+                "volume": 1000.0,
+                "amount": 10500.0,
+            }
+        ]
+    )
+    for store in (source, target):
+        store.ingest_market_daily_batch(
+            trade_date="2026-10-12", provider_name="tushare", bars=first
+        )
+    first_receipt = target.get_market_daily_ingestion_receipt(
+        trade_date="2026-10-12", provider_name="tushare"
+    )
+    assert first_receipt is not None
 
-    with patch("scripts.data.sync_market_history.REPO_ROOT", repo_dir):
-        _maybe_mirror_to_repo(dev_data)
-        repo_meta = repo_store / "meta.db"
-        assert repo_meta.is_file()
-        assert repo_meta.read_text() == "dev_data_content"
+    with (
+        closing(sqlite3.connect(dev_data / "meta.db")) as source_reader,
+        closing(sqlite3.connect(repo_store / "meta.db")) as target_reader,
+    ):
+        for reader in (source_reader, target_reader):
+            assert reader.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+            reader.execute("BEGIN")
+            assert reader.execute("SELECT count(*) FROM market_bars").fetchone() == (1,)
+        second = first.copy()
+        second["timestamp"] = pd.Timestamp("2026-10-13")
+        source.ingest_market_daily_batch(
+            trade_date="2026-10-13", provider_name="tushare", bars=second
+        )
+        assert (
+            source.get_market_daily_ingestion_receipt(
+                trade_date="2026-10-13", provider_name="tushare"
+            )
+            is not None
+        )
+        assert (dev_data / "meta.db-wal").is_file()
+        assert (repo_store / "meta.db-wal").is_file()
+
+        if destination_locked:
+            # Keep a real WAL writer active; the backup must stop at its deadline
+            # and leave the previously committed target readable and unchanged.
+            with closing(sqlite3.connect(repo_store / "meta.db")) as writer:
+                writer.execute("BEGIN IMMEDIATE")
+                monotonic = MagicMock(side_effect=[0.0, 31.0])
+                monkeypatch.setattr("time.monotonic", monotonic)
+                with pytest.raises(TimeoutError, match="market_meta_mirror_timeout"):
+                    _maybe_mirror_to_repo(dev_data)
+                writer.rollback()
+        else:
+            _maybe_mirror_to_repo(dev_data)
+
+        for reader in (source_reader, target_reader):
+            assert reader.execute("SELECT count(*) FROM market_bars").fetchone() == (1,)
+        with closing(sqlite3.connect(repo_store / "meta.db")) as current:
+            assert current.execute("PRAGMA quick_check").fetchall() == [("ok",)]
+            expected_count = 1 if destination_locked else 2
+            assert current.execute("SELECT count(*) FROM market_bars").fetchone() == (
+                expected_count,
+            )
+            assert current.execute(
+                "SELECT count(*) FROM market_daily_ingestion_receipts"
+            ).fetchone() == (expected_count,)
+
+    assert (
+        target.get_market_daily_ingestion_receipt(
+            trade_date="2026-10-12", provider_name="tushare"
+        )
+        == first_receipt
+    )
+    assert (
+        target.get_market_daily_ingestion_receipt(
+            trade_date="2026-10-13", provider_name="tushare"
+        )
+        is not None
+    ) is (not destination_locked)
+
+
+def test_full_market_interrupt_exits_nonzero_and_resumes_missing_dates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from core.types import BarFrequency, InstrumentType
+    from data.store import DataStore
+    from scripts.data import sync_market_history
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "app.db").touch()
+    monkeypatch.setenv("KARKINOS_DATA_DIR", str(data_dir))
+    monkeypatch.setattr(sync_market_history, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(sync_market_history.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(
+        sync_market_history, "_load_tushare_token", lambda: "synthetic-unused-token"
+    )
+    calendar = MagicMock()
+    calendar.get_snapshot.return_value = {
+        "days_json": (
+            '[{"date":"2026-10-12","is_trading_day":true},'
+            '{"date":"2026-10-13","is_trading_day":true}]'
+        )
+    }
+    monkeypatch.setattr(
+        "server.persistence.market_calendar.MarketCalendarRepository",
+        lambda _path: calendar,
+    )
+    requested_dates: list[str] = []
+    interrupted = False
+
+    def fetch(_source: object, trade_date: str) -> pd.DataFrame:
+        nonlocal interrupted
+        requested_dates.append(trade_date)
+        if trade_date == "2026-10-13" and not interrupted:
+            interrupted = True
+            raise KeyboardInterrupt
+        return pd.DataFrame(
+            [
+                {
+                    "symbol": "600000",
+                    "timestamp": pd.Timestamp(trade_date),
+                    "open": 10.0,
+                    "high": 11.0,
+                    "low": 9.0,
+                    "close": 10.5,
+                    "volume": 1000.0,
+                    "amount": 10500.0,
+                }
+            ]
+        )
+
+    monkeypatch.setattr(
+        "data.providers.tushare.TushareSource.fetch_market_daily_bars", fetch
+    )
+    arguments = [
+        "--universe",
+        "full-market",
+        "--start",
+        "2026-10-12",
+        "--end",
+        "2026-10-13",
+        "--throttle",
+        "0",
+        "--data-dir",
+        str(data_dir),
+    ]
+    with pytest.raises(SystemExit) as result:
+        main(arguments)
+    assert result.value.code == 130
+    assert requested_dates == ["2026-10-12", "2026-10-13"]
+
+    store = DataStore(data_dir)
+    first_receipt = store.get_market_daily_ingestion_receipt(
+        trade_date="2026-10-12", provider_name="tushare"
+    )
+    assert first_receipt is not None
+    assert first_receipt["row_count"] == 1
+    assert (
+        store.get_market_daily_ingestion_receipt(
+            trade_date="2026-10-13", provider_name="tushare"
+        )
+        is None
+    )
+    first_bars = store.load_bars(
+        "600000", BarFrequency.DAILY, instrument_type=InstrumentType.STOCK
+    )
+    assert first_bars is not None
+    assert first_bars["timestamp"].dt.strftime("%Y-%m-%d").tolist() == ["2026-10-12"]
+
+    requested_dates.clear()
+    main(arguments)
+    assert requested_dates == ["2026-10-13"]
+    assert (
+        store.get_market_daily_ingestion_receipt(
+            trade_date="2026-10-12", provider_name="tushare"
+        )
+        == first_receipt
+    )
+    second_receipt = store.get_market_daily_ingestion_receipt(
+        trade_date="2026-10-13", provider_name="tushare"
+    )
+    assert second_receipt is not None
+    assert second_receipt["row_count"] == 1
+    bars = store.load_bars(
+        "600000", BarFrequency.DAILY, instrument_type=InstrumentType.STOCK
+    )
+    assert bars is not None
+    assert bars["timestamp"].dt.strftime("%Y-%m-%d").tolist() == [
+        "2026-10-12",
+        "2026-10-13",
+    ]
+
+    requested_dates.clear()
+    main(arguments)
+    assert requested_dates == []
+    assert (
+        store.get_market_daily_ingestion_receipt(
+            trade_date="2026-10-13", provider_name="tushare"
+        )
+        == second_receipt
+    )
+
+
+@pytest.mark.parametrize("local_database_exists", [False, True])
+def test_full_market_calendar_fallback_uses_canonical_snapshot_and_saves_receipts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, local_database_exists: bool
+) -> None:
+    from core.types import BarFrequency, InstrumentType
+    from data.market_calendar import build_static_market_calendar_snapshot
+    from data.store import DataStore
+    from scripts.data import sync_market_history
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    if local_database_exists:
+        (data_dir / "app.db").touch()
+    monkeypatch.setenv("KARKINOS_DATA_DIR", str(data_dir))
+    monkeypatch.setattr(sync_market_history, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(sync_market_history.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(
+        sync_market_history, "_load_tushare_token", lambda: "synthetic-unused-token"
+    )
+    repository = MagicMock()
+    repository.get_snapshot.return_value = None
+    repository_factory = MagicMock(return_value=repository)
+    monkeypatch.setattr(
+        "server.persistence.market_calendar.MarketCalendarRepository",
+        repository_factory,
+    )
+    snapshot = build_static_market_calendar_snapshot(
+        exchange="SSE",
+        year=2026,
+        provider="synthetic",
+        open_dates=["2026-10-09", "2026-10-12", "2026-10-13", "2026-10-15"],
+        fetched_at="2026-10-16T00:00:00+08:00",
+    )
+    fetch_snapshot = MagicMock(return_value=snapshot)
+    calendar_factory = MagicMock(
+        return_value=SimpleNamespace(fetch_snapshot=fetch_snapshot)
+    )
+    monkeypatch.setattr(
+        "data.market_calendar.build_market_calendar_provider", calendar_factory
+    )
+    fetched_dates: list[str] = []
+
+    def fetch(_source: object, trade_date: str) -> pd.DataFrame:
+        fetched_dates.append(trade_date)
+        return pd.DataFrame(
+            [
+                {
+                    "symbol": "600000",
+                    "timestamp": pd.Timestamp(trade_date),
+                    "open": 10.0,
+                    "high": 11.0,
+                    "low": 9.0,
+                    "close": 10.5,
+                    "volume": 1000.0,
+                    "amount": 10500.0,
+                }
+            ]
+        )
+
+    monkeypatch.setattr(
+        "data.providers.tushare.TushareSource.fetch_market_daily_bars", fetch
+    )
+    main(
+        [
+            "--universe",
+            "full-market",
+            "--start",
+            "2026-10-10",
+            "--end",
+            "2026-10-14",
+            "--throttle",
+            "0",
+            "--data-dir",
+            str(data_dir),
+        ]
+    )
+
+    assert repository_factory.call_count == int(local_database_exists)
+    if local_database_exists:
+        repository.get_snapshot.assert_called_once_with(exchange="SSE", year=2026)
+    calendar_factory.assert_called_once_with("akshare")
+    fetch_snapshot.assert_called_once_with(exchange="SSE", year=2026)
+    assert fetched_dates == ["2026-10-12", "2026-10-13"]
+    store = DataStore(data_dir)
+    for day in fetched_dates:
+        receipt = store.get_market_daily_ingestion_receipt(
+            trade_date=day, provider_name="tushare"
+        )
+        assert receipt is not None
+        assert receipt["row_count"] == 1
+    bars = store.load_bars(
+        "600000", BarFrequency.DAILY, instrument_type=InstrumentType.STOCK
+    )
+    assert bars is not None
+    assert bars["timestamp"].dt.strftime("%Y-%m-%d").tolist() == fetched_dates

@@ -191,6 +191,7 @@ def test_unit_of_work_boundaries_remain_explicit() -> None:
         "valuation_publication_recovery.py": 1,  # Re-proven incident disposition and receipt commit.
         "signal_journal.py": 1,  # Source authority and signal/task batch commit.
         "strategy_research_uow.py": 1,
+        "tasks.py": 2,  # Idempotent creation and human final review each lock before reading.
     }
     actual = {
         path.name: path.read_text(encoding="utf-8").count('"BEGIN IMMEDIATE"')

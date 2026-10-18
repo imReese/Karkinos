@@ -24,7 +24,6 @@ from server.projections.portfolio_assets import (
 from server.projections.portfolio_quotes import (
     broker_cost_basis_evidence_by_symbol,
     broker_cost_basis_fields,
-    hydrate_missing_position_quotes,
     quote_age_seconds,
     quote_latest_price,
     quote_source,
@@ -301,12 +300,6 @@ def build_portfolio_snapshot_sync(
         state,
         latest_quotes=latest_quotes,
     )
-    portfolio, instruments, _ = hydrate_missing_position_quotes(
-        state,
-        portfolio,
-        instruments,
-    )
-
     if portfolio is None:
         return PortfolioSnapshotBuildResult(
             snapshot=PortfolioSnapshot(

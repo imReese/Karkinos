@@ -19,10 +19,10 @@ from account_truth.broker_connector_evidence import (
     build_broker_connector_evidence_preview,
 )
 from account_truth.broker_evidence import BrokerEvidenceRepository
-from analytics.benchmark_fixtures import build_benchmark_fixture_backtest_rows
 from server.contracts.quote_ingestion import QuoteIngestionCommand
 from server.db import AppDatabase
 from tests.analytics.test_strategy_validation_matrix import REQUIRED_STRATEGY_IDS
+from tests.benchmark_fixtures import build_benchmark_fixture_backtest_rows
 
 
 def test_decision_today_blocks_from_unresolved_connector_evidence(

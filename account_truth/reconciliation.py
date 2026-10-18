@@ -241,7 +241,11 @@ def build_reconciliation_report(
     return ReconciliationReport(
         schema_version=RECONCILIATION_SCHEMA_VERSION,
         import_run_id=import_run_id,
-        status=_report_status(mismatches=mismatches, warnings=warnings),
+        status=(
+            "blocked"
+            if any(item.status == "blocked" for item in unresolved_items)
+            else _report_status(mismatches=mismatches, warnings=warnings)
+        ),
         cash_difference=cash_difference,
         fee_difference=fee_difference,
         tax_difference=tax_difference,
@@ -531,11 +535,34 @@ def _classify_reconciliation_items(
         remember(event.symbol, event.asset_class)
     for fact in ledger_facts:
         remember(fact.symbol, fact.asset_class)
-    for position in positions:
+    for position in _positions_in_snapshot_scope(broker_events, positions):
         remember(position.symbol, position.asset_class)
 
     classified: list[ReconciliationItem] = []
     for item in items:
+        candidates = asset_classes_by_symbol.get(item.symbol, set())
+        if item.symbol and len(candidates) > 1:
+            # Symbol-shaped comparisons cannot attribute these facts safely.
+            # Keep each affected lane blocked without changing review item keys.
+            classified.extend(
+                replace(
+                    item,
+                    status="blocked",
+                    asset_class=asset_class,
+                    suggested_review_action="review_instrument_identity",
+                    detail_code="account_truth.instrument_identity_ambiguous",
+                    detail=(
+                        "The same symbol has conflicting asset classes; "
+                        "reconciliation cannot attribute its facts safely."
+                    ),
+                    detail_context={
+                        **item.detail_context,
+                        "asset_classes": ",".join(sorted(candidates)),
+                    },
+                )
+                for asset_class in sorted(candidates)
+            )
+            continue
         if _normalized_asset_class(item.asset_class):
             asset_class = _normalized_asset_class(item.asset_class)
         elif item.category == "cash":
@@ -543,7 +570,6 @@ def _classify_reconciliation_items(
         elif not item.symbol:
             asset_class = "account"
         else:
-            candidates = asset_classes_by_symbol.get(item.symbol, set())
             asset_class = next(iter(candidates)) if len(candidates) == 1 else "unknown"
         classified.append(replace(item, asset_class=asset_class))
     return classified
@@ -583,7 +609,8 @@ def _lane_reconciliation(
 
 
 def _normalized_asset_class(value: str) -> str:
-    return str(value or "").strip().lower()
+    normalized = str(value or "").strip().lower()
+    return "fund" if normalized in {"etf", "open_end_fund"} else normalized
 
 
 def _cost_basis_detail(

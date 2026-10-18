@@ -76,9 +76,12 @@ def linked_strategy_evidence(
     order_reader = getattr(db, "list_orders_sync", None)
     fill_reader = getattr(db, "list_fills_sync", None)
 
-    journal_entries = (
-        journal_reader(limit=500, offset=0) if callable(journal_reader) else []
-    )
+    filters: dict[str, Any] = {"strategy_id": assignment.strategy_id}
+    if assignment.scope == "symbol" and assignment.symbol:
+        filters["symbol"] = assignment.symbol
+    if assignment.scope == "asset_class" and assignment.asset_class:
+        filters["asset_class"] = assignment.asset_class
+    journal_entries = _all_pages(journal_reader, **filters)
     strategy_entries = [
         entry
         for entry in journal_entries
@@ -105,7 +108,24 @@ def linked_strategy_evidence(
         if risk and risk.get("intent_id")
     }
 
-    all_orders = order_reader(limit=1000, offset=0) if callable(order_reader) else []
+    all_orders = _all_pages(
+        order_reader,
+        source_signal_ids=sorted(signal_ids),
+        risk_decision_ids=sorted(risk_decision_ids),
+        intent_ids=sorted(intent_ids),
+    )
+    known_order_ids = {str(order["order_id"]) for order in all_orders}
+    fills = _all_pages(
+        fill_reader,
+        source_signal_ids=sorted(signal_ids),
+        order_ids=sorted(known_order_ids),
+        strategy_id=assignment.strategy_id,
+    )
+    fill_order_ids = {
+        str(fill["order_id"]) for fill in fills if fill.get("order_id") is not None
+    }
+    if missing_order_ids := fill_order_ids - known_order_ids:
+        all_orders.extend(_all_pages(order_reader, order_ids=sorted(missing_order_ids)))
     excluded_simulation_order_ids = {
         str(order.get("order_id")) for order in all_orders if is_simulation_order(order)
     }
@@ -121,7 +141,6 @@ def linked_strategy_evidence(
             linked_orders.append(order)
     linked_order_ids = {str(order["order_id"]) for order in linked_orders}
 
-    fills = fill_reader(limit=1000, offset=0) if callable(fill_reader) else []
     linked_fills = []
     unattributed_fills = []
     unattributed_fill_count = 0
@@ -151,3 +170,15 @@ def linked_strategy_evidence(
         "unattributed_fills": unattributed_fills,
         "unattributed_fill_count": unattributed_fill_count,
     }
+
+
+def _all_pages(reader: Any, **filters: Any) -> list[dict[str, Any]]:
+    if not callable(reader):
+        return []
+    rows: list[dict[str, Any]] = []
+    page_size = 500
+    while True:
+        page = list(reader(limit=page_size, offset=len(rows), **filters) or [])
+        rows.extend(page)
+        if len(page) < page_size:
+            return rows

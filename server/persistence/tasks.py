@@ -81,6 +81,7 @@ class ResearchTaskPersistenceMixin:
         task_id = f"ai-research-task-{content_fingerprint(identity)[:24]}"
         status = "blocked_by_evidence" if blockers else "awaiting_human_review"
         with self._connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             existing = conn.execute(
                 "SELECT * FROM ai_research_tasks WHERE idempotency_key = ?",
                 (request.idempotency_key,),
@@ -181,6 +182,7 @@ class ResearchTaskPersistenceMixin:
     ) -> tuple[Any, Any, bool]:
         next_status = request.decision.value
         with self._connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             task_row = conn.execute(
                 "SELECT * FROM ai_research_tasks WHERE task_id = ?", (task_id,)
             ).fetchone()

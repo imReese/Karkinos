@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from itertools import groupby
 from typing import Any, Iterable, Mapping
 
 
@@ -85,34 +86,6 @@ def _coerce_sell_lot(raw: DailySellLot | Mapping[str, Any]) -> DailySellLot:
     )
 
 
-def _matched_lots(
-    quantity: float,
-    lots: Iterable[DailyTradeLot | Mapping[str, Any]],
-) -> tuple[DailyTradeLot, ...]:
-    remaining = max(float(quantity), 0.0)
-    matched: list[DailyTradeLot] = []
-    for raw in sorted(
-        (_coerce_lot(item) for item in lots), key=lambda item: item.timestamp
-    ):
-        if remaining <= 0:
-            break
-        lot_quantity = max(float(raw.quantity), 0.0)
-        if lot_quantity <= 0:
-            continue
-        matched_quantity = min(lot_quantity, remaining)
-        ratio = matched_quantity / lot_quantity
-        matched.append(
-            DailyTradeLot(
-                timestamp=raw.timestamp,
-                quantity=matched_quantity,
-                price=raw.price,
-                total_cost=raw.total_cost * ratio,
-            )
-        )
-        remaining -= matched_quantity
-    return tuple(matched)
-
-
 def build_position_daily_context(
     *,
     quantity: float,
@@ -123,7 +96,14 @@ def build_position_daily_context(
 ) -> PositionDailyContext:
     """Freeze the canonical after-cost daily attribution for one symbol."""
     position_quantity = max(float(quantity), 0.0)
-    lots = _matched_lots(position_quantity, same_day_buy_lots)
+    lots = tuple(
+        lot
+        for lot in sorted(
+            (_coerce_lot(item) for item in same_day_buy_lots),
+            key=lambda item: item.timestamp,
+        )
+        if lot.quantity > 0
+    )
     sell_lots = tuple(
         sorted(
             (_coerce_sell_lot(item) for item in same_day_sell_lots),
@@ -146,7 +126,18 @@ def build_position_daily_context(
             status="unavailable",
             source="same_day_sell_requires_daily_attribution",
         )
-    if overnight_quantity < -1e-9:
+    inventory_quantity = overnight_quantity
+    inventory_conflict = inventory_quantity < -1e-9
+    ordered_lots = sorted((*lots, *sell_lots), key=lambda item: item.timestamp)
+    for _, trades in groupby(ordered_lots, key=lambda item: item.timestamp):
+        inventory_quantity += sum(
+            -lot.quantity if isinstance(lot, DailySellLot) else lot.quantity
+            for lot in trades
+        )
+        if inventory_quantity < -1e-9:
+            inventory_conflict = True
+            break
+    if inventory_conflict:
         return PositionDailyContext(
             quantity=position_quantity,
             overnight_quantity=0.0,

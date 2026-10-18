@@ -188,35 +188,76 @@ class SignalJournalRepository(SQLiteRepository):
         return self.list_signal_journal_sync(limit=limit, offset=offset)
 
     def list_signal_journal_sync(
-        self, limit: int = 50, offset: int = 0
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        *,
+        signal_id: int | None = None,
+        strategy_id: str | None = None,
+        symbol: str | None = None,
+        asset_class: str | None = None,
     ) -> list[dict[str, Any]]:
         """List signal → action task → risk decision journal entries."""
+        conditions: list[str] = []
+        params: list[Any] = []
+        for column, value in (
+            ("id", signal_id),
+            ("strategy_id", strategy_id),
+            ("symbol", symbol),
+            ("asset_class", asset_class),
+        ):
+            if value is not None:
+                conditions.append(f"{column} = ?")
+                params.append(value)
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.extend((limit, offset))
         with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             symbol_names = _load_symbol_display_names(conn)
             signal_rows = conn.execute(
-                """
+                f"""
                 SELECT *
                 FROM signals
+                {where_clause}
                 ORDER BY timestamp DESC, id DESC
                 LIMIT ? OFFSET ?
                 """,
-                (limit, offset),
+                tuple(params),
             ).fetchall()
-            action_rows = conn.execute("""
+            if not signal_rows:
+                return []
+            signal_ids = [int(row["id"]) for row in signal_rows]
+            signal_ids_json = json.dumps(signal_ids)
+            action_rows = conn.execute(
+                """
                 SELECT *
                 FROM action_tasks
-                WHERE source_signal_id IN (
-                    SELECT id FROM signals
-                )
+                WHERE source_signal_id IN (SELECT value FROM json_each(?))
                 ORDER BY updated_at DESC, id DESC
-                """).fetchall()
-            risk_rows = conn.execute("""
+                """,
+                (signal_ids_json,),
+            ).fetchall()
+            payload_sql = (
+                "CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END"
+            )
+            risk_rows = conn.execute(
+                f"""
                 SELECT *
                 FROM risk_decisions
+                WHERE CAST(json_extract({payload_sql}, '$.intent.source_signal_id') AS INTEGER)
+                    IN (SELECT value FROM json_each(?))
                 ORDER BY timestamp DESC, id DESC
-                """).fetchall()
-            event_rows = conn.execute("""
+                """,
+                (signal_ids_json,),
+            ).fetchall()
+            related_refs = [
+                *(str(value) for value in signal_ids),
+                *(str(row["id"]) for row in action_rows),
+                *(str(row["decision_id"]) for row in risk_rows),
+            ]
+            action_ids = [int(row["id"]) for row in action_rows]
+            event_rows = conn.execute(
+                f"""
                 SELECT *
                 FROM event_log
                 WHERE source IN (
@@ -227,8 +268,28 @@ class SignalJournalRepository(SQLiteRepository):
                     'decision_outcome_reviews',
                     'signal_reviews'
                 )
+                AND (
+                    source_ref IN (SELECT value FROM json_each(?))
+                    OR (source IN ('risk_decisions', 'action_tasks') AND source_ref IS NULL)
+                    OR CAST(json_extract({payload_sql}, '$.signal_id') AS INTEGER)
+                        IN (SELECT value FROM json_each(?))
+                    OR CAST(json_extract({payload_sql}, '$.source_signal_id') AS INTEGER)
+                        IN (SELECT value FROM json_each(?))
+                    OR CAST(json_extract({payload_sql}, '$.payload.source_signal_id') AS INTEGER)
+                        IN (SELECT value FROM json_each(?))
+                    OR CAST(json_extract({payload_sql}, '$.payload.action_id') AS INTEGER)
+                        IN (SELECT value FROM json_each(?))
+                )
                 ORDER BY timestamp DESC, id DESC
-                """).fetchall()
+                """,
+                (
+                    json.dumps(related_refs),
+                    signal_ids_json,
+                    signal_ids_json,
+                    signal_ids_json,
+                    json.dumps(action_ids),
+                ),
+            ).fetchall()
 
         actions_by_signal: dict[int, dict[str, Any]] = {}
         for row in action_rows:

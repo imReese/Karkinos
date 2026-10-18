@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from urllib.request import Request, urlopen
 
@@ -21,18 +22,22 @@ class WeChatNotifier(Notifier):
             logger.warning("Server酱 sendkey 未配置，跳过推送")
             return
 
-        url = f"https://sctapi.ftqq.com/{self.sendkey}.send"
-        import json
-
-        data = json.dumps({"title": title, "desp": message}).encode("utf-8")
-        req = Request(
-            url,
-            data=data,
-            headers={"Content-Type": "application/json"},
-        )
         try:
+            req = Request(
+                f"https://sctapi.ftqq.com/{self.sendkey}.send",
+                data=json.dumps({"title": title, "desp": message}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
             with urlopen(req, timeout=10) as resp:
                 if resp.status != 200:
-                    logger.error("Server酱推送失败: HTTP %d", resp.status)
+                    raise ValueError("notification_http_failure")
+                payload = json.loads(resp.read())
+                if (
+                    not isinstance(payload, dict)
+                    or type(payload.get("code")) is not int
+                    or payload["code"] != 0
+                ):
+                    raise ValueError("notification_provider_failure")
         except Exception:
-            logger.exception("Server酱推送异常")
+            logger.error("WeChat notification delivery failed")
+            raise RuntimeError("WeChat notification delivery failed") from None

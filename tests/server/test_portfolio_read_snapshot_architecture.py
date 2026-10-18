@@ -26,7 +26,6 @@ def test_production_portfolio_consumers_use_the_canonical_snapshot_adapter() -> 
         "server/projections/portfolio_views/historical_ledger_series.py",
         "server/projections/portfolio_views/historical_series.py",
         "server/projections/portfolio_views/intraday_series.py",
-        "server/projections/portfolio_views/live_holdings.py",
         "server/http/portfolio_endpoints/performance.py",
         "server/http/portfolio_endpoints/analysis.py",
     )
@@ -34,6 +33,38 @@ def test_production_portfolio_consumers_use_the_canonical_snapshot_adapter() -> 
     for relative_path in consumers:
         imported = _imported_names(PROJECT_ROOT / relative_path, module)
         assert "portfolio_read_snapshot_for_state" in imported, relative_path
+
+    # Live holdings reaches the same adapter through these application readers.
+    # Require calls as well as imports so an unused adapter import cannot pass.
+    live_holdings_path = (
+        PROJECT_ROOT / "server/projections/portfolio_views/live_holdings.py"
+    )
+    live_holdings_tree = ast.parse(live_holdings_path.read_text(encoding="utf-8"))
+    reader_owners = {
+        "current_valuation_snapshot": "server.projections.portfolio_quotes",
+        "read_daily_ledger_entries": "server.projections.portfolio_positions",
+        "resolve_position_today_change": "server.projections.portfolio_positions",
+        "resolve_projection_sources": "server.projections.portfolio_positions",
+    }
+    imported_readers = {
+        alias.name: alias.asname or alias.name
+        for node in ast.walk(live_holdings_tree)
+        if isinstance(node, ast.ImportFrom)
+        and node.module == "server.projections.portfolio_application"
+        for alias in node.names
+        if alias.name in reader_owners
+    }
+    called_names = {
+        node.func.id
+        for node in ast.walk(live_holdings_tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert imported_readers.keys() == reader_owners.keys()
+    assert set(imported_readers.values()) <= called_names
+    for reader, owner in reader_owners.items():
+        assert reader in _imported_names(
+            PROJECT_ROOT / "server/projections/portfolio_application.py", owner
+        )
 
     dependency_source = (PROJECT_ROOT / "server/dependencies.py").read_text(
         encoding="utf-8"

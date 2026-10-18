@@ -3,6 +3,127 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+
+@pytest.mark.parametrize(
+    ("target", "unrelated_modules"),
+    [
+        ("core.types", ["core.clock", "core.event_bus", "core.events"]),
+        (
+            "domain.instrument",
+            [
+                "domain.portfolio",
+                "domain.position",
+            ],
+        ),
+        ("risk.rules", ["risk.manager", "risk.limits"]),
+        (
+            "execution.commission",
+            ["execution.simulator", "execution.tracker"],
+        ),
+        (
+            "notification.contracts",
+            ["notification.console", "notification.notifier"],
+        ),
+        (
+            "strategy.base",
+            [
+                "strategy.registry",
+                "strategy.schema",
+                "strategy.builtins",
+                "data.market_calendar",
+                "data.manager",
+                "data.store",
+            ],
+        ),
+    ],
+)
+def test_cold_foundation_import_keeps_unrelated_runtime_unloaded(
+    target: str, unrelated_modules: list[str]
+) -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            "-c",
+            """
+import importlib
+import json
+import sys
+
+importlib.import_module(sys.argv[1])
+unexpected = set(json.loads(sys.argv[2])).intersection(sys.modules)
+assert not unexpected, sorted(unexpected)
+""",
+            target,
+            json.dumps(unrelated_modules),
+        ],
+        cwd=Path(__file__).resolve().parents[2],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+def test_cold_bootstrap_builds_strategy_and_registers_builtin_catalog(tmp_path) -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            "-c",
+            """
+from types import SimpleNamespace
+
+from core.event_bus import EventBus
+from strategy.registry import StrategyRegistry
+
+assert StrategyRegistry.get_info() == []
+
+from server.bootstrap import build_strategy
+
+event_bus = EventBus()
+strategy = build_strategy(
+    SimpleNamespace(strategy="dual_ma", params={"short_period": 2, "long_period": 5}),
+    event_bus,
+)
+assert strategy.short_period == 2
+assert strategy.long_period == 5
+assert strategy.event_bus is event_bus
+
+catalog = StrategyRegistry.get_info()
+assert {entry["strategy_id"] for entry in catalog} == {
+    "bollinger",
+    "donchian_breakout",
+    "dual_ma",
+    "etf_rotation",
+    "monthly_rebalance",
+    "pairs_ratio_mean_reversion",
+    "risk_parity_macro",
+    "rsi",
+    "time_series_momentum",
+    "volatility_target_trend",
+}
+assert all(entry["source_type"] == "builtin" for entry in catalog)
+assert all(
+    entry["execution_boundary"]["can_submit_broker_orders"] is False
+    for entry in catalog
+)
+""",
+        ],
+        cwd=Path(__file__).resolve().parents[2],
+        env={**os.environ, "KARKINOS_STRATEGY_EXTENSION_DIR": str(tmp_path)},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
 def test_builtin_and_extension_strategies_share_registry_contract(tmp_path) -> None:

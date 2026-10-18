@@ -38,7 +38,7 @@ def test_dependency_boundary_allows_declared_and_same_package_imports(
 def test_backtest_must_not_depend_on_analytics(tmp_path: Path) -> None:
     source = tmp_path / "backtest" / "engine.py"
     source.parent.mkdir(parents=True)
-    source.write_text("from analytics.backtest_metrics import BacktestMetrics\n")
+    source.write_text("from analytics import BacktestMetrics\n")
 
     violations = find_dependency_violations(tmp_path)
 

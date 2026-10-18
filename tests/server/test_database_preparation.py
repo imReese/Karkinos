@@ -11,6 +11,7 @@ import pytest
 
 from server.db import AppDatabase
 from server.persistence import initializer, migration_lifecycle, migrations
+from server.persistence.migration_registry import LEGACY_MUTATED_V14
 
 
 def _ledger(path):
@@ -129,7 +130,7 @@ def test_known_mutated_v14_preserves_provenance_and_upgrades_forward(
 ):
     path = tmp_path / "app.db"
     legacy_registry = tuple(
-        migrations._LEGACY_MUTATED_V14 if item.version == 14 else item
+        LEGACY_MUTATED_V14 if item.version == 14 else item
         for item in migrations._MIGRATIONS
         if item.version <= 14
     )

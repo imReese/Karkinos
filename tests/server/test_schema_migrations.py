@@ -9,6 +9,10 @@ import pytest
 from server import db as db_module
 from server.db import AppDatabase
 from server.persistence import migrations
+from server.persistence.migration_schema_contracts import (
+    read_schema_contract,
+    schema_contract_checksum,
+)
 from server.persistence.migrations import (
     CURRENT_SCHEMA_VERSION,
     V1_BASELINE_SCHEMA_CONTRACT_CHECKSUM,
@@ -94,8 +98,8 @@ def _create_known_legacy_v1_database(database: AppDatabase) -> None:
             "ALTER TABLE controlled_submission_ledger_postings "
             "DROP COLUMN account_truth_review_fingerprint"
         )
-        contract = migrations._read_schema_contract(conn)
-        assert migrations._schema_contract_checksum(contract) == (
+        contract = read_schema_contract(conn)
+        assert schema_contract_checksum(contract) == (
             FROZEN_LEGACY_V1_SCHEMA_CONTRACT_CHECKSUM
         )
         conn.execute(migrations._MIGRATION_TABLE_SQL)
@@ -389,11 +393,9 @@ def test_legacy_database_without_ledger_upgrades_and_preserves_data(tmp_path) ->
 def test_v1_schema_contract_checksum_is_frozen() -> None:
     with sqlite3.connect(":memory:") as conn:
         db_module._initialize_v1_baseline_schema(conn)
-        contract = migrations._read_schema_contract(conn)
+        contract = read_schema_contract(conn)
 
-    assert migrations._schema_contract_checksum(contract) == (
-        V1_BASELINE_SCHEMA_CONTRACT_CHECKSUM
-    )
+    assert schema_contract_checksum(contract) == (V1_BASELINE_SCHEMA_CONTRACT_CHECKSUM)
     assert migrations._MIGRATIONS[0].schema_contract_checksum == (
         V1_BASELINE_SCHEMA_CONTRACT_CHECKSUM
     )

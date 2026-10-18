@@ -15,9 +15,6 @@ from server.ai_runtime.capture import (
 from server.ai_runtime.evidence import EvidenceIdentityMismatch
 from server.ai_runtime.store import IdempotencyConflict
 from server.composition.ai_application_services import (
-    build_capture_projection_readers as _build_capture_projection_readers,
-)
-from server.composition.ai_application_services import (
     build_human_context_capture_service,
 )
 
@@ -76,8 +73,3 @@ def create_router() -> APIRouter:
         return result.to_dict()
 
     return router
-
-
-def build_capture_projection_readers():
-    """Compatibility export for callers of the former route-owned factory."""
-    return _build_capture_projection_readers()

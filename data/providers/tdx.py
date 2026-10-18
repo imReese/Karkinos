@@ -1518,6 +1518,3 @@ class TdxSource(DataSource):
                 "amount",
             ]
         )
-
-
-TdxRealtimeSource = TdxSource

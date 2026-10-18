@@ -74,7 +74,7 @@ def test_backtest_signal_preview_route_returns_research_only_candidate(
 def test_backtest_signal_preview_route_can_load_server_side_bars(monkeypatch) -> None:
     import pandas as pd
 
-    from core.types import AssetClass, BarFrequency, Symbol
+    from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
     from data.handler import DataHandler
     from server.routes import backtest as backtest_routes
 
@@ -85,9 +85,10 @@ def test_backtest_signal_preview_route_can_load_server_side_bars(monkeypatch) ->
         def __init__(self, *args, **kwargs):
             pass
 
-        def get_bars(self, symbol, start, end, asset_class):
+        def get_bars(self, symbol, start, end, *, asset_class, instrument_type):
             assert symbol == Symbol("600000")
             assert asset_class == AssetClass.STOCK
+            assert instrument_type is InstrumentType.STOCK
             assert start.strftime("%Y-%m-%d") == "2026-06-01"
             assert end.strftime("%Y-%m-%d") == "2026-06-04"
             prices = [3, 2, 1, 4]
@@ -106,6 +107,7 @@ def test_backtest_signal_preview_route_can_load_server_side_bars(monkeypatch) ->
                 symbol,
                 frequency=BarFrequency.DAILY,
                 asset_class=asset_class,
+                instrument_type=instrument_type,
             )
 
     monkeypatch.setattr("data.store.DataStore", FakeStore)
@@ -144,13 +146,18 @@ def test_backtest_signal_preview_route_can_load_server_side_bars(monkeypatch) ->
     assert record["does_not_enable_execution"] is True
 
 
-def test_backtest_signal_preview_etf_with_real_data_manager(monkeypatch) -> None:
+def test_backtest_signal_preview_etf_with_real_data_manager(
+    monkeypatch, tmp_path
+) -> None:
     import pandas as pd
 
     from core.types import AssetClass, BarFrequency, Symbol
     from data.source import DataSource
+    from data.store import DataStore
     from server.routes import backtest as backtest_routes
 
+    store = DataStore(tmp_path / "market")
+    monkeypatch.setattr("data.store.DataStore", lambda: store)
     prices = [10.0, 9.9, 9.8, 9.7]
     dates = pd.bdate_range("2026-06-01", periods=len(prices))
     df = pd.DataFrame(
@@ -262,6 +269,90 @@ def test_backtest_signal_preview_route_rejects_unknown_params_before_running(
             }
         ],
     }
+
+
+@pytest.mark.parametrize("num_std", ["NaN", "Infinity", "-Infinity", "2.0"])
+def test_signal_preview_http_validates_numeric_parameters(monkeypatch, num_std) -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from server.routes import backtest as backtest_routes
+
+    monkeypatch.setattr(
+        "server.dependencies.get_app_state",
+        lambda: SimpleNamespace(config=None, db=None),
+    )
+    app = FastAPI()
+    app.include_router(backtest_routes.create_router())
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/backtest/signal-preview",
+            json={
+                "strategy": "bollinger",
+                "symbol": "600000",
+                "params": {"bb_period": "2", "num_std": num_std},
+                "bars": [
+                    {"timestamp": "2026-06-01T15:00:00+08:00", "close": 10},
+                    {"timestamp": "2026-06-02T15:00:00+08:00", "close": 10},
+                    {"timestamp": "2026-06-03T15:00:00+08:00", "close": 1},
+                ],
+            },
+        )
+
+    if num_std == "2.0":
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["params"] == {"bb_period": 2, "num_std": 2.0}
+        assert payload["outputs"][0]["output_type"] == "buy_candidate"
+        assert payload["does_not_enable_execution"] is True
+    else:
+        assert response.status_code == 422
+        assert response.json()["detail"] == {
+            "strategy": "bollinger",
+            "errors": [
+                {
+                    "field": "num_std",
+                    "code": "invalid_type",
+                    "message": "Parameter 'num_std' must be of type float.",
+                }
+            ],
+        }
+
+
+@pytest.mark.parametrize("number", ["1e309", "-1e309"])
+def test_signal_preview_http_rejects_integer_parameter_overflow(
+    monkeypatch, number
+) -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from server.routes import backtest as backtest_routes
+
+    monkeypatch.setattr(
+        "server.dependencies.get_app_state",
+        lambda: SimpleNamespace(config=None, db=None),
+    )
+    app = FastAPI()
+    app.include_router(backtest_routes.create_router())
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/backtest/signal-preview",
+            content=(
+                '{"strategy":"dual_ma","symbol":"600000","params":'
+                '{"short_period":' + number + ',"long_period":5},"bars":'
+                '[{"timestamp":"2026-06-01T15:00:00+08:00","close":10}]}'
+            ),
+            headers={"content-type": "application/json"},
+        )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["errors"] == [
+        {
+            "field": "short_period",
+            "code": "invalid_type",
+            "message": "Parameter 'short_period' must be of type int.",
+        }
+    ]
 
 
 def test_backtest_risk_preview_route_evaluates_without_order_or_audit_writes(

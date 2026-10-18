@@ -41,17 +41,12 @@ from data.market.revision import (
     MarketRevisionMaterialization,
     validate_daily_bar_materialization,
 )
-from data.market.schema import (
-    DAILY_BAR_SCHEMA,
-    daily_bars_from_table,
-)
 from data.storage.objects import (
     ContentAddressedObjectStore,
     ObjectStoreError,
 )
 from data.storage.parquet import (
     ParquetStorageError,
-    read_parquet,
 )
 
 logger = logging.getLogger(__name__)
@@ -161,19 +156,11 @@ class MarketServingStore:
             )
 
         try:
-            validate_daily_bar_materialization(
+            bars = validate_daily_bar_materialization(
                 store,
                 revision=revision,
                 materialization=materialization,
             )
-
-            table = read_parquet(
-                store,
-                materialization.artifact,
-                expected_schema=DAILY_BAR_SCHEMA,
-            )
-
-            bars = daily_bars_from_table(table)
 
         except (
             ObjectStoreError,

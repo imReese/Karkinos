@@ -3,22 +3,15 @@
 from __future__ import annotations
 
 import json
-import logging
 from datetime import datetime
 
 from fastapi import HTTPException
 
-from core.types import AssetClass
 from data.market_data import is_fund_estimate_quote_source
 from data.source_policy import MarketDataUseCase
 from data.source_routing import preferred_legacy_provider
 from server.projections.portfolio_assets import normalize_asset_class
 from server.projections.portfolio_quote_assets import (
-    asset_class_for_position,
-    asset_class_from_config,
-    asset_class_from_ledger,
-    asset_class_from_metadata,
-    asset_class_from_watchlist,
     broker_cost_basis_evidence_by_symbol,
     broker_cost_basis_fields,
     normalize_asset_class_value,
@@ -41,33 +34,15 @@ from server.projections.quote_status import (
 )
 from server.projections.quote_status import quote_is_stale as _quote_is_stale
 from server.projections.quote_status import quote_status as _quote_status
-from server.projections.service import build_portfolio_projection_from_db
 from server.projections.valuation_snapshot import (
     build_current_valuation_snapshot as build_current_valuation_projection,
 )
 from server.projections.valuation_snapshot import select_authoritative_valuation_marks
 from server.services.market_hours import get_shanghai_now, is_cn_trading_session
-from server.services.portfolio.ledger import rebuild_portfolio_from_ledger
 from server.services.valuation_snapshot import (
     load_persisted_quote_rows,
     select_latest_observation_rows,
 )
-
-logger = logging.getLogger(__name__)
-
-
-def has_position_ledger_entries(entries: object) -> bool:
-    if not isinstance(entries, list):
-        return False
-    trade_types = {"trade_buy", "buy", "trade", "trade_sell", "sell"}
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        entry_type = str(entry.get("entry_type") or "").strip().lower()
-        symbol = str(entry.get("symbol") or "").strip()
-        if symbol and entry_type in trade_types:
-            return True
-    return False
 
 
 def collect_latest_quote_timestamps(state) -> dict[str, str]:
@@ -461,96 +436,3 @@ def using_persistent_cache(quote: dict | None) -> bool:
             or quote.get("quote_status") == "stale"
         )
     )
-
-
-def can_refresh_quotes(state, now: datetime | None = None) -> bool:
-    try:
-        preferred_legacy_provider(state.config, MarketDataUseCase.REALTIME_QUOTES)
-    except Exception:
-        return False
-    return is_cn_trading_session(now)
-
-
-def store_runtime_quote(state, symbol: str, quote: dict) -> None:
-    scheduler = state.scheduler
-    if scheduler is None:
-        return
-    publish = getattr(scheduler, "publish_runtime_quote", None)
-    if not callable(publish):
-        return
-    publish(symbol, quote)
-
-
-def hydrate_missing_position_quotes(
-    state,
-    portfolio,
-    instruments: dict,
-    *,
-    allow_remote_refresh: bool = False,
-) -> tuple[object, dict, bool]:
-    if portfolio is None:
-        return portfolio, instruments, False
-    if not allow_remote_refresh:
-        return portfolio, instruments, False
-
-    latest_quotes = collect_latest_quotes(state)
-    refresh_needed: list[tuple[str, AssetClass]] = []
-    now = get_shanghai_now()
-    can_refresh = can_refresh_quotes(state, now)
-    for sym in portfolio.positions:
-        symbol = str(sym)
-        quote = latest_quotes.get(symbol)
-        if quote:
-            is_stale = _quote_is_stale(
-                quote,
-                now=now,
-                live_poll_interval=getattr(state.config, "live_poll_interval", 60),
-            )
-            if not is_stale or not can_refresh:
-                continue
-        asset_class = asset_class_for_position(symbol, quote, instruments, state)
-        if asset_class is None:
-            continue
-        refresh_needed.append((symbol, asset_class))
-
-    if not refresh_needed:
-        return portfolio, instruments, False
-
-    from server.services.market_refresh import fetch_latest_snapshot
-
-    hydrated = False
-    for symbol, asset_class in refresh_needed:
-        try:
-            snapshot = fetch_latest_snapshot(state, symbol, asset_class)
-        except Exception:
-            logger.warning(
-                "Failed to refresh stale quote for %s", symbol, exc_info=True
-            )
-            continue
-        if snapshot:
-            latest_quotes[symbol] = snapshot
-            store_runtime_quote(state, symbol, snapshot)
-            hydrated = True
-
-    if not hydrated or state.db is None:
-        return portfolio, instruments, hydrated
-
-    ledger_entries = (
-        state.db.get_ledger_entries_sync(limit=1, offset=0)
-        if hasattr(state.db, "get_ledger_entries_sync")
-        else []
-    )
-    if has_position_ledger_entries(ledger_entries):
-        rebuilt_projection = build_portfolio_projection_from_db(
-            state.db,
-            initial_cash=0,
-            latest_quotes=latest_quotes,
-        )
-        return rebuilt_projection, instruments, True
-
-    rebuilt = rebuild_portfolio_from_ledger(
-        state.config,
-        state.db,
-        latest_quotes=latest_quotes,
-    )
-    return rebuilt.portfolio, rebuilt.instruments, True

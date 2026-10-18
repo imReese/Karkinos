@@ -25,10 +25,10 @@ from server.ai_runtime.external_research import (
     ExternalResearchInvalidResponseError,
     HumanExternalBacktestReportRequest,
     HumanExternalBacktestReportService,
-    _decode_external_report,
-    _edge_request_options,
 )
+from server.ai_runtime.external_research_output import decode_external_report
 from server.ai_runtime.karkinos_source import _research_evidence_projection
+from server.ai_runtime.openai_compatibility import edge_request_options
 from server.ai_runtime.provider_call_window import (
     DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
     ProviderCallDeferred,
@@ -408,7 +408,7 @@ def test_deepseek_edge_explicitly_preserves_thinking_without_provider_tools():
         enabled=True,
     )
 
-    options = _edge_request_options(settings)
+    options = edge_request_options(settings)
 
     assert options == {
         "thinking": {"type": "enabled"},
@@ -614,7 +614,7 @@ def test_report_decoder_accepts_explanatory_wrapper_but_still_validates_schema()
     response = _successful_response().payload
     raw = response["choices"][0]["message"]["content"]
 
-    decoded = _decode_external_report(
+    decoded = decode_external_report(
         f"以下是结构化结果：\n{raw}\n以上内容仅供研究复核。",
         "ai-evidence-fixture",
     )
@@ -635,7 +635,7 @@ def test_report_decoder_normalizes_bounded_object_and_string_sections():
         "follow_up_checks": "补充滚动样本外检验。",
     }
 
-    decoded = _decode_external_report(
+    decoded = decode_external_report(
         json.dumps(content, ensure_ascii=False),
         "ai-evidence-normalized",
     )
@@ -679,7 +679,7 @@ def test_report_decoder_normalizes_nested_chinese_and_common_provider_aliases():
         "下一步检查": [{"check": "增加滚动样本外验证。"}],
     }
 
-    decoded = _decode_external_report(
+    decoded = decode_external_report(
         json.dumps(content, ensure_ascii=False),
         "ai-evidence-aliases",
     )
@@ -716,7 +716,7 @@ def test_report_decoder_rejects_a_copied_structural_example():
         ExternalResearchInvalidResponseError,
         match="provider_report_copied_structural_example",
     ):
-        _decode_external_report(
+        decode_external_report(
             json.dumps(copied, ensure_ascii=False),
             "ai-evidence-copied-example",
         )

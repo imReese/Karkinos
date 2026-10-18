@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 
-from analytics.benchmark_fixtures import build_benchmark_fixture_backtest_rows
 from analytics.strategy_validation_matrix import build_strategy_validation_matrix
 from strategy.registry import StrategyRegistry
 from tests.analytics.test_strategy_validation_matrix import REQUIRED_STRATEGY_IDS
+from tests.benchmark_fixtures import build_benchmark_fixture_backtest_rows
 
 
 def test_fixture_backtests_generate_validation_evidence_for_all_benchmarks():

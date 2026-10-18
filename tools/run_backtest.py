@@ -43,6 +43,7 @@ def main(argv: list[str] | None = None) -> None:
             start=start,
             end=end,
             asset_class=ac,
+            instrument_type=runtime.instrument_types[sym],
         )
         data_handlers[sym] = handler
 

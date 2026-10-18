@@ -163,17 +163,17 @@ class StrategyResearchGenerationMixin:
             model_id=model_id,
             claimed_at=self._now(),
         )
+        if not claimed:
+            return self.get_session(session["session_id"], reused=True)
         try:
-            if claimed and workflow.status not in TERMINAL_WORKFLOW_STATUSES:
+            if workflow.status not in TERMINAL_WORKFLOW_STATUSES:
                 workflow = await asyncio.to_thread(
                     orchestrator.run,
                     workflow.workflow_id,
                     current_context=capture.context,
                 )
             else:
-                workflow = self._ai_store.getstrategy_research_workflow_definition(
-                    workflow.workflow_id
-                )
+                workflow = self._ai_store.get_workflow(workflow.workflow_id)
         except ProviderCallDeferred as exc:
             self._require_execution_current()
             self._research_store.finish_session(

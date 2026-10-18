@@ -10,10 +10,7 @@ from core.types import Symbol
 
 
 class ExecutionEngine(ABC):
-    """执行引擎抽象基类。
-
-    回测用 SimulatedExecution，实盘用 LiveExecution。
-    """
+    """执行引擎抽象基类，由 SimulatedExecution 实现回测模拟。"""
 
     @abstractmethod
     def execute(self, order: OrderEvent) -> FillEvent | None:

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import pytest
+
 from account_truth.broker_evidence import BrokerEvidenceRepository
 from account_truth.broker_statement import parse_broker_statement_csv
 from account_truth.reconciliation import (
@@ -644,3 +646,181 @@ cash-snapshot,cash_snapshot,2026-01-15T08:45:00+08:00,2026-01-15,,,,CNY,0,0,0,0,
         if item.detail_code == "account_truth.position_snapshot_scope_incomplete"
     )
     assert warning.asset_class == "fund"
+
+
+def test_reconciliation_blocks_same_symbol_position_and_cost_identities(
+    tmp_path,
+) -> None:
+    statement = STOCK_POSITION_SCOPE_STATEMENT.replace(
+        "synthetic-cash-001,cash_snapshot",
+        "fund-position,position_snapshot,2026-01-15T15:10:00+08:00,2026-01-15,STK001,合成基金,fund,CNY,0,10.50,0,0,0,0,,100,10.20,,,broker_remaining_cost\n"
+        "synthetic-cash-001,cash_snapshot",
+    )
+    repository = BrokerEvidenceRepository(tmp_path / "identity.db")
+    preview = parse_broker_statement_csv(statement)
+    assert preview.validation_status == "pass"
+    imported = repository.save_preview(preview, source_name="identity.csv")
+
+    report = build_reconciliation_report(
+        import_run_id=imported.import_run_id,
+        broker_events=repository.list_events(imported.import_run_id),
+        ledger_facts=[],
+        cash_balance=Decimal("1000"),
+        positions=[
+            KarkinosPositionFact(
+                symbol="STK001",
+                quantity=Decimal("100"),
+                cost_basis=Decimal("10.20"),
+                cost_basis_method="broker_remaining_cost",
+                asset_class="stock",
+            )
+        ],
+    )
+
+    assert report.status == "blocked"
+    for category in ("position", "cost_basis"):
+        items = [item for item in report.items if item.category == category]
+        assert {item.asset_class for item in items} == {"stock", "fund"}
+        assert all(item.status == "blocked" for item in items)
+        assert all(
+            item.detail_code == "account_truth.instrument_identity_ambiguous"
+            for item in items
+        )
+    for lane in ("stock", "fund", "account"):
+        assert report.asset_reconciliation[lane]["status"] == "blocked"
+    assert report.asset_reconciliation["cash"]["status"] == "pass"
+
+
+def test_reconciliation_blocks_cross_asset_trade_component_offsets(tmp_path) -> None:
+    statement = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note
+stock-buy,trade_buy,2026-01-15T10:00:00+08:00,2026-01-15,000001,Synthetic stock,stock,CNY,100,1,100,1,0,-101,,,,
+fund-buy,trade_buy,2026-01-15T10:00:00+08:00,2026-01-15,000001,Synthetic fund,fund,CNY,100,1,100,1,0,-101,,,,
+cash,cash_snapshot,2026-01-15T15:10:00+08:00,2026-01-15,,,,CNY,0,0,0,0,0,0,1000,,,
+"""
+    repository = BrokerEvidenceRepository(tmp_path / "trade-identity.db")
+    imported = repository.save_preview(
+        parse_broker_statement_csv(statement), source_name="identity.csv"
+    )
+
+    report = build_reconciliation_report(
+        import_run_id=imported.import_run_id,
+        broker_events=repository.list_events(imported.import_run_id),
+        ledger_facts=[
+            KarkinosLedgerFact(
+                event_type="trade_buy",
+                symbol="000001",
+                asset_class="stock",
+                quantity=Decimal("200"),
+                price=Decimal("1"),
+                gross_amount=Decimal("200"),
+                net_amount=Decimal("-202"),
+                fee=Decimal("2"),
+            )
+        ],
+        cash_balance=Decimal("1000"),
+        positions=[],
+    )
+
+    assert report.status == "blocked"
+    for category in (
+        "trade_gross_amount",
+        "net_cash_impact",
+        "fee",
+        "tax",
+        "transfer_fee",
+    ):
+        items = [
+            item
+            for item in report.items
+            if item.category == category and item.symbol == "000001"
+        ]
+        assert {item.asset_class for item in items} == {"stock", "fund"}
+        assert all(item.status == "blocked" for item in items)
+    for lane in ("stock", "fund", "account"):
+        assert report.asset_reconciliation[lane]["status"] == "blocked"
+
+
+@pytest.mark.parametrize(
+    ("broker_asset_class", "asset_class", "expected_class"),
+    [
+        ("fund", "fund", "fund"),
+        ("fund", "etf", "fund"),
+        ("fund", "open_end_fund", "fund"),
+        ("fund", "", "fund"),
+        ("", "stock", "stock"),
+        ("", "", "unknown"),
+    ],
+)
+def test_reconciliation_preserves_coarse_fund_and_legacy_identity(
+    tmp_path, broker_asset_class, asset_class, expected_class
+) -> None:
+    statement = STOCK_POSITION_SCOPE_STATEMENT.replace(
+        ",stock,CNY,", f",{broker_asset_class},CNY,"
+    )
+    repository = BrokerEvidenceRepository(tmp_path / "fund-identity.db")
+    imported = repository.save_preview(
+        parse_broker_statement_csv(statement), source_name="fund.csv"
+    )
+
+    report = build_reconciliation_report(
+        import_run_id=imported.import_run_id,
+        broker_events=repository.list_events(imported.import_run_id),
+        ledger_facts=[],
+        cash_balance=Decimal("1000"),
+        positions=[
+            KarkinosPositionFact(
+                symbol="STK001",
+                quantity=Decimal("100"),
+                cost_basis=Decimal("10.20"),
+                cost_basis_method="broker_remaining_cost",
+                asset_class=asset_class,
+            )
+        ],
+    )
+
+    assert report.status == "pass"
+    assert {item.asset_class for item in report.items if item.symbol} == {
+        expected_class
+    }
+    if expected_class != "unknown":
+        assert report.asset_reconciliation[expected_class]["status"] == "pass"
+
+
+def test_reconciliation_keeps_same_symbol_out_of_scope_fund_unverified(
+    tmp_path,
+) -> None:
+    repository = BrokerEvidenceRepository(tmp_path / "scope-identity.db")
+    imported = repository.save_preview(
+        parse_broker_statement_csv(STOCK_POSITION_SCOPE_STATEMENT),
+        source_name="stock-only.csv",
+    )
+    positions = [
+        KarkinosPositionFact(
+            symbol="STK001",
+            quantity=Decimal(quantity),
+            cost_basis=Decimal(cost),
+            cost_basis_method="broker_remaining_cost",
+            asset_class=asset_class,
+        )
+        for quantity, cost, asset_class in (
+            ("100", "10.20", "stock"),
+            ("50", "2", "fund"),
+        )
+    ]
+
+    report = build_reconciliation_report(
+        import_run_id=imported.import_run_id,
+        broker_events=repository.list_events(imported.import_run_id),
+        ledger_facts=[],
+        cash_balance=Decimal("1000"),
+        positions=positions,
+    )
+
+    assert report.status == "warning"
+    assert report.asset_reconciliation["stock"]["status"] == "pass"
+    assert report.asset_reconciliation["fund"] == {
+        "status": "warning",
+        "item_count": 1,
+        "unresolved_count": 1,
+    }
+    assert all(item.status == "pass" for item in report.items if item.symbol)

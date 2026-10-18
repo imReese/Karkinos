@@ -542,3 +542,137 @@ def test_conditional_equity_read_reuses_the_validated_input_snapshot(
         second = client.get(path, headers={"If-None-Match": first.headers["etag"]})
     assert second.status_code == 304, second.text
     assert counts == {"ledger": 1, "matrix": 1}
+
+
+@pytest.mark.parametrize(
+    "holding_kind, task_kind, attaches",
+    [
+        ("stock", "stock", True),
+        ("etf", "fund", True),
+        ("open_end_fund", "fund", True),
+        ("stock", "fund", False),
+        ("open_end_fund", "stock", False),
+        ("stock", "", False),
+        ("stock", "unknown", False),
+        ("stock", "missing", False),
+    ],
+)
+def test_cockpit_links_tasks_only_to_the_same_asset_class(
+    tmp_path, monkeypatch, holding_kind, task_kind, attaches
+) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    symbol = "000001"
+    db.insert_ledger_entry_sync(
+        entry_type="cash_deposit",
+        timestamp="2026-09-01T09:00:00+08:00",
+        amount=10_000,
+        asset_class="cash",
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        timestamp="2026-09-01T10:00:00+08:00",
+        symbol=symbol,
+        direction="buy",
+        quantity=100,
+        price=1,
+        asset_class=holding_kind,
+    )
+    db.save_daily_close_snapshot_sync(
+        symbol=symbol,
+        asset_class=holding_kind,
+        trade_date="2026-09-03",
+        close_price=1,
+        source="cockpit_identity_fixture",
+    )
+    db.save_quote_snapshot_sync(
+        symbol=symbol,
+        asset_class=holding_kind,
+        price=1.1,
+        volume=1_000,
+        timestamp="2026-09-04T15:00:00+08:00",
+        quote_source="cockpit_identity_fixture",
+        provider_name="fixture",
+        quote_status="confirmed",
+    )
+    now = datetime.fromisoformat("2026-09-04T16:00:00+08:00")
+    valuation = db.publish_current_valuation_snapshot_sync(now=now)
+    persisted_kind = "stock" if task_kind == "missing" else task_kind
+    signal_id = db.save_signal_sync(
+        timestamp="2026-09-04T09:40:00+08:00",
+        strategy_id="cockpit_identity_fixture",
+        symbol=symbol,
+        direction="sell",
+        target_weight=0,
+        price=12.5,
+        asset_class=persisted_kind,
+    )
+    action_id = db.upsert_action_task_sync(
+        source_signal_id=signal_id,
+        symbol=symbol,
+        title="Synthetic exit candidate",
+        detail="Synthetic identity fixture",
+        direction="sell",
+        urgency="medium",
+        target_weight=0,
+        price=12.5,
+        strategy_id="cockpit_identity_fixture",
+        timestamp="2026-09-04T09:40:00+08:00",
+        asset_class=persisted_kind,
+    )
+    if task_kind == "missing":
+        read_tasks = db.get_action_tasks
+
+        async def missing_task_identity(*args, **kwargs):
+            rows = await read_tasks(*args, **kwargs)
+            return [
+                {key: value for key, value in row.items() if key != "asset_class"}
+                for row in rows
+            ]
+
+        monkeypatch.setattr(db, "get_action_tasks", missing_task_identity)
+
+    state = AppState()
+    state.db = db
+    state.config = ServerConfig(
+        assets=[{"symbol": symbol, "asset_class": holding_kind}]
+    )
+    monkeypatch.setattr(portfolio_routes, "get_shanghai_now", lambda: now)
+    ledger_before = db.get_ledger_entries_sync()
+    valuation_before = db.get_valuation_snapshot_sync(valuation["snapshot_id"])
+    with TestClient(_test_app(state)) as client:
+        response = client.get("/api/portfolio/cockpit")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["summary"]["valuation_snapshot_id"] == valuation["snapshot_id"]
+    assert len(payload["action_queue"]) == 1
+    assert payload["action_queue"][0]["id"] == action_id
+    position = payload["positions"][0]
+    assert position["asset_class"] == (
+        "fund" if holding_kind == "open_end_fund" else holding_kind
+    )
+    if attaches:
+        assert position["action_task"]["id"] == action_id
+        assert position["target_weight"] == 0
+        assert position["drift"] == pytest.approx(-position["actual_weight"])
+        recommendation = payload["construction_recommendations"][0]
+        assert recommendation["source_action_task_id"] == action_id
+        assert recommendation["asset_class"] == position["asset_class"]
+        assert recommendation["direction"] == "sell"
+        assert recommendation["target_weight"] == 0
+        assert recommendation["actionable"] is False
+        assert recommendation["account_truth_gate_status"] == "blocked"
+        assert recommendation["risk_gate_status"] == "not_checked"
+    else:
+        assert position["action_task"] is None
+        assert position["target_weight"] == position["actual_weight"]
+        assert position["drift"] == 0
+        assert payload["construction_recommendations"] == []
+    assert db.get_ledger_entries_sync() == ledger_before
+    assert db.get_valuation_snapshot_sync(valuation["snapshot_id"]) == valuation_before
+    with sqlite3.connect(db._path) as connection:
+        for table in ("risk_decisions", "oms_orders", "fills"):
+            assert (
+                connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0
+            )

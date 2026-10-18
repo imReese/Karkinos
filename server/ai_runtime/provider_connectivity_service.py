@@ -22,7 +22,7 @@ from .provider_connectivity_contracts import (
     ProviderConnectivitySettings,
     ProviderProbeError,
 )
-from .provider_connectivity_transport import UrllibJsonTransport
+from .provider_connectivity_transport import HttpxDeadlineJsonTransport
 from .registry import AiRuntimeRegistry
 from .store import AiAuditStore
 
@@ -44,7 +44,7 @@ class ProviderConnectivityService:
         self._settings = settings
         self._audit_store = audit_store
         self._ai_store = ai_store
-        self._transport = transport or UrllibJsonTransport()
+        self._transport = transport or HttpxDeadlineJsonTransport()
         self._now = now or utc_now
         self._monotonic = monotonic or time.monotonic
         self._provider_send_admission = provider_send_admission

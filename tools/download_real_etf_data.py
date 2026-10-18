@@ -1,14 +1,11 @@
-"""Download real historical daily bars for core ETF universe.
+"""Download historical daily bars for the core ETF universe using AKShare.
 
-Tries TuShare Pro using KARKINOS_TUSHARE_TOKEN from .env,
-with fallbacks to AKShare and Baostock.
-Saves data into data/store/real_etfs/{symbol}.parquet (or csv).
+Skips ETFs with an existing local Parquet file.
+Saves Parquet and CSV files into data/store/real_etfs/.
 """
 
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
 
 import pandas as pd
@@ -25,50 +22,6 @@ CORE_ETFS = [
 ]
 
 DATA_DIR = Path("data/store/real_etfs")
-
-
-def _read_env_token() -> str:
-    env_file = Path(".env")
-    if env_file.exists():
-        with open(env_file) as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("KARKINOS_TUSHARE_TOKEN="):
-                    return line.split("=", 1)[1].strip().strip('"').strip("'")
-    return os.getenv("KARKINOS_TUSHARE_TOKEN", "")
-
-
-def fetch_from_tushare(
-    token: str, start_date: str = "20210101"
-) -> dict[str, pd.DataFrame]:
-    import tushare as ts
-
-    print(f"Connecting to TuShare with token (length {len(token)})...")
-    pro = ts.pro_api(token)
-    results = {}
-
-    for sym, name, ts_code, _ in CORE_ETFS:
-        print(f"Fetching {sym} ({name}) from TuShare fund_daily...")
-        try:
-            df = pro.fund_daily(ts_code=ts_code, start_date=start_date)
-            if df is not None and not df.empty:
-                df = df.sort_values("trade_date").reset_index(drop=True)
-                df["timestamp"] = pd.to_datetime(df["trade_date"])
-                df["volume"] = df["vol"] * 100  # 手 -> 股
-                # Keep timestamp, open, high, low, close, volume, amount
-                clean_df = df[
-                    ["timestamp", "open", "high", "low", "close", "volume", "amount"]
-                ].copy()
-                results[sym] = clean_df
-                print(
-                    f"  Successfully fetched {sym}: {len(clean_df)} bars (from {clean_df['timestamp'].iloc[0].date()} to {clean_df['timestamp'].iloc[-1].date()})"
-                )
-            else:
-                print(f"  Empty response for {sym} from TuShare.")
-        except Exception as e:
-            print(f"  TuShare error for {sym}: {e}")
-
-    return results
 
 
 def fetch_from_akshare(start_date: str = "20210101") -> dict[str, pd.DataFrame]:

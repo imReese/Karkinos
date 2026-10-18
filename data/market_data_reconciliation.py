@@ -62,8 +62,8 @@ def reconcile_market_bars(
     volume_tolerance: float = 1.0,
 ) -> MarketBarReconciliationReport:
     """Compare local cached market bars with freshly supplied provider bars."""
-    local = _normalize_bars(local_df)
-    provider = _normalize_bars(provider_df)
+    local = _normalize_bars(local_df, frequency)
+    provider = _normalize_bars(provider_df, frequency)
     local_dates = set(local.index)
     provider_dates = set(provider.index)
     shared_dates = sorted(local_dates & provider_dates)
@@ -105,9 +105,11 @@ def reconcile_market_bars(
         )
 
     status = "matched" if not mismatches else "mismatched"
-    if local.empty and not provider.empty:
+    if local.empty and provider.empty:
+        status = "missing_both"
+    elif local.empty:
         status = "missing_local"
-    elif provider.empty and not local.empty:
+    elif provider.empty:
         status = "missing_provider"
 
     return MarketBarReconciliationReport(
@@ -163,14 +165,18 @@ def reconcile_store_with_provider(
     )
 
 
-def _normalize_bars(df: pd.DataFrame | None) -> pd.DataFrame:
+def _normalize_bars(df: pd.DataFrame | None, frequency: BarFrequency) -> pd.DataFrame:
     if df is None or df.empty or "timestamp" not in df.columns:
         return pd.DataFrame().rename_axis("timestamp")
 
     normalized = df.copy()
-    normalized["timestamp"] = pd.to_datetime(normalized["timestamp"]).dt.date.astype(
-        str
-    )
+    timestamps = pd.to_datetime(normalized["timestamp"])
+    if frequency in {BarFrequency.DAILY, BarFrequency.WEEKLY}:
+        normalized["timestamp"] = timestamps.dt.date.astype(str)
+    else:
+        if timestamps.dt.tz is not None:
+            timestamps = timestamps.dt.tz_convert("UTC")
+        normalized["timestamp"] = timestamps.map(lambda value: value.isoformat())
     normalized = normalized.drop_duplicates(subset=["timestamp"], keep="last")
     return normalized.set_index("timestamp").sort_index()
 

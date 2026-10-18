@@ -6,7 +6,9 @@ import os
 import sqlite3
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from unittest.mock import patch
 
+import pyarrow.parquet as pq
 import pytest
 
 from core.types import InstrumentKey, InstrumentType
@@ -304,17 +306,20 @@ def test_reapplying_same_materialization_is_idempotent(
 
     revision, materialization = _revision(object_store)
 
-    first = serving.apply_daily_bar_revision(
-        object_store,
-        revision=revision,
-        materialization=materialization,
-    )
+    with patch.object(pq, "read_table", wraps=pq.read_table) as decode:
+        first = serving.apply_daily_bar_revision(
+            object_store,
+            revision=revision,
+            materialization=materialization,
+        )
 
-    second = serving.apply_daily_bar_revision(
-        object_store,
-        revision=revision,
-        materialization=materialization,
-    )
+        second = serving.apply_daily_bar_revision(
+            object_store,
+            revision=revision,
+            materialization=materialization,
+        )
+
+    assert decode.call_count == 2
 
     assert first.inserted_count == 2
 
@@ -465,20 +470,35 @@ def test_same_capture_with_different_revision_fails_closed(
         3,
     )
 
-    first_revision, first_materialization = _revision(
+    early_capture = _instant(_SESSION_DATE, 7, 2)
+    early_revision, early_materialization = _revision_from_bars(
         object_store,
-        captured_at=captured_at,
-        close_600000="10.48",
+        provider="tdx",
+        bars=(_bar("000001", captured_at=early_capture),),
+        raw_payload=b"early",
+    )
+    first_revision, first_materialization = _revision_from_bars(
+        object_store,
+        provider="tdx",
+        bars=(_bar("600000", captured_at=captured_at, close="10.48"),),
         raw_payload=b"first",
     )
 
-    second_revision, second_materialization = _revision(
+    second_revision, second_materialization = _revision_from_bars(
         object_store,
-        captured_at=captured_at,
-        close_600000="10.49",
+        provider="tdx",
+        bars=(
+            _bar("000001", captured_at=captured_at, close="12.45"),
+            _bar("600000", captured_at=captured_at, close="10.49"),
+        ),
         raw_payload=b"second",
     )
 
+    serving.apply_daily_bar_revision(
+        object_store,
+        revision=early_revision,
+        materialization=early_materialization,
+    )
     serving.apply_daily_bar_revision(
         object_store,
         revision=first_revision,
@@ -495,7 +515,7 @@ def test_same_capture_with_different_revision_fails_closed(
             materialization=second_materialization,
         )
 
-    # 冲突不能偷偷覆盖已经存在的数据。
+    # 000001 is updated first; the later 600000 conflict must roll it back too.
     bars = serving.read_daily_bars(
         provider="tdx",
         start_date=_SESSION_DATE,
@@ -504,6 +524,8 @@ def test_same_capture_with_different_revision_fails_closed(
 
     by_symbol = {bar.instrument.symbol: bar for bar in bars}
 
+    assert by_symbol["000001"].close == Decimal("12.34000000")
+    assert by_symbol["000001"].captured_at == early_capture
     assert by_symbol["600000"].close == Decimal("10.48000000")
 
 

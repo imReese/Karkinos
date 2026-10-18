@@ -11,13 +11,13 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from server.ai_runtime.evidence import CanonicalEvidenceRepository
+from server.ai_runtime.external_memory_analysis_output import decode_stage_output
 from server.ai_runtime.external_memory_informed_analysis import (
     EXTERNAL_MEMORY_ANALYSIS_CONFIRMATION,
     ExternalMemoryAnalysisStore,
     ExternalMemoryInvalidResponseError,
     HumanExternalMemoryAnalysisRequest,
     HumanExternalMemoryAnalysisService,
-    _decode_stage_output,
 )
 from server.ai_runtime.provider_call_window import (
     DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY,
@@ -504,7 +504,7 @@ async def test_current_evidence_drift_invalidates_without_deleting_external_hist
 
 @pytest.mark.unit
 def test_response_normalizer_accepts_common_json_aliases_but_rejects_unknown_evidence():
-    decoded = _decode_stage_output(
+    decoded = decode_stage_output(
         """```json
         {
           "标题": "证据审阅",
@@ -535,7 +535,7 @@ def test_response_normalizer_accepts_common_json_aliases_but_rejects_unknown_evi
         ExternalMemoryInvalidResponseError,
         match="contains_unknown_id",
     ):
-        _decode_stage_output(
+        decode_stage_output(
             json.dumps(
                 {
                     "title": "t",
@@ -566,7 +566,7 @@ def test_response_normalizer_accepts_common_json_aliases_but_rejects_unknown_evi
 
 @pytest.mark.unit
 def test_response_normalizer_accepts_one_cited_object_without_weakening_citations():
-    decoded = _decode_stage_output(
+    decoded = decode_stage_output(
         json.dumps(
             {
                 "title": "证据审阅",

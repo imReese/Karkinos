@@ -53,7 +53,7 @@ def build_quote_ingestion_command(
     reported_previous_close_date = str(
         snapshot.get("previous_close_date") or ""
     ).strip()
-    previous_close_date = _validated_previous_close_date(
+    previous_close_date = validated_previous_close_date(
         reported_previous_close_date,
         quote_timestamp=timestamp,
     )
@@ -137,7 +137,7 @@ def _optional_text(value) -> str | None:
     return text or None
 
 
-def _validated_previous_close_date(
+def validated_previous_close_date(
     value: str,
     *,
     quote_timestamp: str,
@@ -203,4 +203,5 @@ __all__ = [
     "QuoteIngestionPersistence",
     "build_quote_ingestion_command",
     "persist_quote_ingestion",
+    "validated_previous_close_date",
 ]

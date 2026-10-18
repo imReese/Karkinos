@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from server.services.citic_history_canonical_lineage import (
+from server.services.controlled_execution.citic.history_lineage import (
     project_citic_history_canonical_lineage_assessment,
 )
 

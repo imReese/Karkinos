@@ -26,8 +26,6 @@ class RecommendationCycle:
 
 def build_recommendation_cycle(
     signals: list[dict[str, Any]],
-    available_cash: float,
-    existing_positions: dict[str, Any],
 ) -> RecommendationCycle:
     tasks: list[RecommendationTask] = []
 

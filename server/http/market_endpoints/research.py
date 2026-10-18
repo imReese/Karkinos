@@ -150,7 +150,7 @@ def create_router(
             priority=body.priority,
             event_date=body.event_date,
         )
-        rows = await state.db.get_research_notes(limit=1, offset=0)
+        rows = await state.db.get_research_notes(note_id=note_id, limit=1, offset=0)
         note = next((row for row in rows if row["id"] == note_id), None)
         if note is None:
             raise HTTPException(status_code=500, detail="failed to fetch created note")
@@ -185,7 +185,7 @@ def create_router(
         if not updated:
             raise HTTPException(status_code=404, detail="note not found")
 
-        rows = await state.db.get_research_notes(limit=200, offset=0)
+        rows = await state.db.get_research_notes(note_id=note_id, limit=1, offset=0)
         note = next((row for row in rows if row["id"] == note_id), None)
         if note is None:
             raise HTTPException(status_code=500, detail="failed to fetch updated note")

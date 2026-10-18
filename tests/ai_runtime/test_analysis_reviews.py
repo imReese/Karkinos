@@ -51,6 +51,35 @@ def _review_request(
     )
 
 
+@pytest.mark.asyncio
+async def test_missing_workflow_audit_blocks_first_human_review(tmp_path):
+    db_path = tmp_path / "missing-workflow-audit.db"
+    _, task = await _accepted_task(db_path)
+    analysis = _analysis_service(db_path).start(_analysis_request(task.task_id))
+    assert analysis.audit_replay.event_count > 0
+    with closing(sqlite3.connect(db_path)) as connection, connection:
+        connection.execute(
+            "DELETE FROM ai_workflow_events WHERE workflow_id = ?",
+            (analysis.workflow.workflow_id,),
+        )
+
+    with pytest.raises(AnalysisReviewRejected, match="analysis_audit_invalid"):
+        _review_service(db_path).review(analysis.record.analysis_id, _review_request())
+
+    restored = _analysis_service(db_path).get(analysis.record.analysis_id)
+    assert restored.audit_replay.valid is False
+    assert restored.audit_replay.event_count == 0
+    assert restored.audit_replay.errors == ("workflow_event_chain_missing",)
+    with closing(sqlite3.connect(db_path)) as connection:
+        for table in (
+            "ai_research_task_analysis_reviews",
+            "ai_research_task_analysis_review_events",
+        ):
+            assert connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone() == (
+                0,
+            )
+
+
 @pytest.mark.unit
 @pytest.mark.trading_safety
 @pytest.mark.asyncio

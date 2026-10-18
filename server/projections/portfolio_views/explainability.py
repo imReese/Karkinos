@@ -129,18 +129,12 @@ def build_recent_drivers(state, entries: list[dict]) -> list[ExplainabilityDrive
             title = "资金转出"
             detail = entry.get("note") or "现金流出组合。"
         elif entry_type == "trade_buy":
-            quantity = float(entry.get("quantity") or 0.0)
-            price = float(entry.get("price") or 0.0)
-            commission = float(entry.get("commission") or 0.0)
             title = f"买入 {instrument_label}"
-            amount = -(ledger_entry_notional(entry) + commission)
+            amount = structured_fields["net_cash_impact"]
             detail = entry.get("note") or ""
         elif entry_type == "trade_sell":
-            quantity = float(entry.get("quantity") or 0.0)
-            price = float(entry.get("price") or 0.0)
-            commission = float(entry.get("commission") or 0.0)
             title = f"卖出 {instrument_label}"
-            amount = ledger_entry_notional(entry) - commission
+            amount = structured_fields["net_cash_impact"]
             detail = entry.get("note") or ""
         elif entry_type in _CASH_INCOME_LEDGER_TYPES:
             if entry_type == "cash_interest":

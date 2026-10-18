@@ -32,7 +32,7 @@ class ConnectionHub:
     async def broadcast(self, data: dict[str, Any]) -> None:
         """广播消息给所有连接，自动清理断开的连接。"""
         disconnected: list[WebSocket] = []
-        for ws in self._connections:
+        for ws in tuple(self._connections):
             try:
                 await ws.send_json(data)
             except Exception:

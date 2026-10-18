@@ -1,4 +1,4 @@
-"""Per-application state and FastAPI dependency adapters."""
+"""Application state and request-local snapshot binding."""
 
 from __future__ import annotations
 
@@ -9,8 +9,6 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from threading import RLock
 from typing import TYPE_CHECKING, Any
-
-from fastapi import Request
 
 if TYPE_CHECKING:
     from starlette.types import ASGIApp, Receive, Scope, Send
@@ -176,39 +174,3 @@ class AppStateContextMiddleware:
                 return
             with bind_portfolio_read_request_state():
                 await self.app(scope, receive, send)
-
-
-def get_scheduler(request: Request) -> TradingScheduler:
-    scheduler = _request_app_state(request).scheduler
-    if scheduler is None:
-        raise RuntimeError("trading scheduler is not initialized")
-    return scheduler
-
-
-def get_db(request: Request) -> AppDatabase:
-    return _request_app_state(request).require_database()
-
-
-def get_bridge(request: Request) -> EventBusBridge:
-    bridge = _request_app_state(request).bridge
-    if bridge is None:
-        raise RuntimeError("event bridge is not initialized")
-    return bridge
-
-
-def get_hub(request: Request) -> ConnectionHub:
-    hub = _request_app_state(request).hub
-    if hub is None:
-        raise RuntimeError("connection hub is not initialized")
-    return hub
-
-
-def get_config(request: Request) -> ServerConfig:
-    return _request_app_state(request).require_config()
-
-
-def _request_app_state(request: Request) -> AppState:
-    state = getattr(request.app.state, "app_state", None)
-    if not isinstance(state, AppState):
-        raise RuntimeError("request is not bound to a Karkinos application state")
-    return state

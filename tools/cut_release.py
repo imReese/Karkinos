@@ -65,40 +65,47 @@ def check_working_tree_clean(repo_root: Path) -> None:
         )
 
 
-def check_codebase_versions(repo_root: Path, expected_version: str) -> None:
-    """Verify that server/__init__.py, web/package.json, and release tests match expected_version."""
-    server_init = repo_root / "server" / "__init__.py"
-    if not server_init.is_file():
-        raise CutReleaseError("missing_server_init: server/__init__.py not found")
-    server_content = server_init.read_text(encoding="utf-8")
-    server_match = re.search(r'__version__\s*=\s*"([^"]+)"', server_content)
+def _read_commit_metadata(repo_root: Path, commit_sha: str, relative: str) -> str:
+    try:
+        result = subprocess.run(
+            ["git", "show", f"{commit_sha}:{relative}"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError, UnicodeError) as exc:
+        raise CutReleaseError(f"release_metadata_unreadable: {relative}") from exc
+    return result.stdout
+
+
+def check_codebase_versions(
+    repo_root: Path, expected_version: str, *, commit_sha: str
+) -> None:
+    """Verify package metadata in the exact target commit without executing it."""
+    server_content = _read_commit_metadata(repo_root, commit_sha, "server/__init__.py")
+    server_match = re.search(
+        r'^__version__\s*=\s*"([^"]+)"\s*$', server_content, re.MULTILINE
+    )
     if not server_match or server_match.group(1) != expected_version:
         found = server_match.group(1) if server_match else "missing"
         raise CutReleaseError(
             f"version_mismatch: server/__init__.py has version '{found}', expected '{expected_version}'"
         )
 
-    web_pkg = repo_root / "web" / "package.json"
-    if not web_pkg.is_file():
-        raise CutReleaseError("missing_web_package: web/package.json not found")
-    try:
-        pkg_data = json.loads(web_pkg.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise CutReleaseError("invalid_web_package_json") from exc
-
-    web_version = pkg_data.get("version")
-    if web_version != expected_version:
-        raise CutReleaseError(
-            f"version_mismatch: web/package.json has version '{web_version}', expected '{expected_version}'"
-        )
-
-    test_release = repo_root / "tests" / "server" / "test_release_version.py"
-    if test_release.is_file():
-        test_content = test_release.read_text(encoding="utf-8")
-        expected_statement = f'server.__version__ == "{expected_version}"'
-        if expected_statement not in test_content:
+    for relative in ("web/package.json", "web/package-lock.json"):
+        content = _read_commit_metadata(repo_root, commit_sha, relative)
+        try:
+            package = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise CutReleaseError(f"invalid_package_json: {relative}") from exc
+        if not isinstance(package, dict):
+            raise CutReleaseError(f"invalid_package_json: {relative}")
+        version = package.get("version")
+        if version != expected_version:
             raise CutReleaseError(
-                f"version_mismatch: tests/server/test_release_version.py does not assert '{expected_statement}'"
+                f"version_mismatch: {relative} has version '{version}', expected '{expected_version}'"
             )
 
 
@@ -295,9 +302,8 @@ def cut_release(
     """Execute full pre-flight verification and safely create and push release tag."""
     version = validate_version(tag)
     check_working_tree_clean(repo_root)
-    check_codebase_versions(repo_root, version)
-
     commit_sha = resolve_commit_sha(repo_root, commit_ref)
+    check_codebase_versions(repo_root, version, commit_sha=commit_sha)
     verify_origin_main_ancestry(repo_root, commit_sha, fetch=fetch)
 
     token = get_github_token()

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -26,7 +26,9 @@ from data.providers.akshare import AKShareSource
 from data.providers.tdx import TdxSource
 from data.store import DataStore
 from server.persistence.market_calendar import MarketCalendarRepository
+from server.projections.quote_status import parse_quote_timestamp
 from server.runtime_paths import resolve_data_dir
+from server.services.fund_nav_sync import is_confirmed_fund_nav_quote
 
 logger = logging.getLogger(__name__)
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -113,6 +115,41 @@ class MarketSyncRequest:
     skip_calendar: bool = False
     skip_quotes: bool = False
     force: bool = False
+
+
+def _daily_close_trade_date(
+    target: SyncTarget,
+    snapshot: dict[str, Any],
+    *,
+    captured_at: datetime,
+) -> str | None:
+    observed_at = parse_quote_timestamp(
+        snapshot.get("quote_timestamp") or snapshot.get("timestamp")
+    )
+    if observed_at is None or observed_at > captured_at:
+        return None
+    if target.instrument_type is InstrumentType.OPEN_END_FUND:
+        nav_date = str(snapshot.get("nav_date") or "").strip()
+        try:
+            nav_day = date.fromisoformat(nav_date)
+        except ValueError:
+            return None
+        if nav_day > observed_at.date():
+            return None
+        return (
+            nav_date
+            if is_confirmed_fund_nav_quote(snapshot, target_date=nav_date)
+            else None
+        )
+    if (
+        observed_at.time() < time(15)
+        or str(snapshot.get("quote_status") or "live").strip().lower()
+        not in {"live", "confirmed", "fresh", "healthy"}
+        or str(snapshot.get("provider_status") or "live").strip().lower() != "live"
+        or snapshot.get("stale_reason") not in {None, ""}
+    ):
+        return None
+    return observed_at.date().isoformat()
 
 
 class MarketSyncService:
@@ -511,8 +548,8 @@ class MarketSyncService:
     def sync_latest_quotes(self, targets: list[SyncTarget]) -> int:
         """Update atomic latest quotes and daily close snapshots."""
         db = self._get_db()
-        now_iso = datetime.now(timezone.utc).isoformat()
-        today_trade_date = datetime.now(_SHANGHAI).strftime("%Y-%m-%d")
+        captured_at = datetime.now(timezone.utc)
+        now_iso = captured_at.isoformat()
         updated_count = 0
 
         for target in targets:
@@ -556,13 +593,17 @@ class MarketSyncService:
                         captured_at=now_iso,
                         nav_date=nav_date,
                     )
-                    db.save_daily_close_snapshot_sync(
-                        symbol=target.symbol,
-                        asset_class=target.asset_class.value,
-                        trade_date=today_trade_date,
-                        close_price=price,
-                        source=provider_name,
+                    close_date = _daily_close_trade_date(
+                        target, q, captured_at=captured_at
                     )
+                    if close_date is not None:
+                        db.save_daily_close_snapshot_sync(
+                            symbol=target.symbol,
+                            asset_class=target.instrument_type.value,
+                            trade_date=close_date,
+                            close_price=price,
+                            source=provider_name,
+                        )
                     updated_count += 1
             except Exception:
                 logger.warning(

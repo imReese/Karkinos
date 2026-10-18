@@ -27,9 +27,11 @@ from server.services.daily_candidate_trial_values import (
     review_event_response as _review_event_response,
 )
 from server.services.daily_candidate_trial_values import trial_binding as _trial_binding
-from server.services.daily_decision_evidence_automation import (
-    DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
+from server.services.daily_decision_background_schedule import (
     project_daily_candidate_background_schedule,
+)
+from server.services.daily_decision_evidence_contracts import (
+    DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
 )
 from server.services.market_calendar_evidence import (
     validate_verified_market_calendar,

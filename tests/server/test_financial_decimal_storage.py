@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import json
 import sqlite3
-from decimal import Decimal
+from decimal import Decimal, localcontext
 from pathlib import Path
 
 import pytest
 
+from server.contracts.financial_values import decimal_storage_pair, decimal_text
+from server.contracts.ledger_mutations import LedgerAppendCommand, LedgerEntryDraft
 from server.contracts.order_state import OmsOrderCommand
 from server.db import AppDatabase
+from server.ledger.models import LedgerEntry
 from server.persistence import migrations
 from server.persistence.financial_decimal_storage import assert_exact_financial_storage
 from server.persistence.initializer import initialize_database
@@ -232,3 +236,93 @@ def test_legacy_real_backfill_allows_only_sqlite_text_rendering_loss() -> None:
 
     drifted = {**row, "quantity_decimal": "456.6211"}
     assert not real_projection_matches(drifted, "quantity", legacy_backfill=True)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("12345678901.123456789012345678", "12345678901.123456789012345678"),
+        (
+            "12345678901234567890.123456789012345678",
+            "12345678901234567890.123456789012345678",
+        ),
+        (Decimal("1E+37"), "1" + "0" * 37),
+        (Decimal("1E-18"), "0.000000000000000001"),
+        ("123.4500", "123.45"),
+        ("-123.4500", "-123.45"),
+        (Decimal("1000.00"), "1000"),
+        (Decimal("-0.000"), "0"),
+        (0, "0"),
+        (1.25, "1.25"),
+    ],
+)
+def test_decimal_text_preserves_supported_exact_values(value, expected) -> None:
+    with localcontext() as context:
+        context.prec = 28
+        assert decimal_text(value, field="amount") == expected
+        projected, exact = decimal_storage_pair(value, field="amount")
+    assert exact == expected
+    assert projected == float(expected)
+    assert Decimal(exact) == Decimal(str(value))
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        True,
+        False,
+        "NaN",
+        "Infinity",
+        "-Infinity",
+        "1E+38",
+        "1E-19",
+        "1.0000000000000000000",
+    ],
+)
+def test_decimal_text_rejects_invalid_or_out_of_bounds_values(value) -> None:
+    with pytest.raises(ValueError):
+        decimal_text(value, field="amount")
+    with pytest.raises(ValueError):
+        decimal_storage_pair(value, field="amount")
+
+
+def test_ledger_append_preserves_exact_decimal_across_reopen_and_replay(
+    tmp_path: Path,
+) -> None:
+    amount = "12345678901.123456789012345678"
+    database = AppDatabase(tmp_path / "exact-ledger.db")
+    database.init_sync()
+    command = LedgerAppendCommand(
+        operator_id="local-owner",
+        request_id="exact-string-deposit",
+        entry=LedgerEntryDraft(
+            entry_type="cash_deposit",
+            timestamp="2026-10-13T09:00:00+08:00",
+            amount=amount,
+            asset_class="cash",
+            source="sanitized_fixture",
+            source_ref="exact-string-deposit",
+        ),
+    )
+    with localcontext() as context:
+        context.prec = 28
+        first = database.append_ledger_entry_sync(command)
+        reopened = AppDatabase(database.path)
+        reopened.init_sync()
+        replay = reopened.append_ledger_entry_sync(command)
+    persisted = reopened.get_ledger_entry_sync(int(first.entry["id"]))
+    assert persisted is not None
+    assert persisted["amount_decimal"] == amount
+    assert LedgerEntry.from_row(persisted).decimal("amount") == Decimal(amount)
+    assert persisted["decimal_provenance"] == "exact_decimal_write_v1"
+    assert first.entry["amount_decimal"] == amount
+    assert replay.entry == first.entry
+    assert replay.replayed is True
+    assert (
+        replay.request_fingerprint == first.request_fingerprint == command.fingerprint
+    )
+    assert replay.entry_fingerprint == first.entry_fingerprint
+    assert len(_rows(database.path, "ledger_entries")) == 1
+    claims = _rows(database.path, "ledger_mutation_claims")
+    assert len(claims) == 1
+    assert json.loads(claims[0]["request_json"]) == command.to_dict()

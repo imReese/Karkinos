@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextlib import nullcontext
 from datetime import date
 from types import SimpleNamespace
 from typing import Any
 
+from server.dependencies import (
+    AppState,
+    bind_portfolio_read_request_state,
+    get_portfolio_read_request_state,
+)
 from server.services.account_board_permissions import resolve_board_buy_permissions
 from server.services.decision_contracts import (
     TRUSTED_DATA_STATUSES,
@@ -39,34 +45,44 @@ def decision_portfolio_context(state: Any) -> dict[str, Any]:
         )
         from server.services.valuation_snapshot import build_current_valuation_snapshot
 
-        snapshot = (
-            current_valuation_snapshot(state)
-            if callable(getattr(db, "save_valuation_snapshot_sync", None))
-            else build_current_valuation_snapshot(db, persist=False)
+        snapshot_scope = (
+            bind_portfolio_read_request_state()
+            if isinstance(state, AppState)
+            and get_portfolio_read_request_state() is None
+            else nullcontext()
         )
-        quotes = quotes_from_valuation_snapshot(snapshot)
-        scheduler = getattr(state, "scheduler", None)
-        projection_scheduler = (
-            SimpleNamespace(
-                portfolio=getattr(scheduler, "portfolio", None),
-                instruments=getattr(scheduler, "instruments", {}),
+        with snapshot_scope:
+            snapshot = (
+                current_valuation_snapshot(state)
+                if callable(getattr(db, "save_valuation_snapshot_sync", None))
+                else build_current_valuation_snapshot(db, persist=False)
             )
-            if scheduler is not None
-            else None
-        )
-        projection_state = SimpleNamespace(
-            db=db,
-            scheduler=projection_scheduler,
-            config=getattr(
-                state,
-                "config",
-                SimpleNamespace(initial_cash=0, assets=[]),
-            ),
-        )
-        portfolio, instruments = resolve_projection_sources(
-            projection_state,
-            latest_quotes=quotes,
-        )
+            quotes = quotes_from_valuation_snapshot(snapshot)
+            if isinstance(state, AppState):
+                projection_state: AppState | SimpleNamespace = state
+            else:
+                scheduler = getattr(state, "scheduler", None)
+                projection_scheduler = (
+                    SimpleNamespace(
+                        portfolio=getattr(scheduler, "portfolio", None),
+                        instruments=getattr(scheduler, "instruments", {}),
+                    )
+                    if scheduler is not None
+                    else None
+                )
+                projection_state = SimpleNamespace(
+                    db=db,
+                    scheduler=projection_scheduler,
+                    config=getattr(
+                        state,
+                        "config",
+                        SimpleNamespace(initial_cash=0, assets=[]),
+                    ),
+                )
+            portfolio, instruments = resolve_projection_sources(
+                projection_state,
+                latest_quotes=quotes,
+            )
         return {
             "portfolio": portfolio,
             "instruments": instruments,

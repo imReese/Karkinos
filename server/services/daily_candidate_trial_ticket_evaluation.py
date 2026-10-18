@@ -13,13 +13,17 @@ from server.services.daily_candidate_trial_values import (
     positive_float,
     shanghai_date,
 )
-from server.services.daily_decision_evidence_automation import (
+from server.services.daily_decision_evidence_contracts import (
     DAILY_CANDIDATE_MANUAL_TICKET_SCHEMA_VERSION,
     DAILY_CANDIDATE_MAX_QUOTE_AGE_SECONDS,
     DAILY_CANDIDATE_STRATEGY_GATE_BINDING_SCHEMA_VERSION,
+)
+from server.services.daily_decision_evidence_identity import (
+    manual_ticket_candidate_fingerprint,
+)
+from server.services.daily_decision_strategy_gate import (
     build_daily_candidate_strategy_gate_binding,
     daily_candidate_strategy_operating_constraints_blockers,
-    manual_ticket_candidate_fingerprint,
 )
 
 

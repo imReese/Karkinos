@@ -566,6 +566,5 @@ class TradingScheduler(
             event,
             watchlist=self.watchlist,
             database=self._db,
-            portfolio=self.portfolio,
             notifier=self._notifier,
         )

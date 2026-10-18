@@ -16,8 +16,6 @@ from fastapi import BackgroundTasks, HTTPException
 from fastapi.routing import APIRoute
 
 from core.types import InstrumentType, Symbol
-from server.projections import portfolio_application
-from server.projections import quote_status as quote_status_projection
 from server.services import decision_application, market_refresh
 from tests.analytics.test_strategy_validation_matrix import REQUIRED_STRATEGY_IDS
 from tests.portfolio_valuation_fakes import bind_published_valuation
@@ -108,6 +106,20 @@ def _persisted_cash_entry(
     }
 
 
+def _freeze_portfolio_clock(monkeypatch: pytest.MonkeyPatch, now: datetime) -> None:
+    """Freeze the actual clocks used by portfolio and quote projections."""
+    for target in (
+        "server.routes.portfolio.get_shanghai_now",
+        "server.projections.portfolio_application.get_shanghai_now",
+        "server.projections.quote_status.get_shanghai_now",
+        "server.projections.portfolio_views.historical_series.get_shanghai_now",
+        "server.projections.portfolio_views.intraday_series.get_shanghai_now",
+        "server.projections.portfolio_views.live_holdings.get_shanghai_now",
+        "server.projections.portfolio_views.synthetic_series.get_shanghai_now",
+    ):
+        monkeypatch.setattr(target, lambda _now=None: now)
+
+
 @pytest.fixture(autouse=True)
 def _fresh_route_quote_timestamp(monkeypatch):
     """A long test suite must not age the module-import quote into stale evidence."""
@@ -133,214 +145,16 @@ def _run_market_fetch_inline(monkeypatch, request):
     ):
         return
 
-    from server.routes import market as market_routes
-
     async def inline_fetch(func, *args):
         return func(*args)
 
-    monkeypatch.setattr(market_routes, "_run_blocking_fetch", inline_fetch)
-
-
-@pytest.fixture(autouse=True)
-def _bind_extracted_application_dependencies(monkeypatch):
-    """Keep legacy route monkeypatches bound to their canonical owners."""
-    from server.projections.portfolio_views import (
-        explainability,
-        historical_series,
-        intraday_series,
-        live_holdings,
-        manual_trade,
-        overview,
-        synthetic_series,
-    )
-    from server.routes import market as market_routes
-    from server.routes import portfolio as portfolio_routes
-    from server.services.market_views import (
-        backfill,
-        confirmed_nav,
-        fetch_runs,
-        health_inputs,
-        health_projection,
-    )
-
-    for module in (
-        explainability,
-        historical_series,
-        intraday_series,
-        live_holdings,
-        manual_trade,
-        overview,
-        synthetic_series,
-    ):
-        for route_name, value in vars(module).items():
-            if (
-                not route_name.startswith("_")
-                and route_name not in module.__all__
-                and callable(value)
-                and not isinstance(value, type)
-                and hasattr(portfolio_routes, route_name)
-            ):
-
-                def imported_portfolio_route_proxy(
-                    *args, _route_name=route_name, **kwargs
-                ):
-                    return getattr(portfolio_routes, _route_name)(*args, **kwargs)
-
-                monkeypatch.setattr(module, route_name, imported_portfolio_route_proxy)
-                continue
-            if (
-                not route_name.startswith("_")
-                or route_name.startswith("__")
-                or not callable(value)
-                or not hasattr(portfolio_routes, route_name)
-            ):
-                continue
-
-            def private_route_proxy(*args, _route_name=route_name, **kwargs):
-                return getattr(portfolio_routes, _route_name)(*args, **kwargs)
-
-            monkeypatch.setattr(module, route_name, private_route_proxy)
-
-        for public_name in module.__all__:
-            route_name = f"_{public_name}"
-            if not hasattr(portfolio_routes, route_name):
-                continue
-
-            def route_proxy(*args, _route_name=route_name, **kwargs):
-                return getattr(portfolio_routes, _route_name)(*args, **kwargs)
-
-            monkeypatch.setattr(module, public_name, route_proxy)
-
-    for module in (
-        backfill,
-        confirmed_nav,
-        fetch_runs,
-        health_inputs,
-        health_projection,
-    ):
-        for route_name, value in vars(module).items():
-            if (
-                not route_name.startswith("_")
-                and route_name not in module.__all__
-                and callable(value)
-                and not isinstance(value, type)
-                and hasattr(market_routes, route_name)
-            ):
-
-                def imported_market_route_proxy(
-                    *args, _route_name=route_name, **kwargs
-                ):
-                    return getattr(market_routes, _route_name)(*args, **kwargs)
-
-                monkeypatch.setattr(module, route_name, imported_market_route_proxy)
-                continue
-            if (
-                not route_name.startswith("_")
-                or route_name.startswith("__")
-                or not callable(value)
-                or not hasattr(market_routes, route_name)
-            ):
-                continue
-
-            def private_market_route_proxy(*args, _route_name=route_name, **kwargs):
-                return getattr(market_routes, _route_name)(*args, **kwargs)
-
-            monkeypatch.setattr(module, route_name, private_market_route_proxy)
-
-        for public_name in module.__all__:
-            route_name = f"_{public_name}"
-            if not hasattr(market_routes, route_name):
-                continue
-
-            def market_route_proxy(*args, _route_name=route_name, **kwargs):
-                return getattr(market_routes, _route_name)(*args, **kwargs)
-
-            monkeypatch.setattr(module, public_name, market_route_proxy)
-
     monkeypatch.setattr(
-        market_refresh,
-        "fetch_latest_snapshot",
-        lambda *args, **kwargs: market_routes._fetch_latest_snapshot(*args, **kwargs),
+        "server.services.market_refresh.run_blocking_fetch", inline_fetch
     )
     monkeypatch.setattr(
-        market_refresh,
-        "fetch_provider_latest_with_timeout",
-        lambda *args, **kwargs: market_routes._fetch_provider_latest_with_timeout(
-            *args, **kwargs
-        ),
+        "server.services.market_views.backfill._run_blocking_fetch", inline_fetch
     )
-    monkeypatch.setattr(
-        market_refresh,
-        "is_cn_trading_session",
-        lambda *args, **kwargs: market_routes.is_cn_trading_session(*args, **kwargs),
-    )
-    monkeypatch.setattr(
-        market_refresh,
-        "load_latest_snapshot_from_provider",
-        lambda *args, **kwargs: market_routes._load_latest_snapshot_from_provider(
-            *args, **kwargs
-        ),
-    )
-
-    def resolve_quote_status(*args, **kwargs):
-        try:
-            return market_routes._resolve_quote_status(*args, **kwargs)
-        except TypeError:
-            kwargs.pop("now", None)
-            return market_routes._resolve_quote_status(*args, **kwargs)
-
-    monkeypatch.setattr(market_refresh, "resolve_quote_status", resolve_quote_status)
-    monkeypatch.setattr(
-        market_refresh,
-        "run_blocking_fetch",
-        lambda *args, **kwargs: market_routes._run_blocking_fetch(*args, **kwargs),
-    )
-
-    monkeypatch.setattr(
-        portfolio_application,
-        "current_valuation_snapshot",
-        lambda *args, **kwargs: portfolio_routes._current_valuation_snapshot(
-            *args, **kwargs
-        ),
-    )
-    monkeypatch.setattr(
-        portfolio_application,
-        "get_shanghai_now",
-        lambda *args, **kwargs: portfolio_routes.get_shanghai_now(*args, **kwargs),
-    )
-    monkeypatch.setattr(
-        portfolio_application,
-        "position_quote_presentation",
-        lambda *args, **kwargs: portfolio_routes._position_quote_presentation(
-            *args, **kwargs
-        ),
-    )
-    monkeypatch.setattr(
-        portfolio_application,
-        "read_daily_ledger_entries",
-        lambda *args, **kwargs: portfolio_routes._read_daily_ledger_entries(
-            *args, **kwargs
-        ),
-    )
-    monkeypatch.setattr(
-        portfolio_application,
-        "resolve_position_today_change",
-        lambda *args, **kwargs: portfolio_routes._resolve_position_today_change(
-            *args, **kwargs
-        ),
-    )
-    monkeypatch.setattr(
-        portfolio_application,
-        "resolve_projection_sources",
-        lambda *args, **kwargs: portfolio_routes._resolve_projection_sources(
-            *args, **kwargs
-        ),
-    )
-    monkeypatch.setattr(
-        quote_status_projection,
-        "get_shanghai_now",
-        lambda *args, **kwargs: portfolio_routes.get_shanghai_now(*args, **kwargs),
-    )
+    monkeypatch.setattr("server.routes.market._run_blocking_fetch", inline_fetch)
 
 
 @pytest.fixture(autouse=True)
@@ -856,12 +670,14 @@ def test_run_single_backtest_attaches_oos_validation_for_benchmark_strategy(
             pass
 
         @staticmethod
-        def get_instrument(symbol, asset_class):
+        def get_instrument_by_type(symbol, instrument_type):
             assert symbol == Symbol("510300")
-            assert asset_class == AssetClass.FUND
+            assert instrument_type == InstrumentType.ETF
             return make_etf("510300", "沪深300ETF")
 
-        def get_bars(self, symbol, start, end, asset_class):
+        def get_bars(self, symbol, start, end, *, asset_class, instrument_type):
+            assert asset_class is AssetClass.FUND
+            assert instrument_type == InstrumentType.ETF
             prices = [
                 10,
                 9.9,
@@ -948,12 +764,14 @@ def test_run_single_backtest_attaches_rolling_oos_validation(monkeypatch):
             pass
 
         @staticmethod
-        def get_instrument(symbol, asset_class):
+        def get_instrument_by_type(symbol, instrument_type):
             assert symbol == Symbol("510300")
-            assert asset_class == AssetClass.FUND
+            assert instrument_type == InstrumentType.ETF
             return make_etf("510300", "沪深300ETF")
 
-        def get_bars(self, symbol, start, end, asset_class):
+        def get_bars(self, symbol, start, end, *, asset_class, instrument_type):
+            assert asset_class is AssetClass.FUND
+            assert instrument_type == InstrumentType.ETF
             prices = [10, 9, 8, 7, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
             dates = pd.bdate_range("2026-01-05", periods=len(prices))
             df = pd.DataFrame(
@@ -1106,7 +924,7 @@ def test_run_single_backtest_etf_with_real_data_manager(monkeypatch, tmp_path):
 def test_run_single_backtest_attaches_dataset_snapshot_metadata(monkeypatch):
     import pandas as pd
 
-    from analytics.backtest_metrics import BacktestMetrics, CostSummary
+    from backtest.metrics import BacktestMetrics, CostSummary
     from backtest.result import BacktestResult
     from core.types import AssetClass, BarFrequency, Symbol
     from data.handler import DataHandler
@@ -1135,12 +953,14 @@ def test_run_single_backtest_attaches_dataset_snapshot_metadata(monkeypatch):
             pass
 
         @staticmethod
-        def get_instrument(symbol, asset_class):
+        def get_instrument_by_type(symbol, instrument_type):
             assert symbol == Symbol("600519")
-            assert asset_class == AssetClass.STOCK
+            assert instrument_type == InstrumentType.STOCK
             return make_stock("600519", "贵州茅台")
 
-        def get_bars(self, symbol, start, end, asset_class):
+        def get_bars(self, symbol, start, end, *, asset_class, instrument_type):
+            assert asset_class is AssetClass.STOCK
+            assert instrument_type == InstrumentType.STOCK
             df = pd.DataFrame(
                 {
                     "timestamp": pd.to_datetime(["2026-01-05", "2026-01-06"]),
@@ -1466,7 +1286,6 @@ def test_market_quote_prefers_persisted_snapshot_and_refreshes_async(monkeypatch
             }
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
         "data.manager.build_sources", lambda **kwargs: {"akshare": FakeSource()}
     )
@@ -1513,7 +1332,6 @@ def test_market_quote_refresh_is_throttled(monkeypatch):
 
     market_routes._QUOTE_REFRESH_ATTEMPTS.clear()
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
 
     first_tasks = BackgroundTasks()
     second_tasks = BackgroundTasks()
@@ -1561,7 +1379,6 @@ def test_market_quote_accepts_scheduler_quote_with_symbol(monkeypatch):
 
     market_routes._QUOTE_REFRESH_ATTEMPTS.clear()
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
 
     response = asyncio.run(endpoint("600003", BackgroundTasks()))
 
@@ -1604,7 +1421,6 @@ def test_market_quote_prefers_persisted_snapshot_without_refresh_when_closed(
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
 
     background_tasks = BackgroundTasks()
     response = asyncio.run(endpoint("600519", background_tasks))
@@ -1642,7 +1458,10 @@ def test_market_data_health_uses_watchlist_and_latest_snapshots(monkeypatch):
         db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
+    monkeypatch.setattr(
+        "server.services.market_views.health_projection.is_cn_trading_session",
+        lambda: False,
+    )
 
     response = asyncio.run(endpoint())
 
@@ -1688,7 +1507,10 @@ def test_market_data_health_includes_default_market_indices(monkeypatch):
         ),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
+    monkeypatch.setattr(
+        "server.services.market_views.health_projection.is_cn_trading_session",
+        lambda: False,
+    )
 
     response = asyncio.run(health_route.endpoint())
 
@@ -1817,7 +1639,10 @@ def test_market_data_health_prefers_materialized_latest_quotes(monkeypatch):
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(
+        "server.services.market_views.health_projection.is_cn_trading_session",
+        lambda: True,
+    )
 
     response = asyncio.run(health_route.endpoint())
 
@@ -1867,7 +1692,10 @@ def test_market_data_health_keeps_expired_cache_stale(monkeypatch):
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(
+        "server.services.market_views.health_projection.is_cn_trading_session",
+        lambda: True,
+    )
 
     response = asyncio.run(health_route.endpoint())
 
@@ -1916,10 +1744,13 @@ def test_market_data_health_treats_live_fund_fallback_as_supported(monkeypatch):
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        "server.routes.market._shanghai_now",
+        "server.services.market_views.health_projection._shanghai_now",
         lambda now=None: datetime.fromisoformat("2026-06-15T11:11:36+08:00"),
     )
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(
+        "server.services.market_views.health_projection.is_cn_trading_session",
+        lambda: True,
+    )
 
     response = asyncio.run(health_route.endpoint())
 
@@ -1943,9 +1774,8 @@ def test_market_quote_metadata_resolves_cached_live_status(monkeypatch):
         "quote_status": "live",
     }
     monkeypatch.setattr(
-        market_routes,
-        "_resolve_quote_status",
-        lambda state, quote: "stale",
+        "server.services.market_refresh.resolve_quote_status",
+        lambda state, quote, *, now=None: "stale",
     )
 
     metadata = market_routes._quote_metadata(
@@ -2073,9 +1903,7 @@ def test_load_latest_snapshot_routes_index_to_capable_source_with_bounded_timeou
         return source.fetch_latest(symbol, asset_class)
 
     monkeypatch.setattr(
-        market_routes,
-        "_fetch_provider_latest_with_timeout",
-        fake_fetch,
+        "server.services.market_refresh.fetch_provider_latest_with_timeout", fake_fetch
     )
 
     payload = market_routes._load_latest_snapshot_from_provider(
@@ -2180,7 +2008,10 @@ def test_market_data_health_includes_ledger_holdings_not_in_scheduler(monkeypatc
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
+    monkeypatch.setattr(
+        "server.services.market_views.health_projection.is_cn_trading_session",
+        lambda: False,
+    )
 
     response = asyncio.run(health_route.endpoint())
 
@@ -2247,7 +2078,10 @@ def test_market_data_health_prefers_materialized_quote_over_runtime(monkeypatch)
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
+    monkeypatch.setattr(
+        "server.services.market_views.health_projection.is_cn_trading_session",
+        lambda: False,
+    )
 
     response = asyncio.run(health_route.endpoint())
 
@@ -2290,7 +2124,10 @@ def test_market_data_health_supports_legacy_only_quote_reader(monkeypatch):
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
+    monkeypatch.setattr(
+        "server.services.market_views.health_projection.is_cn_trading_session",
+        lambda: False,
+    )
 
     response = asyncio.run(health_route.endpoint())
 
@@ -2336,13 +2173,16 @@ def test_market_quote_refresh_endpoint_returns_structured_result(monkeypatch, tm
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr("server.routes.market.is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
-        market_routes, "_resolve_quote_status", lambda state, quote: "live"
+        "server.services.market_refresh.is_cn_trading_session", lambda: True
     )
     monkeypatch.setattr(
-        market_routes,
-        "_load_latest_snapshot_from_provider",
+        "server.services.market_refresh.resolve_quote_status",
+        lambda state, quote, *, now=None: "live",
+    )
+    monkeypatch.setattr(
+        "server.services.market_refresh.load_latest_snapshot_from_provider",
         lambda state, symbol, asset_class: {
             "symbol": symbol,
             "asset_class": asset_class.value,
@@ -2404,11 +2244,13 @@ def test_market_quote_refresh_without_symbols_includes_default_indices(
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr("server.routes.market.is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
-        market_routes,
-        "_resolve_quote_status",
-        lambda state, quote: "live",
+        "server.services.market_refresh.is_cn_trading_session", lambda: True
+    )
+    monkeypatch.setattr(
+        "server.services.market_refresh.resolve_quote_status",
+        lambda state, quote, *, now=None: "live",
     )
 
     seen: list[tuple[str, str]] = []
@@ -2424,8 +2266,7 @@ def test_market_quote_refresh_without_symbols_includes_default_indices(
         }
 
     monkeypatch.setattr(
-        market_routes,
-        "_load_latest_snapshot_from_provider",
+        "server.services.market_refresh.load_latest_snapshot_from_provider",
         fake_load_latest_snapshot,
     )
 
@@ -2480,13 +2321,16 @@ def test_market_quote_refresh_records_successful_fetch_run(monkeypatch, tmp_path
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr("server.routes.market.is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
-        market_routes, "_resolve_quote_status", lambda state, quote: "live"
+        "server.services.market_refresh.is_cn_trading_session", lambda: True
     )
     monkeypatch.setattr(
-        market_routes,
-        "_load_latest_snapshot_from_provider",
+        "server.services.market_refresh.resolve_quote_status",
+        lambda state, quote, *, now=None: "live",
+    )
+    monkeypatch.setattr(
+        "server.services.market_refresh.load_latest_snapshot_from_provider",
         lambda state, symbol, asset_class: {
             "symbol": symbol,
             "asset_class": asset_class.value,
@@ -2573,9 +2417,13 @@ def test_market_quote_refresh_success_upserts_latest_quote(monkeypatch, tmp_path
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr("server.routes.market.is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
-        market_routes, "_resolve_quote_status", lambda state, quote: "live"
+        "server.services.market_refresh.is_cn_trading_session", lambda: True
+    )
+    monkeypatch.setattr(
+        "server.services.market_refresh.resolve_quote_status",
+        lambda state, quote, *, now=None: "live",
     )
     monkeypatch.setattr(
         "data.manager.build_sources",
@@ -2652,9 +2500,12 @@ def test_market_quote_refresh_records_cache_fallback_fetch_run(monkeypatch, tmp_
         raise RuntimeError("provider unavailable")
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr("server.routes.market.is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
-        market_routes, "_load_latest_snapshot_from_provider", fail_fetch
+        "server.services.market_refresh.is_cn_trading_session", lambda: True
+    )
+    monkeypatch.setattr(
+        "server.services.market_refresh.load_latest_snapshot_from_provider", fail_fetch
     )
 
     response = asyncio.run(
@@ -2717,7 +2568,10 @@ def test_market_quote_refresh_records_failed_run_without_provider_fallback(
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr("server.routes.market.is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(
+        "server.services.market_refresh.is_cn_trading_session", lambda: True
+    )
     monkeypatch.setattr(
         "data.manager.build_sources",
         lambda **kwargs: {
@@ -3241,7 +3095,10 @@ def test_market_data_health_reports_provider_configuration_next_action(monkeypat
         db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(
+        "server.services.market_views.health_projection.is_cn_trading_session",
+        lambda: True,
+    )
 
     response = asyncio.run(health_route.endpoint())
     settings_response = settings_routes._build_data_source_status(fake_state)
@@ -3285,7 +3142,9 @@ def test_refresh_one_quote_real_provider_does_not_fallback_to_unregistered_provi
             "akshare": BrokenAkshareSource(),
         },
     )
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(
+        "server.services.market_refresh.is_cn_trading_session", lambda: True
+    )
 
     response = asyncio.run(
         market_routes._refresh_one_quote(
@@ -3342,7 +3201,9 @@ def test_refresh_one_quote_uses_persistent_real_cache_when_provider_fails(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": BrokenAkshareSource()},
     )
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(
+        "server.services.market_refresh.is_cn_trading_session", lambda: True
+    )
 
     response = asyncio.run(
         market_routes._refresh_one_quote(
@@ -3390,13 +3251,16 @@ def test_market_quote_refresh_defaults_to_holding_symbols_and_market_indices(
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr("server.routes.market.is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
-        market_routes, "_resolve_quote_status", lambda state, quote: "live"
+        "server.services.market_refresh.is_cn_trading_session", lambda: True
     )
     monkeypatch.setattr(
-        market_routes,
-        "_load_latest_snapshot_from_provider",
+        "server.services.market_refresh.resolve_quote_status",
+        lambda state, quote, *, now=None: "live",
+    )
+    monkeypatch.setattr(
+        "server.services.market_refresh.load_latest_snapshot_from_provider",
         lambda state, symbol, asset_class: {
             "symbol": symbol,
             "asset_class": asset_class.value,
@@ -3460,12 +3324,16 @@ def test_market_quote_refresh_partial_batch_fails_closed(monkeypatch, tmp_path):
         }
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr("server.routes.market.is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
-        market_routes, "_resolve_quote_status", lambda state, quote: "live"
+        "server.services.market_refresh.is_cn_trading_session", lambda: True
     )
     monkeypatch.setattr(
-        market_routes, "_load_latest_snapshot_from_provider", fake_fetch
+        "server.services.market_refresh.resolve_quote_status",
+        lambda state, quote, *, now=None: "live",
+    )
+    monkeypatch.setattr(
+        "server.services.market_refresh.load_latest_snapshot_from_provider", fake_fetch
     )
 
     with pytest.raises(HTTPException) as blocked:
@@ -3525,10 +3393,12 @@ def test_market_quote_refresh_cache_only_returns_stale_without_fresh_claim(
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
+    monkeypatch.setattr("server.routes.market.is_cn_trading_session", lambda: False)
     monkeypatch.setattr(
-        market_routes,
-        "_load_latest_snapshot_from_provider",
+        "server.services.market_refresh.is_cn_trading_session", lambda: False
+    )
+    monkeypatch.setattr(
+        "server.services.market_refresh.load_latest_snapshot_from_provider",
         lambda state, symbol, asset_class: None,
     )
 
@@ -3580,9 +3450,12 @@ def test_market_quote_refresh_times_out_without_blocking_request(monkeypatch):
         }
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr("server.routes.market.is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
-        market_routes, "_load_latest_snapshot_from_provider", slow_fetch
+        "server.services.market_refresh.is_cn_trading_session", lambda: True
+    )
+    monkeypatch.setattr(
+        "server.services.market_refresh.load_latest_snapshot_from_provider", slow_fetch
     )
     monkeypatch.setattr(market_refresh, "MANUAL_REFRESH_TIMEOUT_SECONDS", 0.001)
 
@@ -3590,7 +3463,9 @@ def test_market_quote_refresh_times_out_without_blocking_request(monkeypatch):
         await asyncio.sleep(0.05)
         return func(*args)
 
-    monkeypatch.setattr(market_routes, "_run_blocking_fetch", slow_blocking_fetch)
+    monkeypatch.setattr(
+        "server.services.market_refresh.run_blocking_fetch", slow_blocking_fetch
+    )
 
     started_at = time.monotonic()
     response = asyncio.run(
@@ -3643,7 +3518,10 @@ def test_market_research_board_merges_watchlist_and_health(monkeypatch):
         db=SimpleNamespace(get_latest_quotes_sync=lambda: []),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(
+        "server.services.market_views.health_projection.is_cn_trading_session",
+        lambda: True,
+    )
 
     response = asyncio.run(endpoint())
 
@@ -3704,9 +3582,12 @@ def test_market_research_board_reuses_resolved_watchlist_for_health(monkeypatch)
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        market_routes, "_merged_watchlist_assets", merged_watchlist_assets
+        "server.routes.market._merged_watchlist_assets", merged_watchlist_assets
     )
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: True)
+    monkeypatch.setattr(
+        "server.services.market_views.health_projection.is_cn_trading_session",
+        lambda: True,
+    )
 
     response = asyncio.run(endpoint())
 
@@ -3748,6 +3629,7 @@ def test_market_research_notes_create_and_list(monkeypatch):
         return note_id
 
     async def fake_get_research_notes(
+        note_id=None,
         symbol=None,
         entry_kind=None,
         priority=None,
@@ -3757,6 +3639,8 @@ def test_market_research_notes_create_and_list(monkeypatch):
         offset=0,
     ):
         rows = [row for row in notes if symbol is None or row["symbol"] == symbol]
+        if note_id is not None:
+            rows = [row for row in rows if row["id"] == note_id]
         return list(reversed(rows))[:limit]
 
     fake_state = SimpleNamespace(
@@ -3834,6 +3718,7 @@ def test_market_research_notes_update_and_filter(monkeypatch):
         return False
 
     async def fake_get_research_notes(
+        note_id=None,
         symbol=None,
         entry_kind=None,
         priority=None,
@@ -3843,6 +3728,8 @@ def test_market_research_notes_update_and_filter(monkeypatch):
         offset=0,
     ):
         rows = list(notes)
+        if note_id is not None:
+            rows = [row for row in rows if row["id"] == note_id]
         if symbol:
             rows = [row for row in rows if row["symbol"] == symbol]
         if entry_kind:
@@ -4320,7 +4207,6 @@ def test_market_quote_resolves_asset_class_from_auto_added_holdings(monkeypatch)
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(market_routes, "is_cn_trading_session", lambda: False)
 
     response = asyncio.run(endpoint("示例成长混合C", BackgroundTasks()))
 
@@ -4765,10 +4651,8 @@ def test_portfolio_live_holdings_prefers_reported_previous_close_from_latest_quo
         ),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 4, 22, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 4, 22, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     response = asyncio.run(live_holdings_route.endpoint())
@@ -5399,11 +5283,7 @@ def test_portfolio_overview_summarizes_account_state(monkeypatch):
         ),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: valuation_now,
-    )
+    _freeze_portfolio_clock(monkeypatch, valuation_now)
 
     response = asyncio.run(endpoint())
 
@@ -5659,10 +5539,8 @@ def test_portfolio_overview_drawdown_ignores_external_cash_deposit(monkeypatch):
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 6, 26, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 6, 26, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
     monkeypatch.setattr(
         portfolio_routes,
@@ -5801,10 +5679,8 @@ def test_portfolio_overview_drawdown_counts_already_applied_future_cash_deposit(
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 6, 26, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 6, 26, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
     monkeypatch.setattr(
         portfolio_routes,
@@ -6089,7 +5965,7 @@ def test_portfolio_snapshot_does_not_fetch_missing_fund_quotes_in_request(
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        "server.routes.market._fetch_latest_snapshot",
+        "server.services.market_refresh.fetch_latest_snapshot",
         lambda *args, **kwargs: pytest.fail(
             "portfolio snapshot must not fetch remotely"
         ),
@@ -6175,10 +6051,8 @@ def test_portfolio_rebuild_uses_persisted_quotes_for_fund_pnl(monkeypatch):
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 4, 18, 20, 1, tzinfo=ZoneInfo("Asia/Shanghai")),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 4, 18, 20, 1, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     response = asyncio.run(endpoint())
@@ -6822,10 +6696,8 @@ def test_portfolio_explainability_builds_daily_timeline_from_ledger_history(
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 5, 12, 20, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 5, 12, 20, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     response = asyncio.run(endpoint(limit=50))
@@ -6916,10 +6788,8 @@ def test_portfolio_explainability_marks_missing_historical_prices(monkeypatch):
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 4, 24, 20, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 4, 24, 20, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     response = asyncio.run(endpoint(limit=50))
@@ -7044,10 +6914,8 @@ def test_portfolio_explainability_does_not_attribute_weekend_current_quotes(
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 5, 10, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 5, 10, 12, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     response = asyncio.run(endpoint(limit=50))
@@ -7172,10 +7040,8 @@ def test_portfolio_explainability_does_not_attribute_stale_quote_to_current_day(
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 6, 15, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 6, 15, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     response = asyncio.run(endpoint(limit=50))
@@ -7606,12 +7472,8 @@ def test_current_equity_series_point_marks_confirmed_nav_missing_fund_estimate(
     fake_instruments = {
         "029999": SimpleNamespace(asset_class=SimpleNamespace(value="fund"))
     }
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(
-            2026, 6, 17, 21, 30, tzinfo=ZoneInfo("Asia/Shanghai")
-        ),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 6, 17, 21, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     point = portfolio_routes._current_equity_series_point(
@@ -7914,10 +7776,8 @@ def test_portfolio_explainability_prefers_market_bars_for_stock_daily_returns(
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 6, 12, 20, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 6, 12, 20, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     response = asyncio.run(endpoint(limit=50))
@@ -9797,13 +9657,13 @@ def test_decision_today_requires_strategy_attribution_for_assigned_strategy(
                 }
             ]
 
-        def list_signal_journal_sync(self, limit=50, offset=0):
+        def list_signal_journal_sync(self, limit=50, offset=0, **_filters):
             return []
 
-        def list_orders_sync(self, limit=1000, offset=0):
+        def list_orders_sync(self, limit=1000, offset=0, **_filters):
             return []
 
-        def list_fills_sync(self, limit=1000, offset=0):
+        def list_fills_sync(self, limit=1000, offset=0, **_filters):
             return []
 
         def get_latest_quote_sync(self, symbol, asset_type=None):
@@ -11127,8 +10987,8 @@ def test_backtest_compare_rejects_mismatched_dataset_snapshots_before_persisting
 
 
 def test_backtest_strategy_validation_route_returns_evidence_matrix(monkeypatch):
-    from analytics.benchmark_fixtures import build_benchmark_fixture_backtest_rows
     from server.routes import backtest as backtest_routes
+    from tests.benchmark_fixtures import build_benchmark_fixture_backtest_rows
 
     class FakeDb:
         async def get_backtest_results(self):
@@ -11162,7 +11022,7 @@ def test_backtest_strategy_validation_route_returns_evidence_matrix(monkeypatch)
 
 
 def _benchmark_fixture_rows_with_research_pass():
-    from analytics.benchmark_fixtures import build_benchmark_fixture_backtest_rows
+    from tests.benchmark_fixtures import build_benchmark_fixture_backtest_rows
 
     rows = build_benchmark_fixture_backtest_rows()
     for row in rows:
@@ -11271,7 +11131,7 @@ def test_backtest_strategy_promotion_readiness_route_blocks_assigned_strategy_wi
                 for strategy_id in sorted(REQUIRED_STRATEGY_IDS)
             ]
 
-        def list_orders_sync(self, limit=500, offset=0):
+        def list_orders_sync(self, limit=500, offset=0, **_filters):
             return [
                 {
                     "order_id": f"SHADOW-{strategy_id}",
@@ -11647,10 +11507,8 @@ def test_portfolio_equity_curve_series_groups_asset_buckets(monkeypatch):
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 4, 30, 15, 1, tzinfo=ZoneInfo("Asia/Shanghai")),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 4, 30, 15, 1, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     series = asyncio.run(endpoint())
@@ -11833,10 +11691,8 @@ def test_portfolio_equity_curve_series_uses_intraday_mtm_for_1d(monkeypatch):
             AssertionError("equity GET must not construct provider sources")
         ),
     )
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 4, 20, 9, 45, tzinfo=ZoneInfo("Asia/Shanghai")),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 4, 20, 9, 45, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     series = asyncio.run(endpoint("1d"))
@@ -11968,10 +11824,8 @@ def test_portfolio_equity_curve_series_1d_falls_back_to_flat_previous_close(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": FakeSource()},
     )
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 4, 20, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 4, 20, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     series = asyncio.run(endpoint("1d"))
@@ -12083,10 +11937,8 @@ def test_portfolio_equity_curve_series_1d_marks_current_quote_when_minute_bars_m
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": FakeSource()},
     )
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 4, 20, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 4, 20, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     series = asyncio.run(endpoint("1d"))
@@ -12206,10 +12058,8 @@ def test_portfolio_equity_curve_series_1d_does_not_fabricate_missing_quote_value
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": FakeSource()},
     )
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 4, 20, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 4, 20, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     series = asyncio.run(endpoint("1d"))
@@ -12354,10 +12204,8 @@ def test_portfolio_equity_curve_series_1d_uses_local_quote_snapshots(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": EmptySource()},
     )
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 4, 20, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 4, 20, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     series = asyncio.run(endpoint("1d"))
@@ -12487,12 +12335,8 @@ def test_portfolio_equity_curve_series_1d_uses_intraday_buy_cost_basis(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": FakeSource()},
     )
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(
-            2026, 1, 15, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai")
-        ),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 1, 15, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     series = asyncio.run(endpoint("1d"))
@@ -12622,12 +12466,8 @@ def test_portfolio_equity_curve_series_1d_splits_overnight_and_intraday_lots(
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": EmptySource()},
     )
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(
-            2026, 7, 10, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai")
-        ),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 7, 10, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     series = asyncio.run(endpoint("1d"))
@@ -12717,10 +12557,8 @@ def test_portfolio_equity_curve_series_1d_skips_intraday_source_when_market_clos
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": UnexpectedSource()},
     )
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 6, 14, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 6, 14, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     series = asyncio.run(endpoint("1d"))
@@ -12823,12 +12661,8 @@ def test_portfolio_live_holdings_groups_positions_and_computes_returns(monkeypat
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(
-            2026, 4, 21, 14, 31, tzinfo=ZoneInfo("Asia/Shanghai")
-        ),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 4, 21, 14, 31, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     response = asyncio.run(live_holdings_route.endpoint())
@@ -12932,12 +12766,8 @@ def test_portfolio_live_holdings_uses_intraday_buy_cost_for_today_pnl(monkeypatc
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(
-            2026, 1, 15, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai")
-        ),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 1, 15, 15, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     response = asyncio.run(live_holdings_route.endpoint())
@@ -13079,28 +12909,43 @@ def test_portfolio_projections_reuse_one_daily_ledger_snapshot(monkeypatch):
         return 0.0, 0.0, 10.0, "2026-07-09", "previous_close"
 
     monkeypatch.setattr(
-        portfolio_routes,
-        "_current_valuation_snapshot",
+        "server.projections.portfolio_application.current_valuation_snapshot",
         lambda _state, *, now=None: valuation_snapshot,
     )
     monkeypatch.setattr(
-        portfolio_routes,
-        "_resolve_projection_sources",
+        "server.projections.portfolio_views.live_holdings._current_valuation_snapshot",
+        lambda _state, *, now=None: valuation_snapshot,
+    )
+    monkeypatch.setattr(
+        "server.projections.portfolio_application.resolve_projection_sources",
         lambda _state, latest_quotes=None: (portfolio, instruments),
     )
     monkeypatch.setattr(
-        portfolio_routes,
-        "_read_daily_ledger_entries",
+        "server.projections.portfolio_views.live_holdings._resolve_projection_sources",
+        lambda _state, latest_quotes=None: (portfolio, instruments),
+    )
+    monkeypatch.setattr(
+        "server.projections.portfolio_application.read_daily_ledger_entries",
         read_daily_ledger_entries,
     )
     monkeypatch.setattr(
-        portfolio_routes,
-        "_resolve_position_today_change",
+        "server.projections.portfolio_views.live_holdings._read_daily_ledger_entries",
+        read_daily_ledger_entries,
+    )
+    monkeypatch.setattr(
+        "server.projections.portfolio_application.resolve_position_today_change",
         resolve_position_today_change,
     )
     monkeypatch.setattr(
-        portfolio_routes,
-        "_position_quote_presentation",
+        "server.projections.portfolio_views.live_holdings._resolve_position_today_change",
+        resolve_position_today_change,
+    )
+    monkeypatch.setattr(
+        "server.projections.portfolio_application.position_quote_presentation",
+        lambda *args, **kwargs: ("live", None),
+    )
+    monkeypatch.setattr(
+        "server.projections.portfolio_views.live_holdings._position_quote_presentation",
         lambda *args, **kwargs: ("live", None),
     )
 
@@ -13208,12 +13053,8 @@ def test_daily_performance_is_identical_across_holdings_curve_and_overview(
         db=db,
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(
-            2026, 7, 12, 14, 30, tzinfo=ZoneInfo("Asia/Shanghai")
-        ),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 7, 12, 14, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
     router = portfolio_routes.create_router()
     live_endpoint = next(
@@ -13379,12 +13220,8 @@ def test_closed_same_day_sell_is_included_in_overview_daily_pnl(
     db.publish_current_valuation_snapshot_sync(
         now=datetime(2026, 8, 17, 14, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(
-            2026, 8, 17, 14, 30, tzinfo=ZoneInfo("Asia/Shanghai")
-        ),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 8, 17, 14, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     snapshot = asyncio.run(portfolio_routes.build_portfolio_snapshot(state))
@@ -13503,12 +13340,8 @@ def test_portfolio_positions_exposes_latest_quote_price(monkeypatch):
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(
-            2026, 1, 15, 14, 57, tzinfo=ZoneInfo("Asia/Shanghai")
-        ),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 1, 15, 14, 57, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     response = asyncio.run(positions_route.endpoint())
@@ -13750,10 +13583,8 @@ def test_portfolio_live_holdings_merges_materialized_previous_close(monkeypatch)
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 6, 4, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 6, 4, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     response = asyncio.run(live_holdings_route.endpoint())
@@ -13874,12 +13705,8 @@ def test_portfolio_live_holdings_prefers_local_daily_close_over_quote_previous_c
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(
-            2026, 6, 17, 14, 21, tzinfo=ZoneInfo("Asia/Shanghai")
-        ),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 6, 17, 14, 21, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     response = asyncio.run(live_holdings_route.endpoint())
@@ -14011,11 +13838,8 @@ def test_portfolio_live_holdings_uses_same_day_market_bar_close_after_session(
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        "server.routes.portfolio.get_shanghai_now",
-        lambda now=None: datetime(
-            2026, 6, 17, 21, 30, tzinfo=ZoneInfo("Asia/Shanghai")
-        ),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 6, 17, 21, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     response = asyncio.run(live_holdings_route.endpoint())
@@ -14153,11 +13977,8 @@ def test_portfolio_live_holdings_fund_uses_confirmed_same_day_nav_after_session(
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        "server.routes.portfolio.get_shanghai_now",
-        lambda now=None: datetime(
-            2026, 6, 17, 21, 30, tzinfo=ZoneInfo("Asia/Shanghai")
-        ),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 6, 17, 21, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     response = asyncio.run(live_holdings_route.endpoint())
@@ -14286,11 +14107,8 @@ def test_portfolio_live_holdings_marks_unconfirmed_fund_estimate_after_session(
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        "server.routes.portfolio.get_shanghai_now",
-        lambda now=None: datetime(
-            2026, 6, 17, 21, 30, tzinfo=ZoneInfo("Asia/Shanghai")
-        ),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 6, 17, 21, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     response = asyncio.run(live_holdings_route.endpoint())
@@ -14366,7 +14184,7 @@ def test_portfolio_live_holdings_fails_closed_when_only_runtime_quote_exists(
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        "server.routes.market._fetch_latest_snapshot",
+        "server.services.market_refresh.fetch_latest_snapshot",
         lambda *args, **kwargs: pytest.fail("live holdings must not fetch remotely"),
     )
 
@@ -14459,12 +14277,8 @@ def test_portfolio_live_holdings_falls_back_to_previous_quote_close(monkeypatch)
         db=FakeDb(),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(
-            2026, 4, 21, 14, 31, tzinfo=ZoneInfo("Asia/Shanghai")
-        ),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 4, 21, 14, 31, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     response = asyncio.run(live_holdings_route.endpoint())
@@ -14633,14 +14447,8 @@ def test_portfolio_snapshot_does_not_refresh_stale_quote_in_request(monkeypatch)
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 5, 12, 10, 6, tzinfo=ZoneInfo("Asia/Shanghai")),
-    )
-    monkeypatch.setattr(
-        "server.routes.market.is_cn_trading_session",
-        lambda now=None: True,
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 5, 12, 10, 6, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
     monkeypatch.setattr(
         "data.manager.build_sources",
@@ -14754,14 +14562,8 @@ def test_portfolio_snapshot_does_not_fetch_missing_ledger_quote_in_request(monke
             }
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 6, 4, 10, 6, tzinfo=ZoneInfo("Asia/Shanghai")),
-    )
-    monkeypatch.setattr(
-        "server.routes.market.is_cn_trading_session",
-        lambda now=None: True,
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 6, 4, 10, 6, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
     monkeypatch.setattr(
         "data.manager.build_sources",
@@ -14875,14 +14677,8 @@ def test_portfolio_live_holdings_marks_cached_stale_quote_when_market_closed(
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 5, 12, 20, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
-    )
-    monkeypatch.setattr(
-        "server.routes.market.is_cn_trading_session",
-        lambda now=None: False,
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 5, 12, 20, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     response = asyncio.run(live_holdings_route.endpoint())
@@ -15265,10 +15061,8 @@ def test_portfolio_equity_curve_series_appends_current_valuation_point(
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 5, 12, 20, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 5, 12, 20, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     series = asyncio.run(curve_route.endpoint("1m"))
@@ -15401,10 +15195,8 @@ def test_portfolio_equity_curve_series_uses_daily_close_history(monkeypatch):
     )
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 5, 12, 20, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 5, 12, 20, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     series = asyncio.run(curve_route.endpoint("1m"))
@@ -15506,10 +15298,8 @@ def test_portfolio_equity_curve_series_1d_falls_back_when_intraday_source_blocks
         "data.manager.build_sources",
         lambda **kwargs: {"akshare": BlockingSource()},
     )
-    monkeypatch.setattr(
-        portfolio_routes,
-        "get_shanghai_now",
-        lambda now=None: datetime(2026, 5, 12, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    _freeze_portfolio_clock(
+        monkeypatch, datetime(2026, 5, 12, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
 
     series = asyncio.run(curve_route.endpoint("1d"))

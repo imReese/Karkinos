@@ -12,7 +12,6 @@ import server.ai_runtime.external_promoted_analysis_memory_retrieval as retrieva
 import server.ai_runtime.external_promoted_memory_analysis_reviews as review_facade
 from server.ai_runtime.external_promoted_analysis_memory_result import (
     ExternalPromotedAnalysisMemoryPromotionResult,
-    memory_artifact_payload,
 )
 from server.ai_runtime.external_promoted_analysis_memory_retrieval_result import (
     ExternalPromotedAnalysisMemoryRetrievalResult,
@@ -22,14 +21,12 @@ from server.ai_runtime.external_promoted_analysis_memory_retrieval_service impor
 )
 from server.ai_runtime.external_promoted_analysis_memory_service import (
     ExternalPromotedAnalysisMemoryPromotionService,
-    memory_content,
 )
 from server.ai_runtime.external_promoted_memory_analysis_review_result import (
     ExternalPromotedMemoryAnalysisReviewResult,
 )
 from server.ai_runtime.external_promoted_memory_analysis_review_service import (
     HumanExternalPromotedMemoryAnalysisReviewService,
-    promoted_review_target,
 )
 from server.contracts.external_promoted_analysis_memory import (
     ExternalPromotedAnalysisMemoryPromotionRequest,
@@ -45,16 +42,12 @@ from server.contracts.external_promoted_memory_analysis_review import (
 )
 from server.persistence.external_promoted_analysis_memory_retrieval_uow import (
     ExternalPromotedAnalysisMemoryRetrievalStore,
-    retrieval_from_row,
 )
 from server.persistence.external_promoted_analysis_memory_uow import (
     ExternalPromotedAnalysisMemoryStore,
-    promotion_from_row,
-    revocation_from_row,
 )
 from server.persistence.external_promoted_memory_analysis_review_uow import (
     ExternalPromotedMemoryAnalysisReviewStore,
-    review_from_row,
 )
 from tests.test_server_import_boundaries import (
     _server_import_graph,
@@ -129,8 +122,6 @@ def test_promoted_memory_facades_preserve_canonical_public_identities() -> None:
         review_facade.ExternalPromotedMemoryAnalysisReviewStore
         is ExternalPromotedMemoryAnalysisReviewStore
     )
-    assert review_facade._promoted_review_target is promoted_review_target
-    assert review_facade._review_from_row is review_from_row
 
     assert (
         promotion_facade.ExternalPromotedAnalysisMemoryPromotionRequest
@@ -152,10 +143,6 @@ def test_promoted_memory_facades_preserve_canonical_public_identities() -> None:
         promotion_facade.ExternalPromotedAnalysisMemoryStore
         is ExternalPromotedAnalysisMemoryStore
     )
-    assert promotion_facade._memory_content is memory_content
-    assert promotion_facade._memory_artifact_payload is memory_artifact_payload
-    assert promotion_facade._promotion_from_row is promotion_from_row
-    assert promotion_facade._revocation_from_row is revocation_from_row
 
     assert (
         retrieval_facade.HumanExternalPromotedAnalysisMemoryRetrievalRequest
@@ -177,7 +164,6 @@ def test_promoted_memory_facades_preserve_canonical_public_identities() -> None:
         retrieval_facade.ExternalPromotedAnalysisMemoryRetrievalStore
         is ExternalPromotedAnalysisMemoryRetrievalStore
     )
-    assert retrieval_facade._retrieval_from_row is retrieval_from_row
 
 
 def test_promoted_memory_sql_and_atomic_uows_have_only_persistence_owners() -> None:

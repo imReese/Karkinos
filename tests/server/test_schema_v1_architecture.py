@@ -10,6 +10,10 @@ import pytest
 
 from server import db as db_module
 from server.persistence import initializer, migrations
+from server.persistence.migration_schema_contracts import (
+    read_schema_contract,
+    schema_contract_checksum,
+)
 from server.persistence.schema_v1 import initialize_v1_baseline_schema
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -96,8 +100,8 @@ def test_public_initializer_identity_and_frozen_checksum_remain_stable() -> None
     )
     with sqlite3.connect(":memory:") as connection:
         initialize_v1_baseline_schema(connection)
-        contract = migrations._read_schema_contract(connection)
-    assert migrations._schema_contract_checksum(contract) == (
+        contract = read_schema_contract(connection)
+    assert schema_contract_checksum(contract) == (
         migrations.V1_BASELINE_SCHEMA_CONTRACT_CHECKSUM
     )
 

@@ -94,6 +94,35 @@ class StrategyPromotionPipeline:
         )
         return self._normalize_state(state)
 
+    def evaluate_and_request_promotion(
+        self,
+        strategy_id: str,
+        *,
+        target_stage: str,
+        readiness: dict[str, Any],
+        actor: str,
+        confirmation: str,
+        review_note: str,
+    ) -> dict[str, Any]:
+        """Validate the human command before recording its readiness review."""
+        if str(target_stage) == "paper_shadow":
+            _validated_paper_shadow_review(
+                strategy_id,
+                readiness=readiness,
+                actor=actor,
+                confirmation=confirmation,
+                review_note=review_note,
+            )
+            self.evaluate_readiness(readiness, actor=actor)
+        return self.request_promotion(
+            strategy_id,
+            target_stage=target_stage,
+            readiness=readiness,
+            actor=actor,
+            confirmation=confirmation,
+            review_note=review_note,
+        )
+
     def request_promotion(
         self,
         strategy_id: str,
@@ -110,18 +139,13 @@ class StrategyPromotionPipeline:
             raise ValueError("live-like promotion is disabled by default")
         if target_stage != "paper_shadow":
             raise ValueError(f"unsupported promotion target: {target_stage}")
-        normalized_actor = str(actor or "").strip()
-        if not normalized_actor:
-            raise ValueError("paper/shadow promotion reviewer is required")
-        if normalized_actor.startswith(("automation:", "policy:")):
-            raise ValueError("automated_decision_cannot_create_human_approval")
-        if confirmation != STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION:
-            raise ValueError("paper/shadow promotion requires exact human confirmation")
-        normalized_review_note = str(review_note or "").strip()
-        if not normalized_review_note:
-            raise ValueError("paper/shadow promotion review note is required")
-        if strategy_id != _strategy_id(readiness):
-            raise ValueError("readiness strategy_id does not match promotion target")
+        normalized_actor, normalized_review_note = _validated_paper_shadow_review(
+            strategy_id,
+            readiness=readiness,
+            actor=actor,
+            confirmation=confirmation,
+            review_note=review_note,
+        )
         _require_ai_shadow_readiness_binding(self._db, readiness)
         if strategy_id.startswith(AI_SHADOW_STRATEGY_PREFIX):
             from server.services.research_final_evaluation import (
@@ -318,6 +342,29 @@ class StrategyPromotionPipeline:
             "payload": payload,
             "lifecycle": _lifecycle_metadata(str(row.get("stage") or "research")),
         }
+
+
+def _validated_paper_shadow_review(
+    strategy_id: str,
+    *,
+    readiness: dict[str, Any],
+    actor: str,
+    confirmation: str,
+    review_note: str,
+) -> tuple[str, str]:
+    normalized_actor = str(actor or "").strip()
+    if not normalized_actor:
+        raise ValueError("paper/shadow promotion reviewer is required")
+    if normalized_actor.startswith(("automation:", "policy:")):
+        raise ValueError("automated_decision_cannot_create_human_approval")
+    if confirmation != STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION:
+        raise ValueError("paper/shadow promotion requires exact human confirmation")
+    normalized_review_note = str(review_note or "").strip()
+    if not normalized_review_note:
+        raise ValueError("paper/shadow promotion review note is required")
+    if strategy_id != _strategy_id(readiness):
+        raise ValueError("readiness strategy_id does not match promotion target")
+    return normalized_actor, normalized_review_note
 
 
 def _strategy_id(readiness: dict[str, Any]) -> str:

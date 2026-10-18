@@ -405,27 +405,14 @@ def prepare_retrieved_dataset_backtest_inputs(
     end_dt = datetime.strptime(request.end_date, "%Y-%m-%d")
 
     for sym, ac, itype in watchlist:
-        if hasattr(DataManager, "get_instrument_by_type"):
-            instrument = DataManager.get_instrument_by_type(sym, itype)
-        else:
-            instrument = DataManager.get_instrument(sym, ac)
-        instruments[sym] = instrument
-
-        try:
-            handler = dm.get_bars(
-                sym,
-                start_dt,
-                end_dt,
-                asset_class=ac,
-                instrument_type=itype,
-            )
-        except TypeError:
-            handler = dm.get_bars(
-                sym,
-                start_dt,
-                end_dt,
-                asset_class=ac,
-            )
+        instruments[sym] = DataManager.get_instrument_by_type(sym, itype)
+        handler = dm.get_bars(
+            sym,
+            start_dt,
+            end_dt,
+            asset_class=ac,
+            instrument_type=itype,
+        )
         data_handlers[sym] = handler
 
     source_names = list(sources.keys())

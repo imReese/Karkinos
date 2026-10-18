@@ -418,6 +418,117 @@ def test_scheduler_poll_success_records_quote_fetch_run(monkeypatch, tmp_path):
     assert observed_runtime_quotes["600519"]["quote_source"] == "akshare"
 
 
+@pytest.mark.parametrize(
+    ("quote_timestamp", "reported_date", "expected_date", "expected_price"),
+    [
+        ("2026-10-12T10:00:00+08:00", "2026-10-12", None, None),
+        ("2026-10-12T10:00:00+08:00", "2026-10-13", None, None),
+        ("2026-10-12T10:00:00+08:00", "invalid", None, None),
+        ("2026-10-12T10:00:00+08:00", None, None, None),
+        ("2026-10-12T10:00:00+08:00", "2026-10-09", "2026-10-09", 100),
+        (
+            "2026-10-12T02:00:00+00:00",
+            "2026-10-08T16:00:00Z",
+            "2026-10-09",
+            100,
+        ),
+        ("2026-10-12T15:00:00+08:00", "2026-10-12", "2026-10-12", 110),
+        ("2026-10-12T07:00:00+00:00", None, "2026-10-12", 110),
+    ],
+)
+def test_scheduler_only_materializes_previous_close_for_an_earlier_session(
+    monkeypatch, tmp_path, quote_timestamp, reported_date, expected_date, expected_price
+):
+    timestamp = datetime.fromisoformat(quote_timestamp)
+    event = replace(_market_event("600519", price=Decimal("110")), timestamp=timestamp)
+
+    def configure_database(db):
+        db.save_daily_close_snapshot_sync(
+            symbol="600519",
+            asset_class="stock",
+            trade_date="2026-10-12",
+            close_price=110,
+            source=(
+                "scheduler_close"
+                if expected_date == "2026-10-12"
+                else "verified_fixture"
+            ),
+        )
+
+    observed_runtime_quotes = {}
+    db = _run_scheduler_once(
+        monkeypatch,
+        tmp_path,
+        events=[event],
+        snapshots={
+            ("600519", AssetClass.STOCK): {
+                "timestamp": quote_timestamp,
+                "source": "akshare",
+                "previous_close": 100,
+                "previous_close_date": reported_date,
+                "metadata": {"upstream_group": "fixture_group", "receipt": "fixture"},
+            }
+        },
+        configure_database=configure_database,
+        now=timestamp + timedelta(seconds=1),
+        observe_scheduler=lambda scheduler: observed_runtime_quotes.update(
+            scheduler.latest_quotes
+        ),
+    )
+
+    run = db.list_quote_fetch_runs()[0]
+    latest = db.get_latest_quote_sync("600519", asset_type="stock")
+    assert run["status"] == "success"
+    assert run["success_count"] == 1
+    assert latest is not None
+    assert latest["price"] == 110
+    assert latest["previous_close"] == 100
+    runtime_quote = observed_runtime_quotes["600519"]
+    assert runtime_quote["previous_close_date"] == (
+        "2026-10-09" if expected_date == "2026-10-09" else None
+    )
+    assert latest["fetch_run_id"] == run["run_id"]
+    assert runtime_quote["price"] == 110
+    assert runtime_quote["metadata"]["receipt"] == "fixture"
+    with sqlite3.connect(db.path) as connection:
+        payload = json.loads(
+            connection.execute(
+                "SELECT payload_json FROM quote_ingestion_items WHERE run_id = ?",
+                (run["run_id"],),
+            ).fetchone()[0]
+        )
+        closes = connection.execute(
+            "SELECT trade_date, close_price, source FROM daily_close_snapshots_v2 "
+            "WHERE symbol = '600519' AND instrument_type = 'stock' ORDER BY trade_date"
+        ).fetchall()
+    assert payload["daily_close_date"] == expected_date
+    assert payload["daily_close_price"] == expected_price
+    assert payload["daily_close_source"] == (
+        "reported_previous_close"
+        if expected_date == "2026-10-09"
+        else "scheduler_close"
+        if expected_date
+        else None
+    )
+    if reported_date and expected_date != "2026-10-09":
+        assert payload["metadata"]["discarded_previous_close_date"] == reported_date
+        assert payload["metadata"]["discarded_previous_close_date_reason"] == (
+            "not_strictly_before_quote_trade_date"
+        )
+    assert (
+        "2026-10-12",
+        110,
+        "scheduler_close" if expected_date == "2026-10-12" else "verified_fixture",
+    ) in closes
+    if expected_date == "2026-10-09":
+        assert (expected_date, expected_price, "reported_previous_close") in closes
+        assert len(closes) == 2
+    else:
+        assert len(closes) == 1
+    # The existing verified close remains authoritative, including post-close
+    # fallback; intraday observations must not manufacture any other close.
+
+
 def test_scheduler_captures_quote_batch_after_provider_poll(monkeypatch, tmp_path):
     iteration_started_at = datetime(2026, 5, 23, 10, 0, 0)
     event = replace(

@@ -988,7 +988,7 @@ def test_app_database_research_note_facade_preserves_async_and_sync_contracts(
         priority="normal",
         event_date=None,
     )
-    list_notes.assert_awaited_once_with(**filters)
+    list_notes.assert_awaited_once_with(note_id=None, **filters)
     list_notes_sync.assert_called_once_with(**filters)
     delete.assert_awaited_once_with(23)
     update.assert_awaited_once_with(

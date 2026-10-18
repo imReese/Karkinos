@@ -5,13 +5,23 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
+from server.config import ServerConfig
+from server.contracts.portfolio_cash_flows import CashFlowWrite
 from server.db import AppDatabase
+from server.dependencies import AppState, AppStateContextMiddleware
+from server.services.decision_action_application import (
+    batch_pre_trade_risk_evidence_gate,
+)
 from server.services.decision_candidate_market_evidence import (
     bind_candidate_market_evidence,
     candidate_market_evidence,
 )
+from server.services.decision_gate_evidence import data_freshness_evidence
 from server.services.decision_portfolio_projection import (
+    decision_portfolio_context,
     decision_symbols,
     market_data_summary,
     portfolio_state_summary,
@@ -25,6 +35,189 @@ def _position(quantity: float, market_value: float):
         market_value=market_value,
         valuation_available=True,
     )
+
+
+def _persisted_decision_state(tmp_path, *, with_quote=True) -> AppState:
+    db = AppDatabase(tmp_path / "decision.db")
+    db.init_sync()
+    db.insert_ledger_entry_sync(
+        entry_type="cash_deposit",
+        timestamp="2026-10-16T09:00:00+08:00",
+        amount=1000,
+        asset_class="cash",
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        timestamp="2026-10-16T10:00:00+08:00",
+        symbol="600001",
+        direction="buy",
+        quantity=100,
+        price=1,
+        asset_class="stock",
+    )
+    if with_quote:
+        db.save_quote_snapshot_sync(
+            symbol="600001",
+            asset_class="stock",
+            price=1,
+            volume=1000,
+            timestamp="2026-10-16T15:00:00+08:00",
+            quote_source="deterministic_fixture",
+            quote_status="confirmed",
+        )
+    db.publish_current_valuation_snapshot_sync(
+        now=datetime.fromisoformat("2026-10-16T16:00:00+08:00")
+    )
+    state = AppState()
+    state.db = db
+    state.config = ServerConfig()
+    return state
+
+
+@pytest.mark.parametrize("through_http", [False, True])
+def test_decision_context_keeps_published_ledger_when_a_deposit_commits(
+    tmp_path, monkeypatch, through_http
+) -> None:
+    from server.projections import portfolio_application
+    from server.routes import decision as decision_routes
+
+    state = _persisted_decision_state(tmp_path)
+    db = state.require_database()
+    read_valuation = portfolio_application.current_valuation_snapshot
+    captured_snapshot = None
+    read_ledger = db.get_all_ledger_entries_sync
+    ledger_reads = 0
+
+    def counted_ledger():
+        nonlocal ledger_reads
+        ledger_reads += 1
+        return read_ledger()
+
+    def publish_concurrent_deposit(*args, **kwargs):
+        nonlocal captured_snapshot
+        captured_snapshot = read_valuation(*args, **kwargs)
+        db.record_cash_flow_sync(
+            CashFlowWrite(
+                command_id="concurrent-deposit",
+                operator_id="synthetic",
+                timestamp="2026-10-16T15:30:00+08:00",
+                amount=1000,
+                flow_type="deposit",
+            )
+        )
+        return captured_snapshot
+
+    monkeypatch.setattr(db, "get_all_ledger_entries_sync", counted_ledger)
+    monkeypatch.setattr(
+        portfolio_application,
+        "current_valuation_snapshot",
+        publish_concurrent_deposit,
+    )
+    if through_http:
+        app = FastAPI()
+        app.add_middleware(AppStateContextMiddleware, app_state=state)
+        app.include_router(decision_routes.create_router())
+        with TestClient(app) as client:
+            response = client.get("/api/decision/today")
+        assert response.status_code == 200, response.text
+        summary = response.json()["summary"]["portfolio"]
+        context = {
+            "authority": "persisted_valuation_snapshot",
+            "valuation_snapshot": captured_snapshot,
+        }
+    else:
+        context = decision_portfolio_context(state)
+        summary = portfolio_state_summary(state, portfolio_context=context)
+        assert float(context["portfolio"].cash) == 900
+        assert ledger_reads == 1
+
+    assert captured_snapshot is not None
+    assert summary["cash"] == 900
+    assert summary["valuation_snapshot_id"] == captured_snapshot["snapshot_id"]
+    assert summary["ledger_cutoff_id"] == captured_snapshot["ledger_cutoff_id"] == 2
+    assert max(row["id"] for row in read_ledger()) == 3
+
+    context = bind_candidate_market_evidence(
+        context, candidate_market_evidence(db, [], state=state)
+    )
+    gate = batch_pre_trade_risk_evidence_gate(
+        db,
+        portfolio_context=context,
+        tasks=[],
+        data_freshness_resolver=data_freshness_evidence,
+    )
+    assert gate["ready"] is False
+    assert {item["code"] for item in gate["blockers"]} >= {
+        "valuation_publication_snapshot_drift",
+        "valuation_publication_ledger_cutoff_drift",
+    }
+    assert len(read_ledger()) == 3
+    monkeypatch.setattr(
+        portfolio_application, "current_valuation_snapshot", read_valuation
+    )
+    current = portfolio_state_summary(
+        state, portfolio_context=decision_portfolio_context(state)
+    )
+    assert current["cash"] == 1900
+    assert current["ledger_cutoff_id"] == 3
+
+
+def test_decision_context_requires_a_published_snapshot(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "unpublished.db")
+    db.init_sync()
+    state = AppState()
+    state.db = db
+    state.config = ServerConfig()
+
+    with pytest.raises(HTTPException) as error:
+        decision_portfolio_context(state)
+
+    assert error.value.status_code == 503
+
+
+def test_decision_context_requires_the_published_ledger(tmp_path, monkeypatch) -> None:
+    state = _persisted_decision_state(tmp_path)
+
+    def unavailable():
+        raise RuntimeError("synthetic ledger unavailable")
+
+    monkeypatch.setattr(
+        state.require_database(), "get_all_ledger_entries_sync", unavailable
+    )
+
+    with pytest.raises(HTTPException) as error:
+        decision_portfolio_context(state)
+
+    assert error.value.status_code == 503
+
+
+def test_decision_context_missing_quote_still_blocks_valuation_and_risk(
+    tmp_path,
+) -> None:
+    state = _persisted_decision_state(tmp_path, with_quote=False)
+    db = state.require_database()
+    context = decision_portfolio_context(state)
+    summary = portfolio_state_summary(state, portfolio_context=context)
+    tasks = [{"id": 1, "symbol": "600001", "asset_class": "stock"}]
+    context = bind_candidate_market_evidence(
+        context, candidate_market_evidence(db, tasks, state=state)
+    )
+    gate = batch_pre_trade_risk_evidence_gate(
+        db,
+        portfolio_context=context,
+        tasks=tasks,
+        data_freshness_resolver=data_freshness_evidence,
+    )
+
+    assert summary["status"] == "blocked"
+    assert summary["total_equity"] is None
+    assert context["quotes"]["600001"]["quote_status"] == "missing"
+    assert context["quotes"]["600001"].get("price") is None
+    assert context["candidate_quotes"] == {}
+    assert gate["ready"] is False
+    assert "candidate_market_data_not_complete" in {
+        item["code"] for item in gate["blockers"]
+    }
 
 
 def test_portfolio_state_summary_excludes_closed_zero_quantity_positions():

@@ -13,7 +13,6 @@ from server.projections.portfolio_assets import (
 )
 from server.projections.portfolio_quotes import (
     collect_latest_quotes,
-    has_position_ledger_entries,
     normalize_asset_class_value,
     refresh_policy,
 )

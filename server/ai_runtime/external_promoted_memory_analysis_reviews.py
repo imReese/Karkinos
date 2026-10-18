@@ -18,9 +18,7 @@ from server.contracts.external_promoted_memory_analysis_review import (
     StoredExternalPromotedMemoryAnalysisReview,
 )
 from server.persistence.external_promoted_memory_analysis_review_uow import (
-    EXTERNAL_PROMOTED_MEMORY_ANALYSIS_REVIEW_SCHEMA,
     ExternalPromotedMemoryAnalysisReviewStore,
-    review_from_row,
 )
 
 from .external_promoted_memory_analysis_review_result import (
@@ -28,14 +26,7 @@ from .external_promoted_memory_analysis_review_result import (
 )
 from .external_promoted_memory_analysis_review_service import (
     HumanExternalPromotedMemoryAnalysisReviewService,
-    promoted_review_target,
 )
-
-# Retain historical private seams used by white-box consumers while keeping all
-# canonical implementations in their responsibility-specific modules.
-_SCHEMA = EXTERNAL_PROMOTED_MEMORY_ANALYSIS_REVIEW_SCHEMA
-_promoted_review_target = promoted_review_target
-_review_from_row = review_from_row
 
 __all__ = [
     "EXTERNAL_PROMOTED_MEMORY_ANALYSIS_REVIEW_CONFIRMATION",

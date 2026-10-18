@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from analytics.metrics import (
+from backtest.metrics import (
     AnnualizedReturn,
     MaxDrawdown,
     SharpeRatio,

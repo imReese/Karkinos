@@ -261,10 +261,21 @@ class StrategyTradingDatabaseFacade(DatabaseRepositoryAccess):
         symbol: str | None = None,
         limit: int = 100,
         offset: int = 0,
+        source_signal_ids: list[int] | None = None,
+        risk_decision_ids: list[str] | None = None,
+        intent_ids: list[str] | None = None,
+        order_ids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """List shared order facts newest first."""
         return self._paper_trading.list_orders_sync(
-            status=status, symbol=symbol, limit=limit, offset=offset
+            status=status,
+            symbol=symbol,
+            limit=limit,
+            offset=offset,
+            source_signal_ids=source_signal_ids,
+            risk_decision_ids=risk_decision_ids,
+            intent_ids=intent_ids,
+            order_ids=order_ids,
         )
 
     def update_order_status_sync(
@@ -354,8 +365,17 @@ class StrategyTradingDatabaseFacade(DatabaseRepositoryAccess):
         symbol: str | None = None,
         limit: int = 100,
         offset: int = 0,
+        source_signal_ids: list[int] | None = None,
+        order_ids: list[str] | None = None,
+        strategy_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """List persisted execution fills newest first."""
         return self._paper_trading.list_fills_sync(
-            order_id=order_id, symbol=symbol, limit=limit, offset=offset
+            order_id=order_id,
+            symbol=symbol,
+            limit=limit,
+            offset=offset,
+            source_signal_ids=source_signal_ids,
+            order_ids=order_ids,
+            strategy_id=strategy_id,
         )

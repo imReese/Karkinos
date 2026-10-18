@@ -43,21 +43,8 @@ def create_router() -> APIRouter:
         request: StrategyPromotionRequest,
     ) -> dict[str, Any]:
         service = _service()
-        if request.target_stage == "paper_shadow":
-            try:
-                service.evaluate_readiness(request.readiness, actor=request.actor)
-                return service.request_promotion(
-                    strategy_id,
-                    target_stage=request.target_stage,
-                    readiness=request.readiness,
-                    actor=request.actor,
-                    confirmation=request.confirmation,
-                    review_note=request.review_note,
-                )
-            except ValueError as exc:
-                raise HTTPException(status_code=409, detail=str(exc)) from exc
         try:
-            return service.request_promotion(
+            return service.evaluate_and_request_promotion(
                 strategy_id,
                 target_stage=request.target_stage,
                 readiness=request.readiness,

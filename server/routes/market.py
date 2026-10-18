@@ -71,7 +71,6 @@ from server.services.asset_metadata import (
     metadata_configured_count,
     resolve_asset_metadata,
 )
-from server.services.data_health import build_data_health
 from server.services.market.hours import is_cn_trading_session
 from server.services.market.indices import (
     default_market_index_assets,

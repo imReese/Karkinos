@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 from typing import Any
@@ -232,6 +233,10 @@ class PaperTradingRepository(
         symbol: str | None = None,
         limit: int = 100,
         offset: int = 0,
+        source_signal_ids: list[int] | None = None,
+        risk_decision_ids: list[str] | None = None,
+        intent_ids: list[str] | None = None,
+        order_ids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """List shared order facts newest first."""
         conditions: list[str] = []
@@ -242,6 +247,31 @@ class PaperTradingRepository(
         if symbol is not None:
             conditions.append("symbol = ?")
             params.append(symbol)
+        related: list[str] = []
+        if source_signal_ids is not None:
+            payload = (
+                "CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END"
+            )
+            for path in (
+                "$.source_signal_id",
+                "$.signal_id",
+                "$.intent.source_signal_id",
+            ):
+                related.append(
+                    f"CAST(json_extract({payload}, '{path}') AS INTEGER) "
+                    "IN (SELECT value FROM json_each(?))"
+                )
+                params.append(json.dumps(source_signal_ids))
+        for column, values in (
+            ("risk_decision_id", risk_decision_ids),
+            ("intent_id", intent_ids),
+            ("order_id", order_ids),
+        ):
+            if values is not None:
+                related.append(f"{column} IN (SELECT value FROM json_each(?))")
+                params.append(json.dumps(values))
+        if related:
+            conditions.append(f"({' OR '.join(related)})")
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         params.extend([limit, offset])
         with connect_sqlite(self._path) as conn:
@@ -335,6 +365,9 @@ class PaperTradingRepository(
         symbol: str | None = None,
         limit: int = 100,
         offset: int = 0,
+        source_signal_ids: list[int] | None = None,
+        order_ids: list[str] | None = None,
+        strategy_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """List persisted execution fills newest first."""
         conditions: list[str] = []
@@ -345,6 +378,25 @@ class PaperTradingRepository(
         if symbol is not None:
             conditions.append("symbol = ?")
             params.append(symbol)
+        related: list[str] = []
+        metadata = (
+            "CASE WHEN json_valid(metadata_json) THEN metadata_json ELSE '{}' END"
+        )
+        if source_signal_ids is not None:
+            for path in ("$.source_signal_id", "$.signal_id"):
+                related.append(
+                    f"CAST(json_extract({metadata}, '{path}') AS INTEGER) "
+                    "IN (SELECT value FROM json_each(?))"
+                )
+                params.append(json.dumps(source_signal_ids))
+        if order_ids is not None:
+            related.append("order_id IN (SELECT value FROM json_each(?))")
+            params.append(json.dumps(order_ids))
+        if strategy_id is not None:
+            related.append(f"json_extract({metadata}, '$.strategy_id') = ?")
+            params.append(strategy_id)
+        if related:
+            conditions.append(f"({' OR '.join(related)})")
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         params.extend([limit, offset])
         with connect_sqlite(self._path) as conn:

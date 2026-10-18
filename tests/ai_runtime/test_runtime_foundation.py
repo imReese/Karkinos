@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sqlite3
+import subprocess
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
@@ -58,6 +60,49 @@ MODEL_ID = "fixture.local/research-v1"
 ROLE_ID = "fundamental_analyst"
 PORTFOLIO_REF = "portfolio-projection-001"
 RESEARCH_REF = "research-evidence-001"
+
+
+@pytest.mark.unit
+def test_cold_contract_import_preserves_explicit_runtime_registration() -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            "-c",
+            """
+import sys
+from server.ai_runtime.contracts import ProviderRegistration
+
+unexpected = {
+    "server.ai_runtime.capture",
+    "server.ai_runtime.orchestrator",
+    "server.ai_runtime.permissions",
+    "server.ai_runtime.provider",
+    "server.ai_runtime.registry",
+    "server.ai_runtime.store",
+}.intersection(sys.modules)
+assert not unexpected, sorted(unexpected)
+
+from server.ai_runtime.registry import AiRuntimeRegistry
+
+registry = AiRuntimeRegistry()
+registry.register_provider(
+    ProviderRegistration(
+        provider_id="fixture.local",
+        display_name="Local fixture",
+        adapter_kind="fixture",
+        enabled=True,
+    )
+)
+assert registry.require_provider("fixture.local").enabled
+""",
+        ],
+        cwd=Path(__file__).resolve().parents[2],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
 def _context(

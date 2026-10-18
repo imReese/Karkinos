@@ -6,6 +6,8 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
+
 from account_truth.broker_evidence import BrokerEvidenceRepository
 from account_truth.broker_statement import (
     BrokerStatementValidationError,
@@ -16,12 +18,17 @@ from account_truth.citic_history_xls import (
     CITIC_HISTORY_XLS_SOURCE_TYPE,
 )
 from account_truth.citic_source_intake import CiticSourceIntakeRepository
+from account_truth.manual_review import ManualReviewRepository
+from account_truth.score import reconciliation_item_fingerprint
 from server.account_truth_gate import (
     _karkinos_account_facts,
+    build_account_truth_score_for_import_run,
     build_latest_account_truth_promotion_evidence,
     build_latest_account_truth_score_payload,
     build_reconciliation_report_for_import_run,
 )
+from server.contracts.portfolio_cash_flows import CashFlowWrite
+from server.contracts.portfolio_trades import ManualTradeWrite
 from server.db import AppDatabase
 from server.ledger.repository import LedgerRepository
 from server.services.account_truth_replay import (
@@ -34,6 +41,100 @@ from tests.out_of_band_corruption import allow_out_of_band_update
 _INCOMPLETE_CITIC_SOURCE = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method,broker_order_id,client_order_id
 private-buy,trade_buy,2026-01-05T09:35:00+08:00,2026-01-06,PRIVATE-SYMBOL,PRIVATE-NAME,stock,CNY,100,10,1000,0,0,-1005,,,,PRIVATE-NOTE,0,,PRIVATE-ORDER,
 """
+
+
+@pytest.mark.parametrize("fund_first", [False, True])
+def test_account_truth_blocks_same_code_stock_and_missing_fund_in_real_ledger(
+    tmp_path, fund_first
+) -> None:
+    db = AppDatabase(tmp_path / "typed-account-truth.db")
+    db.init_sync()
+    db.record_cash_flow_sync(
+        CashFlowWrite(
+            command_id="synthetic-deposit",
+            operator_id="synthetic",
+            timestamp="2026-10-16T09:00:00+08:00",
+            amount=1100,
+            flow_type="deposit",
+        )
+    )
+    db.record_manual_trade_sync(
+        ManualTradeWrite(
+            command_id="synthetic-stock",
+            operator_id="synthetic",
+            timestamp="2026-10-16T10:00:00+08:00",
+            symbol="000001",
+            display_name="Synthetic stock",
+            direction="buy",
+            quantity=100,
+            price=1,
+            commission=0,
+            gross_amount=100,
+            net_cash_impact=-100,
+            fee_breakdown_json='{"commission":"0","total_fee":"0"}',
+            fee_rule_id="synthetic",
+            fee_rule_version="v1",
+            asset_class="stock",
+            note="synthetic",
+        )
+    )
+    rows = [
+        "stock,position_snapshot,2026-10-16T15:10:00+08:00,2026-10-16,000001,Synthetic stock,stock,CNY,0,1,0,0,0,0,,100,1,synthetic",
+        "fund,position_snapshot,2026-10-16T15:10:00+08:00,2026-10-16,000001,Synthetic fund,fund,CNY,0,1,0,0,0,0,,100,1,synthetic",
+    ]
+    if fund_first:
+        rows.reverse()
+    statement = (
+        "event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note\n"
+        "buy,trade_buy,2026-10-16T10:00:00+08:00,2026-10-16,000001,Synthetic stock,stock,CNY,100,1,100,0,0,-100,,,,synthetic\n"
+        + "\n".join(rows)
+        + "\ncash,cash_snapshot,2026-10-16T15:10:00+08:00,2026-10-16,,,,CNY,0,0,0,0,0,0,1000,,,synthetic\n"
+    )
+    repository = BrokerEvidenceRepository(db.path)
+    preview = parse_broker_statement_csv(statement)
+    assert preview.validation_status == "pass"
+    imported = repository.save_preview(preview, source_name="synthetic.csv")
+    state = SimpleNamespace(db=db)
+    ledger_before = db.get_all_ledger_entries_sync()
+
+    report = build_reconciliation_report_for_import_run(
+        state, repository=repository, import_run=imported
+    )
+
+    assert report.status == "blocked"
+    assert report.schema_version == "karkinos.account_truth.reconciliation.v1"
+    for lane in ("stock", "fund", "account"):
+        assert report.asset_reconciliation[lane]["status"] == "blocked"
+    assert report.asset_reconciliation["cash"]["status"] == "pass"
+    identity_items = [
+        item
+        for item in report.items
+        if item.detail_code == "account_truth.instrument_identity_ambiguous"
+    ]
+    assert identity_items
+    for item in identity_items:
+        ManualReviewRepository(db.path).record_decision(
+            import_run_id=imported.import_run_id,
+            item_key=f"{item.category}:{item.symbol}",
+            category=item.category,
+            symbol=item.symbol,
+            review_status="accepted",
+            note="Cannot waive an ambiguous identity.",
+            reviewer="synthetic",
+            evidence_fingerprint=reconciliation_item_fingerprint(item),
+        )
+
+    score = build_account_truth_score_for_import_run(
+        state, repository=repository, import_run=imported
+    )
+
+    assert score.score == 0
+    assert score.gate_status == "blocked"
+    assert score.position_status == "blocked"
+    assert score.cost_basis_status == "blocked"
+    assert score.resolved_review_count == 0
+    assert "blocked_reconciliation_report" in score.blocking_reasons
+    assert db.get_all_ledger_entries_sync() == ledger_before
 
 
 def test_account_truth_cash_is_zero_when_canonical_ledger_is_empty(tmp_path) -> None:

@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+import json
+from contextlib import nullcontext
+from types import SimpleNamespace
+from urllib.error import URLError
+from urllib.parse import parse_qs, urlsplit
+
+import pytest
+
 from notification.console import ConsoleNotifier
 from notification.notifier import (
     build_notifier,
@@ -10,6 +18,111 @@ from notification.notifier import (
 )
 from notification.telegram import TelegramNotifier
 from notification.wechat import WeChatNotifier
+
+_ENVIRONMENT = {
+    "KARKINOS_TELEGRAM_BOT_TOKEN": "fixture-bot-token",
+    "KARKINOS_TELEGRAM_CHAT_ID": "fixture-chat",
+    "KARKINOS_WECHAT_SENDKEY": "fixture-sendkey",
+}
+
+
+@pytest.mark.parametrize("kind", ["telegram", "wechat"])
+def test_configured_notifier_posts_signal_as_encoded_plain_text(monkeypatch, kind):
+    title = "Karkinos 信号: 510300 *_[] & + #"
+    message = format_signal_message(
+        symbol="510300",
+        direction="买入",
+        target_weight=0.25,
+        price=4.05,
+        strategy_id="dual_ma",
+        asset_class="fund",
+        timestamp="2026-10-18 09:35:00",
+    )
+    requests = []
+
+    def send(request, *, timeout):
+        requests.append(request)
+        assert timeout == 10
+        payload = {"ok": True} if kind == "telegram" else {"code": 0}
+        return nullcontext(
+            SimpleNamespace(status=200, read=lambda: json.dumps(payload).encode())
+        )
+
+    monkeypatch.setattr(f"notification.{kind}.urlopen", send)
+    notifier = build_notifier({"type": kind}, environ=_ENVIRONMENT)
+    assert notifier.send(title, message) is None
+
+    assert len(requests) == 1
+    request = requests[0]
+    assert request.get_method() == "POST"
+    assert urlsplit(request.full_url).query == ""
+    if kind == "telegram":
+        assert request.get_header("Content-type") == (
+            "application/x-www-form-urlencoded"
+        )
+        assert parse_qs(request.data.decode("utf-8")) == {
+            "chat_id": ["fixture-chat"],
+            "text": [f"{title}\n\n{message}"],
+        }
+    else:
+        assert request.get_header("Content-type") == "application/json"
+        assert json.loads(request.data) == {"title": title, "desp": message}
+
+
+@pytest.mark.parametrize("kind", ["telegram", "wechat"])
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "transport",
+        "http_status",
+        "provider",
+        "invalid_json",
+        "missing_status",
+        "wrong_status_type",
+    ],
+)
+def test_configured_notifier_propagates_only_safe_delivery_failure(
+    monkeypatch, caplog, kind, failure
+):
+    private_error = "https://provider/fixture-bot-token/fixture-sendkey: private-body"
+
+    def send(request, *, timeout):
+        if failure == "transport":
+            raise URLError(private_error)
+        payload = {"ok": True} if kind == "telegram" else {"code": 0}
+        if failure == "provider":
+            payload = (
+                {"ok": False, "description": private_error}
+                if kind == "telegram"
+                else {"code": 40001, "message": private_error}
+            )
+        elif failure == "missing_status":
+            payload = {}
+        elif failure == "wrong_status_type":
+            payload = {"ok": 1} if kind == "telegram" else {"code": False}
+        body = (
+            b"not json" if failure == "invalid_json" else json.dumps(payload).encode()
+        )
+        return nullcontext(
+            SimpleNamespace(
+                status=503 if failure == "http_status" else 200,
+                read=lambda: body,
+            )
+        )
+
+    monkeypatch.setattr(f"notification.{kind}.urlopen", send)
+    notifier = build_notifier({"type": kind}, environ=_ENVIRONMENT)
+    label = "Telegram" if kind == "telegram" else "WeChat"
+    with pytest.raises(
+        RuntimeError, match=f"^{label} notification delivery failed$"
+    ) as exc:
+        notifier.send("测试通知", "private-body")
+
+    assert exc.value.__cause__ is None
+    assert exc.value.__suppress_context__ is True
+    assert "fixture-bot-token" not in caplog.text
+    assert "fixture-sendkey" not in caplog.text
+    assert "private-body" not in caplog.text
 
 
 class TestConsoleNotifier:

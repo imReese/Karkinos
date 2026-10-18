@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import sqlite3
-from contextlib import closing
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing, contextmanager
+from threading import Barrier
 
 import pytest
 
@@ -102,13 +104,13 @@ async def _capture(db_path, *, statuses=None):
     return result
 
 
-def _service(db_path):
+def _service(db_path, *, task_store=None):
     evidence, contexts, captures, tasks = _stores(db_path)
     return HumanResearchTaskService(
         evidence_repository=evidence,
         context_store=contexts,
         capture_store=captures,
-        task_store=tasks,
+        task_store=tasks if task_store is None else task_store,
         now=lambda: NOW,
     )
 
@@ -223,6 +225,209 @@ async def test_task_and_review_idempotency_reject_changed_input(tmp_path):
                 note="Changed decision with the same key.",
             ),
         )
+
+
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed_request", (False, True))
+async def test_concurrent_task_creation_preserves_idempotency(
+    tmp_path, changed_request
+):
+    db_path = tmp_path / "concurrent-task-create.db"
+    capture = await _capture(db_path)
+    both_read_missing = Barrier(2)
+
+    class MissingTaskCursor:
+        def __init__(self, cursor, connection):
+            self.cursor, self.connection = cursor, connection
+
+        def fetchone(self):
+            row = self.cursor.fetchone()
+            if row is None and not self.connection.in_transaction:
+                both_read_missing.wait(timeout=5)
+            return row
+
+    class InterleavedConnection:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def execute(self, sql, *args):
+            cursor = self.connection.execute(sql, *args)
+            if "SELECT * FROM ai_research_tasks WHERE idempotency_key = ?" in sql:
+                return MissingTaskCursor(cursor, self.connection)
+            return cursor
+
+        def __getattr__(self, name):
+            return getattr(self.connection, name)
+
+    class InterleavedStore(ResearchTaskStore):
+        @contextmanager
+        def _connection(self):
+            with super()._connection() as connection:
+                yield InterleavedConnection(connection)
+
+    first = _task_request(capture.run.capture_id)
+    second = (
+        _task_request(capture.run.capture_id, title="A different research task")
+        if changed_request
+        else first
+    )
+    services = [
+        _service(db_path, task_store=InterleavedStore(db_path)) for _ in range(2)
+    ]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(service.create, request)
+            for service, request in zip(services, (first, second), strict=True)
+        ]
+        results, errors = [], []
+        for future in futures:
+            try:
+                results.append(future.result(timeout=10))
+            except Exception as exc:
+                errors.append(exc)
+
+    if changed_request:
+        assert len(results) == 1
+        assert len(errors) == 1
+        assert isinstance(errors[0], IdempotencyConflict)
+    else:
+        assert not errors
+        assert sorted(result.reused for result in results) == [False, True]
+        assert results[0].task == results[1].task
+    winner = next(result for result in results if not result.reused)
+    winner_request = (
+        first if winner.task.request_fingerprint == first.fingerprint else second
+    )
+    reopened = _service(db_path)
+    reused = reopened.create(winner_request)
+    assert reused.reused is True
+    assert reused.task == winner.task
+    assert reused.task.status == ResearchTaskStatus.AWAITING_HUMAN_REVIEW
+    assert reused.task.context_snapshot_id == capture.context.snapshot_id
+    replay = reopened.replay(winner.task.task_id)
+    assert replay.valid is True
+    assert replay.event_count == 1
+    assert replay.replayed_status == ResearchTaskStatus.AWAITING_HUMAN_REVIEW
+    with closing(sqlite3.connect(db_path)) as connection:
+        for table, count in (
+            ("ai_research_tasks", 1),
+            ("ai_research_task_events", 1),
+            ("ai_research_task_reviews", 0),
+            ("ai_workflows", 0),
+        ):
+            assert (
+                connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                == count
+            )
+
+
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+@pytest.mark.parametrize("concurrent_request", ("different_key", "exact", "changed"))
+async def test_concurrent_task_reviews_persist_one_final_decision(
+    tmp_path, concurrent_request
+):
+    db_path = tmp_path / "concurrent-task-review.db"
+    capture = await _capture(db_path)
+    task = _service(db_path).create(_task_request(capture.run.capture_id)).task
+    both_read_pending = Barrier(2)
+
+    class InterleavedStore(ResearchTaskStore):
+        active_connection = None
+
+        @contextmanager
+        def _connection(self):
+            with super()._connection() as connection:
+                self.active_connection = connection
+                try:
+                    yield connection
+                finally:
+                    self.active_connection = None
+
+        def _task_from_row(self, row):
+            current = super()._task_from_row(row)
+            connection = self.active_connection
+            # Synchronize only unprotected reads, fixing a legal stale-read
+            # interleaving without changing SQLite rows or blocking a writer
+            # that already owns the transaction. An optimistic CAS also passes.
+            if (
+                current.status == ResearchTaskStatus.AWAITING_HUMAN_REVIEW
+                and connection is not None
+                and not connection.in_transaction
+            ):
+                both_read_pending.wait(timeout=5)
+            return current
+
+    first = _review_request(key="concurrent-review")
+    second = (
+        first
+        if concurrent_request == "exact"
+        else _review_request(
+            ResearchTaskReviewDecision.CLOSED_WITHOUT_ANALYSIS,
+            key=(
+                "another-review"
+                if concurrent_request == "different_key"
+                else first.idempotency_key
+            ),
+            note="This request independently closes the same frozen task.",
+        )
+    )
+    services = [
+        _service(db_path, task_store=InterleavedStore(db_path)) for _ in range(2)
+    ]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(service.review, task.task_id, request)
+            for service, request in zip(services, (first, second), strict=True)
+        ]
+        results, errors = [], []
+        for future in futures:
+            try:
+                results.append(future.result(timeout=10))
+            except Exception as exc:
+                errors.append(exc)
+
+    if concurrent_request == "exact":
+        assert not errors
+        assert sorted(result.reused for result in results) == [False, True]
+        assert results[0].review == results[1].review
+    else:
+        assert len(results) == 1
+        assert len(errors) == 1
+        expected_error = (
+            ResearchTaskRejected
+            if concurrent_request == "different_key"
+            else IdempotencyConflict
+        )
+        assert isinstance(errors[0], expected_error)
+    winner = next(result for result in results if not result.reused)
+    reopened = _service(db_path)
+    persisted = reopened.get(task.task_id)
+    assert persisted.status.value == winner.review.decision.value
+    assert persisted.context_snapshot_id == capture.context.snapshot_id
+    assert persisted.evidence == task.evidence
+    replay = reopened.replay(task.task_id)
+    assert replay.valid is True
+    assert replay.event_count == 2
+    assert replay.replayed_status == persisted.status
+    winner_request = first if winner.review.decision == first.decision else second
+    reused = reopened.review(task.task_id, winner_request)
+    assert reused.reused is True
+    assert reused.review == winner.review
+    assert reused.to_dict()["model_execution_enabled"] is False
+    assert reused.to_dict()["workflow_started"] is False
+    assert reused.to_dict()["authority_effect"] == "none"
+    with closing(sqlite3.connect(db_path)) as connection:
+        for table, count in (
+            ("ai_research_task_reviews", 1),
+            ("ai_research_task_events", 2),
+            ("ai_workflows", 0),
+        ):
+            assert (
+                connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                == count
+            )
 
 
 @pytest.mark.unit

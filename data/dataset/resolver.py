@@ -65,9 +65,7 @@ from data.market.revision import (
     validate_daily_bar_materialization,
 )
 from data.market.schema import (
-    DAILY_BAR_SCHEMA,
     DAILY_BAR_SCHEMA_VERSION,
-    daily_bars_from_table,
 )
 from data.market.verification_evidence import (
     MarketVerificationEvidence,
@@ -77,9 +75,6 @@ from data.market.verification_evidence import (
 )
 from data.storage.objects import (
     ContentAddressedObjectStore,
-)
-from data.storage.parquet import (
-    read_parquet,
 )
 
 logger = logging.getLogger(__name__)
@@ -537,19 +532,11 @@ def _evaluate_candidate(
                 "dataset_resolver_verification_lineage_mismatch"
             )
 
-    validate_daily_bar_materialization(
+    bars = validate_daily_bar_materialization(
         store,
         revision=revision,
         materialization=materialization,
     )
-
-    table = read_parquet(
-        store,
-        materialization.artifact,
-        expected_schema=DAILY_BAR_SCHEMA,
-    )
-
-    bars = daily_bars_from_table(table)
 
     requested = set(instruments)
 

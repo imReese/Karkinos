@@ -73,7 +73,7 @@ class LedgerEntry:
             commission=_as_float(row.get("commission")) or 0.0,
             gross_amount=_as_float(row.get("gross_amount")),
             net_cash_impact=_as_float(row.get("net_cash_impact")),
-            fee_breakdown=_as_fee_breakdown(row.get("fee_breakdown_json")),
+            fee_breakdown=_as_json_object(row.get("fee_breakdown_json")),
             fee_rule_id=cast(str | None, row.get("fee_rule_id")),
             fee_rule_version=cast(str | None, row.get("fee_rule_version")),
             estimated_commission=_as_float(row.get("estimated_commission")),
@@ -92,7 +92,7 @@ class LedgerEntry:
             ),
             currency_code=_as_text(row.get("currency_code")),
             decimal_provenance=_as_text(row.get("decimal_provenance")),
-            estimated_fee_breakdown=_as_fee_breakdown(
+            estimated_fee_breakdown=_as_json_object(
                 row.get("estimated_fee_breakdown_json")
             ),
             estimated_fee_rule_id=cast(str | None, row.get("estimated_fee_rule_id")),
@@ -143,19 +143,6 @@ def _as_float(value: object | None) -> float | None:
     if value is None:
         return None
     return float(cast(float | int | str | Decimal, value))
-
-
-def _as_fee_breakdown(value: object | None) -> dict[str, Any] | None:
-    if value is None:
-        return None
-    if isinstance(value, dict):
-        return value
-    if not isinstance(value, str) or not value.strip():
-        return None
-    parsed = json.loads(value)
-    if not isinstance(parsed, dict):
-        return None
-    return parsed
 
 
 def _as_json_object(value: object | None) -> dict[str, Any] | None:

@@ -16,7 +16,7 @@ from server.ai_runtime.karkinos_source import (
     CaptureProjectionReaders,
     PersistedKarkinosCaptureSource,
 )
-from server.routes.ai_research import build_capture_projection_readers
+from server.composition.ai_application_services import build_capture_projection_readers
 
 NOW = "2026-07-13T12:30:00+00:00"
 VALUATION_ID = "valuation-source-001"

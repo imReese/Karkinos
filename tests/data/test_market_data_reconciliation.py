@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from core.types import BarFrequency, InstrumentType, Symbol
 from data.market_data_reconciliation import (
@@ -10,6 +11,112 @@ from data.market_data_reconciliation import (
     reconcile_store_with_provider,
 )
 from data.store import DataStore
+
+
+def _intraday_frame():
+    return pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(["2026-06-15 09:30", "2026-06-15 09:35"]),
+            "open": [10.0, 11.0],
+            "high": [10.0, 11.0],
+            "low": [10.0, 11.0],
+            "close": [10.0, 11.0],
+            "volume": [1000.0, 1100.0],
+        }
+    )
+
+
+@pytest.mark.parametrize("frequency", [BarFrequency.MIN_1, BarFrequency.MIN_5])
+def test_intraday_reconciliation_detects_earlier_bar_mismatch(frequency):
+    local = _intraday_frame()
+    provider = local.copy()
+    provider.loc[0, "close"] = 99.0
+
+    report = reconcile_market_bars(
+        Symbol("600001"), frequency, local, provider, provider_name="synthetic"
+    )
+
+    assert report.status == "mismatched"
+    assert report.local_rows == report.provider_rows == report.checked_rows == 2
+    assert report.mismatch_count == 1
+    assert report.mismatches[0].timestamp == "2026-06-15T09:30:00"
+    assert report.mismatches[0].field == "close"
+    assert report.mismatches[0].local_value == 10.0
+    assert report.mismatches[0].provider_value == 99.0
+
+
+@pytest.mark.parametrize("frequency", [BarFrequency.MIN_1, BarFrequency.MIN_5])
+def test_intraday_reconciliation_reports_missing_minute(frequency):
+    local = _intraday_frame()
+    report = reconcile_market_bars(
+        Symbol("600001"),
+        frequency,
+        local,
+        local.iloc[1:],
+        provider_name="synthetic",
+    )
+
+    assert report.status == "mismatched"
+    assert report.local_rows == 2
+    assert report.provider_rows == report.checked_rows == 1
+    assert report.mismatch_count == 1
+    assert report.mismatches[0].timestamp == "2026-06-15T09:30:00"
+    assert report.mismatches[0].issue_type == "missing_provider_row"
+
+
+@pytest.mark.parametrize("frequency", [BarFrequency.MIN_1, BarFrequency.MIN_5])
+def test_intraday_reconciliation_matches_all_bars_and_deduplicates_only_exact_key(
+    frequency,
+):
+    local = _intraday_frame()
+    earlier_version = local.iloc[:1].copy()
+    earlier_version.loc[0, "close"] = 99.0
+    provider = pd.concat([earlier_version, local], ignore_index=True)
+    original = provider.copy(deep=True)
+
+    report = reconcile_market_bars(
+        Symbol("600001"), frequency, local, provider, provider_name="synthetic"
+    )
+
+    assert report.status == "matched"
+    assert report.local_rows == report.provider_rows == report.checked_rows == 2
+    assert report.mismatch_count == 0
+    pd.testing.assert_frame_equal(provider, original)
+
+
+def test_intraday_reconciliation_matches_equivalent_timezone_instants():
+    local = _intraday_frame()
+    local["timestamp"] = local["timestamp"].dt.tz_localize("Asia/Shanghai")
+    provider = local.copy()
+    provider["timestamp"] = provider["timestamp"].dt.tz_convert("UTC")
+
+    report = reconcile_market_bars(
+        Symbol("600001"),
+        BarFrequency.MIN_1,
+        local,
+        provider,
+        provider_name="synthetic",
+    )
+
+    assert report.status == "matched"
+    assert report.checked_rows == 2
+    assert report.mismatches == []
+
+
+@pytest.mark.parametrize("frame", [None, pd.DataFrame()])
+def test_reconciliation_with_no_evidence_is_missing_both(frame):
+    report = reconcile_market_bars(
+        Symbol("600001"),
+        BarFrequency.DAILY,
+        frame,
+        frame,
+        provider_name="synthetic",
+    )
+
+    assert report.status == "missing_both"
+    assert report.checked_rows == report.local_rows == report.provider_rows == 0
+    assert report.mismatch_count == 0
+    assert report.mismatches == []
 
 
 def test_reconcile_market_bars_reports_matched_provider_rows():

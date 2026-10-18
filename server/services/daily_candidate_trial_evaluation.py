@@ -25,11 +25,13 @@ from server.services.daily_candidate_trial_values import (
     object_value,
     shanghai_date,
 )
-from server.services.daily_decision_evidence_automation import (
+from server.services.daily_decision_evidence_contracts import (
     DAILY_CANDIDATE_DECISION_WINDOW_SCHEMA_VERSION,
     DAILY_CANDIDATE_INPUT_IDENTITY_SCHEMA_VERSION,
     DAILY_CANDIDATE_MAX_QUOTE_AGE_SECONDS,
     DAILY_DECISION_EVIDENCE_AUTOMATION_SCHEMA_VERSION,
+)
+from server.services.daily_decision_evidence_identity import (
     daily_candidate_input_fingerprint,
     daily_candidate_record_fingerprint,
 )

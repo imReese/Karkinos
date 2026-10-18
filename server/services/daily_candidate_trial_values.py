@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from server.services.daily_decision_evidence_automation import (
+from server.services.daily_decision_evidence_contracts import (
     DAILY_CANDIDATE_DECISION_WINDOW_END_MINUTE,
     DAILY_CANDIDATE_DECISION_WINDOW_START_MINUTE,
 )

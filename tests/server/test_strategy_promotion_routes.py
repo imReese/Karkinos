@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -80,6 +81,87 @@ def test_strategy_promotion_route_blocks_missing_evidence(
 
     assert response.status_code == 409
     assert "missing readiness requirements" in response.json()["detail"]
+    state = db.get_strategy_promotion_state_sync("dual_ma")
+    assert state is not None
+    assert state["stage"] == "research"
+    assert state["gate_status"] == "blocked"
+    assert [
+        event["event_type"]
+        for event in db.list_strategy_promotion_events_sync("dual_ma")
+    ] == ["readiness_evaluated"]
+
+
+@pytest.mark.parametrize(
+    ("target", "actor", "review_note", "detail"),
+    [
+        (
+            "other_strategy",
+            "human:owner",
+            "Reviewed deterministic evidence.",
+            "readiness strategy_id does not match promotion target",
+        ),
+        (
+            "dual_ma",
+            "automation:test",
+            "Reviewed deterministic evidence.",
+            "automated_decision_cannot_create_human_approval",
+        ),
+        (
+            "dual_ma",
+            "policy:test",
+            "Reviewed deterministic evidence.",
+            "automated_decision_cannot_create_human_approval",
+        ),
+        (
+            "dual_ma",
+            "   ",
+            "Reviewed deterministic evidence.",
+            "paper/shadow promotion reviewer is required",
+        ),
+        (
+            "dual_ma",
+            "human:owner",
+            "   ",
+            "paper/shadow promotion review note is required",
+        ),
+    ],
+)
+def test_rejected_promotion_command_preserves_existing_state_and_events(
+    tmp_path, monkeypatch, target, actor, review_note, detail
+) -> None:
+    db = AppDatabase(tmp_path / "strategy-promotion.db")
+    db.init_sync()
+    db.upsert_strategy_promotion_state_sync(
+        strategy_id="dual_ma",
+        stage="paper_shadow",
+        gate_status="paper_shadow_enabled",
+        live_like_enabled=False,
+        missing_requirements=[],
+        backtest_result_id=7,
+        payload={"human_review": {"reviewer": "human:owner"}},
+    )
+    db.record_strategy_promotion_event_sync(
+        strategy_id="dual_ma",
+        event_type="promoted_to_paper_shadow",
+        from_stage="research",
+        to_stage="paper_shadow",
+        actor="human:owner",
+    )
+    before_state = db.get_strategy_promotion_state_sync("dual_ma")
+    before_events = db.list_strategy_promotion_events_sync("dual_ma")
+    client = _client_for_db(monkeypatch, db)
+    command = _promotion_command()
+    command.update(actor=actor, review_note=review_note)
+
+    response = client.post(f"/api/strategy-promotion/{target}/promote", json=command)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == detail
+    assert db.get_strategy_promotion_state_sync("dual_ma") == before_state
+    assert db.list_strategy_promotion_events_sync("dual_ma") == before_events
+    if target != "dual_ma":
+        assert db.get_strategy_promotion_state_sync(target) is None
+        assert db.list_strategy_promotion_events_sync(target) == []
 
 
 def test_strategy_promotion_route_blocks_non_evidence_owned_strategy(
@@ -104,6 +186,41 @@ def test_strategy_promotion_route_blocks_non_evidence_owned_strategy(
     assert states.json()[0]["gate_status"] == "blocked"
 
 
+@pytest.mark.parametrize(
+    ("target_stage", "detail", "expected_events"),
+    [
+        (
+            "live_like",
+            "live-like promotion is disabled by default",
+            ["live_like_promotion_rejected"],
+        ),
+        (
+            "unsupported_stage",
+            "unsupported promotion target: unsupported_stage",
+            [],
+        ),
+    ],
+)
+def test_non_paper_promotion_preserves_its_rejection_audit(
+    tmp_path, monkeypatch, target_stage, detail, expected_events
+) -> None:
+    db = AppDatabase(tmp_path / "strategy-promotion.db")
+    db.init_sync()
+    client = _client_for_db(monkeypatch, db)
+    command = _promotion_command()
+    command["target_stage"] = target_stage
+
+    response = client.post("/api/strategy-promotion/dual_ma/promote", json=command)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == detail
+    assert db.get_strategy_promotion_state_sync("dual_ma") is None
+    assert [
+        event["event_type"]
+        for event in db.list_strategy_promotion_events_sync("dual_ma")
+    ] == expected_events
+
+
 def test_strategy_promotion_route_requires_exact_human_command_and_gate(
     tmp_path,
     monkeypatch,
@@ -121,6 +238,8 @@ def test_strategy_promotion_route_requires_exact_human_command_and_gate(
             "review_note": "Reviewed deterministic evidence.",
         },
     )
+    assert db.get_strategy_promotion_state_sync("dual_ma") is None
+    assert db.list_strategy_promotion_events_sync("dual_ma") == []
     forged = _promotion_command()
     forged["readiness"].pop("strategy_advancement_gate")
     forged_response = client.post(

@@ -9,8 +9,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from server.contracts.http.ledger_models import EquityPoint
 
-_DEFAULT_END_DATE = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
-
 
 class SignalResponse(BaseModel):
     id: int | None = None
@@ -58,7 +56,9 @@ class BacktestRequest(BaseModel):
         "price_only", "cash_dividends_gross", "reported_distributions_gross"
     ] = "price_only"
     start_date: str = "2025-01-02"
-    end_date: str = Field(default_factory=lambda: _DEFAULT_END_DATE)
+    end_date: str = Field(
+        default_factory=lambda: (date.today() - timedelta(days=1)).isoformat()
+    )
     initial_cash: float = 100_000
     cost_assumptions: BacktestCostAssumptions | None = None
     strategy: str = "dual_ma"
@@ -126,7 +126,9 @@ class BacktestSweepRequest(BaseModel):
         "price_only", "cash_dividends_gross", "reported_distributions_gross"
     ] = "price_only"
     start_date: str = "2025-01-02"
-    end_date: str = Field(default_factory=lambda: _DEFAULT_END_DATE)
+    end_date: str = Field(
+        default_factory=lambda: (date.today() - timedelta(days=1)).isoformat()
+    )
     initial_cash: float = 100_000
     cost_assumptions: BacktestCostAssumptions | None = None
     strategy: str = "dual_ma"
@@ -170,7 +172,9 @@ class CompareRequest(BaseModel):
         "price_only", "cash_dividends_gross", "reported_distributions_gross"
     ] = "price_only"
     start_date: str = "2011-06-01"
-    end_date: str = Field(default_factory=lambda: _DEFAULT_END_DATE)
+    end_date: str = Field(
+        default_factory=lambda: (date.today() - timedelta(days=1)).isoformat()
+    )
     initial_cash: float = 100_000
     cost_assumptions: BacktestCostAssumptions | None = None
     strategies: list[str] | None = None  # None = 全部策略

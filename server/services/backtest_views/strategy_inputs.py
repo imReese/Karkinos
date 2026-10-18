@@ -262,21 +262,13 @@ def load_signal_preview_bars(
             else str(getattr(config, "data_source", "") or "") or None
         ),
     )
-    try:
-        handler = manager.get_bars(
-            symbol,
-            datetime.strptime(start_date, "%Y-%m-%d"),
-            datetime.strptime(end_date, "%Y-%m-%d"),
-            asset_class=asset_class,
-            instrument_type=instrument_type,
-        )
-    except TypeError:
-        handler = manager.get_bars(
-            symbol,
-            datetime.strptime(start_date, "%Y-%m-%d"),
-            datetime.strptime(end_date, "%Y-%m-%d"),
-            asset_class=asset_class,
-        )
+    handler = manager.get_bars(
+        symbol,
+        datetime.strptime(start_date, "%Y-%m-%d"),
+        datetime.strptime(end_date, "%Y-%m-%d"),
+        asset_class=asset_class,
+        instrument_type=instrument_type,
+    )
     snapshot = build_backtest_dataset_snapshot(
         start_date=start_date,
         end_date=end_date,

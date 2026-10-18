@@ -37,6 +37,7 @@ class ResearchDatabaseFacade(DatabaseRepositoryAccess):
     async def get_research_notes(
         self,
         *,
+        note_id: int | None = None,
         symbol: str | None = None,
         entry_kind: str | None = None,
         priority: str | None = None,
@@ -47,6 +48,7 @@ class ResearchDatabaseFacade(DatabaseRepositoryAccess):
     ) -> list[dict[str, Any]]:
         """异步读取研究记录，按更新时间倒序。"""
         return await self._research_notes.list_notes(
+            note_id=note_id,
             symbol=symbol,
             entry_kind=entry_kind,
             priority=priority,

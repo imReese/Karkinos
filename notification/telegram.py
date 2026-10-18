@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from notification.base import Notifier
@@ -22,15 +24,20 @@ class TelegramNotifier(Notifier):
             logger.warning("Telegram 配置缺失，跳过推送")
             return
 
-        text = f"*{title}*\n\n{message}"
-        url = (
-            f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
-            f"?chat_id={self.chat_id}&text={text}&parse_mode=Markdown"
-        )
         try:
-            req = Request(url)
+            req = Request(
+                f"https://api.telegram.org/bot{self.bot_token}/sendMessage",
+                data=urlencode(
+                    {"chat_id": self.chat_id, "text": f"{title}\n\n{message}"}
+                ).encode("utf-8"),
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
             with urlopen(req, timeout=10) as resp:
                 if resp.status != 200:
-                    logger.error("Telegram 推送失败: HTTP %d", resp.status)
+                    raise ValueError("notification_http_failure")
+                payload = json.loads(resp.read())
+                if not isinstance(payload, dict) or payload.get("ok") is not True:
+                    raise ValueError("notification_provider_failure")
         except Exception:
-            logger.exception("Telegram 推送异常")
+            logger.error("Telegram notification delivery failed")
+            raise RuntimeError("Telegram notification delivery failed") from None

@@ -19,18 +19,11 @@ from .external_research_errors import (
     ExternalResearchRateLimitedError,
     ExternalResearchTimeoutError,
 )
-from .external_research_output import decode_external_report
 from .external_research_provider import OpenAICompatibleBacktestReportProvider
 from .external_research_result import ExternalBacktestReportResult
 from .external_research_service import HumanExternalBacktestReportService
 from .external_research_store import ExternalBacktestReportAuditStore
-from .openai_compatibility import edge_request_options, message_text, safe_usage
-
-# Backward-compatible spellings for existing callers; implementations have one owner.
-_decode_external_report = decode_external_report
-_edge_request_options = edge_request_options
-_message_text = message_text
-_safe_usage = safe_usage
+from .openai_compatibility import edge_request_options, message_text
 
 __all__ = [
     "EXTERNAL_BACKTEST_REPORT_CONFIRMATION",
@@ -51,10 +44,6 @@ __all__ = [
     "HumanExternalBacktestReportRequest",
     "HumanExternalBacktestReportService",
     "OpenAICompatibleBacktestReportProvider",
-    "_decode_external_report",
-    "_edge_request_options",
-    "_message_text",
-    "_safe_usage",
     "edge_request_options",
     "message_text",
 ]

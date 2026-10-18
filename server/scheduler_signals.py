@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from core.events import SignalEvent
 from core.types import AssetClass, Symbol
-from domain.portfolio import Portfolio
 from notification.notifier import format_signal_message
 from server.scheduler_contracts import SchedulerNotifier, SchedulerSignalDatabase
 from server.services.recommendation_flow import build_recommendation_cycle
@@ -15,7 +14,6 @@ def handle_scheduler_signal(
     *,
     watchlist: list[tuple[Symbol, AssetClass]],
     database: SchedulerSignalDatabase | None,
-    portfolio: Portfolio | None,
     notifier: SchedulerNotifier | None,
 ) -> None:
     """Persist a signal candidate and optionally notify without adding authority."""
@@ -51,15 +49,6 @@ def handle_scheduler_signal(
                     "asset_class": asset_class,
                 }
             ],
-            available_cash=(0.0 if portfolio is None else float(portfolio.cash)),
-            existing_positions=(
-                {}
-                if portfolio is None
-                else {
-                    str(symbol): position
-                    for symbol, position in portfolio.positions.items()
-                }
-            ),
         )
         for task in cycle.tasks:
             database.upsert_action_task_sync(

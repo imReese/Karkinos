@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 import server.ai_runtime.external_memory_informed_analysis as facade
-from server.ai_runtime.external_memory_analysis_output import decode_stage_output
 from server.ai_runtime.external_memory_analysis_provider import (
     OpenAICompatibleMemoryInformedProvider,
 )
@@ -81,7 +80,6 @@ def test_external_memory_analysis_facade_preserves_public_contracts() -> None:
         facade.OpenAICompatibleMemoryInformedProvider
         is OpenAICompatibleMemoryInformedProvider
     )
-    assert facade._decode_stage_output is decode_stage_output
     assert facade.record_from_row is record_from_row
     assert facade.model_call_from_row is model_call_from_row
 

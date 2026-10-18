@@ -18,22 +18,14 @@ class ProviderRegistration:
     upstream_group: str
     source_factory: Callable[[], DataSource] | None = None
     daily_bar_factory: Callable[[], DailyBarProvider] | None = None
-    legacy_factory: Callable[[], DataSource] | None = None
 
     def __post_init__(self) -> None:
         name = _text(self.name, field="name")
         upstream_group = _text(self.upstream_group, field="upstream_group")
-        factory = (
-            self.source_factory
-            if self.source_factory is not None
-            else self.legacy_factory
-        )
-        if factory is None and self.daily_bar_factory is None:
+        if self.source_factory is None and self.daily_bar_factory is None:
             raise ValueError("provider_registration_has_no_capabilities")
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "upstream_group", upstream_group)
-        object.__setattr__(self, "source_factory", factory)
-        object.__setattr__(self, "legacy_factory", factory)
 
 
 class ProviderRegistry:
@@ -72,9 +64,6 @@ class ProviderRegistry:
             )
         return registration.source_factory()
 
-    def build_legacy(self, name: str) -> DataSource:
-        return self.build_source(name)
-
     def build_daily_bar(self, name: str) -> DailyBarProvider:
         registration = self.registration(name)
         if registration.daily_bar_factory is None:
@@ -98,12 +87,6 @@ class ProviderRegistry:
                 continue
             result[name] = registration.source_factory()
         return result
-
-    def legacy_sources(
-        self,
-        candidates: tuple[str, ...] | None = None,
-    ) -> dict[str, DataSource]:
-        return self.data_sources(candidates)
 
     def daily_bar_providers(
         self,
@@ -200,9 +183,6 @@ def configured_data_sources(
         tushare_token=str(getattr(config, "tushare_token", "") or ""),
         include_tdx=True,
     ).data_sources(candidates)
-
-
-configured_legacy_sources = configured_data_sources
 
 
 def _text(value: Any, *, field: str) -> str:

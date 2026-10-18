@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from analytics import backtest_metrics
-from analytics.backtest_metrics import (
+from backtest import metrics as backtest_metrics
+from backtest.metrics import (
     CostSummary,
     calculate_backtest_metrics,
     summarize_fill_costs,

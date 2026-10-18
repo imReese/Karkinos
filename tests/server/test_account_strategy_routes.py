@@ -48,7 +48,7 @@ class StrategyHealthFakeDb:
             ],
         }
 
-    def list_signal_journal_sync(self, limit=500, offset=0):
+    def list_signal_journal_sync(self, limit=500, offset=0, **_filters):
         return [
             {
                 "signal": {
@@ -60,10 +60,10 @@ class StrategyHealthFakeDb:
             }
         ]
 
-    def list_orders_sync(self, limit=1000, offset=0):
+    def list_orders_sync(self, limit=1000, offset=0, **_filters):
         return []
 
-    def list_fills_sync(self, limit=1000, offset=0):
+    def list_fills_sync(self, limit=1000, offset=0, **_filters):
         fills = []
         if self.linked_fill:
             fills.append(
@@ -313,7 +313,7 @@ async def test_account_strategy_asset_class_scope_filters_attribution(monkeypatc
         def set_runtime_control_sync(self, key, value):
             persisted[key] = value
 
-        def list_signal_journal_sync(self, limit=500, offset=0):
+        def list_signal_journal_sync(self, limit=500, offset=0, **_filters):
             return [
                 {
                     "signal": {
@@ -333,10 +333,10 @@ async def test_account_strategy_asset_class_scope_filters_attribution(monkeypatc
                 },
             ]
 
-        def list_orders_sync(self, limit=1000, offset=0):
+        def list_orders_sync(self, limit=1000, offset=0, **_filters):
             return []
 
-        def list_fills_sync(self, limit=1000, offset=0):
+        def list_fills_sync(self, limit=1000, offset=0, **_filters):
             return []
 
     state = SimpleNamespace(config=SimpleNamespace(strategy="dual_ma"), db=FakeDb())
@@ -530,7 +530,7 @@ async def test_holding_strategy_attribution_filters_exact_symbol_evidence(
                 ],
             }
 
-        def list_signal_journal_sync(self, limit=500, offset=0):
+        def list_signal_journal_sync(self, limit=500, offset=0, **_filters):
             return [
                 {
                     "signal": {
@@ -562,7 +562,7 @@ async def test_holding_strategy_attribution_filters_exact_symbol_evidence(
                 },
             ]
 
-        def list_orders_sync(self, limit=1000, offset=0):
+        def list_orders_sync(self, limit=1000, offset=0, **_filters):
             return [
                 {
                     "order_id": "ORD-HOLDING-1",
@@ -580,7 +580,7 @@ async def test_holding_strategy_attribution_filters_exact_symbol_evidence(
                 },
             ]
 
-        def list_fills_sync(self, limit=1000, offset=0):
+        def list_fills_sync(self, limit=1000, offset=0, **_filters):
             return [
                 {
                     "fill_id": "FILL-HOLDING-1",

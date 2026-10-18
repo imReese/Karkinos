@@ -159,6 +159,10 @@ uv run --locked python scripts/data/verify_market_bars.py \
   --symbol 600519 --start 2024-01-01 --end 2024-12-31 --provider akshare
 ```
 
+分钟线使用 `--frequency 1m` 或 `5m`，逐根比较完整时间。`--start` 和 `--end` 支持日期或 ISO datetime；日期型 `--end` 包含当天全部时间，完整 datetime 保持精确的 inclusive 边界。
+
+`--instrument-type` 选择本地缓存的精确身份，例如 `etf` 或 `open_end_fund`。ETF 与开放式基金都使用 `--asset-class fund`，此时必须同时指定精确类型；两者冲突时会在读取数据前拒绝。省略资产大类时可由精确类型确定；两者均省略则沿用股票。
+
 ## 离线数字签名工具
 
 [`broker/operator_signer.py`](broker/operator_signer.py) 为高敏感度人工复核操作（如撤销会话、结算冲正、对账放行等）生成离线分离式数字签名。私钥由操作员在离线受控环境保存，签名载荷通过界面提交，私钥永不进入 Karkinos 运行时或浏览器：
