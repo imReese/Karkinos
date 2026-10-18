@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from server.services.market_quote_ingestion import build_quote_ingestion_command
+from server.services.market.quotes import build_quote_ingestion_command
 
 pytestmark = pytest.mark.unit
 
@@ -73,6 +73,22 @@ def test_prior_session_previous_close_is_preserved_as_daily_close_evidence() -> 
     assert command.daily_close_date == "2026-09-03"
     assert command.daily_close_source == "reported_previous_close"
     assert "discarded_previous_close_date" not in command.metadata
+
+
+def test_explicit_zero_quote_fields_are_not_replaced_by_provider_aliases() -> None:
+    command = _command(
+        {
+            "price": 87.40,
+            "timestamp": "2026-09-04T09:36:00+08:00",
+            "change_percent": 0.0,
+            "pct_chg": 0.05,
+            "turnover": 0.0,
+            "amount": 5000.0,
+        },
+        captured_at="2026-09-04T09:36:01+08:00",
+    )
+    assert command.change_percent == 0.0
+    assert command.turnover == 0.0
 
 
 def test_explicit_verified_same_day_close_bypasses_previous_close_guard() -> None:

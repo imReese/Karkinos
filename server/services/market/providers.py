@@ -10,7 +10,6 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from core.types import AssetClass, Symbol
 from data.source_policy import MarketDataUseCase
 from data.source_routing import data_sources_for_use_case
-from server.services.market_refresh_errors import provider_error_code
 
 logger = logging.getLogger(__name__)
 
@@ -151,3 +150,33 @@ def load_provider_quote_payload(
 
 
 __all__ = ("fetch_provider_latest_with_timeout", "load_provider_quote_payload")
+
+
+TUSHARE_FUND_NAV_PERMISSION_DENIED = "tushare_fund_nav_permission_denied"
+
+
+def provider_error_code(exc: Exception) -> str | None:
+    message = str(exc)
+    normalized = message.lower()
+    if "fund_nav" in normalized and (
+        "访问权限" in message
+        or "没有接口" in message
+        or "permission" in normalized
+        or "access" in normalized
+    ):
+        return TUSHARE_FUND_NAV_PERMISSION_DENIED
+    return None
+
+
+def provider_error_reason(error_code: str, *, using_cache: bool) -> str:
+    if error_code == TUSHARE_FUND_NAV_PERMISSION_DENIED:
+        return (
+            "TuShare fund_nav 权限不足，继续使用本地基金缓存"
+            if using_cache
+            else "TuShare fund_nav 权限不足，请使用免费盘中基金估值或提升 TuShare 权限"
+        )
+    return (
+        "行情源刷新失败，继续使用本地缓存"
+        if using_cache
+        else "行情源刷新失败，暂无真实行情数据"
+    )

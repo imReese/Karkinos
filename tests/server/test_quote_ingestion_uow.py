@@ -18,7 +18,7 @@ from server.projections.valuation_snapshot import (
     build_current_valuation_snapshot,
     select_latest_observation_rows,
 )
-from server.services.market_quote_ingestion import build_quote_ingestion_command
+from server.services.market.quotes import build_quote_ingestion_command
 
 pytestmark = pytest.mark.unit
 

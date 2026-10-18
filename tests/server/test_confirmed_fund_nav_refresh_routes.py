@@ -97,7 +97,7 @@ def test_confirmed_fund_nav_refresh_persists_audited_evidence_only(
     inline_market_fetch,
 ):
     from server.routes.market import ConfirmedFundNavRefreshRequest
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -157,7 +157,7 @@ def test_confirmed_fund_nav_refresh_replays_same_request_without_provider_contac
     inline_market_fetch,
 ):
     from server.routes.market import ConfirmedFundNavRefreshRequest
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -234,7 +234,7 @@ def test_confirmed_fund_nav_refresh_maps_request_payload_drift_to_conflict(
     inline_market_fetch,
 ):
     from server.routes.market import ConfirmedFundNavRefreshRequest
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -270,7 +270,7 @@ def test_confirmed_fund_nav_refresh_rejects_estimate_and_keeps_review_open(
     inline_market_fetch,
 ):
     from server.routes.market import ConfirmedFundNavRefreshRequest
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -304,7 +304,7 @@ def test_confirmed_fund_nav_refresh_rejects_non_fund_before_provider_contact(
     inline_market_fetch,
 ):
     from server.routes.market import ConfirmedFundNavRefreshRequest
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -338,7 +338,7 @@ def test_confirmed_fund_nav_refresh_keeps_exact_fund_lane_with_same_symbol_stock
     inline_market_fetch,
 ):
     from server.routes.market import ConfirmedFundNavRefreshRequest
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()

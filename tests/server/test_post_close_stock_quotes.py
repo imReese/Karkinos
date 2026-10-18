@@ -10,10 +10,10 @@ from core.types import AssetClass, Symbol
 from data.market_daily_store import is_supported_stock_receipt_identity
 from data.store import DataStore
 from server.db import AppDatabase
+from server.services.market.post_close import publish_post_close_stock_quotes
 from server.services.market_calendar_dates import (
     resolve_latest_verified_closed_trading_date,
 )
-from server.services.post_close_stock_quotes import publish_post_close_stock_quotes
 
 _CAPTURED_AT = datetime(2026, 5, 29, 16, 5, tzinfo=ZoneInfo("Asia/Shanghai"))
 _SOURCE_FINGERPRINT = "c" * 64

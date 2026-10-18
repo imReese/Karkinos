@@ -196,7 +196,7 @@ def create_router(dependencies: RefreshEndpointDependencies) -> APIRouter:
     async def sync_market(request: MarketSyncApiRequest) -> MarketSyncApiResponse:
         """Trigger comprehensive multi-asset market synchronization."""
         from server.dependencies import get_app_state
-        from server.services.market_sync import (
+        from server.services.market.sync import (
             MarketSyncRequest,
             get_market_sync_service,
         )
@@ -246,7 +246,7 @@ def create_router(dependencies: RefreshEndpointDependencies) -> APIRouter:
     async def get_sync_status() -> MarketSyncApiResponse | None:
         """Query the latest market synchronization outcome."""
         from server.dependencies import get_app_state
-        from server.services.market_sync import get_market_sync_service
+        from server.services.market.sync import get_market_sync_service
 
         state = get_app_state()
         service = get_market_sync_service(

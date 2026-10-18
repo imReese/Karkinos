@@ -31,11 +31,11 @@ from server.scheduler_quote_runs import SchedulerQuoteRunMixin
 from server.scheduler_signals import handle_scheduler_signal
 from server.scheduler_values import optional_float
 from server.services.market.indices import default_market_index_assets
-from server.services.market_hours import is_cn_trading_session
-from server.services.market_quote_ingestion import (
+from server.services.market.quotes import (
     build_quote_ingestion_command,
     persist_quote_ingestion,
 )
+from server.services.market_hours import is_cn_trading_session
 from server.services.portfolio.ledger import rebuild_portfolio_from_ledger
 from server.services.trading_controls import TradingControlState
 

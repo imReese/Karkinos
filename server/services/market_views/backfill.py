@@ -18,8 +18,8 @@ from server.contracts.http.market import (
     MarketBarsBackfillRequest,
     MarketBarsBackfillResponse,
 )
-from server.services.market_refresh import run_blocking_fetch as _run_blocking_fetch
-from server.services.market_refresh import shanghai_now as _shanghai_now
+from server.services.market.refresh import run_blocking_fetch as _run_blocking_fetch
+from server.services.market.refresh import shanghai_now as _shanghai_now
 from server.services.market_views.health_inputs import (
     merged_watchlist_assets,
     normalize_asset_class,

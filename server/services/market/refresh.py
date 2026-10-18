@@ -1,4 +1,4 @@
-"""Application projection extracted from the HTTP delivery adapter."""
+"""Quote refresh, cache status, and committed runtime publication."""
 
 from __future__ import annotations
 
@@ -13,34 +13,30 @@ from core.types import AssetClass, InstrumentType
 from data.source_policy import MarketDataUseCase
 from data.source_routing import preferred_legacy_provider
 from server.contracts.http.market import QuoteRefreshSymbolResult
+from server.projections.quote_status import parse_quote_timestamp
 from server.services.asset_metadata import resolve_asset_metadata
-from server.services.market.indices import market_index_display_name
-from server.services.market_hours import is_cn_trading_session
-from server.services.market_quote_ingestion import (
-    build_quote_ingestion_command,
-    persist_quote_ingestion,
-)
-from server.services.market_refresh_errors import (
-    TUSHARE_FUND_NAV_PERMISSION_DENIED as _TUSHARE_FUND_NAV_PERMISSION_DENIED,
-)
-from server.services.market_refresh_errors import (
-    provider_error_code,
-    provider_error_reason,
-)
-from server.services.market_refresh_identity import (
+from server.services.market.identity import (
     instrument_type_for_refresh as _instrument_type_for_refresh,
 )
-from server.services.market_refresh_identity import (
+from server.services.market.identity import (
     is_real_persistent_quote,
     latest_persistent_real_quote,
 )
-from server.services.market_refresh_identity import (
+from server.services.market.identity import (
     provider_asset_class as _provider_asset_class,
 )
-from server.services.market_refresh_provider import (
+from server.services.market.indices import market_index_display_name
+from server.services.market.providers import (
     fetch_provider_latest_with_timeout,
     load_provider_quote_payload,
+    provider_error_code,
+    provider_error_reason,
 )
+from server.services.market.quotes import (
+    build_quote_ingestion_command,
+    persist_quote_ingestion,
+)
+from server.services.market_hours import is_cn_trading_session
 
 logger = logging.getLogger(__name__)
 
@@ -60,26 +56,6 @@ _SH_TZ = ZoneInfo("Asia/Shanghai")
 
 def shanghai_now() -> datetime:
     return datetime.now(_SH_TZ)
-
-
-def parse_quote_timestamp(timestamp: object) -> datetime | None:
-    if isinstance(timestamp, datetime):
-        parsed = timestamp
-    elif isinstance(timestamp, str) and timestamp.strip():
-        value = timestamp.strip()
-        try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
-            try:
-                parsed = datetime.fromisoformat(f"{value}T00:00:00")
-            except ValueError:
-                return None
-    else:
-        return None
-
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=_SH_TZ)
-    return parsed.astimezone(_SH_TZ)
 
 
 def quote_age_seconds(quote: dict | None, now: datetime | None = None) -> int | None:
@@ -591,19 +567,13 @@ async def refresh_one_quote(
 
 __all__ = (
     "fetch_latest_snapshot",
-    "fetch_provider_latest_with_timeout",
-    "is_real_persistent_quote",
-    "latest_persistent_real_quote",
     "latest_refresh_attempt",
     "latest_refresh_error",
     "load_latest_snapshot_from_provider",
     "mark_persistent_cache_quote",
     "optional_float",
-    "parse_quote_timestamp",
     "persist_latest_snapshot",
     "publish_committed_runtime_quotes",
-    "provider_error_code",
-    "provider_error_reason",
     "quote_age_seconds",
     "quote_metadata",
     "quote_source",

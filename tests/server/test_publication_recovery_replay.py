@@ -20,7 +20,7 @@ from server.projections.portfolio_quotes import (
     current_valuation_snapshot,
 )
 from server.projections.system_readiness import build_system_readiness
-from server.services.market_quote_ingestion import build_quote_ingestion_command
+from server.services.market.quotes import build_quote_ingestion_command
 
 NOW = datetime.fromisoformat("2026-09-04T15:10:00+08:00")
 

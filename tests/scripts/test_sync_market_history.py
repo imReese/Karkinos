@@ -20,7 +20,7 @@ from scripts.data.sync_market_history import (
     main,
     parse_args,
 )
-from server.services.market_sync import MarketSyncSummary
+from server.services.market.sync import MarketSyncSummary
 
 
 def test_parse_args_defaults():

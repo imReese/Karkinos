@@ -16,11 +16,11 @@ from data.manager import build_sources
 from data.market_data import is_fund_estimate_quote_source
 from data.source_policy import MarketDataUseCase, source_policy_for_config
 from data.source_routing import preferred_legacy_provider
-from server.services.market_hours import get_shanghai_now
-from server.services.market_quote_ingestion import (
+from server.services.market.quotes import (
     build_quote_ingestion_command,
     persist_quote_ingestion,
 )
+from server.services.market_hours import get_shanghai_now
 
 logger = logging.getLogger(__name__)
 
@@ -276,7 +276,7 @@ def _source_chain(
     return [(name, sources[name]) for name in names if name in sources]
 
 
-def _normalize_snapshot(
+def normalize_fund_nav_snapshot(
     *,
     symbol: str,
     snapshot: dict[str, Any],
@@ -583,7 +583,7 @@ def refresh_fund_nav_quotes(
                         raise ValueError(
                             "confirmed fund NAV is not published for the target date"
                         )
-                quote = _normalize_snapshot(
+                quote = normalize_fund_nav_snapshot(
                     symbol=symbol,
                     snapshot=dict(snapshot),
                     source_name=source_name,

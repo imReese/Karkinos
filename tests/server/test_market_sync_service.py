@@ -21,7 +21,7 @@ from server.contracts.http.market import MarketSyncApiRequest
 from server.db import AppDatabase
 from server.http.market_endpoints.dependencies import RefreshEndpointDependencies
 from server.http.market_endpoints.refresh import create_router
-from server.services.market_sync import (
+from server.services.market.sync import (
     DEFAULT_BENCHMARK_INDICES,
     DEFAULT_ETFS,
     MarketSyncItem,
@@ -106,7 +106,7 @@ def test_sync_calendar(temp_data_env):
     )
 
     with patch(
-        "server.services.market_sync.build_market_calendar_provider",
+        "server.services.market.sync.build_market_calendar_provider",
         return_value=mock_provider,
     ):
         synced = service.sync_calendar(2026, 2026, force=True)
@@ -167,6 +167,33 @@ def test_sync_target_bars(temp_data_env):
     )
     assert item_fund.status == "updated"
     assert item_fund.bars_count == 2
+    mock_ak.fetch_bars.assert_called_once()
+
+    item_etf = service.sync_target_bars(
+        SyncTarget("510300", AssetClass.FUND, InstrumentType.ETF, "Synthetic ETF"),
+        start,
+        end,
+    )
+    assert item_etf.status == "updated"
+    mock_tdx.fetch_bars.assert_called_with(
+        Symbol("510300"),
+        start=start,
+        end=end,
+        frequency=BarFrequency.DAILY,
+        asset_class=AssetClass.FUND,
+    )
+    loaded_etf = store.load_bars(
+        Symbol("510300"), BarFrequency.DAILY, instrument_type=InstrumentType.ETF
+    )
+    pd.testing.assert_frame_equal(loaded_etf[sample_df.columns], sample_df)
+    assert (
+        store.load_bars(
+            Symbol("510300"),
+            BarFrequency.DAILY,
+            instrument_type=InstrumentType.OPEN_END_FUND,
+        )
+        is None
+    )
     mock_ak.fetch_bars.assert_called_once()
 
 
@@ -344,7 +371,7 @@ def test_http_sync_endpoints(temp_data_env):
 
         # POST sync
         with patch.object(MarketSyncService, "sync") as mock_sync:
-            from server.services.market_sync import MarketSyncSummary
+            from server.services.market.sync import MarketSyncSummary
 
             mock_sync.return_value = MarketSyncSummary(
                 status="success",
@@ -375,6 +402,21 @@ def _daily_closes(db):
         ).fetchall()
 
 
+def _quote_fact_counts(db):
+    with sqlite3.connect(db.path) as connection:
+        return {
+            table: connection.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+            for table in (
+                "latest_quotes",
+                "quote_snapshots",
+                "daily_close_snapshots_v2",
+                "event_log",
+                "instrument_metadata",
+                "valuation_snapshots",
+            )
+        }
+
+
 @pytest.fixture
 def sync_quote_clock(monkeypatch):
     current = datetime(2026, 10, 13, 16, 30, tzinfo=_SHANGHAI)
@@ -388,7 +430,7 @@ def sync_quote_clock(monkeypatch):
                 else current.replace(tzinfo=None)
             )
 
-    monkeypatch.setattr("server.services.market_sync.datetime", FixedDateTime)
+    monkeypatch.setattr("server.services.market.sync.datetime", FixedDateTime)
     return current
 
 
@@ -425,7 +467,7 @@ def test_latest_quote_sync_preserves_both_typed_daily_closes(
         db.save_daily_close_snapshot_sync(
             symbol=symbol,
             asset_class=kind.value,
-            trade_date="2026-10-13",
+            trade_date="2026-10-12",
             close_price=price,
             source="synthetic_prior_close",
         )
@@ -438,7 +480,8 @@ def test_latest_quote_sync_preserves_both_typed_daily_closes(
         SyncTarget(symbol, left_class, left_type, "synthetic left"),
         SyncTarget(symbol, right_class, right_type, "synthetic right"),
     ]
-    expected_prices = {left_type.value: 2.5, right_type.value: 1.75}
+    prior_closes = _daily_closes(db)
+    expected_prices = {}
     for target, new_price in zip(targets, (3.25, 1.8), strict=True):
         provider = (
             akshare if target.instrument_type is InstrumentType.OPEN_END_FUND else tdx
@@ -466,8 +509,11 @@ def test_latest_quote_sync_preserves_both_typed_daily_closes(
         )
         expected_prices[target.instrument_type.value] = new_price
         assert {
-            kind: price for _, kind, _, price, _ in _daily_closes(db)
+            kind: price
+            for _, kind, day, price, _ in _daily_closes(db)
+            if day == "2026-10-13"
         } == expected_prices
+        assert all(row in _daily_closes(db) for row in prior_closes)
         assert (
             db.get_latest_quote_sync(symbol, target.instrument_type.value)["price"]
             == new_price
@@ -482,13 +528,125 @@ def test_latest_quote_sync_preserves_both_typed_daily_closes(
     assert db.list_latest_quotes_sync() == before_quotes
 
 
+@pytest.mark.parametrize(
+    "failed_table", ["daily_close_snapshots_v2", "valuation_snapshots"]
+)
+def test_quote_sync_rolls_back_all_facts_when_late_write_fails(
+    temp_data_env, sync_quote_clock, failed_table
+):
+    db = AppDatabase(temp_data_env / "app.db")
+    before = _quote_fact_counts(db)
+    with sqlite3.connect(temp_data_env / "app.db") as conn:
+        conn.execute(
+            f"CREATE TRIGGER reject_sync_write BEFORE INSERT ON {failed_table} "
+            "BEGIN SELECT RAISE(ABORT, 'synthetic late write failure'); END"
+        )
+    provider = MagicMock()
+    provider.fetch_latest.return_value = {
+        "price": 10.5,
+        "timestamp": "2026-10-13T15:00:00+08:00",
+        "provider_name": "synthetic_provider",
+        "name": "Synthetic Stock",
+    }
+    service = MarketSyncService(data_dir=temp_data_env, db=db, tdx_source=provider)
+    target = SyncTarget(
+        "600519", AssetClass.STOCK, InstrumentType.STOCK, "Synthetic Stock"
+    )
+    assert service.sync_latest_quotes([target]) == 0
+    assert _quote_fact_counts(db) == before
+    assert db.get_latest_quote_sync("600519", "stock") is None
+
+
+@pytest.mark.parametrize(
+    "price,source", [(9.0, "synthetic_provider"), (10.5, "other_provider")]
+)
+def test_quote_sync_rejects_conflicting_close_without_partial_facts(
+    temp_data_env, sync_quote_clock, price, source
+):
+    db = AppDatabase(temp_data_env / "app.db")
+    db.save_daily_close_snapshot_sync(
+        symbol="600519",
+        asset_class="stock",
+        trade_date="2026-10-13",
+        close_price=price,
+        source=source,
+    )
+    before = _quote_fact_counts(db)
+    provider = MagicMock()
+    provider.fetch_latest.return_value = {
+        "price": 10.5,
+        "timestamp": "2026-10-13T15:00:00+08:00",
+        "provider_name": "synthetic_provider",
+    }
+    service = MarketSyncService(data_dir=temp_data_env, db=db, tdx_source=provider)
+    target = SyncTarget(
+        "600519", AssetClass.STOCK, InstrumentType.STOCK, "Synthetic Stock"
+    )
+    assert service.sync_latest_quotes([target]) == 0
+    assert _quote_fact_counts(db) == before
+    assert _daily_closes(db) == [("600519", "stock", "2026-10-13", price, source)]
+    assert db.get_latest_quote_sync("600519", "stock") is None
+
+
+def test_quote_sync_captures_each_response_after_fetch(temp_data_env, monkeypatch):
+    current = datetime(2026, 10, 13, 14, 59, tzinfo=_SHANGHAI)
+
+    class ResponseDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return current.astimezone(tz) if tz else current.replace(tzinfo=None)
+
+    def fetch_latest(symbol, asset_class):
+        nonlocal current
+        current = datetime(2026, 10, 13, 15, 1, tzinfo=_SHANGHAI)
+        return {"price": 10.5, "timestamp": current.isoformat()}
+
+    monkeypatch.setattr("server.services.market.sync.datetime", ResponseDateTime)
+    db = AppDatabase(temp_data_env / "app.db")
+    service = MarketSyncService(
+        data_dir=temp_data_env,
+        db=db,
+        tdx_source=SimpleNamespace(fetch_latest=fetch_latest),
+    )
+    target = SyncTarget(
+        "600519", AssetClass.STOCK, InstrumentType.STOCK, "Synthetic Stock"
+    )
+    assert service.sync_latest_quotes([target]) == 1
+    quote = db.get_latest_quote_sync("600519", "stock")
+    assert quote["captured_at"] == current.astimezone(ZoneInfo("UTC")).isoformat()
+    assert _daily_closes(db) == [("600519", "stock", "2026-10-13", 10.5, "tdx")]
+
+
+def test_older_quote_adds_dated_close_without_replacing_latest(
+    temp_data_env, sync_quote_clock
+):
+    db = AppDatabase(temp_data_env / "app.db")
+    provider = MagicMock()
+    provider.fetch_latest.side_effect = [
+        {"price": 10.5, "timestamp": "2026-10-13T15:00:00+08:00"},
+        {"price": 10.0, "timestamp": "2026-10-12T15:00:00+08:00"},
+    ]
+    service = MarketSyncService(data_dir=temp_data_env, db=db, tdx_source=provider)
+    target = SyncTarget(
+        "600519", AssetClass.STOCK, InstrumentType.STOCK, "Synthetic Stock"
+    )
+    assert service.sync_latest_quotes([target]) == 1
+    assert service.sync_latest_quotes([target]) == 1
+    assert db.get_latest_quote_sync("600519", "stock")["price"] == 10.5
+    assert {(row[2], row[3]) for row in _daily_closes(db)} == {
+        ("2026-10-12", 10.0),
+        ("2026-10-13", 10.5),
+    }
+    assert _quote_fact_counts(db)["quote_snapshots"] == 2
+
+
 def test_http_etf_sync_does_not_overwrite_same_code_fund_close(
     temp_data_env, sync_quote_clock, monkeypatch
 ):
     from server.routes import market
 
     db = AppDatabase(temp_data_env / "app.db")
-    for kind, price in (("etf", 2.5), ("open_end_fund", 1.75)):
+    for kind, price in (("open_end_fund", 1.75),):
         db.save_daily_close_snapshot_sync(
             symbol="510300",
             asset_class=kind,
@@ -512,7 +670,7 @@ def test_http_etf_sync_does_not_overwrite_same_code_fund_close(
     service = MarketSyncService(
         data_dir=temp_data_env, db=db, tdx_source=tdx, ak_source=akshare
     )
-    monkeypatch.setattr("server.services.market_sync._GLOBAL_SERVICE", service)
+    monkeypatch.setattr("server.services.market.sync._GLOBAL_SERVICE", service)
     monkeypatch.setattr(
         "server.dependencies.get_app_state",
         lambda: SimpleNamespace(data_dir=temp_data_env, db=db, config=None),
@@ -564,7 +722,11 @@ def test_http_etf_sync_does_not_overwrite_same_code_fund_close(
         ),
         pytest.param(
             InstrumentType.ETF,
-            {"timestamp": "2026-10-13T14:59:59+08:00"},
+            {
+                "timestamp": "2026-10-13T14:59:59+08:00",
+                "previous_close": 2.8,
+                "previous_close_date": "2026-10-12",
+            },
             None,
             id="intraday",
         ),
@@ -700,6 +862,11 @@ def test_quote_sync_daily_close_requires_source_session_evidence(
     service = MarketSyncService(
         data_dir=temp_data_env, db=db, tdx_source=provider, ak_source=provider
     )
+    expected_updates = (
+        0
+        if evidence.get("timestamp") in {"invalid", "2026-10-14T15:00:00+08:00"}
+        else 1
+    )
     asset_class = (
         AssetClass.FUND
         if kind in {InstrumentType.ETF, InstrumentType.OPEN_END_FUND}
@@ -707,7 +874,7 @@ def test_quote_sync_daily_close_requires_source_session_evidence(
     )
     target = SyncTarget("510300", asset_class, kind, "synthetic instrument")
     if via_http:
-        monkeypatch.setattr("server.services.market_sync._GLOBAL_SERVICE", service)
+        monkeypatch.setattr("server.services.market.sync._GLOBAL_SERVICE", service)
         monkeypatch.setattr(service, "resolve_targets", lambda request: [target])
         monkeypatch.setattr(
             "server.dependencies.get_app_state",
@@ -725,13 +892,26 @@ def test_quote_sync_daily_close_requires_source_session_evidence(
                 },
             )
         assert response.status_code == 200, response.text
-        assert response.json()["quotes_updated"] == 1
+        assert response.json()["quotes_updated"] == expected_updates
     else:
-        assert service.sync_latest_quotes([target]) == 1
+        assert service.sync_latest_quotes([target]) == expected_updates
     provider.fetch_latest.assert_called_once_with(
         Symbol("510300"), asset_class=asset_class
     )
     quote = db.get_latest_quote_sync("510300", kind.value)
+    if expected_updates == 0:
+        assert quote is None
+        assert _daily_closes(db) == prior_closes
+        with sqlite3.connect(temp_data_env / "app.db") as conn:
+            for table in ("quote_snapshots", "valuation_snapshots"):
+                assert conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0
+            assert (
+                conn.execute(
+                    "SELECT count(*) FROM event_log WHERE event_type LIKE 'market.quote.%'"
+                ).fetchone()[0]
+                == 0
+            )
+        return
     assert quote is not None and quote["price"] == 3.25
     if not evidence.get("timestamp") and not evidence.get("quote_timestamp"):
         # The existing latest-quote capture fallback does not grant close authority.
@@ -784,6 +964,22 @@ def test_real_akshare_page_nav_writes_dated_close_and_estimate_cannot_replace_it
     assert raw["quote_source"] == "eastmoney_fund_page"
     assert not {"nav_date", "provider_status", "quote_status"}.intersection(raw)
     db = AppDatabase(temp_data_env / "app.db")
+    # Persist the same response in the format written by the previous sync
+    # implementation. Re-ingestion must keep its authority fields compatible.
+    db.upsert_latest_quote_sync(
+        symbol="018125",
+        asset_type="open_end_fund",
+        price=1.25,
+        previous_close=1.2,
+        change=0.05,
+        change_percent=0.041667,
+        volume=0.0,
+        turnover=0.0,
+        quote_timestamp=raw["timestamp"],
+        quote_source="eastmoney_fund_page",
+        provider_name="akshare",
+        captured_at=sync_quote_clock.isoformat(),
+    )
     service = MarketSyncService(data_dir=temp_data_env, db=db, ak_source=source)
     target = SyncTarget(
         "018125", AssetClass.FUND, InstrumentType.OPEN_END_FUND, "Synthetic Fund"
@@ -803,6 +999,8 @@ def test_real_akshare_page_nav_writes_dated_close_and_estimate_cannot_replace_it
             "timestamp": "2026-10-13T15:00:00+08:00",
             "quote_source": "sina_fund_estimate",
             "source": "sina",
+            "previous_close": 1.25,
+            "previous_close_date": "2026-10-09",
         },
     )
     assert service.sync_latest_quotes([target]) == 1

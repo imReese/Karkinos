@@ -119,7 +119,7 @@ Specialized tooling is grouped under `broker/`, `ci/`, `data/`, `release/`, and 
 
 ## 市场数据统一同步与历史回补
 
-行情同步在底层由 [`server/services/market_sync.py`](../server/services/market_sync.py) 统筹，支持交易日历、基准指数、主流ETF、公募基金净值与个股日K线全量/增量同步，以及最新行情快照原子发布。
+行情同步在底层由 [`server/services/market/sync.py`](../server/services/market/sync.py) 统筹，支持交易日历、基准指数、主流ETF、公募基金净值与个股日K线全量/增量同步，以及最新行情快照原子发布。
 
 - **后台自动化（生产与日常运行）**：
   - 收盘后（15:00 ~ 16:00），`TradingScheduler` 自动同步并补齐基准指数日K、自选池日K与收盘快照；

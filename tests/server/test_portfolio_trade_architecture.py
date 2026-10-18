@@ -16,8 +16,8 @@ PORTFOLIO_ARCHITECTURE_MODULES = (
     "server/projections/portfolio_views/historical_ledger_series.py",
     "server/projections/service.py",
     "server/projections/portfolio_projection_values.py",
-    "server/services/market_refresh.py",
-    "server/services/market_refresh_provider.py",
+    "server/services/market/refresh.py",
+    "server/services/market/providers.py",
 )
 
 

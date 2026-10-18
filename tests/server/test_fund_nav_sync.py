@@ -70,7 +70,7 @@ class ConfirmedFundSource:
 
 
 def test_fund_nav_sync_requires_canonical_fund_identity(tmp_path) -> None:
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -88,7 +88,7 @@ def test_fund_nav_sync_requires_canonical_fund_identity(tmp_path) -> None:
 
 
 def test_fund_nav_sync_does_not_fetch_etf(monkeypatch, tmp_path) -> None:
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -110,7 +110,7 @@ def test_fund_nav_sync_does_not_fetch_etf(monkeypatch, tmp_path) -> None:
 
 
 def test_refresh_fund_nav_quotes_persists_only_fund_symbols(monkeypatch, tmp_path):
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -162,7 +162,7 @@ def test_refresh_fund_nav_quotes_persists_only_fund_symbols(monkeypatch, tmp_pat
 
 
 def test_refresh_fund_nav_quotes_skips_fresh_cached_fund(monkeypatch, tmp_path):
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -200,7 +200,7 @@ def test_confirmation_only_skips_same_day_confirmed_nav_even_after_ttl(
     monkeypatch,
     tmp_path,
 ):
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -246,7 +246,7 @@ def test_confirmation_only_refetches_target_date_nonconfirmed_nav_after_midnight
     monkeypatch,
     tmp_path,
 ):
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -302,7 +302,7 @@ def test_confirmation_only_falls_back_after_tushare_fund_nav_permission_error(
     monkeypatch,
     tmp_path,
 ):
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -360,7 +360,7 @@ def test_confirmation_only_falls_back_after_tushare_fund_nav_permission_error(
 def test_refresh_fund_nav_quotes_fetches_complete_batch_before_persisting(
     monkeypatch, tmp_path
 ):
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -394,7 +394,7 @@ def test_refresh_fund_nav_quotes_fetches_complete_batch_before_persisting(
 def test_confirmation_only_same_timestamp_authority_conflict_fails_closed(
     monkeypatch, tmp_path
 ):
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -486,7 +486,7 @@ def test_confirmation_only_same_timestamp_authority_conflict_fails_closed(
 
 
 def test_confirmation_only_rejects_intraday_estimate(monkeypatch, tmp_path):
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -515,7 +515,7 @@ def test_confirmation_only_rejects_intraday_estimate(monkeypatch, tmp_path):
 
 
 def test_confirmation_only_rejects_previous_day_confirmed_nav(monkeypatch, tmp_path):
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -559,7 +559,7 @@ def test_confirmation_only_request_replays_persisted_run_after_restart(
     monkeypatch,
     tmp_path,
 ):
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db_path = tmp_path / "app.db"
     db = AppDatabase(db_path)
@@ -617,7 +617,7 @@ def test_confirmation_only_request_replays_running_run_without_provider_contact(
     monkeypatch,
     tmp_path,
 ):
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -668,7 +668,7 @@ def test_confirmation_only_request_rejects_idempotency_payload_drift(
     monkeypatch,
     tmp_path,
 ):
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -711,7 +711,7 @@ def test_confirmation_only_request_rejects_target_date_drift(
     monkeypatch,
     tmp_path,
 ):
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -756,7 +756,7 @@ def test_confirmation_only_duplicate_during_active_request_replays_running_run(
     monkeypatch,
     tmp_path,
 ):
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -817,7 +817,7 @@ def test_confirmation_only_failed_request_replays_exact_failure_without_refetch(
     monkeypatch,
     tmp_path,
 ):
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -864,7 +864,7 @@ def test_confirmation_only_concurrent_create_race_admits_one_provider_effect(
     monkeypatch,
     tmp_path,
 ):
-    from server.services import fund_nav_sync
+    from server.services.market import fund_nav as fund_nav_sync
 
     base_db = AppDatabase(tmp_path / "app.db")
     base_db.init_sync()

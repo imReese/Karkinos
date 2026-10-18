@@ -26,7 +26,7 @@ from server.http.portfolio_endpoints.dependencies import (
     PortfolioSnapshotDependencies,
     PortfolioSnapshotOperations,
 )
-from server.services.market_refresh_identity import provider_asset_class
+from server.services.market.identity import provider_asset_class
 
 
 @dataclass(frozen=True, slots=True)

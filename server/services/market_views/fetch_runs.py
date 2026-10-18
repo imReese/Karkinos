@@ -11,7 +11,7 @@ from server.contracts.http.market import (
 from server.models import (
     QuoteFetchRunResponse,
 )
-from server.services.market_refresh_identity import instrument_type_for_refresh
+from server.services.market.identity import instrument_type_for_refresh
 from server.services.market_views.health_inputs import (
     configured_provider_name,
 )

@@ -35,7 +35,9 @@ def build_quote_ingestion_command(
     daily_close_price: float | None = None,
     daily_close_date: str | None = None,
     daily_close_source: str | None = None,
+    include_reported_previous_close: bool = True,
 ) -> QuoteIngestionCommand:
+    """Build one observation under the caller's daily-close admission policy."""
     captured_at_value = captured_at or datetime.now(_SHANGHAI_TZ).isoformat()
     timestamp = _normalize_quote_timestamp(
         str(snapshot.get("timestamp") or "").strip(),
@@ -57,7 +59,12 @@ def build_quote_ingestion_command(
         reported_previous_close_date,
         quote_timestamp=timestamp,
     )
-    if daily_close_price is None and previous_close is not None and previous_close_date:
+    if (
+        include_reported_previous_close
+        and daily_close_price is None
+        and previous_close is not None
+        and previous_close_date
+    ):
         daily_close_price = previous_close
         daily_close_date = previous_close_date
         daily_close_source = "reported_previous_close"
@@ -91,9 +98,15 @@ def build_quote_ingestion_command(
         previous_close_date=previous_close_date,
         change=_optional_float(snapshot.get("change")),
         change_percent=_optional_float(
-            snapshot.get("change_percent") or snapshot.get("pct_chg")
+            snapshot.get("change_percent")
+            if snapshot.get("change_percent") is not None
+            else snapshot.get("pct_chg")
         ),
-        turnover=_optional_float(snapshot.get("turnover") or snapshot.get("amount")),
+        turnover=_optional_float(
+            snapshot.get("turnover")
+            if snapshot.get("turnover") is not None
+            else snapshot.get("amount")
+        ),
         quote_source=quote_source,
         provider_name=provider_name,
         provider_status=provider_status,

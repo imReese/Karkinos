@@ -1,1 +1,1 @@
-"""Market domain services: calendar verification, trading hours, indices, and automation."""
+"""Market collection, quote ingestion, calendar, and index services."""

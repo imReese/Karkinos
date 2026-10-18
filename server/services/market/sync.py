@@ -28,9 +28,13 @@ from data.store import DataStore
 from server.persistence.market_calendar import MarketCalendarRepository
 from server.projections.quote_status import parse_quote_timestamp
 from server.runtime_paths import resolve_data_dir
-from server.services.fund_nav_sync import (
-    _normalize_snapshot,
+from server.services.market.fund_nav import (
     is_confirmed_fund_nav_quote,
+    normalize_fund_nav_snapshot,
+)
+from server.services.market.quotes import (
+    build_quote_ingestion_command,
+    persist_quote_ingestion,
 )
 
 logger = logging.getLogger(__name__)
@@ -141,7 +145,7 @@ def _daily_close_trade_date(
             or snapshot.get("stale_reason") not in {None, ""}
         ):
             return None
-        quote = _normalize_snapshot(
+        quote = normalize_fund_nav_snapshot(
             symbol=target.symbol,
             snapshot={**snapshot, "timestamp": observed_at.isoformat()},
             source_name="akshare",
@@ -365,140 +369,42 @@ class MarketSyncService:
         """Fetch and persist historical bars for one target under its exact identity."""
         sym = Symbol(target.symbol)
         try:
-            if target.instrument_type is InstrumentType.INDEX:
-                df = self._tdx.fetch_bars(
-                    sym,
-                    start=start,
-                    end=end,
-                    frequency=BarFrequency.DAILY,
-                    asset_class=AssetClass.INDEX,
-                )
-                if df.empty:
-                    return MarketSyncItem(
-                        symbol=target.symbol,
-                        asset_class=target.asset_class.value,
-                        instrument_type=target.instrument_type.value,
-                        bars_count=0,
-                        status="skipped",
-                        error="no_bars_returned",
-                    )
-                self._data_store.save_bars(
-                    sym,
-                    BarFrequency.DAILY,
-                    df,
-                    instrument_type=InstrumentType.INDEX,
-                    provider_name="tdx",
-                    data_source="tdx",
-                )
+            is_fund = target.instrument_type is InstrumentType.OPEN_END_FUND
+            source = self._ak if is_fund else self._tdx
+            provider_name = "akshare" if is_fund else "tdx"
+            df = source.fetch_bars(
+                sym,
+                start=start,
+                end=end,
+                frequency=BarFrequency.DAILY,
+                asset_class=target.asset_class,
+            )
+            if df.empty:
                 return MarketSyncItem(
                     symbol=target.symbol,
                     asset_class=target.asset_class.value,
                     instrument_type=target.instrument_type.value,
-                    bars_count=len(df),
-                    status="updated",
+                    bars_count=0,
+                    status="skipped",
+                    error="no_bars_returned",
                 )
-
-            elif target.instrument_type is InstrumentType.ETF:
-                df = self._tdx.fetch_bars(
-                    sym,
-                    start=start,
-                    end=end,
-                    frequency=BarFrequency.DAILY,
-                    asset_class=AssetClass.FUND,
-                )
-                if df.empty:
-                    return MarketSyncItem(
-                        symbol=target.symbol,
-                        asset_class=target.asset_class.value,
-                        instrument_type=target.instrument_type.value,
-                        bars_count=0,
-                        status="skipped",
-                        error="no_bars_returned",
-                    )
-                self._data_store.save_bars(
-                    sym,
-                    BarFrequency.DAILY,
-                    df,
-                    instrument_type=InstrumentType.ETF,
-                    provider_name="tdx",
-                    data_source="tdx",
-                )
-                return MarketSyncItem(
-                    symbol=target.symbol,
-                    asset_class=target.asset_class.value,
-                    instrument_type=target.instrument_type.value,
-                    bars_count=len(df),
-                    status="updated",
-                )
-
-            elif target.instrument_type is InstrumentType.OPEN_END_FUND:
-                df = self._ak.fetch_bars(
-                    sym,
-                    start=start,
-                    end=end,
-                    frequency=BarFrequency.DAILY,
-                    asset_class=AssetClass.FUND,
-                )
-                if df.empty:
-                    return MarketSyncItem(
-                        symbol=target.symbol,
-                        asset_class=target.asset_class.value,
-                        instrument_type=target.instrument_type.value,
-                        bars_count=0,
-                        status="skipped",
-                        error="no_bars_returned",
-                    )
-                self._data_store.save_bars(
-                    sym,
-                    BarFrequency.DAILY,
-                    df,
-                    instrument_type=InstrumentType.OPEN_END_FUND,
-                    provider_name="akshare",
-                    data_source="akshare",
-                )
-                return MarketSyncItem(
-                    symbol=target.symbol,
-                    asset_class=target.asset_class.value,
-                    instrument_type=target.instrument_type.value,
-                    bars_count=len(df),
-                    status="updated",
-                )
-
-            else:
-                # Stock: merge with existing receipt-bound bars to avoid mutation conflicts
-                df_remote = self._tdx.fetch_bars(
-                    sym,
-                    start=start,
-                    end=end,
-                    frequency=BarFrequency.DAILY,
-                    asset_class=AssetClass.STOCK,
-                )
-                if df_remote.empty:
-                    return MarketSyncItem(
-                        symbol=target.symbol,
-                        asset_class=target.asset_class.value,
-                        instrument_type=target.instrument_type.value,
-                        bars_count=0,
-                        status="skipped",
-                        error="no_bars_returned",
-                    )
-
-                df_merged = self._merge_stock_bars_safely(sym, df_remote)
-                self._data_store.save_bars(
-                    sym,
-                    BarFrequency.DAILY,
-                    df_merged,
-                    instrument_type=InstrumentType.STOCK,
-                    provider_name="tdx",
-                    data_source="tdx",
-                )
-                return MarketSyncItem(
-                    symbol=target.symbol,
-                    asset_class=target.asset_class.value,
-                    instrument_type=target.instrument_type.value,
-                    bars_count=len(df_merged),
-                    status="updated",
-                )
+            if target.instrument_type is InstrumentType.STOCK:
+                df = self._merge_stock_bars_safely(sym, df)
+            self._data_store.save_bars(
+                sym,
+                BarFrequency.DAILY,
+                df,
+                instrument_type=target.instrument_type,
+                provider_name=provider_name,
+                data_source=provider_name,
+            )
+            return MarketSyncItem(
+                symbol=target.symbol,
+                asset_class=target.asset_class.value,
+                instrument_type=target.instrument_type.value,
+                bars_count=len(df),
+                status="updated",
+            )
 
         except Exception as exc:
             logger.warning(
@@ -566,8 +472,6 @@ class MarketSyncService:
     def sync_latest_quotes(self, targets: list[SyncTarget]) -> int:
         """Update atomic latest quotes and daily close snapshots."""
         db = self._get_db()
-        captured_at = datetime.now(timezone.utc)
-        now_iso = captured_at.isoformat()
         updated_count = 0
 
         for target in targets:
@@ -581,7 +485,11 @@ class MarketSyncService:
                 if not q or q.get("price") is None:
                     continue
 
+                captured_at = datetime.now(timezone.utc)
+                now_iso = captured_at.isoformat()
                 price = float(q["price"])
+                # Retain persisted sync defaults so replaying a pre-UOW
+                # observation does not create conflicting same-time facts.
                 prev_close = float(q.get("previous_close") or price)
                 change = float(q.get("change") or round(price - prev_close, 4))
                 change_pct = float(
@@ -596,32 +504,37 @@ class MarketSyncService:
                 quote_source = str(q.get("quote_source") or f"{provider_name}_realtime")
 
                 if db is not None:
-                    db.upsert_latest_quote_sync(
-                        symbol=target.symbol,
-                        asset_type=target.instrument_type.value,
-                        price=price,
-                        previous_close=prev_close,
-                        change=change,
-                        change_percent=change_pct,
-                        volume=vol,
-                        turnover=turnover,
-                        quote_timestamp=str(quote_ts),
-                        quote_source=quote_source,
-                        provider_name=provider_name,
-                        captured_at=now_iso,
-                        nav_date=nav_date,
-                    )
                     close_date = _daily_close_trade_date(
                         target, q, captured_at=captured_at
                     )
-                    if close_date is not None:
-                        db.save_daily_close_snapshot_sync(
-                            symbol=target.symbol,
-                            asset_class=target.instrument_type.value,
-                            trade_date=close_date,
-                            close_price=price,
-                            source=provider_name,
-                        )
+                    command = build_quote_ingestion_command(
+                        symbol=target.symbol,
+                        asset_type=target.instrument_type.value,
+                        snapshot={
+                            **q,
+                            "timestamp": str(quote_ts),
+                            "previous_close": prev_close,
+                            "change": change,
+                            "change_percent": change_pct,
+                            "volume": vol,
+                            "turnover": turnover,
+                        },
+                        quote_source=quote_source,
+                        provider_name=provider_name,
+                        provider_status=q.get("provider_status"),
+                        quote_status=str(q.get("quote_status") or "live"),
+                        captured_reason="market_sync",
+                        fetch_run_id=None,
+                        captured_at=now_iso,
+                        nav_date=nav_date,
+                        daily_close_date=close_date,
+                        daily_close_price=price if close_date is not None else None,
+                        daily_close_source=provider_name
+                        if close_date is not None
+                        else None,
+                        include_reported_previous_close=False,
+                    )
+                    persist_quote_ingestion(db, command)
                     updated_count += 1
             except Exception:
                 logger.warning(

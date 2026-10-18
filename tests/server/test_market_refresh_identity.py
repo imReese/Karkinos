@@ -11,7 +11,9 @@ from data.providers.tushare import TushareSource
 from domain.instrument import make_etf
 from server.db import AppDatabase
 from server.scheduler_loop import runtime_quotes_from_persisted
-from server.services import market_refresh, market_refresh_provider
+from server.services.market import identity as market_identity
+from server.services.market import providers as market_refresh_provider
+from server.services.market import refresh as market_refresh
 from server.services.market_views.health_inputs import (
     extract_runtime_portfolio,
     find_asset_config,
@@ -54,7 +56,7 @@ def test_etf_cache_lookup_never_accepts_legacy_fund_observation() -> None:
     )
 
     assert (
-        market_refresh.latest_persistent_real_quote(
+        market_identity.latest_persistent_real_quote(
             state,
             _SYNTHETIC_ETF_SYMBOL,
             AssetClass.FUND,

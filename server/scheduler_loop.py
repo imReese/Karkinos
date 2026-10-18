@@ -38,7 +38,7 @@ from server.scheduler_values import (
     scheduler_quote_evidence,
     scheduler_quote_provider_names,
 )
-from server.services.market_quote_ingestion import validated_previous_close_date
+from server.services.market.quotes import validated_previous_close_date
 
 logger = logging.getLogger(__name__)
 

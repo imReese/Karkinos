@@ -11,8 +11,8 @@ from server.contracts.http.market import (
     ConfirmedFundNavRefreshRequest,
     ConfirmedFundNavRefreshResponse,
 )
-from server.services.market_refresh import run_blocking_fetch as _run_blocking_fetch
-from server.services.market_refresh import shanghai_now as _shanghai_now
+from server.services.market.refresh import run_blocking_fetch as _run_blocking_fetch
+from server.services.market.refresh import shanghai_now as _shanghai_now
 from server.services.market_views.fetch_runs import (
     quote_fetch_run_response,
 )
@@ -30,7 +30,7 @@ async def refresh_confirmed_fund_nav(
     shanghai_now=_shanghai_now,
 ) -> ConfirmedFundNavRefreshResponse:
     """Run an explicit, audited, confirmation-only fund NAV ingestion batch."""
-    from server.services.fund_nav_sync import (
+    from server.services.market.fund_nav import (
         FundNavSyncIdempotencyConflict,
         refresh_fund_nav_quotes,
     )

@@ -14,7 +14,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from server.runtime_paths import resolve_data_dir
-from server.services.market_sync import (
+from server.services.market.sync import (
     MarketSyncRequest,
     MarketSyncService,
 )

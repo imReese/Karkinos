@@ -16,7 +16,8 @@ from fastapi import BackgroundTasks, HTTPException
 from fastapi.routing import APIRoute
 
 from core.types import InstrumentType, Symbol
-from server.services import decision_application, market_refresh
+from server.services import decision_application
+from server.services.market import refresh as market_refresh
 from tests.analytics.test_strategy_validation_matrix import REQUIRED_STRATEGY_IDS
 from tests.portfolio_valuation_fakes import bind_published_valuation
 from tests.route_assertions import registered_app_routes
@@ -149,7 +150,7 @@ def _run_market_fetch_inline(monkeypatch, request):
         return func(*args)
 
     monkeypatch.setattr(
-        "server.services.market_refresh.run_blocking_fetch", inline_fetch
+        "server.services.market.refresh.run_blocking_fetch", inline_fetch
     )
     monkeypatch.setattr(
         "server.services.market_views.backfill._run_blocking_fetch", inline_fetch
@@ -1330,7 +1331,7 @@ def test_market_quote_refresh_is_throttled(monkeypatch):
         db=SimpleNamespace(get_latest_quote=fake_get_latest_quote),
     )
 
-    market_routes._QUOTE_REFRESH_ATTEMPTS.clear()
+    market_refresh.QUOTE_REFRESH_ATTEMPTS.clear()
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     first_tasks = BackgroundTasks()
@@ -1377,7 +1378,7 @@ def test_market_quote_accepts_scheduler_quote_with_symbol(monkeypatch):
         db=None,
     )
 
-    market_routes._QUOTE_REFRESH_ATTEMPTS.clear()
+    market_refresh.QUOTE_REFRESH_ATTEMPTS.clear()
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
 
     response = asyncio.run(endpoint("600003", BackgroundTasks()))
@@ -1762,7 +1763,6 @@ def test_market_data_health_treats_live_fund_fallback_as_supported(monkeypatch):
 
 
 def test_market_quote_metadata_resolves_cached_live_status(monkeypatch):
-    from server.routes import market as market_routes
 
     fake_state = SimpleNamespace(config=SimpleNamespace(live_poll_interval=60))
     quote = {
@@ -1774,11 +1774,11 @@ def test_market_quote_metadata_resolves_cached_live_status(monkeypatch):
         "quote_status": "live",
     }
     monkeypatch.setattr(
-        "server.services.market_refresh.resolve_quote_status",
+        "server.services.market.refresh.resolve_quote_status",
         lambda state, quote, *, now=None: "stale",
     )
 
-    metadata = market_routes._quote_metadata(
+    metadata = market_refresh.quote_metadata(
         fake_state,
         "019999",
         "fund",
@@ -1794,7 +1794,6 @@ def test_market_quote_metadata_resolves_cached_live_status(monkeypatch):
 
 def test_load_latest_snapshot_marks_tushare_fund_permission_fallback(monkeypatch):
     from core.types import AssetClass
-    from server.routes import market as market_routes
 
     class TushareWithoutFundNav:
         def fetch_latest(self, symbol, asset_class):
@@ -1819,7 +1818,7 @@ def test_load_latest_snapshot_marks_tushare_fund_permission_fallback(monkeypatch
         },
     )
 
-    payload = market_routes._load_latest_snapshot_from_provider(
+    payload = market_refresh.load_latest_snapshot_from_provider(
         SimpleNamespace(
             config=SimpleNamespace(data_source="tushare", tushare_token="token")
         ),
@@ -1836,7 +1835,6 @@ def test_load_latest_snapshot_marks_tushare_fund_permission_fallback(monkeypatch
 
 def test_load_latest_snapshot_propagates_the_final_fallback_error(monkeypatch):
     from core.types import AssetClass
-    from server.routes import market as market_routes
 
     class TushareWithoutIndexSupport:
         def fetch_latest(self, symbol, asset_class):
@@ -1855,7 +1853,7 @@ def test_load_latest_snapshot_propagates_the_final_fallback_error(monkeypatch):
     )
 
     with pytest.raises(TimeoutError, match="timed out after 7.0s"):
-        market_routes._load_latest_snapshot_from_provider(
+        market_refresh.load_latest_snapshot_from_provider(
             SimpleNamespace(
                 config=SimpleNamespace(data_source="tushare", tushare_token="token")
             ),
@@ -1868,7 +1866,6 @@ def test_load_latest_snapshot_routes_index_to_capable_source_with_bounded_timeou
     monkeypatch,
 ):
     from core.types import AssetClass
-    from server.routes import market as market_routes
 
     class UnsupportedTushare:
         def fetch_latest(self, symbol, asset_class):
@@ -1903,10 +1900,10 @@ def test_load_latest_snapshot_routes_index_to_capable_source_with_bounded_timeou
         return source.fetch_latest(symbol, asset_class)
 
     monkeypatch.setattr(
-        "server.services.market_refresh.fetch_provider_latest_with_timeout", fake_fetch
+        "server.services.market.refresh.fetch_provider_latest_with_timeout", fake_fetch
     )
 
-    payload = market_routes._load_latest_snapshot_from_provider(
+    payload = market_refresh.load_latest_snapshot_from_provider(
         SimpleNamespace(
             config=SimpleNamespace(data_source="tushare", tushare_token="token")
         ),
@@ -1919,7 +1916,7 @@ def test_load_latest_snapshot_routes_index_to_capable_source_with_bounded_timeou
             akshare,
             "399001",
             AssetClass.INDEX,
-            market_routes._INDEX_PROVIDER_REFRESH_TIMEOUT_SECONDS,
+            market_refresh.INDEX_PROVIDER_REFRESH_TIMEOUT_SECONDS,
         )
     ]
     assert payload is not None
@@ -2175,14 +2172,14 @@ def test_market_quote_refresh_endpoint_returns_structured_result(monkeypatch, tm
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr("server.routes.market.is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
-        "server.services.market_refresh.is_cn_trading_session", lambda: True
+        "server.services.market.refresh.is_cn_trading_session", lambda: True
     )
     monkeypatch.setattr(
-        "server.services.market_refresh.resolve_quote_status",
+        "server.services.market.refresh.resolve_quote_status",
         lambda state, quote, *, now=None: "live",
     )
     monkeypatch.setattr(
-        "server.services.market_refresh.load_latest_snapshot_from_provider",
+        "server.services.market.refresh.load_latest_snapshot_from_provider",
         lambda state, symbol, asset_class: {
             "symbol": symbol,
             "asset_class": asset_class.value,
@@ -2246,10 +2243,10 @@ def test_market_quote_refresh_without_symbols_includes_default_indices(
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr("server.routes.market.is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
-        "server.services.market_refresh.is_cn_trading_session", lambda: True
+        "server.services.market.refresh.is_cn_trading_session", lambda: True
     )
     monkeypatch.setattr(
-        "server.services.market_refresh.resolve_quote_status",
+        "server.services.market.refresh.resolve_quote_status",
         lambda state, quote, *, now=None: "live",
     )
 
@@ -2266,7 +2263,7 @@ def test_market_quote_refresh_without_symbols_includes_default_indices(
         }
 
     monkeypatch.setattr(
-        "server.services.market_refresh.load_latest_snapshot_from_provider",
+        "server.services.market.refresh.load_latest_snapshot_from_provider",
         fake_load_latest_snapshot,
     )
 
@@ -2323,14 +2320,14 @@ def test_market_quote_refresh_records_successful_fetch_run(monkeypatch, tmp_path
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr("server.routes.market.is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
-        "server.services.market_refresh.is_cn_trading_session", lambda: True
+        "server.services.market.refresh.is_cn_trading_session", lambda: True
     )
     monkeypatch.setattr(
-        "server.services.market_refresh.resolve_quote_status",
+        "server.services.market.refresh.resolve_quote_status",
         lambda state, quote, *, now=None: "live",
     )
     monkeypatch.setattr(
-        "server.services.market_refresh.load_latest_snapshot_from_provider",
+        "server.services.market.refresh.load_latest_snapshot_from_provider",
         lambda state, symbol, asset_class: {
             "symbol": symbol,
             "asset_class": asset_class.value,
@@ -2419,10 +2416,10 @@ def test_market_quote_refresh_success_upserts_latest_quote(monkeypatch, tmp_path
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr("server.routes.market.is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
-        "server.services.market_refresh.is_cn_trading_session", lambda: True
+        "server.services.market.refresh.is_cn_trading_session", lambda: True
     )
     monkeypatch.setattr(
-        "server.services.market_refresh.resolve_quote_status",
+        "server.services.market.refresh.resolve_quote_status",
         lambda state, quote, *, now=None: "live",
     )
     monkeypatch.setattr(
@@ -2502,10 +2499,10 @@ def test_market_quote_refresh_records_cache_fallback_fetch_run(monkeypatch, tmp_
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr("server.routes.market.is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
-        "server.services.market_refresh.is_cn_trading_session", lambda: True
+        "server.services.market.refresh.is_cn_trading_session", lambda: True
     )
     monkeypatch.setattr(
-        "server.services.market_refresh.load_latest_snapshot_from_provider", fail_fetch
+        "server.services.market.refresh.load_latest_snapshot_from_provider", fail_fetch
     )
 
     response = asyncio.run(
@@ -2570,7 +2567,7 @@ def test_market_quote_refresh_records_failed_run_without_provider_fallback(
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr("server.routes.market.is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
-        "server.services.market_refresh.is_cn_trading_session", lambda: True
+        "server.services.market.refresh.is_cn_trading_session", lambda: True
     )
     monkeypatch.setattr(
         "data.manager.build_sources",
@@ -3143,7 +3140,7 @@ def test_refresh_one_quote_real_provider_does_not_fallback_to_unregistered_provi
         },
     )
     monkeypatch.setattr(
-        "server.services.market_refresh.is_cn_trading_session", lambda: True
+        "server.services.market.refresh.is_cn_trading_session", lambda: True
     )
 
     response = asyncio.run(
@@ -3202,7 +3199,7 @@ def test_refresh_one_quote_uses_persistent_real_cache_when_provider_fails(
         lambda **kwargs: {"akshare": BrokenAkshareSource()},
     )
     monkeypatch.setattr(
-        "server.services.market_refresh.is_cn_trading_session", lambda: True
+        "server.services.market.refresh.is_cn_trading_session", lambda: True
     )
 
     response = asyncio.run(
@@ -3253,14 +3250,14 @@ def test_market_quote_refresh_defaults_to_holding_symbols_and_market_indices(
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr("server.routes.market.is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
-        "server.services.market_refresh.is_cn_trading_session", lambda: True
+        "server.services.market.refresh.is_cn_trading_session", lambda: True
     )
     monkeypatch.setattr(
-        "server.services.market_refresh.resolve_quote_status",
+        "server.services.market.refresh.resolve_quote_status",
         lambda state, quote, *, now=None: "live",
     )
     monkeypatch.setattr(
-        "server.services.market_refresh.load_latest_snapshot_from_provider",
+        "server.services.market.refresh.load_latest_snapshot_from_provider",
         lambda state, symbol, asset_class: {
             "symbol": symbol,
             "asset_class": asset_class.value,
@@ -3326,14 +3323,14 @@ def test_market_quote_refresh_partial_batch_fails_closed(monkeypatch, tmp_path):
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr("server.routes.market.is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
-        "server.services.market_refresh.is_cn_trading_session", lambda: True
+        "server.services.market.refresh.is_cn_trading_session", lambda: True
     )
     monkeypatch.setattr(
-        "server.services.market_refresh.resolve_quote_status",
+        "server.services.market.refresh.resolve_quote_status",
         lambda state, quote, *, now=None: "live",
     )
     monkeypatch.setattr(
-        "server.services.market_refresh.load_latest_snapshot_from_provider", fake_fetch
+        "server.services.market.refresh.load_latest_snapshot_from_provider", fake_fetch
     )
 
     with pytest.raises(HTTPException) as blocked:
@@ -3395,10 +3392,10 @@ def test_market_quote_refresh_cache_only_returns_stale_without_fresh_claim(
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr("server.routes.market.is_cn_trading_session", lambda: False)
     monkeypatch.setattr(
-        "server.services.market_refresh.is_cn_trading_session", lambda: False
+        "server.services.market.refresh.is_cn_trading_session", lambda: False
     )
     monkeypatch.setattr(
-        "server.services.market_refresh.load_latest_snapshot_from_provider",
+        "server.services.market.refresh.load_latest_snapshot_from_provider",
         lambda state, symbol, asset_class: None,
     )
 
@@ -3452,10 +3449,10 @@ def test_market_quote_refresh_times_out_without_blocking_request(monkeypatch):
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr("server.routes.market.is_cn_trading_session", lambda: True)
     monkeypatch.setattr(
-        "server.services.market_refresh.is_cn_trading_session", lambda: True
+        "server.services.market.refresh.is_cn_trading_session", lambda: True
     )
     monkeypatch.setattr(
-        "server.services.market_refresh.load_latest_snapshot_from_provider", slow_fetch
+        "server.services.market.refresh.load_latest_snapshot_from_provider", slow_fetch
     )
     monkeypatch.setattr(market_refresh, "MANUAL_REFRESH_TIMEOUT_SECONDS", 0.001)
 
@@ -3464,7 +3461,7 @@ def test_market_quote_refresh_times_out_without_blocking_request(monkeypatch):
         return func(*args)
 
     monkeypatch.setattr(
-        "server.services.market_refresh.run_blocking_fetch", slow_blocking_fetch
+        "server.services.market.refresh.run_blocking_fetch", slow_blocking_fetch
     )
 
     started_at = time.monotonic()
@@ -4254,7 +4251,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_for_fund_when_tushare_retur
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        "server.services.market_refresh_provider._quote_sources",
+        "server.services.market.providers._quote_sources",
         lambda **kwargs: {
             "tushare": NullSource(),
             "akshare": AkshareSource(),
@@ -4304,7 +4301,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_for_stock_when_tushare_retu
             }
 
     monkeypatch.setattr(
-        "server.services.market_refresh_provider._quote_sources",
+        "server.services.market.providers._quote_sources",
         lambda **kwargs: {
             "tushare": NullSource(),
             "akshare": AkshareSource(),
@@ -4357,7 +4354,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_raises(
             }
 
     monkeypatch.setattr(
-        "server.services.market_refresh_provider._quote_sources",
+        "server.services.market.providers._quote_sources",
         lambda **kwargs: {
             "tushare": RaisingTushareSource(),
             "akshare": AkshareSource(),
@@ -4412,7 +4409,7 @@ def test_fetch_latest_snapshot_falls_back_to_akshare_when_tushare_times_out(
 
     monkeypatch.setattr(market_refresh, "PROVIDER_REFRESH_TIMEOUT_SECONDS", 0.001)
     monkeypatch.setattr(
-        "server.services.market_refresh_provider._quote_sources",
+        "server.services.market.providers._quote_sources",
         lambda **kwargs: {
             "tushare": SlowTushareSource(),
             "akshare": AkshareSource(),
@@ -4466,7 +4463,7 @@ def test_fetch_latest_snapshot_persists_stock_change_fields(monkeypatch):
             }
 
     monkeypatch.setattr(
-        "server.services.market_refresh_provider._quote_sources",
+        "server.services.market.providers._quote_sources",
         lambda **kwargs: {"akshare": AkshareSource()},
     )
 
@@ -4514,7 +4511,7 @@ def test_fetch_latest_snapshot_preserves_normalized_provider_identity(monkeypatc
             }
 
     monkeypatch.setattr(
-        "server.services.market_refresh_provider._quote_sources",
+        "server.services.market.providers._quote_sources",
         lambda **kwargs: {"akshare": AkshareSource()},
     )
 
@@ -4561,7 +4558,7 @@ def test_fetch_latest_snapshot_persists_reported_previous_close(monkeypatch):
             }
 
     monkeypatch.setattr(
-        "server.services.market_refresh_provider._quote_sources",
+        "server.services.market.providers._quote_sources",
         lambda **kwargs: {"akshare": AkshareSource()},
     )
 
@@ -5965,7 +5962,7 @@ def test_portfolio_snapshot_does_not_fetch_missing_fund_quotes_in_request(
 
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        "server.services.market_refresh.fetch_latest_snapshot",
+        "server.services.market.refresh.fetch_latest_snapshot",
         lambda *args, **kwargs: pytest.fail(
             "portfolio snapshot must not fetch remotely"
         ),
@@ -14184,7 +14181,7 @@ def test_portfolio_live_holdings_fails_closed_when_only_runtime_quote_exists(
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        "server.services.market_refresh.fetch_latest_snapshot",
+        "server.services.market.refresh.fetch_latest_snapshot",
         lambda *args, **kwargs: pytest.fail("live holdings must not fetch remotely"),
     )
 
