@@ -10,17 +10,17 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
-    "akshare>=1.18.97",
+    "akshare>=1.19.1",
     "tushare>=1.4.29",
-    "tdxaidata==1.0.2",
+    "tdxaidata==1.2.2",
     "pandas>=3.0.6",
-    "numpy>=2.5.3",
+    "numpy>=2.5.4",
     "pyarrow>=25.0.1",
     "httpx>=0.28.1",
-    "python-dotenv>=1.2.3",
-    "cryptography>=50.0.1",
+    "python-dotenv>=1.2.4",
+    "cryptography>=50.0.2",
     "xlrd>=2.0.2",
-    "ruff>=0.16.9",
+    "ruff>=0.17.0",
     "baostock>=0.9.4,<1",
     "pytdx>=1.72",
 ]
@@ -33,14 +33,14 @@ dev = [
     "pytest-xdist>=3.8.0",
     "pip-audit==2.10.1",
     "pre-commit>=4.6.2",
-    "mypy>=1.18.2",
+    "mypy>=2.4.0",
 ]
 server = [
-    "fastapi>=0.141.1",
+    "fastapi>=0.143.0",
     "uvicorn[standard]>=0.54.0",
     "aiosqlite>=0.22.1",
-    "websockets>=17.1",
-    "pydantic>=2.13.5",
+    "websockets>=17.2",
+    "pydantic>=2.14.1",
 ]
 
 [project.urls]
