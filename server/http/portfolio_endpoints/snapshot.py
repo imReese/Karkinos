@@ -315,4 +315,8 @@ def create_router(
     )
 
 
-__all__ = ["PortfolioSnapshotEndpoints", "create_router"]
+__all__ = [
+    "PortfolioSnapshotEndpoints",
+    "create_router",
+    "portfolio_response_not_modified",
+]

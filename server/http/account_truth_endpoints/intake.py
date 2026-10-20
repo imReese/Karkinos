@@ -306,3 +306,6 @@ def create_router(dependencies: IntakeEndpointDependencies) -> APIRouter:
         ]
 
     return r
+
+
+__all__ = ["create_router"]

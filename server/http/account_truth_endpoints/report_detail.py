@@ -85,3 +85,6 @@ def create_router(dependencies: ReportDetailEndpointDependencies) -> APIRouter:
         return _decision_response(decision)
 
     return r
+
+
+__all__ = ["create_router"]

@@ -279,3 +279,13 @@ def create_router() -> APIRouter:
         }
 
     return router
+
+
+__all__ = [
+    "DatasetInstrumentRequest",
+    "PrepareDatasetRequest",
+    "PrepareVerifiedJobsRequest",
+    "PublishVerifiedIntervalRequest",
+    "VerifiedDatasetRangeRequest",
+    "create_router",
+]

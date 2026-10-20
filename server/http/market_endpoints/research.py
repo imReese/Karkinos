@@ -206,3 +206,6 @@ def create_router(
         return {"status": "ok"}
 
     return r
+
+
+__all__ = ["create_router"]

@@ -121,3 +121,6 @@ def create_router(dependencies: CalendarEndpointDependencies) -> APIRouter:
         )
 
     return r
+
+
+__all__ = ["create_router"]

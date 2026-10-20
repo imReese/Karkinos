@@ -108,4 +108,8 @@ def create_router() -> APIRouter:
     return router
 
 
-__all__ = ["ShadowResearchQualificationPromotionPayload", "create_router"]
+__all__ = [
+    "ForwardPaperReviewPayload",
+    "ShadowResearchQualificationPromotionPayload",
+    "create_router",
+]

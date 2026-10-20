@@ -276,3 +276,9 @@ def create_router(
             return []
 
     return r, get_watchlist
+
+
+__all__ = [
+    "WatchlistLoader",
+    "create_router",
+]

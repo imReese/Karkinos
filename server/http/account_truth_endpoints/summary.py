@@ -165,3 +165,6 @@ def create_router(dependencies: SummaryEndpointDependencies) -> APIRouter:
             raise _account_truth_read_http_exception(exc) from exc
 
     return r
+
+
+__all__ = ["create_router"]

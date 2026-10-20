@@ -47,3 +47,6 @@ def create_router(dependencies: PreviewEndpointDependencies) -> APIRouter:
         return _run_backtest_attribution_preview(request, state)
 
     return r
+
+
+__all__ = ["create_router"]

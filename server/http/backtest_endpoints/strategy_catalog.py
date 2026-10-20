@@ -143,3 +143,6 @@ def create_router(dependencies: StrategyCatalogEndpointDependencies) -> APIRoute
         return StrategySignalPreviewResponse(**preview)
 
     return r
+
+
+__all__ = ["create_router"]

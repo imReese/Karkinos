@@ -191,3 +191,6 @@ def create_router(dependencies: HealthEndpointDependencies) -> APIRouter:
         )
 
     return r
+
+
+__all__ = ["create_router"]

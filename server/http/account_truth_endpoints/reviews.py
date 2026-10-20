@@ -239,3 +239,6 @@ def create_router(dependencies: ReviewEndpointDependencies) -> APIRouter:
             raise _citic_canonical_resolution_read_http_exception(exc) from exc
 
     return r
+
+
+__all__ = ["create_router"]
