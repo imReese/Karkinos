@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal, DecimalException, Inexact, localcontext
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 from core.events import MarketEvent
@@ -210,7 +210,7 @@ class DistributionReplay:
         self.listed: set[str] = set()
         self.execution_blocked_count = 0
 
-    def validate_events(self, events: Sequence[MarketEvent], *, observed: bool) -> None:
+    def validate_events(self, events: Iterable[MarketEvent], *, observed: bool) -> None:
         sessions: set[tuple[Symbol, date]] = set()
         for event in events:
             if event.timestamp.tzinfo is None:

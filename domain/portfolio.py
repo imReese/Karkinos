@@ -327,9 +327,13 @@ class Portfolio:
                 self.positions[symbol].mark_to_market(price)
 
     def record_equity(self, timestamp, prices: dict[Symbol, Decimal]) -> None:
-        """记录资金曲线。"""
+        """Keep the latest portfolio valuation at each observed timestamp."""
         equity = self._calculate_equity_with_prices(prices)
-        self.equity_curve.append((timestamp, equity))
+        point = (timestamp, equity)
+        if self.equity_curve and self.equity_curve[-1][0] == timestamp:
+            self.equity_curve[-1] = point
+        else:
+            self.equity_curve.append(point)
 
     def _calculate_equity(self) -> Decimal:
         """使用每个持仓各自最近一次盯市价值计算总权益。"""

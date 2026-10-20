@@ -5,7 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from dataclasses import replace
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -34,6 +37,370 @@ from server.contracts.strategy_research import (
     StrategyResearchRejected,
     StrategyResearchSelection,
 )
+
+
+def _scoped_formula_inputs(
+    tmp_path, monkeypatch, *, gap=False, halt=False, actions=False
+):
+    """Real immutable inputs without a catalog, application DB or provider I/O."""
+    from analytics.dataset_snapshot import load_immutable_dataset_inputs
+    from core.types import InstrumentKey
+    from data.dataset.manifest import publish_daily_bar_dataset_manifest
+    from data.dataset.model import DailyBarDatasetMembership, DailyBarDatasetPartition
+    from data.dataset.reader import read_daily_bar_dataset
+    from data.providers import tushare_corporate_actions as dividends
+    from data.providers.tdx import TDX_PROVIDER_DESCRIPTOR
+    from data.storage.objects import ContentAddressedObjectStore
+    from data.store import normalize_stock_master_metadata
+    from server.services.market_universe_truth import (
+        MarketUniversePolicy,
+        market_deployment_scope,
+        normalize_a_share_members,
+    )
+    from tests.data.providers import test_official_stock_master as official
+    from tests.server.test_dataset_corporate_actions import _response
+    from tests.server.test_verified_interval_dataset import _side
+
+    root = tmp_path / "research"
+    objects = ContentAddressedObjectStore(root / "objects")
+    days = tuple(day.date() for day in pd.bdate_range("2026-09-14", periods=6))
+    held, other = (
+        InstrumentKey(symbol, InstrumentType.STOCK) for symbol in ("000001", "600000")
+    )
+    cutoff = datetime(2026, 9, 21, 8, 10, tzinfo=timezone.utc)
+    status_refs = ()
+    status_at = datetime(2026, 9, 18, 8, 6, tzinfo=timezone.utc)
+    if halt:
+        monkeypatch.setattr(official, "NOW", status_at)
+        rows, refs, started, completed = official._capture(objects)
+        members = normalize_a_share_members([row["symbol"] for row in rows])
+        # The real reader verifies the projection against the captured bytes.
+        master = {
+            "schema_version": "karkinos.market_universe_snapshot.v3",
+            "trade_date": days[4].isoformat(),
+            "membership_basis": "current_active_stock_master",
+            "availability_basis": "capture_completed_at",
+            "observation_basis": "adapter_response",
+            "capture_started_at": started.isoformat(),
+            "capture_completed_at": completed.isoformat(),
+            "available_at": completed.isoformat(),
+            "source_capture_ids": sorted(refs),
+            "members": members,
+            "member_metadata": normalize_stock_master_metadata(rows, members),
+        }
+        status_refs = (objects.put_bytes(json.dumps(master).encode()).object_id,)
+    partitions, memberships = [], []
+    for day in days:
+        instruments = (other,) if gap and day == days[4] else (held, other)
+        revision, materialization, _ = _side(
+            objects, day, TDX_PROVIDER_DESCRIPTOR, instruments=instruments
+        )
+        partitions.append(
+            DailyBarDatasetPartition(
+                partition_date=day,
+                provider=revision.provider,
+                revision_id=revision.ref.revision_id,
+                materialization_id=materialization.materialization_id,
+                instruments=instruments,
+            )
+        )
+        at = datetime.combine(
+            day, datetime.min.time(), tzinfo=timezone.utc
+        ) + timedelta(hours=8, minutes=5)
+        memberships.append(
+            DailyBarDatasetMembership(
+                day,
+                instruments if gap else (other,),
+                status_at if status_refs and day == days[4] else at,
+                status_refs if day == days[4] else (),
+                status_at if status_refs and day == days[4] else None,
+                () if gap else (held,),
+            )
+        )
+    from data.dataset.model import DailyBarDatasetSnapshot
+    from data.market.schema import DAILY_BAR_SCHEMA_VERSION
+
+    action_ids = ()
+    if actions:
+        response = _response("000001.SZ")
+        response.loc[:, "record_date"] = "20260916"
+        response.loc[:, "ex_date"] = "20260917"
+        response.loc[:, "pay_date"] = "20260921"
+        action_ids = tuple(
+            dividends.collect_tushare_dividend_observation(
+                objects,
+                instrument=instrument,
+                client=SimpleNamespace(
+                    dividend=lambda instrument=instrument, **_: (
+                        response if instrument == held else pd.DataFrame()
+                    )
+                ),
+                clock=lambda: cutoff,
+            ).object_id
+            for instrument in (held, other)
+        )
+    ref = publish_daily_bar_dataset_manifest(
+        objects,
+        DailyBarDatasetSnapshot(
+            start_date=days[0],
+            end_date=days[-1],
+            cutoff=cutoff,
+            instruments=(held, other),
+            resolver_policy_id="fixture.formula.dated.v1",
+            market_schema_version=DAILY_BAR_SCHEMA_VERSION,
+            partitions=tuple(partitions),
+            session_memberships=tuple(memberships),
+            universe_policy_id="fixture.formula.dated.v1",
+            corporate_action_observation_ids=action_ids,
+        ),
+    )
+    read_daily_bar_dataset(objects, ref)
+    _, handlers, binding = load_immutable_dataset_inputs(
+        root, {"immutable_dataset_id": ref.dataset_id}
+    )
+    snapshot = build_backtest_dataset_snapshot(
+        start_date=days[0].isoformat(),
+        end_date=days[-1].isoformat(),
+        configured_source="tdx",
+        source_names=["tdx"],
+        data_handlers=handlers,
+        store=None,
+        research_dataset_binding=binding,
+    )
+    scope = market_deployment_scope(
+        MarketUniversePolicy(
+            minimum_master_member_count=2, minimum_history_rows=2, allocation_slots=2
+        )
+    )
+    selection = StrategyResearchSelection(
+        saved_backtest_result_id=1,
+        universe=(held.symbol, other.symbol),
+        asset_classes=("stock", "stock"),
+        dataset_snapshot_id=snapshot["snapshot_id"],
+        start_date=days[0].isoformat(),
+        end_date=days[-1].isoformat(),
+        frequency="1d",
+        initial_cash=NORMALIZED_RESEARCH_NOTIONAL,
+        deployment_scope=scope,
+        portfolio_policy_id=scope["portfolio_policy_id"],
+    )
+    formula = {
+        "schema_version": FORMULA_AST_CONTRACT,
+        "entry": {
+            "op": "gt",
+            "left": {
+                "op": "rolling_mean",
+                "input": {"op": "field", "name": "close"},
+                "window": 2,
+            },
+            "right": {"op": "constant", "value": 0},
+        },
+        "exit": {
+            "op": "lt",
+            "left": {"op": "field", "name": "close"},
+            "right": {"op": "constant", "value": 0},
+        },
+        "position_size": {"op": "equal_weight"},
+    }
+    draft = {
+        "draft_id": "dated-formula-fixture",
+        "formula_ast": formula,
+        "selected_universe": list(selection.universe),
+        "dataset_snapshot_id": selection.dataset_snapshot_id,
+        "test_window": {
+            "start_date": selection.start_date,
+            "end_date": selection.end_date,
+        },
+        "frequency": "1d",
+        "cost_model_reference": selection.cost_model_reference,
+        "anti_lookahead_assumptions": ["Only completed daily bars."],
+        "parameter_values": {"window": 2},
+        "parameter_ranges": {"window": [2, 3, 4]},
+    }
+    draft["formula_fingerprint"] = FormulaBinding(
+        formula_ast=formula,
+        universe=selection.universe,
+        dataset_snapshot_id=selection.dataset_snapshot_id,
+        start_date=selection.start_date,
+        end_date=selection.end_date,
+        frequency=selection.frequency,
+        cost_model_reference=selection.cost_model_reference,
+        anti_lookahead_assumptions=tuple(draft["anti_lookahead_assumptions"]),
+        parameter_values=draft["parameter_values"],
+        parameter_ranges=draft["parameter_ranges"],
+        initial_cash=selection.initial_cash,
+    ).fingerprint
+    adapter = RestrictedFormulaBacktestAdapter(
+        data_store=SimpleNamespace(_root=tmp_path / "unused-market"), research_root=root
+    )
+    return adapter, selection, draft, snapshot, days
+
+
+def _record_formula_replays(monkeypatch):
+    from backtest.engine import BacktestEngine
+
+    runs = []
+    original = BacktestEngine.run
+
+    def recorded(engine):
+        assert all(
+            previous.strategy._prepared_sessions is None for previous, _ in runs
+        ), "Completed replay frames must be released before the next panel"
+        result = original(engine)
+        runs.append((engine, result))
+        return result
+
+    monkeypatch.setattr(BacktestEngine, "run", recorded)
+    return runs
+
+
+def test_formula_research_respects_dated_entry_scope_in_all_replays(
+    tmp_path, monkeypatch
+):
+    from backtest.costs import RESEARCH_COST_STRESS_BPS
+    from tests.data.dataset.test_read_scope import _track_cold_reads
+
+    adapter, selection, draft, snapshot, _ = _scoped_formula_inputs(
+        tmp_path, monkeypatch
+    )
+    runs = _record_formula_replays(monkeypatch)
+    cold_reads = _track_cold_reads(monkeypatch)
+    actual, _ = adapter.run(
+        selection=selection, draft=draft, expected_dataset_snapshot=snapshot
+    )
+
+    assert len(runs) == 1 + len(RESEARCH_COST_STRESS_BPS) + 2
+    assert len(cold_reads) == 1
+    assert actual["metrics_json"]["parameter_robustness"]["tested_count"] == 3
+    for engine, result in runs:
+        assert result.fills
+        assert {str(fill.symbol) for fill in result.fills} == {"600000"}
+        assert engine.strategy._allocation_slots == 2
+        assert engine.event_bus._raise_handler_errors is True
+        assert engine._stream_sorted_data_handlers is True
+        assert engine.strategy.session_decisions == []
+        assert engine.strategy._prepared_sessions is None
+        assert result.cash_dividend_accounting is None
+    assert actual["metrics_json"]["dataset_snapshot"]["point_in_time_verified"] is False
+    assert (
+        actual["metrics_json"]["dataset_snapshot"]["research_use"]
+        == "exploratory_backtest"
+    )
+
+
+def test_formula_research_rejects_unproved_holding_gap(tmp_path, monkeypatch):
+    adapter, selection, draft, snapshot, _ = _scoped_formula_inputs(
+        tmp_path, monkeypatch, gap=True
+    )
+    with pytest.raises(
+        ValueError, match="formula_session_holding_valuation_missing:000001"
+    ):
+        adapter.run(
+            selection=selection, draft=draft, expected_dataset_snapshot=snapshot
+        )
+
+
+def test_formula_research_replays_proven_halt_and_bound_distributions(
+    tmp_path, monkeypatch
+):
+    adapter, selection, draft, snapshot, days = _scoped_formula_inputs(
+        tmp_path, monkeypatch, gap=True, halt=True, actions=True
+    )
+    runs = _record_formula_replays(monkeypatch)
+    actual, _ = adapter.run(
+        selection=selection, draft=draft, expected_dataset_snapshot=snapshot
+    )
+
+    for engine, result in runs:
+        assert not any(
+            fill.timestamp.date() == days[4] and str(fill.symbol) == "000001"
+            for fill in result.fills
+        )
+        books = {row["session"]: row for row in engine.strategy.session_books}
+        before, halted = books[days[3].isoformat()], books[days[4].isoformat()]
+        if "000001" in before["position_values"]:
+            assert (
+                halted["position_values"]["000001"]
+                == before["position_values"]["000001"]
+            )
+            assert halted["nontrading_valuations"] == [
+                {
+                    "symbol": "000001",
+                    "valuation_basis": "last_observed_close_bound_nontrading",
+                    "observation_session": days[3].isoformat(),
+                    "reference_close": "10.48000000",
+                    "tradable": False,
+                }
+            ]
+        accounting = result.cash_dividend_accounting
+        assert accounting is not None
+        distribution = accounting["distributions"][0]
+        assert Decimal(accounting["gross_income"]) == Decimal(
+            distribution["eligible_quantity"]
+        ) * Decimal("0.1")
+        assert accounting["cash_paid"] == accounting["gross_income"]
+        assert accounting["taxes_modeled"] is False
+    accounting = actual["metrics_json"]["cash_dividend_accounting"]
+    assert Decimal(accounting["gross_income"]) > 0
+    assert accounting["coverage_verified"] is False
+
+
+@pytest.mark.parametrize("full_scope", [False, True])
+def test_formula_research_strict_fill_errors_preserve_legacy_behavior(
+    tmp_path, monkeypatch, full_scope
+):
+    from server.ai_runtime.strategy_research_backtest import _FormulaSignalStrategy
+
+    adapter, selection, draft, snapshot, _ = _scoped_formula_inputs(
+        tmp_path, monkeypatch
+    )
+    if not full_scope:
+        selection = replace(selection, deployment_scope=None, portfolio_policy_id=None)
+
+    def failed_update(*_args):
+        raise RuntimeError("fixture_position_update_failed")
+
+    monkeypatch.setattr(_FormulaSignalStrategy, "on_position_update", failed_update)
+    if full_scope:
+        with pytest.raises(RuntimeError, match="fixture_position_update_failed"):
+            adapter.run(
+                selection=selection, draft=draft, expected_dataset_snapshot=snapshot
+            )
+    else:
+        result, _ = adapter.run(
+            selection=selection, draft=draft, expected_dataset_snapshot=snapshot
+        )
+        assert result["fills"]
+
+
+@pytest.mark.parametrize("actions", [False, True])
+def test_sealed_formula_keeps_bound_distribution_requirement(
+    tmp_path, monkeypatch, actions
+):
+    from tests.data.dataset.test_read_scope import _track_cold_reads
+
+    adapter, selection, draft, snapshot, days = _scoped_formula_inputs(
+        tmp_path, monkeypatch, gap=True, halt=True, actions=actions
+    )
+    selection = replace(selection, end_date=days[0].isoformat())
+    cold_reads = _track_cold_reads(monkeypatch)
+    kwargs = dict(
+        selection=selection,
+        draft=draft,
+        sealed_end_date=days[-1].isoformat(),
+        evaluation_dataset_snapshot=snapshot,
+    )
+    if actions:
+        result = adapter.run_sealed(**kwargs)
+        assert Decimal(result.cash_dividend_accounting["gross_income"]) > 0
+        assert any(
+            row.get("nontrading_valuations") for row in result.portfolio_observations
+        )
+    else:
+        with pytest.raises(ValueError, match="cash_dividend_evidence_required"):
+            adapter.run_sealed(**kwargs)
+    assert len(cold_reads) == 1
+
 
 _SYMBOL = Symbol("600000")
 _DATES = pd.bdate_range("2026-01-05", periods=8).strftime("%Y-%m-%d").tolist()

@@ -66,8 +66,10 @@ from server.services.research_observation_data_preparation import (
     run_research_observation_data_preparation_once,
 )
 from server.services.verified_daily_market_data import (
+    VERIFIED_DAILY_MARKET_RANGE_JOB_SCHEMA_VERSION,
     VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT,
     VerifiedDailyMarketDataNotPublishable,
+    VerifiedDailyMarketDataRequestError,
     VerifiedDailyMarketDataService,
     VerifiedDailyMarketDataUnavailable,
     VerifiedDailyMarketJobRequest,
@@ -498,7 +500,7 @@ async def execute_verified_daily_market_job(
     job: JobRun,
     service,
     *,
-    timeout: float = 180,
+    timeout: float | None = None,
     heartbeat_interval: float = 15,
     source_resolution_recorder: Callable[[dict[str, object]], None] | None = None,
     request_validator: Callable[[], None] | None = None,
@@ -507,6 +509,22 @@ async def execute_verified_daily_market_job(
     finish_guard: Callable[[sqlite3.Connection], None] | None = None,
 ) -> None:
     """Run one durable verified-market job behind lease fencing."""
+    if timeout is None:
+        timeout = 180
+        if (
+            job.payload.get("schema_version")
+            == VERIFIED_DAILY_MARKET_RANGE_JOB_SCHEMA_VERSION
+        ):
+            try:
+                request = VerifiedDailyMarketJobRequest.from_payload(job.payload)
+            except (VerifiedDailyMarketDataRequestError, TypeError, ValueError):
+                # Preserve the service's normal validation and durable failure path.
+                pass
+            else:
+                # Range publication verifies/materializes each expected session.
+                timeout = min(
+                    180 * math.ceil(len(request.expected_sessions()) / 250), 1800
+                )
     await _execute_daily_market_job(
         store,
         job,

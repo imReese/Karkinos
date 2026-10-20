@@ -304,7 +304,8 @@ def test_evaluation_record_date_earns_normal_cash_and_locked_share_awards():
 
 
 @pytest.mark.parametrize("missing", [DAYS[2], DAYS[3]])
-def test_warmup_required_corporate_action_bars_still_fail_closed(missing):
+@pytest.mark.parametrize("streaming", [False, True])
+def test_warmup_required_corporate_action_bars_still_fail_closed(missing, streaming):
     strategy = DatedActions()
     days = [day for day in DAYS if day != missing]
     engine = _engine(
@@ -312,6 +313,7 @@ def test_warmup_required_corporate_action_bars_still_fail_closed(missing):
         frame=_frame([10] * len(days), days=days),
         cash_dividends=(_distribution(),),
         include_share_distributions=True,
+        execution_config=BacktestExecutionConfig(stream_sorted_data_handlers=streaming),
     )
 
     with pytest.raises(ValueError, match="cash_dividend_required_session_missing"):
@@ -323,7 +325,10 @@ def test_warmup_required_corporate_action_bars_still_fail_closed(missing):
 
 
 @pytest.mark.parametrize("late_ca", [False, True])
-def test_warmup_availability_is_validated_before_any_strategy_observation(late_ca):
+@pytest.mark.parametrize("streaming", [False, True])
+def test_warmup_availability_is_validated_before_any_strategy_observation(
+    late_ca, streaming
+):
     strategy = DatedActions()
     frame = _frame([10] * 8)
     distribution = _distribution()
@@ -340,7 +345,9 @@ def test_warmup_availability_is_validated_before_any_strategy_observation(late_c
         frame=frame,
         cash_dividends=(distribution,),
         include_share_distributions=True,
-        execution_config=BacktestExecutionConfig(availability_mode="observed"),
+        execution_config=BacktestExecutionConfig(
+            availability_mode="observed", stream_sorted_data_handlers=streaming
+        ),
     )
 
     with pytest.raises(ValueError, match=reason):
@@ -354,3 +361,41 @@ def test_warmup_availability_is_validated_before_any_strategy_observation(late_c
 def test_evaluation_start_requires_a_session_date(boundary):
     with pytest.raises(ValueError, match="backtest_evaluation_start_invalid"):
         _engine(evaluation_start=boundary)
+
+
+def test_streamed_warmup_targets_and_distribution_prepasses_replay_the_same_book():
+    results = []
+    for streaming in (False, True):
+        engine = _engine(
+            DatedActions({DAYS[4]: Decimal("0.1"), DAYS[6]: ZERO}),
+            frame=_frame([10] * 8),
+            evaluation_start=DAYS[5],
+            warmup_final_bar_targets=True,
+            initial_cash=Decimal("10000"),
+            cash_dividends=(
+                _distribution(
+                    record_date=DAYS[5],
+                    ex_date=DAYS[6],
+                    pay_date=DAYS[7],
+                    listing_date=DAYS[7],
+                ),
+            ),
+            include_share_distributions=True,
+            execution_config=BacktestExecutionConfig(
+                stream_sorted_data_handlers=streaming
+            ),
+        )
+        result = engine.run()
+        results.append((result, engine))
+    eager, streamed = (row[0] for row in results)
+    assert streamed.fills
+    assert [fill.timestamp for fill in streamed.fills] == [
+        _close(DAYS[5]),
+        _close(DAYS[7]),
+    ]
+    assert streamed.equity_curve == eager.equity_curve
+    assert streamed.final_equity == eager.final_equity
+    assert streamed.cost_summary == eager.cost_summary
+    assert streamed.cash_dividend_accounting == eager.cash_dividend_accounting
+    assert streamed.execution_timing == eager.execution_timing
+    assert results[0][1].strategy.observed == results[1][1].strategy.observed == DAYS

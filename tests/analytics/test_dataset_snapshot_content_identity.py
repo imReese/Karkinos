@@ -265,3 +265,61 @@ def test_dataset_snapshot_replay_rejects_tampered_manifest_identity(
     assert evidence["status"] == "blocked"
     assert "dataset_snapshot_identity_mismatch" in evidence["blockers"]
     assert "dataset_replay_store_missing" not in evidence["blockers"]
+
+
+def test_immutable_replay_checks_each_instrument_content_rows_and_time_bounds(
+    tmp_path,
+) -> None:
+    from copy import deepcopy
+
+    from analytics.dataset_snapshot import (
+        backtest_dataset_snapshot_content_id,
+        load_immutable_dataset_inputs,
+    )
+    from data.storage.objects import ContentAddressedObjectStore
+    from tests.data.dataset.test_reader import _publish_dataset, _revision
+
+    research_root = tmp_path / "research"
+    objects = ContentAddressedObjectStore(research_root / "objects")
+    revision, materialization = _revision(objects)
+    ref = _publish_dataset(objects, revision=revision, materialization=materialization)
+    _, handlers, binding = load_immutable_dataset_inputs(
+        research_root, {"immutable_dataset_id": ref.dataset_id}
+    )
+    snapshot = build_backtest_dataset_snapshot(
+        start_date=revision.partition_date.isoformat(),
+        end_date=revision.partition_date.isoformat(),
+        configured_source=binding["source_names"][0],
+        data_handlers=handlers,
+        store=None,
+        source_names=binding["source_names"],
+        research_dataset_binding=binding,
+    )
+    replay = verify_backtest_dataset_snapshot_replay(snapshot, store_root=tmp_path)
+    assert replay["status"] == "pass"
+    assert replay["verified_symbol_count"] == 2
+
+    for original in snapshot["symbol_universe"]:
+        for field, value in (
+            ("content_digest", "sha256:" + "0" * 64),
+            ("row_count", original["row_count"] + 1),
+            ("first_timestamp", "2020-01-01T00:00:00+00:00"),
+            ("last_timestamp", "2030-01-01T00:00:00+00:00"),
+        ):
+            changed = deepcopy(snapshot)
+            item = next(
+                item
+                for item in changed["symbol_universe"]
+                if item["symbol"] == original["symbol"]
+            )
+            item[field] = value
+            changed.pop("snapshot_id")
+            changed["snapshot_id"] = backtest_dataset_snapshot_content_id(changed)
+            drifted = verify_backtest_dataset_snapshot_replay(
+                changed, store_root=tmp_path
+            )
+            assert drifted["status"] == "blocked"
+            assert drifted["verified_symbol_count"] == 1
+            assert drifted["blockers"] == [
+                f"dataset_replay_content_drift:{original['symbol']}:1d"
+            ]

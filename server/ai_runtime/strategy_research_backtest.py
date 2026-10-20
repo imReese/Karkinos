@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -33,10 +33,12 @@ from backtest.costs import (
     RESEARCH_COST_STRESS_BPS,
     research_friction_assumptions,
 )
+from backtest.distributions import StockDistribution, distributions_from_evidence
 from backtest.engine import BacktestEngine, research_execution_config
 from backtest.result import BacktestResult
 from core.events import MarketEvent
 from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
+from data.dataset.reader import daily_bar_dataset_read_scope
 from data.handler import DataHandler
 from data.manager import DataManager
 from data.research_market_data import load_research_market_frames
@@ -78,6 +80,7 @@ class _FormulaSignalStrategy(Strategy):
         allocation_slots: int = 4,
         strategy_id: str = "ai_formula_research",
         portfolio_policy_id: str | None = None,
+        retain_session_decisions: bool = False,
     ) -> None:
         super().__init__(strategy_id, _NullEventBus())
         self._formula_ast = formula_ast
@@ -96,6 +99,7 @@ class _FormulaSignalStrategy(Strategy):
         self._entry_target_count = 0
         self._portfolio_policy_id = portfolio_policy_id
         self._prepared_sessions = None
+        self._retain_session_decisions = retain_session_decisions
         self.session_decisions: list[dict[str, Any]] = []
         self.session_books: list[dict[str, Any]] = []
 
@@ -172,11 +176,15 @@ class _FormulaSignalStrategy(Strategy):
         def decide(day):
             # The selected set is resolved before any next-session execution;
             # fills, not yesterday's desired weights, supply the active book.
-            eligible = [
-                symbol
-                for symbol, frame in self._prepared_sessions.items()
-                if day in frame.index
-            ]
+            eligible = (
+                session_memberships(day)
+                if session_memberships
+                else [
+                    symbol
+                    for symbol, frame in self._prepared_sessions.items()
+                    if day in frame.index
+                ]
+            )
             decision = formula_session_targets(
                 prepared=self._prepared_sessions,
                 decision_session=day,
@@ -187,9 +195,7 @@ class _FormulaSignalStrategy(Strategy):
                 equity=engine.portfolio.total_equity,
                 instruments=engine.instruments,
                 commission_calc=engine.execution.commission_calc,
-                eligible_symbols=(
-                    session_memberships(day) if session_memberships else eligible
-                ),
+                eligible_symbols=eligible,
                 slippage_bps=slippage_bps,
                 minimum_history_rows=minimum_history_rows,
                 max_positions=self._allocation_slots,
@@ -236,7 +242,8 @@ class _FormulaSignalStrategy(Strategy):
                         ),
                     }
                 )
-            self.session_decisions.append(decision)
+            if self._retain_session_decisions:
+                self.session_decisions.append(decision)
             self._entry_signal_count += len(decision["selected_entries"])
             self._entry_target_count += len(decision["selected_entries"])
             self._exit_signal_count += len(decision["exit_symbols"])
@@ -307,6 +314,7 @@ class RestrictedFormulaBacktestAdapter:
             else root / "research"
         )
 
+    @daily_bar_dataset_read_scope(join_existing=True)
     def run(
         self,
         *,
@@ -365,6 +373,11 @@ class RestrictedFormulaBacktestAdapter:
             expected_dataset_snapshot=expected_dataset_snapshot,
             research_root=self._research_root,
         )
+        session_memberships = session_nontrading_instruments = distributions = None
+        if selection.portfolio_policy_id and snapshot.get("immutable_dataset_id"):
+            session_memberships, session_nontrading_instruments, distributions = (
+                _bound_formula_portfolio_inputs(self._research_root, snapshot)
+            )
         commission_calc, fee_schedule_evidence = validated_fee_schedule_resolution(
             selection,
             reviewed_fee_schedule_resolution,
@@ -417,18 +430,28 @@ class RestrictedFormulaBacktestAdapter:
             data_handlers=handlers,
             initial_cash=Decimal(str(selection.initial_cash)),
             commission_calc=commission_calc,
-            execution_config=research_execution_config(commission_calc),
+            execution_config=research_execution_config(
+                commission_calc,
+                stream_sorted_data_handlers=bool(selection.deployment_scope),
+            ),
             db=None,
+            cash_dividends=distributions,
+            include_share_distributions=distributions is not None,
+            strict_event_errors=bool(selection.deployment_scope),
         )
         formula_strategy.bind_portfolio_engine(
             engine,
             handlers,
             entry_board_policy=entry_board_policy,
+            session_memberships=session_memberships,
+            session_nontrading_instruments=session_nontrading_instruments,
             minimum_history_rows=(selection.deployment_scope or {})
             .get("universe_policy", {})
             .get("minimum_history_rows", 60),
         )
         result = engine.run()
+        formula_strategy._prepared_sessions = None
+        del engine
         metrics = result.metrics
         evidence_json = (
             result.evidence_bundle.to_json_dict()
@@ -436,6 +459,8 @@ class RestrictedFormulaBacktestAdapter:
             else {}
         )
         metrics_json = metrics.to_json_dict()
+        if result.cash_dividend_accounting is not None:
+            metrics_json["cash_dividend_accounting"] = result.cash_dividend_accounting
         if selection.simulation_validation_binding is not None:
             metrics_json["simulation_validation_binding"] = (
                 selection.simulation_validation_binding
@@ -447,41 +472,18 @@ class RestrictedFormulaBacktestAdapter:
             **research_friction_assumptions(),
             "commission_model_reference": selection.cost_model_reference,
         }
-        metrics_json["cost_sensitivity"] = []
-        for bps in RESEARCH_COST_STRESS_BPS:
-            stress_strategy = _FormulaSignalStrategy(
-                formula_ast,
-                len(instruments),
-                allocation_slots=allocation_slots,
-                portfolio_policy_id=selection.portfolio_policy_id,
-            )
-            stressed_engine = BacktestEngine(
-                strategy=stress_strategy,
-                instruments=instruments,
-                data_handlers=handlers,
-                initial_cash=Decimal(str(selection.initial_cash)),
-                execution_config=research_execution_config(
-                    commission_calc, slippage_bps=bps
-                ),
-            )
-            stress_strategy.bind_portfolio_engine(
-                stressed_engine,
-                handlers,
-                entry_board_policy=entry_board_policy,
-                slippage_bps=Decimal(str(bps)),
-                minimum_history_rows=(selection.deployment_scope or {})
-                .get("universe_policy", {})
-                .get("minimum_history_rows", 60),
-            )
-            stressed = stressed_engine.run()
-            metrics_json["cost_sensitivity"].append(
-                {
-                    **research_friction_assumptions(bps),
-                    "total_return": float(stressed.total_return),
-                    "max_drawdown": stressed.metrics.max_drawdown,
-                    "fill_count": len(stressed.fills),
-                }
-            )
+        metrics_json["cost_sensitivity"] = _run_cost_stress_scenarios(
+            formula_ast=formula_ast,
+            instruments=instruments,
+            handlers=handlers,
+            selection=selection,
+            allocation_slots=allocation_slots,
+            commission_calc=commission_calc,
+            entry_board_policy=entry_board_policy,
+            session_memberships=session_memberships,
+            session_nontrading_instruments=session_nontrading_instruments,
+            distributions=distributions,
+        )
         min_train_points, test_window_points, step_points = rolling_oos_parameters(
             len(result.equity_curve)
         )
@@ -504,7 +506,12 @@ class RestrictedFormulaBacktestAdapter:
                 initial_cash=Decimal(str(selection.initial_cash)),
                 commission_calc=commission_calc,
                 portfolio_policy_id=selection.portfolio_policy_id,
+                allocation_slots=allocation_slots,
                 entry_board_policy=entry_board_policy,
+                session_memberships=session_memberships,
+                session_nontrading_instruments=session_nontrading_instruments,
+                distributions=distributions,
+                strict_event_errors=bool(selection.deployment_scope),
                 minimum_history_rows=(selection.deployment_scope or {})
                 .get("universe_policy", {})
                 .get("minimum_history_rows", 60),
@@ -585,7 +592,7 @@ class RestrictedFormulaBacktestAdapter:
                     build_normalized_research_operation_preview(
                         formula_ast=formula_ast,
                         frames={
-                            str(symbol): handler._df.copy()
+                            str(symbol): handler._df
                             for symbol, handler in handlers.items()
                         },
                         dataset_snapshot_id=selection.dataset_snapshot_id,
@@ -677,6 +684,7 @@ class RestrictedFormulaBacktestAdapter:
         )
         return snapshot
 
+    @daily_bar_dataset_read_scope(join_existing=True)
     def run_sealed(
         self,
         *,
@@ -857,35 +865,12 @@ class RestrictedFormulaBacktestAdapter:
         session_nontrading_instruments = None
         distributions = None
         if evaluation_dataset_snapshot is not None:
-            from backtest.distributions import distributions_from_evidence
-            from data.dataset.model import DatasetRef
-            from data.dataset.reader import (
-                dataset_session_nontrading_instruments,
-                read_daily_bar_dataset,
-            )
-            from data.storage.objects import ContentAddressedObjectStore
-
-            root = self._research_root
-            objects = ContentAddressedObjectStore(root / "objects")
-            restored = read_daily_bar_dataset(
-                objects,
-                DatasetRef(
-                    objects.resolve_ref(
-                        evaluation_dataset_snapshot["immutable_dataset_id"]
-                    )
-                ),
-            )
-            session_memberships = lambda day: [
-                key.symbol for key in restored.snapshot.instruments_for_session(day)
-            ]
-            nontrading = dataset_session_nontrading_instruments(
-                objects, restored.snapshot
-            )
-            session_nontrading_instruments = lambda day: [
-                key.symbol for key in nontrading.get(day, ())
-            ]
-            distributions = distributions_from_evidence(
-                restored.corporate_action_evidence, include_shares=True
+            session_memberships, session_nontrading_instruments, distributions = (
+                _bound_formula_portfolio_inputs(
+                    self._research_root,
+                    evaluation_dataset_snapshot,
+                    require_distributions=True,
+                )
             )
         if selection.portfolio_policy_id:
             from domain.instrument import make_research_stock
@@ -905,7 +890,10 @@ class RestrictedFormulaBacktestAdapter:
             data_handlers=handlers,
             initial_cash=initial_cash_override or Decimal(str(selection.initial_cash)),
             commission_calc=commission_calc,
-            execution_config=research_execution_config(commission_calc),
+            execution_config=research_execution_config(
+                commission_calc,
+                stream_sorted_data_handlers=bool(selection.deployment_scope),
+            ),
             db=None,
             evaluation_start=date.fromisoformat(selection.end_date) + timedelta(days=1),
             warmup_final_bar_targets=True,
@@ -924,9 +912,120 @@ class RestrictedFormulaBacktestAdapter:
             .get("minimum_history_rows", 60),
         )
         result = engine.run()
+        formula_strategy._prepared_sessions = None
+        del engine
         result.dataset_snapshot = snapshot
         result.portfolio_observations = formula_strategy.session_books
         return result
+
+
+def _bound_formula_portfolio_inputs(
+    root: Path,
+    snapshot: Mapping[str, Any],
+    *,
+    require_distributions: bool = False,
+) -> tuple[
+    Callable[[date], list[str]],
+    Callable[[date], list[str]],
+    tuple[StockDistribution, ...] | None,
+]:
+    """Replay the frozen Dataset's entry scope, status proof and distributions."""
+    from data.dataset.model import DatasetRef
+    from data.dataset.reader import (
+        dataset_session_nontrading_instruments,
+        read_daily_bar_dataset,
+    )
+    from data.storage.objects import ContentAddressedObjectStore
+
+    objects = ContentAddressedObjectStore(root / "objects")
+    restored = read_daily_bar_dataset(
+        objects, DatasetRef(objects.resolve_ref(snapshot["immutable_dataset_id"]))
+    )
+    memberships = {
+        item.partition_date: [key.symbol for key in item.instruments]
+        for item in restored.snapshot.session_memberships
+    }
+
+    def session_memberships(day: date) -> list[str]:
+        if not memberships:
+            return [key.symbol for key in restored.snapshot.instruments]
+        if day not in memberships:
+            raise ValueError("dataset_session_membership_missing")
+        return memberships[day]
+
+    nontrading = dataset_session_nontrading_instruments(objects, restored.snapshot)
+    distributions = (
+        distributions_from_evidence(
+            restored.corporate_action_evidence, include_shares=True
+        )
+        if restored.corporate_action_evidence is not None or require_distributions
+        else None
+    )
+    return (
+        session_memberships,
+        lambda day: [key.symbol for key in nontrading.get(day, ())],
+        distributions,
+    )
+
+
+def _run_cost_stress_scenarios(
+    *,
+    formula_ast: Mapping[str, Any],
+    instruments: Mapping[Symbol, Any],
+    handlers: Mapping[Symbol, DataHandler],
+    selection: StrategyResearchSelection,
+    allocation_slots: int,
+    commission_calc: Any | None,
+    entry_board_policy: Mapping[str, Any] | None,
+    session_memberships: Callable[[date], list[str]] | None,
+    session_nontrading_instruments: Callable[[date], list[str]] | None,
+    distributions: tuple[StockDistribution, ...] | None,
+) -> list[dict[str, Any]]:
+    sensitivity: list[dict[str, Any]] = []
+    for bps in RESEARCH_COST_STRESS_BPS:
+        stress_strategy = _FormulaSignalStrategy(
+            formula_ast,
+            len(instruments),
+            allocation_slots=allocation_slots,
+            portfolio_policy_id=selection.portfolio_policy_id,
+        )
+        stressed_engine = BacktestEngine(
+            strategy=stress_strategy,
+            instruments=instruments,
+            data_handlers=handlers,
+            initial_cash=Decimal(str(selection.initial_cash)),
+            execution_config=research_execution_config(
+                commission_calc,
+                slippage_bps=bps,
+                stream_sorted_data_handlers=bool(selection.deployment_scope),
+            ),
+            cash_dividends=distributions,
+            include_share_distributions=distributions is not None,
+            strict_event_errors=bool(selection.deployment_scope),
+        )
+        stress_strategy.bind_portfolio_engine(
+            stressed_engine,
+            handlers,
+            entry_board_policy=entry_board_policy,
+            slippage_bps=Decimal(str(bps)),
+            session_memberships=session_memberships,
+            session_nontrading_instruments=session_nontrading_instruments,
+            minimum_history_rows=(selection.deployment_scope or {})
+            .get("universe_policy", {})
+            .get("minimum_history_rows", 60),
+        )
+        stressed = stressed_engine.run()
+        stress_strategy._prepared_sessions = None
+        del stressed_engine, stress_strategy
+        sensitivity.append(
+            {
+                **research_friction_assumptions(bps),
+                "total_return": float(stressed.total_return),
+                "max_drawdown": stressed.metrics.max_drawdown,
+                "fill_count": len(stressed.fills),
+            }
+        )
+    return sensitivity
 
 
 def _formula_parameter_robustness(
@@ -940,8 +1039,13 @@ def _formula_parameter_robustness(
     initial_cash: Decimal,
     commission_calc: Any | None,
     portfolio_policy_id: str | None = None,
+    allocation_slots: int = 4,
     minimum_history_rows: int = 60,
     entry_board_policy: Mapping[str, Any] | None = None,
+    session_memberships: Callable[[date], list[str]] | None = None,
+    session_nontrading_instruments: Callable[[date], list[str]] | None = None,
+    distributions: tuple[StockDistribution, ...] | None = None,
+    strict_event_errors: bool = False,
 ) -> tuple[dict[str, Any], str | None]:
     try:
         variants = build_formula_parameter_variants(
@@ -968,7 +1072,7 @@ def _formula_parameter_robustness(
             variant_strategy = _FormulaSignalStrategy(
                 variant.formula_ast,
                 len(instruments),
-                allocation_slots=4,
+                allocation_slots=allocation_slots,
                 portfolio_policy_id=portfolio_policy_id,
             )
             variant_engine = BacktestEngine(
@@ -977,16 +1081,26 @@ def _formula_parameter_robustness(
                 data_handlers=handlers,
                 initial_cash=initial_cash,
                 commission_calc=commission_calc,
-                execution_config=research_execution_config(commission_calc),
+                execution_config=research_execution_config(
+                    commission_calc,
+                    stream_sorted_data_handlers=bool(portfolio_policy_id),
+                ),
                 db=None,
+                cash_dividends=distributions,
+                include_share_distributions=distributions is not None,
+                strict_event_errors=strict_event_errors,
             )
             variant_strategy.bind_portfolio_engine(
                 variant_engine,
                 handlers,
                 minimum_history_rows=minimum_history_rows,
                 entry_board_policy=entry_board_policy,
+                session_memberships=session_memberships,
+                session_nontrading_instruments=session_nontrading_instruments,
             )
             variant_result = variant_engine.run()
+            variant_strategy._prepared_sessions = None
+            del variant_engine, variant_strategy
         results.append(
             {
                 "params": dict(variant.params),

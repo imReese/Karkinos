@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -12,6 +13,9 @@ from core.types import BarFrequency
 from server.ai_runtime.contracts import JsonObject, content_fingerprint
 from server.ai_runtime.formula_dsl import (
     is_operator_approved_cost_model_reference,
+)
+from server.ai_runtime.formula_parameter_sweep import (
+    FORMULA_PARAMETER_SWEEP_MAX_VARIANTS,
 )
 from server.contracts.normalized_strategy_research import (
     CANONICAL_COST_MODEL_REFERENCE,
@@ -28,6 +32,7 @@ STRATEGY_RESEARCH_ITERATION_CONTEXT_CONTRACT = (
     "karkinos.ai.strategy_iteration_context.v1"
 )
 STRATEGY_RESEARCH_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v18"
+LOCAL_HYPOTHESIS_ADMISSION_VERSION = "karkinos.ai.local_hypothesis_admission.v1"
 SANITIZED_ACCOUNT_EVIDENCE_CONTRACT = "karkinos.ai.sanitized_account_risk_evidence.v1"
 
 
@@ -54,6 +59,9 @@ def validate_simulation_notional_binding(value: Any) -> dict[str, Any]:
 HYPOTHESIS_EXPORT_CONFIRMATION = (
     "send_selected_sanitized_strategy_research_evidence_to_configured_external_"
     "model_without_trade_authority"
+)
+LOCAL_HYPOTHESIS_ADMISSION_CONFIRMATION = (
+    "admit_conversation_authored_hypotheses_for_local_research_without_trade_authority"
 )
 BACKTEST_CONFIRMATION = (
     "run_selected_validated_formula_with_canonical_backtest_without_trade_authority"
@@ -332,6 +340,158 @@ class HypothesisGenerationRequest:
         if self.research_task_id is not None:
             payload["research_task_id"] = self.research_task_id
         return content_fingerprint(payload)
+
+
+def validate_prior_diagnostic_exposure(value: Any) -> None:
+    """Validate a conservative search disclosure, never a performance result."""
+    required = {
+        "artifact_fingerprint",
+        "source_code_sha",
+        "observed_at",
+        "universe",
+        "start_date",
+        "end_date",
+        "frequency",
+        "cost_model_reference",
+        "observed_trial_count",
+        "provenance",
+    }
+    if not isinstance(value, dict) or set(value) != required:
+        raise StrategyResearchRejected("prior_diagnostic_exposure_invalid")
+    if (
+        not re.fullmatch(r"sha256:[0-9a-f]{64}", str(value["artifact_fingerprint"]))
+        or not re.fullmatch(
+            r"(?:[0-9a-f]{40}|[0-9a-f]{64})", str(value["source_code_sha"])
+        )
+        or not isinstance(value["universe"], list)
+        or not value["universe"]
+        or any(
+            not isinstance(item, str) or not item.strip() for item in value["universe"]
+        )
+        or len(value["universe"]) != len(set(value["universe"]))
+        or value["frequency"] != BarFrequency.DAILY.value
+        or not is_operator_approved_cost_model_reference(value["cost_model_reference"])
+        or type(value["observed_trial_count"]) is not int
+        or not 1
+        <= value["observed_trial_count"]
+        <= FORMULA_PARAMETER_SWEEP_MAX_VARIANTS
+    ):
+        raise StrategyResearchRejected("prior_diagnostic_exposure_invalid")
+    try:
+        observed = datetime.fromisoformat(value["observed_at"])
+        start = date.fromisoformat(value["start_date"])
+        end = date.fromisoformat(value["end_date"])
+        if observed.utcoffset() is None or start > end:
+            raise ValueError
+    except (TypeError, ValueError) as exc:
+        raise StrategyResearchRejected(
+            "prior_diagnostic_exposure_time_invalid"
+        ) from exc
+    provenance = value["provenance"]
+    if (
+        not isinstance(provenance, dict)
+        or set(provenance)
+        != {"generator", "model_id", "disposition", "external_provider_api_called"}
+        or any(
+            not isinstance(provenance[key], str) or not provenance[key].strip()
+            for key in ("generator", "model_id", "disposition")
+        )
+        or type(provenance["external_provider_api_called"]) is not bool
+    ):
+        raise StrategyResearchRejected("prior_diagnostic_exposure_provenance_invalid")
+
+
+@dataclass(frozen=True)
+class LocalHypothesisAdmissionRequest:
+    """Admit caller-authored structured output; never assert a model invocation."""
+
+    idempotency_key: str
+    requested_by: str
+    account_alias: str
+    research_question: str
+    selection: StrategyResearchSelection
+    confirmation: str
+    artifact: JsonObject
+    source_conversation_id: str
+    source_model_id: str
+    source_authored_at: str | None = None
+    prior_diagnostic_exposures: tuple[JsonObject, ...] = ()
+    iteration_context: JsonObject | None = None
+    research_task_id: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in (
+            "idempotency_key",
+            "requested_by",
+            "account_alias",
+            "research_question",
+            "source_conversation_id",
+            "source_model_id",
+        ):
+            if (
+                not isinstance(getattr(self, name), str)
+                or not getattr(self, name).strip()
+            ):
+                raise StrategyResearchRejected(f"{name}_required")
+        if self.confirmation != LOCAL_HYPOTHESIS_ADMISSION_CONFIRMATION:
+            raise PermissionError(
+                "local hypothesis admission requires local import authorization"
+            )
+        if self.research_task_id is not None and not self.research_task_id.strip():
+            raise StrategyResearchRejected("research_task_id_required")
+        if self.selection.has_account_binding:
+            raise StrategyResearchRejected(
+                "local_admission_requires_strategy_only_selection"
+            )
+        if not isinstance(self.artifact, dict):
+            raise StrategyResearchRejected("local_hypothesis_artifact_invalid")
+        if self.source_authored_at is not None:
+            try:
+                if datetime.fromisoformat(self.source_authored_at).utcoffset() is None:
+                    raise ValueError
+            except (TypeError, ValueError) as exc:
+                raise StrategyResearchRejected(
+                    "local_hypothesis_source_time_invalid"
+                ) from exc
+        if len(self.prior_diagnostic_exposures) > STRATEGY_RESEARCH_MAX_CANDIDATES:
+            raise StrategyResearchRejected("prior_diagnostic_exposure_budget_exceeded")
+        for exposure in self.prior_diagnostic_exposures:
+            validate_prior_diagnostic_exposure(exposure)
+        validate_iteration_context(self.iteration_context)
+
+    @property
+    def source_provenance(self) -> JsonObject:
+        return {
+            "operation": "local_hypothesis_artifact_admission",
+            "source_conversation_id": self.source_conversation_id,
+            "source_model_id": self.source_model_id,
+            "model_identity_basis": "caller_declared",
+            "source_authored_at": self.source_authored_at,
+            "source_artifact_fingerprint": "sha256:"
+            + content_fingerprint(self.artifact),
+            "source_generation_context_verified": False,
+            "model_invocation_performed": False,
+            "external_provider_api_called": False,
+            "external_calls": 0,
+            "usage": None,
+            "admission_version": LOCAL_HYPOTHESIS_ADMISSION_VERSION,
+        }
+
+    @property
+    def fingerprint(self) -> str:
+        return content_fingerprint(
+            {
+                "requested_by": self.requested_by,
+                "account_alias": self.account_alias,
+                "research_question": self.research_question,
+                "selection": self.selection.to_dict(),
+                "confirmation": self.confirmation,
+                "source_provenance": self.source_provenance,
+                "prior_diagnostic_exposures": list(self.prior_diagnostic_exposures),
+                "iteration_context": self.iteration_context,
+                "research_task_id": self.research_task_id,
+            }
+        )
 
 
 @dataclass(frozen=True)

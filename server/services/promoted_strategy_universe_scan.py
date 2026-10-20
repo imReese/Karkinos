@@ -27,6 +27,7 @@ from server.services.promoted_strategy_universe_scan_persistence import (
 from server.services.promoted_strategy_universe_scan_support import (
     SIGNAL_SELECTION_POLICY,
     account_eligible_signals,
+    active_action_blockers,
     aggregate_ranked_signals,
     automation_safety_blockers,
     board_buy_blocker,
@@ -444,11 +445,14 @@ class PromotedStrategyUniverseScanService:
                 "completed_no_signal",
             }:
                 payload = json_object(existing.get("payload_json"))
-                if blockers:
+                active_blockers = active_action_blockers(
+                    blockers, payload.get("selected_signals") or []
+                )
+                if active_blockers:
                     payload = {
                         **payload,
                         "status": "blocked",
-                        "blockers": blockers,
+                        "blockers": active_blockers,
                         "action_tasks": [],
                         "normal_no_signal": False,
                         "finished_at": self._clock().isoformat(),
@@ -459,20 +463,21 @@ class PromotedStrategyUniverseScanService:
                     )
                 return {**payload, "run_id": run_id, "reused": True}
 
+        action_blockers = active_action_blockers(blockers, selected_signals)
         action_tasks: list[dict[str, Any]] = []
         if persist_actions:
             status = (
                 "blocked"
-                if blockers
+                if action_blockers
                 else ("completed" if selected_signals else "completed_no_signal")
             )
         else:
             status = (
                 "blocked"
-                if blockers
+                if action_blockers
                 else ("prepared" if selected_signals else "prepared_no_signal")
             )
-        if persist_actions and not blockers and selected_signals:
+        if persist_actions and not action_blockers and selected_signals:
 
             def current_authority_validator():
                 from server.services.account_board_permissions import (
@@ -586,13 +591,13 @@ class PromotedStrategyUniverseScanService:
                     "promoted_strategy_scan_authority_changed_before_persist"
                 ):
                     raise
-                blockers.append(str(exc))
+                action_blockers.append(str(exc))
                 status = "blocked"
         payload_core = {
             **input_core,
             "status": status,
             "input_fingerprint": input_fingerprint,
-            "blockers": blockers,
+            "blockers": action_blockers,
             "raw_signal_count": len(raw_signals),
             "raw_signals": raw_signals,
             "account_blocked_buys": account_blocked_buys,

@@ -8,8 +8,10 @@ from typing import Any
 from server.ai_runtime.contracts import JsonObject, canonical_json, content_fingerprint
 from server.ai_runtime.store import IdempotencyConflict
 from server.contracts.strategy_research import (
+    LOCAL_HYPOTHESIS_ADMISSION_VERSION,
     STRATEGY_RESEARCH_PROMPT_VERSION,
     HypothesisGenerationRequest,
+    LocalHypothesisAdmissionRequest,
 )
 from server.persistence.strategy_research_errors import StrategyResearchOperationalError
 
@@ -17,7 +19,7 @@ from server.persistence.strategy_research_errors import StrategyResearchOperatio
 class StrategyResearchSessionRepositoryMixin:
     def create_or_get_session(
         self,
-        request: HypothesisGenerationRequest,
+        request: HypothesisGenerationRequest | LocalHypothesisAdmissionRequest,
         *,
         created_at: str,
     ) -> tuple[dict[str, Any], bool]:
@@ -36,6 +38,13 @@ class StrategyResearchSessionRepositoryMixin:
         }
         if request.research_task_id is not None:
             request_payload["research_task_id"] = request.research_task_id
+        prompt_version = STRATEGY_RESEARCH_PROMPT_VERSION
+        if isinstance(request, LocalHypothesisAdmissionRequest):
+            request_payload["source_provenance"] = request.source_provenance
+            request_payload["prior_diagnostic_exposures"] = list(
+                request.prior_diagnostic_exposures
+            )
+            prompt_version = LOCAL_HYPOTHESIS_ADMISSION_VERSION
         request_json = canonical_json(request_payload)
         with self._connect(immediate=True) as conn:
             existing = conn.execute(
@@ -60,7 +69,7 @@ class StrategyResearchSessionRepositoryMixin:
                     request.fingerprint,
                     request_json,
                     request.selection.fingerprint,
-                    STRATEGY_RESEARCH_PROMPT_VERSION,
+                    prompt_version,
                     created_at,
                     created_at,
                 ),

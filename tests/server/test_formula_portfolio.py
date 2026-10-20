@@ -108,6 +108,84 @@ def test_missing_today_held_is_carried_at_last_known_price_and_consumes_slot():
         )
 
 
+@pytest.mark.parametrize("held", [False, True])
+def test_current_session_ignores_later_prices_and_exit_observations(held):
+    history = frame(["2026-09-17", "2026-09-18", "2026-09-21"])
+    history.loc[2, "close"] = 999
+    data = prepared({"600000": history})
+    data["600000"].loc[date(2026, 9, 21), "exit"] = True
+    kwargs = dict(
+        decision_session=date(2026, 9, 18),
+        quantities={"600000": Decimal(100)} if held else {},
+        cash=Decimal(9000),
+        equity=Decimal(10000),
+        instruments={Symbol("600000"): make_stock("600000", "fixture")},
+        minimum_history_rows=2,
+    )
+    result = formula_session_targets(prepared=data, **kwargs)
+    known = {"600000": data["600000"].iloc[:2]}
+    assert result == formula_session_targets(prepared=known, **kwargs)
+    assert result["exit_symbols"] == []
+    assert result["forecasts"] == [
+        {
+            "symbol": "600000",
+            "action": "hold" if held else "enter",
+            "reference_close": "10",
+            "observation_session": "2026-09-18",
+            "data_available": True,
+        }
+    ]
+
+
+@pytest.mark.parametrize("nontrading", [None, [], ["600000"]])
+def test_missing_held_session_uses_only_prior_history_and_keeps_valuation_policy(
+    nontrading,
+):
+    history = frame(["2026-09-17", "2026-09-21"])
+    history.loc[1, "close"] = 999
+    data = prepared({"600000": history})
+    kwargs = dict(
+        prepared=data,
+        decision_session=date(2026, 9, 18),
+        quantities={"600000": Decimal(100)},
+        cash=Decimal(9000),
+        equity=Decimal(10000),
+        instruments={Symbol("600000"): make_stock("600000", "fixture")},
+        minimum_history_rows=2,
+        nontrading_symbols=nontrading,
+    )
+    if nontrading == []:
+        with pytest.raises(
+            ValueError, match="formula_session_holding_valuation_missing:600000"
+        ):
+            formula_session_targets(**kwargs)
+        return
+    result = formula_session_targets(**kwargs)
+    assert result["target_weights"] == {"600000": Decimal("0.1")}
+    forecast = result["forecasts"][0]
+    assert forecast["reference_close"] == "10"
+    assert forecast["observation_session"] == "2026-09-17"
+    assert forecast["data_available"] is False
+    assert forecast.get("valuation_basis") == (
+        "last_observed_close_bound_nontrading" if nontrading else None
+    )
+
+
+def test_future_only_held_history_preserves_missing_observation_error():
+    data = prepared({"600000": frame(["2026-09-21"])})
+    with pytest.raises(ValueError, match="formula_session_observation_missing:600000"):
+        formula_session_targets(
+            prepared=data,
+            decision_session=date(2026, 9, 18),
+            quantities={"600000": Decimal(100)},
+            cash=Decimal(9000),
+            equity=Decimal(10000),
+            instruments={Symbol("600000"): make_stock("600000", "fixture")},
+            minimum_history_rows=2,
+            nontrading_symbols=[],
+        )
+
+
 def test_account_entry_mask_preserves_full_forecasts_and_allows_maintenance_exit():
     from server.services.account_board_permissions import freeze_entry_board_policy
 

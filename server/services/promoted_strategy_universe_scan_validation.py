@@ -14,6 +14,7 @@ from server.services.market_universe_truth import (
 )
 from server.services.promoted_strategy_universe_scan_support import (
     account_eligible_signals,
+    active_action_blockers,
     aggregate_ranked_signals,
     automation_safety_blockers,
     cash_buffer_ratio,
@@ -227,10 +228,14 @@ def current_scan_input_blockers(
             held_stock_symbols=held_symbols,
             policy=policy,
         )
-        blockers.extend(
-            f"promoted_strategy_scan_current_truth:{item}" for item in truth_blockers
+        relevant_truth_blockers = active_action_blockers(
+            truth_blockers, scan.get("selected_signals") or []
         )
-        if not truth_blockers:
+        blockers.extend(
+            f"promoted_strategy_scan_current_truth:{item}"
+            for item in relevant_truth_blockers
+        )
+        if not relevant_truth_blockers:
             if any(
                 truths.get(strategy_id, {}).get("evidence_fingerprint")
                 != stored_by_id.get(strategy_id, {}).get("universe_truth_fingerprint")

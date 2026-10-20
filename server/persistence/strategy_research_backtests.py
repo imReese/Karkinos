@@ -6,7 +6,10 @@ from typing import Any
 
 from server.ai_runtime.contracts import JsonObject, content_fingerprint
 from server.ai_runtime.store import IdempotencyConflict
-from server.contracts.strategy_research import FormulaBacktestRequest
+from server.contracts.strategy_research import (
+    FormulaBacktestRequest,
+    validate_prior_diagnostic_exposure,
+)
 
 
 class StrategyResearchBacktestRepositoryMixin:
@@ -126,6 +129,7 @@ class StrategyResearchBacktestRepositoryMixin:
         windows enter the nominal family; this does not claim independence.
         """
         import json
+        from datetime import datetime
 
         from server.ai_runtime.formula_parameter_sweep import (
             build_formula_parameter_variants,
@@ -161,8 +165,70 @@ class StrategyResearchBacktestRepositoryMixin:
                 "LEFT JOIN backtest_results r ON r.id=b.canonical_backtest_result_id "
                 "ORDER BY b.created_at, b.backtest_run_id"
             ).fetchall()
+            diagnostic_sessions = conn.execute(
+                "SELECT request_json FROM ai_strategy_research_sessions"
+            ).fetchall()
         trials: set[str] = set()
-        sources = []
+        sources: list[JsonObject] = []
+        diagnostic_sources: dict[str, JsonObject] = {}
+        for session in diagnostic_sessions:
+            request = json.loads(session["request_json"])
+            for exposure in request.get("prior_diagnostic_exposures", []):
+                validate_prior_diagnostic_exposure(exposure)
+                observed_at = datetime.fromisoformat(exposure["observed_at"])
+                overlap = bool(set(exposure["universe"]) & set(selection.universe))
+                if (
+                    selection.has_sealed_holdout
+                    and overlap
+                    and (
+                        not exposure_cutoff
+                        or observed_at <= datetime.fromisoformat(exposure_cutoff)
+                    )
+                    and exposure["start_date"] <= selection.sealed_end_date
+                    and exposure["end_date"] > selection.end_date
+                ):
+                    raise StrategyResearchRejected("sealed_window_exposed_to_research")
+                if (
+                    not overlap
+                    or exposure["frequency"] != selection.frequency
+                    or exposure["cost_model_reference"]
+                    != selection.cost_model_reference
+                    or exposure["start_date"] > selection.end_date
+                    or exposure["end_date"] < selection.start_date
+                    or exposure["end_date"] > selection.end_date
+                    or (
+                        trial_cutoff
+                        and observed_at > datetime.fromisoformat(trial_cutoff)
+                    )
+                ):
+                    continue
+                # These are disclosed score exposures, not canonical results.
+                # Artifact/ordinal identities deliberately cannot deduplicate away
+                # an existing scored trial. Repeated disclosures count once;
+                # larger disclosures of the same artifact can only add trials.
+                artifact_fingerprint = exposure["artifact_fingerprint"]
+                for ordinal in range(exposure["observed_trial_count"]):
+                    trials.add(
+                        content_fingerprint(
+                            {
+                                "diagnostic_artifact_fingerprint": artifact_fingerprint,
+                                "conservative_exposure_ordinal": ordinal,
+                            }
+                        )
+                    )
+                prior = diagnostic_sources.get(artifact_fingerprint)
+                if prior is None or (
+                    prior["observed_trial_count"],
+                    prior["source_fingerprint"],
+                ) < (exposure["observed_trial_count"], content_fingerprint(exposure)):
+                    diagnostic_sources[artifact_fingerprint] = {
+                        "source_kind": "declared_prior_diagnostic_exposure",
+                        "artifact_fingerprint": artifact_fingerprint,
+                        "observed_trial_count": exposure["observed_trial_count"],
+                        "source_fingerprint": content_fingerprint(exposure),
+                        "canonical_performance_admitted": False,
+                    }
+        sources.extend(diagnostic_sources[key] for key in sorted(diagnostic_sources))
         for raw in rows:
             row = dict(raw)
             selected = json.loads(row["request_json"]).get("selection", {})

@@ -6,10 +6,11 @@ import logging
 import uuid
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
+from heapq import merge
 from itertools import groupby
-from typing import Literal
+from typing import Literal, cast
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -35,6 +36,7 @@ from core.events import (
     SignalEvent,
 )
 from core.types import ZERO, AssetClass, InstrumentType, OrderSide, OrderType, Symbol
+from data.handler import DataHandler
 from domain.a_share_limits import is_limit_down, is_limit_up, is_suspended
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
@@ -62,6 +64,8 @@ class BacktestExecutionConfig:
     ``observed`` rejects any bar whose availability is missing or later than
     its replay timestamp. It never shifts timestamps or assumes historical
     availability. ``historical_snapshot`` permits explicitly exploratory replay.
+    Streaming opts into distinct sorted DataHandlers whose frames stay private
+    and unchanged; every row still receives preflight before strategy initialization.
     """
 
     slippage_model: SlippageModel | None = None
@@ -70,18 +74,21 @@ class BacktestExecutionConfig:
     availability_mode: Literal["historical_snapshot", "observed"] = (
         "historical_snapshot"
     )
+    stream_sorted_data_handlers: bool = False
 
 
 def research_execution_config(
     commission_calc: CommissionCalculator | None = None,
     *,
     slippage_bps: Decimal = RESEARCH_SLIPPAGE_BPS,
+    stream_sorted_data_handlers: bool = False,
 ) -> BacktestExecutionConfig:
     """The same explicit friction assumption for automatic research consumers."""
     return BacktestExecutionConfig(
         commission_calc=commission_calc,
         slippage_model=PercentSlippage(slippage_bps / Decimal("10000")),
         max_volume_participation=RESEARCH_MAX_VOLUME_PARTICIPATION,
+        stream_sorted_data_handlers=stream_sorted_data_handlers,
     )
 
 
@@ -155,6 +162,13 @@ class BacktestEngine:
         )
         if self._availability_mode not in {"historical_snapshot", "observed"}:
             raise ValueError("backtest_availability_mode_unsupported")
+        self._stream_sorted_data_handlers = (
+            execution_config.stream_sorted_data_handlers
+            if execution_config is not None
+            else False
+        )
+        if type(self._stream_sorted_data_handlers) is not bool:
+            raise ValueError("backtest_streaming_data_handlers_flag_invalid")
         self._pending_signals: dict[Symbol, SignalEvent] = {}
         self._current_market_event: MarketEvent | None = None
         self._previous_close: dict[Symbol, Decimal] = {}
@@ -240,16 +254,22 @@ class BacktestEngine:
     def run(self) -> BacktestResult:
         """运行回测，返回 BacktestResult。"""
         # Validate availability before any strategy state can observe the input.
-        all_events = self._merge_streams()
+        events: Callable[[], Iterable[MarketEvent]]
+        if self._stream_sorted_data_handlers:
+            self._validate_sorted_data_handlers()
+            events = self._merge_sorted_data_handlers
+        else:
+            all_events = self._merge_streams()
+            events = lambda: iter(all_events)
         if self._warmup_final_bar_targets:
             self._warmup_target_timestamps = {
                 event.symbol: event.timestamp
-                for event in all_events
+                for event in events()
                 if self._session_date(event) < self.evaluation_start
             }
         if self._dividend_replay is not None:
             self._dividend_replay.validate_events(
-                all_events, observed=self._availability_mode == "observed"
+                events(), observed=self._availability_mode == "observed"
             )
         # 初始化策略
         symbols = list(self.instruments.keys())
@@ -258,7 +278,7 @@ class BacktestEngine:
             self.event_bus.drain()
 
         # 主循环
-        for current_date, session in groupby(all_events, key=self._session_date):
+        for current_date, session in groupby(events(), key=self._session_date):
             self._bar_filled_quantity.clear()
             session_events = list(session)
             self._warming_up = (
@@ -706,6 +726,53 @@ class BacktestEngine:
                 all_events.append(event)
         all_events.sort(key=lambda e: (e.timestamp, str(e.symbol)))
         return all_events
+
+    def _validate_sorted_data_handlers(self) -> None:
+        """Preflight every row before initialization without retaining events.
+
+        This opt-in path requires private, unchanged, repeatable DataHandlers.
+        Generic iterables retain the eager collect/sort path by default.
+        """
+        seen_handlers: set[int] = set()
+        reference_timestamp = None
+        for symbol, handler in self.data_handlers.items():
+            if (
+                type(handler) is not DataHandler
+                or handler._symbol != symbol
+                or id(handler) in seen_handlers
+            ):
+                raise ValueError("backtest_streaming_requires_distinct_data_handlers")
+            seen_handlers.add(id(handler))
+            previous = None
+            for event in handler._iter_replay_events():
+                if self._availability_mode == "observed":
+                    self._require_available_observation(event)
+                timestamp = event.timestamp
+                if not isinstance(timestamp, datetime) or pd.isna(timestamp):
+                    raise ValueError("backtest_streaming_timestamp_invalid")
+                try:
+                    if previous is not None and timestamp < previous:
+                        raise ValueError("backtest_streaming_data_handler_unsorted")
+                    if previous is None and reference_timestamp is not None:
+                        # Establish comparability across streams before on_init.
+                        _ = timestamp < reference_timestamp
+                except TypeError as exc:
+                    raise ValueError("backtest_streaming_timestamp_mismatch") from exc
+                previous = timestamp
+                if reference_timestamp is None:
+                    reference_timestamp = timestamp
+
+    def _merge_sorted_data_handlers(self) -> Iterable[MarketEvent]:
+        """A fresh resettable merge for each prepass and the execution pass."""
+        return merge(
+            # heapq's single-stream tail calls iter() again. A generator wrapper
+            # prevents DataHandler.__iter__ from resetting an active stream.
+            *(
+                (event for event in cast(DataHandler, handler)._iter_replay_events())
+                for handler in self.data_handlers.values()
+            ),
+            key=lambda event: (event.timestamp, str(event.symbol)),
+        )
 
     @staticmethod
     def _require_available_observation(event: MarketEvent) -> None:

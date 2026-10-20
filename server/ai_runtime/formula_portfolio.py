@@ -31,7 +31,9 @@ def prepare_formula_sessions(
             formula_ast, ordered, universe_size=universe_size
         )
         amount = pd.to_numeric(
-            ordered.get("amount", ordered["close"] * ordered["volume"]),
+            ordered["amount"]
+            if "amount" in ordered
+            else ordered["close"] * ordered["volume"],
             errors="coerce",
         )
         prepared[str(symbol)] = pd.DataFrame(
@@ -97,10 +99,16 @@ def formula_session_targets(
         observations = prepared.get(symbol)
         if observations is None:
             raise ValueError(f"formula_session_observation_missing:{symbol}")
-        available = observations.loc[observations.index <= decision_session]
-        if available.empty:
-            raise ValueError(f"formula_session_observation_missing:{symbol}")
         current_observation = decision_session in observations.index
+        if current_observation:
+            row = observations.loc[decision_session]
+            observation_session = decision_session
+        else:
+            available = observations.loc[observations.index <= decision_session]
+            if available.empty:
+                raise ValueError(f"formula_session_observation_missing:{symbol}")
+            row = available.iloc[-1]
+            observation_session = available.index[-1]
         if (
             symbol in held
             and not current_observation
@@ -108,7 +116,6 @@ def formula_session_targets(
             and symbol not in nontrading_symbols
         ):
             raise ValueError(f"formula_session_holding_valuation_missing:{symbol}")
-        row = available.iloc[-1]
         price = Decimal(str(row["close"]))
         instrument = instruments.get(Symbol(symbol))
         if instrument is None or not price.is_finite() or price <= 0:
@@ -140,7 +147,7 @@ def formula_session_targets(
                 "symbol": symbol,
                 "action": action,
                 "reference_close": str(price),
-                "observation_session": available.index[-1].isoformat(),
+                "observation_session": observation_session.isoformat(),
                 "data_available": current_observation,
                 **(
                     {"valuation_basis": "last_observed_close_bound_nontrading"}

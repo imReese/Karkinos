@@ -22,6 +22,7 @@ from analytics.sealed_holdout import (
     sealed_return_from_result,
 )
 from backtest.costs import research_friction_assumptions
+from core.types import InstrumentKey
 from server.ai_runtime.formula_challengers import (
     build_challenger_comparison,
     frozen_research_challengers,
@@ -1263,10 +1264,17 @@ def _deployment_assessment(
         ):
             blockers.append("deployment_dated_membership_unverified")
             continue
-        source_memberships = []
+        source_memberships: list[set[InstrumentKey]] = []
         source_count = 0
         for identity in membership.source_observation_ids:
             master = json.loads(objects.read_bytes(objects.resolve_ref(identity)))
+            if master.get("schema_version") not in {
+                "karkinos.market_universe_snapshot.v2",
+                "karkinos.market_universe_snapshot.v3",
+            }:
+                blockers.append("deployment_dated_membership_unverified")
+                source_memberships = []
+                break
             source_memberships.append(
                 set(
                     market_master_buy_instruments(
@@ -1275,6 +1283,8 @@ def _deployment_assessment(
                 )
             )
             source_count = max(source_count, len(master["members"]))
+        if not source_memberships:
+            continue
         if any(members != source_memberships[0] for members in source_memberships):
             blockers.append("deployment_membership_sources_conflict")
         expected_members = source_memberships[0]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sqlite3
+from dataclasses import replace
 from datetime import datetime, timedelta
 from decimal import Decimal
 from threading import Event, Lock
@@ -21,6 +22,7 @@ from core.types import (
 )
 from data.handler import DataHandler
 from data.store import DataStore
+from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
 from execution.commission import MultiAssetCommission, StockACommission
 from server.ai_runtime.capture import (
     CAPTURE_TOOL_BY_TYPE,
@@ -84,6 +86,11 @@ from server.ai_runtime.strategy_research_support import (
 from server.composition.strategy_research import (
     STRATEGY_RESEARCH_WORKFLOW_BUDGET,
     strategy_research_workflow_definition,
+)
+from server.contracts.strategy_research import (
+    LOCAL_HYPOTHESIS_ADMISSION_CONFIRMATION,
+    LOCAL_HYPOTHESIS_ADMISSION_VERSION,
+    LocalHypothesisAdmissionRequest,
 )
 
 NOW = "2026-07-15T01:00:00+00:00"
@@ -763,6 +770,374 @@ def _service(
         provider_send_admission=provider_send_admission,
     )
     return service, selection, transport, db_path
+
+
+def _local_admission_request(selection, **changes):
+    response = _hypothesis_response(selection, include_account_evidence=False)
+    artifact = json.loads(response.payload["choices"][0]["message"]["content"])
+    artifact["drafts"][0]["citations"] = ["cite_01", "cite_02", "cite_03"]
+    request = LocalHypothesisAdmissionRequest(
+        idempotency_key="local-candidate-2",
+        requested_by="human:reese",
+        account_alias="synthetic-research-only",
+        research_question="Admit a conversation-authored hypothesis for research.",
+        selection=selection,
+        confirmation=LOCAL_HYPOTHESIS_ADMISSION_CONFIRMATION,
+        artifact=artifact,
+        source_conversation_id="sanitized-conversation",
+        source_model_id="declared-fixture-model",
+        source_authored_at="2026-07-14T20:00:00+00:00",
+    )
+    return replace(request, **changes)
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_local_admission_without_provider_preserves_truthful_source_and_reuses_backtest(
+    tmp_path,
+):
+    service, selection, transport, db_path = _service(tmp_path, bind_account=False)
+    service._settings = None
+
+    def no_transport(**kwargs):
+        raise AssertionError("Local admission and backtesting must not call a model.")
+
+    transport.post_json = no_transport
+    request = _local_admission_request(selection)
+    result = await service.admit_local_hypotheses(request)
+    assert result["status"] == "completed"
+    assert result["binding_validity"] == "valid"
+    assert result["prompt_version"] == LOCAL_HYPOTHESIS_ADMISSION_VERSION
+    assert result["provider_id"] == "codex_conversation"
+    draft = result["drafts"][0]
+    assert draft["validation"]["status"] == "valid"
+    assert draft["prompt_version"] == LOCAL_HYPOTHESIS_ADMISSION_VERSION
+    provenance = draft["provider_provenance"]
+    assert provenance["source_authored_at"] == request.source_authored_at
+    assert provenance["admitted_at"] == NOW
+    assert provenance["model_identity_basis"] == "caller_declared"
+    assert provenance["source_generation_context_verified"] is False
+    assert provenance["model_invocation_performed"] is False
+    assert provenance["external_calls"] == 0
+    assert provenance["external_provider_api_called"] is False
+    assert provenance["usage"] is None
+    assert result["reviews"] == []
+    assert result["authority_effect"] == "none"
+    with sqlite3.connect(db_path) as conn:
+        assert (
+            conn.execute(
+                "SELECT count(*) FROM ai_strategy_formula_backtests"
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            conn.execute(
+                "SELECT count(*) FROM ai_strategy_backtest_critiques"
+            ).fetchone()[0]
+            == 0
+        )
+        stage, role = conn.execute(
+            "SELECT stage_id,role_id FROM ai_agent_runs"
+        ).fetchone()
+        assert stage == "local_hypothesis_artifact_admission"
+        assert role == "local.strategy_hypothesis_artifact_admission.v1"
+    reused = await service.admit_local_hypotheses(request)
+    assert reused["session_id"] == result["session_id"]
+    assert reused["reused"] is True
+    changed = json.loads(json.dumps(request.artifact))
+    changed["drafts"][0]["economic_hypothesis"] = (
+        "A changed hypothesis is a different admission."
+    )
+    with pytest.raises(IdempotencyConflict):
+        await service.admit_local_hypotheses(replace(request, artifact=changed))
+    backtest = await service.run_formula_backtest(
+        FormulaBacktestRequest(
+            idempotency_key="local-candidate-2-backtest",
+            requested_by="human:reese",
+            session_id=result["session_id"],
+            draft_id=draft["draft_id"],
+            confirmation=BACKTEST_CONFIRMATION,
+        )
+    )
+    assert backtest["status"] == "completed"
+    assert backtest["canonical_backtest"]["result_id"] > 0
+    assert backtest["authority_effect"] == "none"
+    assert transport.calls == []
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_local_admission_snapshots_nested_caller_input_before_await(tmp_path):
+    service, selection, transport, db_path = _service(tmp_path, bind_account=False)
+    service._settings = None
+    family_selection = selection
+    scope_core = {
+        "universe_policy": {"policy_id": "sanitized-full-market-fixture"},
+        "portfolio_policy_id": FORMULA_PORTFOLIO_POLICY_ID,
+    }
+    selection = replace(
+        selection,
+        portfolio_policy_id=FORMULA_PORTFOLIO_POLICY_ID,
+        deployment_scope={
+            **scope_core,
+            "scope_kind": "full_declared_market",
+            "deployment_scope_fingerprint": "sha256:" + content_fingerprint(scope_core),
+        },
+    )
+    exposure = {
+        "artifact_fingerprint": "sha256:" + "d" * 64,
+        "source_code_sha": "e" * 40,
+        "observed_at": "2026-07-14T19:00:00+00:00",
+        "universe": ["600000", "600001"],
+        "start_date": "2025-01-02",
+        "end_date": "2025-01-08",
+        "frequency": "1d",
+        "cost_model_reference": selection.cost_model_reference,
+        "observed_trial_count": 9,
+        "provenance": {
+            "generator": "sanitized_conversation",
+            "model_id": "declared-fixture-model",
+            "disposition": "rejected",
+            "external_provider_api_called": False,
+        },
+    }
+    request = _local_admission_request(
+        selection, prior_diagnostic_exposures=(exposure,)
+    )
+    original_fingerprint = request.fingerprint
+    original_provenance = request.source_provenance
+    original_hypothesis = request.artifact["drafts"][0]["economic_hypothesis"]
+    started = asyncio.Event()
+    resume = asyncio.Event()
+    validate_selection = service._validate_saved_selection
+
+    async def suspended_validation(selected):
+        started.set()
+        await resume.wait()
+        return await validate_selection(selected)
+
+    service._validate_saved_selection = suspended_validation
+    pending = asyncio.create_task(service.admit_local_hypotheses(request))
+    await asyncio.wait_for(started.wait(), timeout=2)
+    request.artifact["drafts"][0]["economic_hypothesis"] = "Changed during validation."
+    request.artifact["drafts"][0]["formula_ast"]["entry"]["op"] = "future_price"
+    exposure["observed_trial_count"] = 1
+    exposure["observed_at"] = "2027-01-01T00:00:00+00:00"
+    exposure["provenance"]["disposition"] = "accepted"
+    selection.deployment_scope["universe_policy"]["policy_id"] = "mutated-during-await"
+    resume.set()
+    result = await asyncio.wait_for(pending, timeout=5)
+
+    assert result["status"] == "completed"
+    assert result["binding_validity"] == "valid"
+    draft = result["drafts"][0]
+    assert draft["validation"]["status"] == "valid"
+    assert draft["economic_hypothesis"] == original_hypothesis
+    assert (
+        draft["provider_provenance"]["source_artifact_fingerprint"]
+        == original_provenance["source_artifact_fingerprint"]
+    )
+    row = service._research_store.get_session(result["session_id"])
+    assert row["request_fingerprint"] == original_fingerprint
+    stored = json.loads(row["request_json"])
+    assert stored["source_provenance"] == original_provenance
+    assert (
+        stored["selection"]["deployment_scope"]["universe_policy"]["policy_id"]
+        == "sanitized-full-market-fixture"
+    )
+    saved_exposure = stored["prior_diagnostic_exposures"][0]
+    assert saved_exposure["observed_trial_count"] == 9
+    assert saved_exposure["observed_at"] == "2026-07-14T19:00:00+00:00"
+    assert saved_exposure["provenance"]["disposition"] == "rejected"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "CREATE TABLE backtest_results(id INTEGER PRIMARY KEY,metrics_json TEXT)"
+        )
+    assert (
+        service._research_store.research_trial_family(family_selection)[
+            "nominal_trial_count"
+        ]
+        == 9
+    )
+    assert transport.calls == []
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["citation", "formula", "future_source"])
+async def test_local_admission_reuses_fail_closed_citation_and_formula_validation(
+    tmp_path, failure
+):
+    service, selection, transport, _ = _service(tmp_path, bind_account=False)
+    service._settings = None
+    request = _local_admission_request(selection)
+    if failure == "citation":
+        request.artifact["drafts"][0]["citations"] = ["cite_unknown"]
+    elif failure == "future_source":
+        with pytest.raises(
+            StrategyResearchRejected, match="local_admission_source_time_in_future"
+        ):
+            await service.admit_local_hypotheses(
+                replace(request, source_authored_at="2026-07-16T20:00:00+00:00")
+            )
+        assert transport.calls == []
+        return
+    else:
+        request.artifact["drafts"][0]["formula_ast"]["entry"]["op"] = "future_price"
+    result = await service.admit_local_hypotheses(request)
+    assert transport.calls == []
+    if failure == "citation":
+        assert result["status"] == "failed"
+        assert result["drafts"] == []
+    else:
+        assert result["drafts"][0]["validation"]["status"] == "blocked"
+        with pytest.raises(
+            StrategyResearchRejected, match="hypothesis_draft_not_validated"
+        ):
+            await service.run_formula_backtest(
+                FormulaBacktestRequest(
+                    idempotency_key="invalid-local-backtest",
+                    requested_by="human:reese",
+                    session_id=result["session_id"],
+                    draft_id=result["drafts"][0]["draft_id"],
+                    confirmation=BACKTEST_CONFIRMATION,
+                )
+            )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_local_prior_diagnostic_disclosure_only_increases_trial_family_without_scores(
+    tmp_path,
+):
+    service, selection, _, db_path = _service(tmp_path, bind_account=False)
+    service._settings = None
+    # The normal FixtureDb keeps its results in memory; the family reader opens
+    # this same canonical table in production. A sentinel proves no score import.
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "CREATE TABLE backtest_results(id INTEGER PRIMARY KEY,metrics_json TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO backtest_results VALUES (17,?)", ('{"sentinel":"unchanged"}',)
+        )
+    request = _local_admission_request(selection)
+    unscored = await service.admit_local_hypotheses(request)
+    assert (
+        service._research_store.research_trial_family(selection)["nominal_trial_count"]
+        == 0
+    )
+    exposure = {
+        "artifact_fingerprint": "sha256:" + "d" * 64,
+        "source_code_sha": "e" * 40,
+        "observed_at": "2026-07-14T19:00:00+00:00",
+        "universe": ["600000", "600001"],
+        "start_date": "2025-01-02",
+        "end_date": "2025-01-08",
+        "frequency": "1d",
+        "cost_model_reference": selection.cost_model_reference,
+        "observed_trial_count": 9,
+        "provenance": {
+            "generator": "sanitized_conversation",
+            "model_id": "declared-fixture-model",
+            "disposition": "rejected",
+            "external_provider_api_called": False,
+        },
+    }
+    await service.admit_local_hypotheses(
+        replace(
+            request,
+            idempotency_key="local-with-prior-exposure",
+            prior_diagnostic_exposures=(exposure,),
+        )
+    )
+    family = service._research_store.research_trial_family(selection)
+    assert family["nominal_trial_count"] == 9
+    assert family["sources"][0]["source_kind"] == "declared_prior_diagnostic_exposure"
+    assert family["sources"][0]["canonical_performance_admitted"] is False
+    await service.admit_local_hypotheses(
+        replace(
+            request,
+            idempotency_key="duplicate-prior-exposure",
+            prior_diagnostic_exposures=({**exposure, "observed_trial_count": 3},),
+        )
+    )
+    assert service._research_store.research_trial_family(selection) == family
+    extended = replace(
+        selection,
+        universe=("600000", "600002"),
+        asset_classes=("stock", "stock"),
+        end_date="2025-02-01",
+    )
+    assert (
+        service._research_store.research_trial_family(extended)["nominal_trial_count"]
+        == 9
+    )
+    scope_core = {
+        "universe_policy": {"policy_id": "sanitized-full-market-fixture"},
+        "portfolio_policy_id": FORMULA_PORTFOLIO_POLICY_ID,
+    }
+    full_scope = replace(
+        extended,
+        portfolio_policy_id=FORMULA_PORTFOLIO_POLICY_ID,
+        deployment_scope={
+            **scope_core,
+            "scope_kind": "full_declared_market",
+            "deployment_scope_fingerprint": "sha256:" + content_fingerprint(scope_core),
+        },
+    )
+    assert (
+        service._research_store.research_trial_family(full_scope)["nominal_trial_count"]
+        == 9
+    )
+    with pytest.raises(
+        StrategyResearchRejected, match="sealed_window_exposed_to_research"
+    ):
+        service._research_store.research_trial_family(
+            replace(full_scope, end_date="2025-01-05", sealed_end_date="2025-01-10")
+        )
+    with sqlite3.connect(db_path) as conn:
+        assert (
+            conn.execute(
+                "SELECT count(*) FROM ai_strategy_formula_backtests"
+            ).fetchone()[0]
+            == 0
+        )
+        assert conn.execute("SELECT * FROM backtest_results").fetchall() == [
+            (17, '{"sentinel":"unchanged"}')
+        ]
+    with pytest.raises(
+        StrategyResearchRejected, match="prior_diagnostic_exposure_invalid"
+    ):
+        replace(
+            request, prior_diagnostic_exposures=({**exposure, "total_return": 1.0},)
+        )
+    backtest = await service.run_formula_backtest(
+        FormulaBacktestRequest(
+            idempotency_key="actual-local-backtest",
+            requested_by="human:reese",
+            session_id=unscored["session_id"],
+            draft_id=unscored["drafts"][0]["draft_id"],
+            confirmation=BACKTEST_CONFIRMATION,
+        )
+    )
+    result_id = backtest["canonical_backtest"]["result_id"]
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO backtest_results VALUES (?,?)",
+            (
+                result_id,
+                service._db.rows[result_id]["metrics_json"],
+            ),
+        )
+    assert (
+        service._research_store.research_trial_family(selection)["nominal_trial_count"]
+        > 9
+    )
 
 
 @pytest.mark.unit

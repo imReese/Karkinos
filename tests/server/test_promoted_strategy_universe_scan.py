@@ -1742,3 +1742,74 @@ def test_promoted_strategy_scan_succeeds_with_multi_source_daily_receipts(
     assert first["selected_signal_count"] == 5
     assert second["reused"] is True
     assert second["blockers"] == []
+
+
+def test_full_market_truth_incomplete_allows_held_stock_exit_while_blocking_buys(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    db, service, symbols = _service(tmp_path, produces_signals=True)
+    portfolio = {
+        "total_equity": 100_000,
+        "cash": 100_000,
+        "fact_authority": "persisted_valuation_snapshot",
+        "valuation_status": "complete",
+        "symbols": [symbols[0]],
+        "instrument_types": {symbols[0]: "stock"},
+        "valuation_snapshot_id": _valuation_id(db),
+    }
+
+    original_evaluate = service._evaluate_promoted_strategies
+
+    def evaluate_with_incomplete_market_truth(*args, **kwargs):
+        truths, raw_signals, blockers = original_evaluate(*args, **kwargs)
+        for strategy_id, truth in truths.items():
+            truth["status"] = "blocked"
+            truth["blockers"] = ["full_market_evidence_incomplete"]
+            truth["eligible_symbols"] = []
+        blockers = [
+            f"strategy_full_market_truth:{strategy_id}:full_market_evidence_incomplete"
+            for strategy_id in truths
+        ]
+        # Re-evaluate with empty eligible_symbols but preserved maintenance_symbols
+        re_truths, re_signals, _ = original_evaluate(*args, **kwargs)
+        # Sells from maintenance_symbols should be retained, buys suppressed
+        sells = [s for s in re_signals if s.get("direction") == "sell"]
+        return truths, sells, blockers
+
+    monkeypatch.setattr(
+        service,
+        "_evaluate_promoted_strategies",
+        evaluate_with_incomplete_market_truth,
+    )
+
+    result = service.run_once(decision_date="2026-08-24", portfolio_summary=portfolio)
+
+    assert result["status"] == "completed"
+    assert result["blockers"] == []
+    assert result["selected_signal_count"] == 1
+    assert result["selected_signals"][0]["symbol"] == symbols[0]
+    assert result["selected_signals"][0]["direction"] == "sell"
+    assert len(result["action_tasks"]) == 1
+    assert result["action_tasks"][0]["symbol"] == symbols[0]
+    assert result["action_tasks"][0]["direction"] == "sell"
+    assert result["full_market_truths"][0]["status"] == "blocked"
+    assert result["full_market_truths"][0]["blockers"] == [
+        "full_market_evidence_incomplete"
+    ]
+
+    # Verify that if no stocks are held, the scan fails closed as blocked
+    empty_portfolio = {
+        **portfolio,
+        "symbols": [],
+        "instrument_types": {},
+    }
+    blocked_result = service.run_once(
+        decision_date="2026-08-24", portfolio_summary=empty_portfolio
+    )
+    assert blocked_result["status"] == "blocked"
+    assert any(
+        "full_market_evidence_incomplete" in b for b in blocked_result["blockers"]
+    )
+    assert blocked_result["action_tasks"] == []
+    assert blocked_result["selected_signal_count"] == 0

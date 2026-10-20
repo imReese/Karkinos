@@ -73,9 +73,22 @@ def test_multi_asset_equity_uses_each_positions_own_mark_price() -> None:
                 slippage=Decimal("0"),
             )
         )
-    portfolio.mark_to_market({first: Decimal("11"), second: Decimal("23")})
+    close = datetime(2026, 8, 21, 15)
+    portfolio.mark_to_market({first: Decimal("11")})
+    portfolio.record_equity(close, {first: Decimal("11")})
+    portfolio.mark_to_market({second: Decimal("23")})
+    portfolio.record_equity(close, {second: Decimal("23")})
 
     assert portfolio._calculate_equity() == Decimal("101400")
+    assert portfolio.equity_curve == [(close, Decimal("101400"))]
+
+    next_close = datetime(2026, 8, 24, 15)
+    portfolio.mark_to_market({first: Decimal("12")})
+    portfolio.record_equity(next_close, {first: Decimal("12")})
+    assert portfolio.equity_curve == [
+        (close, Decimal("101400")),
+        (next_close, Decimal("101500")),
+    ]
 
 
 def test_dividend_receivable_preserves_equity_without_spendable_cash() -> None:

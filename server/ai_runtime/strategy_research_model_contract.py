@@ -42,6 +42,7 @@ def bind_and_validate_drafts(
     iteration_context: JsonObject | None,
     provider_id: str,
     model_id: str,
+    prompt_version: str = STRATEGY_RESEARCH_PROMPT_VERSION,
 ) -> list[JsonObject]:
     candidates = artifact.get("drafts")
     if not isinstance(candidates, list) or not 1 <= len(candidates) <= 3:
@@ -176,7 +177,7 @@ def bind_and_validate_drafts(
             "evidence_reference_id": evidence_reference_id,
             "provider_id": provider_id,
             "model_id": model_id,
-            "prompt_version": STRATEGY_RESEARCH_PROMPT_VERSION,
+            "prompt_version": prompt_version,
             "provider_provenance": artifact.get("provider_provenance") or {},
             "research_question": research_question,
             "iteration_context": json.loads(canonical_json(iteration_context or {})),

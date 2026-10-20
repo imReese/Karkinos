@@ -1,14 +1,16 @@
 import asyncio
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from threading import Event
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 
+from core.types import InstrumentKey, InstrumentType
 from data.market.capture import capture_provider_payload, read_provider_capture
 from data.market.ingestion import DailyBarIngestionCapturedFailure
+from data.source_policy import FREE_CN_RESEARCH_V1
 from data.storage.objects import ContentAddressedObjectStore
 from server.contracts.market_calendar import MarketCalendarAutomationPublication
 from server.db import AppDatabase
@@ -21,8 +23,11 @@ from server.persistence.market_daily_call_budget import (
     reserve_market_daily_provider_call,
 )
 from server.services.verified_daily_market_data import (
+    VERIFIED_DAILY_MARKET_RANGE_JOB_SCHEMA_VERSION,
     VerifiedDailyMarketDataNotPublishable,
+    VerifiedDailyMarketDataService,
     VerifiedDailyMarketDataUnavailable,
+    VerifiedDailyMarketJobRequest,
     VerifiedDailySourceResolution,
 )
 from server.workers.data_worker import (
@@ -37,6 +42,28 @@ from server.workers.data_worker import (
 )
 from server.workers.presence import run_with_presence
 from server.workers.supervisor import supervised_worker
+
+
+def _verified_market_payload(session_count=None):
+    instruments = tuple(
+        InstrumentKey(str(600000 + index), InstrumentType.STOCK)
+        for index in range(40 if session_count is not None else 1)
+    )
+    days = tuple(
+        date(2020, 1, 2) + timedelta(days=index) for index in range(session_count or 1)
+    )
+    refs = ("calendar:fixture",)
+    return VerifiedDailyMarketJobRequest(
+        trade_date=days[-1],
+        instruments=instruments,
+        source_policy_id=FREE_CN_RESEARCH_V1.policy_id,
+        calendar_evidence_refs=refs,
+        range_start_date=days[0] if session_count is not None else None,
+        range_end_date=days[-1] if session_count is not None else None,
+        session_memberships=tuple((day, instruments, refs) for day in days)
+        if session_count is not None
+        else (),
+    ).to_payload()
 
 
 @pytest.mark.asyncio
@@ -530,12 +557,18 @@ with supervised_worker(worker="data", enabled=True):
 
 
 @pytest.mark.asyncio
-async def test_verified_market_worker_finishes_with_dataset_result_ref(tmp_path):
+@pytest.mark.parametrize(
+    ("session_count", "expected_timeout"),
+    [(None, 180), (187, 180), (1643, 1260), (2000, 1440)],
+)
+async def test_verified_market_worker_finishes_with_dataset_result_ref(
+    tmp_path, monkeypatch, session_count, expected_timeout
+):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     store = SQLiteJobStore(db.path)
     now = datetime.now(timezone.utc)
-    payload = {"fixture": "matched"}
+    payload = _verified_market_payload(session_count)
     store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
     job = store.claim(VERIFIED_DAILY_MARKET_JOB, "worker", now=now)
 
@@ -553,6 +586,8 @@ async def test_verified_market_worker_finishes_with_dataset_result_ref(tmp_path)
         )()
 
     service.run.side_effect = run
+    wait = Mock(wraps=asyncio.wait)
+    monkeypatch.setattr("server.workers.data_worker.asyncio.wait", wait)
     await execute_verified_daily_market_job(
         store,
         job,
@@ -564,6 +599,37 @@ async def test_verified_market_worker_finishes_with_dataset_result_ref(tmp_path)
     assert observed == ["published"]
     assert result.status == "succeeded"
     assert result.result_ref == "dataset:sha256:" + "a" * 64
+    assert wait.call_args.kwargs["timeout"] == expected_timeout
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid_field", ["trade_date", "session_memberships", "source_policy_id"]
+)
+async def test_invalid_range_payload_keeps_durable_service_validation(
+    tmp_path, invalid_field
+):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = SQLiteJobStore(db.path)
+    now = datetime.now(timezone.utc)
+    payload = _verified_market_payload(2)
+    del payload[invalid_field]
+    assert payload["schema_version"] == VERIFIED_DAILY_MARKET_RANGE_JOB_SCHEMA_VERSION
+    store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
+    job = store.claim(VERIFIED_DAILY_MARKET_JOB, "worker", now=now)
+
+    await execute_verified_daily_market_job(
+        store,
+        job,
+        VerifiedDailyMarketDataService(tmp_path / "research", SimpleNamespace()),
+    )
+
+    result = store.get(job.job_id)
+    assert result.status == "queued"
+    assert result.error == "VerifiedDailyMarketDataRequestError"
+    assert result.result_ref is None
+    assert not (tmp_path / "research").exists()
 
 
 @pytest.mark.asyncio
@@ -879,16 +945,18 @@ async def test_verified_market_worker_retries_failed_publication(tmp_path):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["heartbeat", "timeout", "activation"])
+@pytest.mark.parametrize("session_count", [None, 1643])
 async def test_verified_market_worker_fences_publication_on_lost_authority(
     tmp_path,
     monkeypatch,
     failure,
+    session_count,
 ):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     store = SQLiteJobStore(db.path)
     now = datetime.now(timezone.utc)
-    payload = {"fixture": failure}
+    payload = _verified_market_payload(session_count)
     store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
     job = store.claim(VERIFIED_DAILY_MARKET_JOB, "worker", now=now)
 
@@ -896,26 +964,38 @@ async def test_verified_market_worker_fences_publication_on_lost_authority(
         "server.workers.data_worker.is_release_activation_guarded",
         lambda: failure == "activation",
     )
-    if failure == "heartbeat":
-        monkeypatch.setattr(
-            store,
-            "heartbeat",
-            Mock(side_effect=ValueError("job_lease_lost")),
-        )
+    heartbeat = (
+        Mock(side_effect=ValueError("job_lease_lost"))
+        if failure == "heartbeat"
+        else Mock(wraps=store.heartbeat)
+    )
+    monkeypatch.setattr(store, "heartbeat", heartbeat)
 
     blocked = Event()
+    finished = Event()
+    fenced: list[str] = []
+    published: list[str] = []
     service = Mock()
 
-    def run(request, *, before_publish):
-        if failure == "timeout":
+    def run(request, *, before_publish, publication_guard):
+        try:
             blocked.wait(5)
+            # Even a provider thread returning after the worker aborted cannot publish.
+            for check in (
+                before_publish,
+                lambda: publication_guard(lambda: published.append("dataset")),
+            ):
+                try:
+                    check()
+                except WorkerExecutionAborted as exc:
+                    fenced.append(str(exc))
             return type(
                 "Publication",
                 (),
                 {"result_ref": "dataset:sha256:" + "b" * 64},
             )()
-        before_publish()
-        pytest.fail("publication guard should have fenced this job")
+        finally:
+            finished.set()
 
     service.run.side_effect = run
     try:
@@ -926,9 +1006,20 @@ async def test_verified_market_worker_fences_publication_on_lost_authority(
                 service,
                 timeout=0.1,
                 heartbeat_interval=0.01,
+                publication_guard=lambda action: action(),
             )
     finally:
         blocked.set()
+        assert await asyncio.to_thread(finished.wait, 2)
+
+    assert len(fenced) == 2
+    assert published == []
+    if failure == "timeout":
+        assert heartbeat.call_count > 0
+    result = store.get(job.job_id)
+    assert result.status == "queued"
+    assert result.error == "WorkerExecutionAborted"
+    assert result.result_ref is None
 
 
 @pytest.mark.asyncio

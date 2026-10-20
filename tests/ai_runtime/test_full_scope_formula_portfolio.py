@@ -12,7 +12,7 @@ from server.ai_runtime.formula_dsl import FORMULA_AST_CONTRACT
 from server.ai_runtime.strategy_research_backtest import _FormulaSignalStrategy
 
 
-def _run(reverse=False):
+def _run(reverse=False, *, retain_session_decisions=True):
     names = [f"600{index:03d}" for index in range(81)]
     if reverse:
         names.reverse()
@@ -48,7 +48,10 @@ def _run(reverse=False):
         "position_size": {"op": "equal_weight"},
     }
     strategy = _FormulaSignalStrategy(
-        formula, len(names), portfolio_policy_id=FORMULA_PORTFOLIO_POLICY_ID
+        formula,
+        len(names),
+        portfolio_policy_id=FORMULA_PORTFOLIO_POLICY_ID,
+        retain_session_decisions=retain_session_decisions,
     )
     engine = BacktestEngine(
         strategy=strategy,
@@ -76,6 +79,23 @@ def test_more_than_40_symbols_use_global_ranking_actual_cash_and_later_fills():
     assert result.final_equity == reversed_result.final_equity
     assert all(Decimal(row["cash"]) >= 0 for row in strategy.session_books)
     assert all(len(row["position_values"]) <= 4 for row in strategy.session_books)
+    compact_result, compact_strategy = _run(retain_session_decisions=False)
+    assert compact_strategy.session_decisions == []
+    assert compact_strategy.session_books == strategy.session_books
+    assert compact_result.equity_curve == result.equity_curve
+    assert [
+        (fill.symbol, fill.side, fill.fill_quantity, fill.fill_price, fill.commission)
+        for fill in compact_result.fills
+    ] == [
+        (fill.symbol, fill.side, fill.fill_quantity, fill.fill_price, fill.commission)
+        for fill in result.fills
+    ]
+    assert compact_strategy.execution_evidence(
+        fill_count=len(compact_result.fills),
+        execution_timing=compact_result.execution_timing,
+    ) == strategy.execution_evidence(
+        fill_count=len(result.fills), execution_timing=result.execution_timing
+    )
 
 
 @pytest.mark.parametrize(
@@ -129,7 +149,10 @@ def test_actual_quantity_holds_until_exit_then_reentry_across_three_consumers(pr
     handler = DataHandler(frame, symbol, asset_class=AssetClass.STOCK)
     instruments = {symbol: make_research_stock(str(symbol), "fixture")}
     strategy = _FormulaSignalStrategy(
-        formula, 1, portfolio_policy_id=FORMULA_PORTFOLIO_POLICY_ID
+        formula,
+        1,
+        portfolio_policy_id=FORMULA_PORTFOLIO_POLICY_ID,
+        retain_session_decisions=True,
     )
     quantities = []
     engine = BacktestEngine(

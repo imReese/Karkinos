@@ -707,6 +707,9 @@ def _verify_immutable_dataset_replay(
 
     verified = 0
     blockers: list[str] = []
+    bars_by_instrument = {}
+    for bar in restored.bars:
+        bars_by_instrument.setdefault(bar.instrument.storage_tuple(), []).append(bar)
     for item in universe:
         symbol = str(item["symbol"])
         instrument_type = str(item["instrument_type"])
@@ -714,12 +717,7 @@ def _verify_immutable_dataset_replay(
         if frequency != "1d":
             blockers.append(f"dataset_replay_frequency_invalid:{symbol}:{frequency}")
             continue
-        bars = [
-            bar
-            for bar in restored.bars
-            if bar.instrument.symbol == symbol
-            and bar.instrument.instrument_type.value == instrument_type
-        ]
+        bars = bars_by_instrument.get((symbol, instrument_type), [])
         frame = pd.DataFrame(
             [
                 {

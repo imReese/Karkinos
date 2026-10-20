@@ -421,6 +421,31 @@ def _timing_engine(frame, *, strategy=None, execution_config=None):
     )
 
 
+def _canonical_replay_frame(frame):
+    frame = frame.copy()
+    for name in ("open", "high", "low", "close", "volume"):
+        frame[name] = frame[name].map(lambda value: Decimal(str(value)))
+    frame["amount"] = frame["close"] * frame["volume"]
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True)
+    frame["available_at"] = pd.to_datetime(
+        frame.get("available_at", frame["timestamp"]), utc=True
+    )
+    frame["captured_at"] = frame["available_at"]
+    return frame[
+        [
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "amount",
+            "available_at",
+            "captured_at",
+        ]
+    ]
+
+
 def test_pending_target_sizes_at_next_close_and_does_not_fill_at_next_open():
     frame = _timing_frame([10, 10.5])
     result = _timing_engine(frame).run()
@@ -649,15 +674,26 @@ def test_execution_time_risk_rejection_prevents_fill():
 
 
 @pytest.mark.parametrize("missing", [False, True])
-def test_observed_mode_rejects_unavailable_input_before_strategy_observes_it(missing):
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("canonical", [False, True])
+def test_observed_mode_rejects_unavailable_input_before_strategy_observes_it(
+    missing, streaming, canonical
+):
     strategy = FirstBarTargetStrategy()
     frame = _timing_frame([10, 10.5])
     if not missing:
         frame["available_at"] = frame["timestamp"] + pd.Timedelta(seconds=1)
+    if canonical:
+        frame = _canonical_replay_frame(frame)
+        if missing:
+            frame["available_at"] = pd.NaT
+            frame["available_at"] = pd.to_datetime(frame["available_at"], utc=True)
     engine = _timing_engine(
         frame,
         strategy=strategy,
-        execution_config=BacktestExecutionConfig(availability_mode="observed"),
+        execution_config=BacktestExecutionConfig(
+            availability_mode="observed", stream_sorted_data_handlers=streaming
+        ),
     )
     with pytest.raises(ValueError, match="backtest_observation_"):
         engine.run()
@@ -687,6 +723,218 @@ def test_historical_snapshot_mode_keeps_late_availability_explicit():
     assert engine.strategy.observed[0].available_at == frame.iloc[0]["available_at"]
     assert result.execution_timing["availability_mode"] == "historical_snapshot"
     assert result.execution_timing["historical_pit_verified"] is False
+
+
+@pytest.mark.parametrize("canonical", [False, True])
+def test_streamed_sorted_handlers_preserve_results_and_bound_live_market_events(
+    monkeypatch, canonical
+):
+    from weakref import WeakSet
+
+    original = DataHandler._values_to_event
+
+    def measured(streaming):
+        live = WeakSet()
+        peak = 0
+
+        def tracked(handler, ts, row):
+            nonlocal peak
+            event = original(handler, ts, row)
+            live.add(event)
+            peak = max(peak, len(live))
+            return event
+
+        monkeypatch.setattr(DataHandler, "_values_to_event", tracked)
+        symbols = [Symbol(f"60000{index}") for index in (2, 0, 1)]
+        handlers = {
+            symbol: DataHandler(
+                _canonical_replay_frame(_timing_frame([10 + index / 10] * 30))
+                if canonical
+                else _timing_frame([10 + index / 10] * 30),
+                symbol,
+            )
+            for index, symbol in enumerate(symbols)
+        }
+        engine = BacktestEngine(
+            SimpleBuyStrategy(EventBus()),
+            {symbol: make_stock(str(symbol), "fixture") for symbol in symbols},
+            handlers,
+            execution_config=BacktestExecutionConfig(
+                stream_sorted_data_handlers=streaming
+            ),
+        )
+        return engine.run(), peak
+
+    eager, eager_peak = measured(False)
+    streamed, streamed_peak = measured(True)
+    assert eager_peak == 90
+    assert streamed_peak < 15
+    assert streamed.equity_curve == eager.equity_curve
+    assert streamed.final_equity == eager.final_equity
+    assert streamed.cost_summary == eager.cost_summary
+    assert streamed.execution_timing == eager.execution_timing
+    assert [
+        (
+            fill.timestamp,
+            fill.symbol,
+            fill.side,
+            fill.fill_quantity,
+            fill.fill_price,
+            fill.commission,
+        )
+        for fill in streamed.fills
+    ] == [
+        (
+            fill.timestamp,
+            fill.symbol,
+            fill.side,
+            fill.fill_quantity,
+            fill.fill_price,
+            fill.commission,
+        )
+        for fill in eager.fills
+    ]
+
+
+@pytest.mark.parametrize("kind", ["one_shot", "unsorted", "symbol_mismatch"])
+@pytest.mark.parametrize("canonical", [False, True])
+def test_streamed_handler_requirements_fail_before_strategy_initialization(
+    kind, canonical
+):
+    strategy = FirstBarTargetStrategy()
+    frame = _timing_frame([10, 10.1, 10.2])
+    if canonical:
+        frame = _canonical_replay_frame(frame)
+    engine = _timing_engine(
+        frame,
+        strategy=strategy,
+        execution_config=BacktestExecutionConfig(stream_sorted_data_handlers=True),
+    )
+    symbol = Symbol("600000")
+    if kind == "one_shot":
+        engine.data_handlers[symbol] = iter(list(DataHandler(frame, symbol)))
+    elif kind == "unsorted":
+        engine.data_handlers[symbol] = DataHandler(frame.iloc[::-1], symbol)
+    else:
+        engine.data_handlers[symbol] = DataHandler(frame, Symbol("600001"))
+    with pytest.raises(ValueError, match="backtest_streaming_"):
+        engine.run()
+    assert strategy.initialized is False
+    assert strategy.observed == []
+    assert engine.fills == []
+
+
+def test_default_merge_still_sorts_unsorted_one_shot_handlers():
+    symbol = Symbol("600000")
+    frame = _timing_frame([10, 10.1, 10.2])
+    events = list(DataHandler(frame, symbol))
+    engine = _timing_engine(frame)
+    engine.data_handlers[symbol] = (event for event in reversed(events))
+    result = engine.run()
+    assert [event.timestamp for event in engine.strategy.observed] == list(
+        frame["timestamp"]
+    )
+    assert result.fills[0].timestamp == frame.iloc[1]["timestamp"]
+
+
+@pytest.mark.parametrize("canonical", [False, True])
+def test_streamed_historical_conversion_failure_still_precedes_strategy_init(canonical):
+    from decimal import InvalidOperation
+
+    strategy = FirstBarTargetStrategy()
+    frame = _timing_frame([10, 10.1, 10.2]).astype({"close": object})
+    if canonical:
+        frame = _canonical_replay_frame(frame)
+    frame.loc[2, "close"] = "not-a-price"
+    engine = _timing_engine(
+        frame,
+        strategy=strategy,
+        execution_config=BacktestExecutionConfig(stream_sorted_data_handlers=True),
+    )
+    with pytest.raises(InvalidOperation):
+        engine.run()
+    assert strategy.initialized is False
+    assert strategy.observed == []
+
+
+@pytest.mark.parametrize("canonical", [False, True])
+def test_streamed_merge_keeps_duplicate_timestamp_row_order(canonical):
+    symbol = Symbol("600000")
+    frame = _timing_frame([10, 10.1, 10.2])
+    frame.loc[1, "timestamp"] = frame.loc[0, "timestamp"]
+    if canonical:
+        frame = _canonical_replay_frame(frame)
+    outputs = []
+    for streaming in (False, True):
+        engine = _timing_engine(
+            frame,
+            execution_config=BacktestExecutionConfig(
+                stream_sorted_data_handlers=streaming
+            ),
+        )
+        result = engine.run()
+        outputs.append(
+            (
+                [(event.timestamp, event.close) for event in engine.strategy.observed],
+                [(fill.timestamp, fill.fill_price) for fill in result.fills],
+            )
+        )
+    assert outputs[0] == outputs[1]
+    assert outputs[1][0][0][1] == Decimal("10")
+    assert outputs[1][0][1][1] == Decimal("10.1")
+
+
+def test_canonical_replay_factory_preserves_decimal_precision_and_restarts(monkeypatch):
+    from dataclasses import fields
+
+    frame = _canonical_replay_frame(_timing_frame([10, 10.1, 10.2]))
+    frame["close"] = [
+        Decimal("10.00000000000000000100"),
+        Decimal("10.10000000000000000200"),
+        Decimal("10.20000000000000000300"),
+    ]
+    original_frame = frame.copy(deep=True)
+    handler = DataHandler(frame, Symbol("600000"))
+    expected = list(handler)
+
+    def forbid_series_conversion(*_args):
+        raise AssertionError("Canonical streaming must avoid the iloc Series path")
+
+    monkeypatch.setattr(DataHandler, "_row_to_event", forbid_series_conversion)
+    first, second = handler._iter_replay_events(), handler._iter_replay_events()
+    assert next(first) == next(second) == expected[0]
+    assert list(first) == list(second) == expected[1:]
+    actual = list(handler._iter_replay_events())
+    for old, new in zip(expected, actual, strict=True):
+        for field in fields(MarketEvent):
+            before, after = getattr(old, field.name), getattr(new, field.name)
+            assert type(before) is type(after)
+            assert before == after
+            if isinstance(before, Decimal):
+                assert before.as_tuple() == after.as_tuple()
+                assert str(before) == str(after)
+    pd.testing.assert_frame_equal(handler._df, original_frame)
+
+
+def test_noncanonical_numeric_dtype_replay_keeps_series_precision(monkeypatch):
+    frame = _canonical_replay_frame(_timing_frame([10, 10.1, 10.2]))
+    frame["close"] = frame["close"].astype("float32")
+    handler = DataHandler(frame, Symbol("600000"))
+    expected = list(handler)
+    original = DataHandler._row_to_event
+    calls = []
+
+    def tracked(handler, row):
+        calls.append(row)
+        return original(handler, row)
+
+    monkeypatch.setattr(DataHandler, "_row_to_event", tracked)
+    actual = list(handler._iter_replay_events())
+    assert len(calls) == len(frame)
+    assert [event.close.as_tuple() for event in actual] == [
+        event.close.as_tuple() for event in expected
+    ]
+    assert actual == expected
 
 
 @pytest.mark.parametrize("timezone", ["UTC", None])

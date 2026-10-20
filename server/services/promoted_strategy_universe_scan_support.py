@@ -175,6 +175,55 @@ def aggregate_ranked_signals(
     )
 
 
+def active_action_blockers(
+    blockers: Sequence[str],
+    selected_signals: Sequence[Mapping[str, Any]],
+) -> list[str]:
+    """Filter blockers to those that actively block the selected actions."""
+    if not selected_signals:
+        return list(dict.fromkeys(str(item) for item in blockers if str(item)))
+
+    has_buys = any(s.get("direction") == "buy" for s in selected_signals)
+    held_symbols = {
+        str(s.get("symbol") or "")
+        for s in selected_signals
+        if s.get("direction") == "sell"
+    }
+
+    relevant: list[str] = []
+    for blocker in blockers:
+        blocker_str = str(blocker)
+        if not blocker_str:
+            continue
+        # Buy-only blockers do not block an all-sell (exit) action set
+        if not has_buys:
+            if (
+                ":full_market_evidence_incomplete" in blocker_str
+                or ":full_market_eligible_stock_pool_too_small" in blocker_str
+                or ":market_universe_eligible_members_missing" in blocker_str
+                or ":full_market_trading_date_evidence_incomplete" in blocker_str
+                or ":full_market_daily_receipt_coverage_incomplete" in blocker_str
+                or ":full_market_daily_receipt_invalid" in blocker_str
+                or blocker_str.startswith("daily_candidate_quote_freeze:")
+                or "current_board_permission_changed" in blocker_str
+                or blocker_str == "unsupported_trade_unit"
+                or blocker_str == "insufficient_cash_for_one_lot"
+            ):
+                continue
+        # Per-holding exit blockers only block the affected symbol
+        if (
+            ":holding_outside_active_stock_universe:" in blocker_str
+            or ":holding_exit_evidence_incomplete:" in blocker_str
+        ):
+            if not any(
+                f":{sym}:" in blocker_str or blocker_str.endswith(f":{sym}")
+                for sym in held_symbols
+            ):
+                continue
+        relevant.append(blocker_str)
+    return list(dict.fromkeys(relevant))
+
+
 def board_buy_blocker(
     symbol: str,
     permission_evidence: Any,
@@ -913,20 +962,24 @@ def evaluate_promoted_strategy_market(
             )
             continue
         truths[strategy_id] = truth
-        if truth.get("status") != "complete":
+        has_truth_blockers = truth.get("status") != "complete"
+        if has_truth_blockers:
             blockers.extend(
                 f"strategy_full_market_truth:{strategy_id}:{item}"
                 for item in truth.get("blockers") or []
             )
-            continue
+            # Fail-closed for new buy candidates only; held positions may still exit
+            eligible_symbols: list[str] = []
+        else:
+            eligible_symbols = list(truth.get("eligible_symbols") or [])
         evaluated_signals = evaluate_strategy_signals(
             strategy_id=strategy_id,
             formula_ast=formula_ast,
             universe_size=len(selected_universe),
             target_weight=target_weight,
             frames=strategy_frames,
-            eligible_symbols=list(truth["eligible_symbols"]),
-            maintenance_symbols=list(truth["maintenance_symbols"]),
+            eligible_symbols=eligible_symbols,
+            maintenance_symbols=list(truth.get("maintenance_symbols") or []),
             held_symbols=held,
             market_date=market_date,
         )
