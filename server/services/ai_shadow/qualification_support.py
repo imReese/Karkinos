@@ -1,0 +1,66 @@
+"""Pure qualification calculations and gate evaluation support.
+
+Canonical module in server.services.ai_shadow.
+"""
+
+from __future__ import annotations
+
+from server.services.ai_shadow.ai_shadow_research_qualification_support import (
+    QUALIFICATION_COMPARISON_SCHEMA,
+    QUALIFICATION_MARKET_OPEN_BLACKOUT_CODE,
+    QUALIFICATION_NOTIONAL_POLICY_ID,
+    FrozenQualificationSource,
+    QualificationBaselinePreparer,
+    account_total_equity,
+    blocked_result,
+    classify_qualification_resume_candidates,
+    deferred_result,
+    failure_code,
+    formula_binding,
+    latest_qualification_attempt,
+    money_text,
+    now_text,
+    public_qualification_attempt,
+    public_result,
+    qualification_backtest_values,
+    qualification_clock_time,
+    qualification_initial_cash,
+    qualification_market_open_blackout,
+    qualification_research_retry_advice,
+    qualification_selection,
+    record_blocked_qualification_attempt,
+    require_complete_valuation,
+    require_current_valuation_trade_date,
+    valid_fingerprint,
+    valuation_fingerprint,
+)
+
+__all__ = [
+    "QUALIFICATION_COMPARISON_SCHEMA",
+    "QUALIFICATION_MARKET_OPEN_BLACKOUT_CODE",
+    "QUALIFICATION_NOTIONAL_POLICY_ID",
+    "FrozenQualificationSource",
+    "QualificationBaselinePreparer",
+    "account_total_equity",
+    "blocked_result",
+    "classify_qualification_resume_candidates",
+    "deferred_result",
+    "failure_code",
+    "formula_binding",
+    "latest_qualification_attempt",
+    "money_text",
+    "now_text",
+    "public_qualification_attempt",
+    "public_result",
+    "qualification_backtest_values",
+    "qualification_clock_time",
+    "qualification_initial_cash",
+    "qualification_market_open_blackout",
+    "qualification_research_retry_advice",
+    "qualification_selection",
+    "record_blocked_qualification_attempt",
+    "require_complete_valuation",
+    "require_current_valuation_trade_date",
+    "valid_fingerprint",
+    "valuation_fingerprint",
+]
