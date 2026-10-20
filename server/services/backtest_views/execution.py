@@ -19,16 +19,16 @@ from server.config import BacktestConfig
 from server.models import (
     BacktestRequest,
 )
-from server.services.backtest.backtest_result_projection import (
+from server.services.backtest.result_projection import (
     backtest_evidence_from_payload as _backtest_evidence_from_payload,
 )
-from server.services.backtest.backtest_result_projection import (
+from server.services.backtest.result_projection import (
     fill_to_response as _fill_to_response,
 )
-from server.services.backtest.backtest_result_projection import (
+from server.services.backtest.result_projection import (
     json_object as _json_object,
 )
-from server.services.backtest.backtest_result_projection import (
+from server.services.backtest.result_projection import (
     strategy_metadata_snapshot as _strategy_metadata_snapshot,
 )
 from server.services.backtest_views.parameter_sweep import (

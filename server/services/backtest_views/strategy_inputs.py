@@ -19,7 +19,7 @@ from server.models import (
     BacktestMetrics,
     BacktestRequest,
 )
-from server.services.backtest.backtest_result_projection import (
+from server.services.backtest.result_projection import (
     json_object as _json_object,
 )
 
