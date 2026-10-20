@@ -4,14 +4,14 @@ import ast
 import inspect
 from pathlib import Path
 
-from server.services import daily_decision_evidence_automation as facade
-from server.services import daily_decision_evidence_identity as identity
-from server.services import daily_decision_policy_gates as policy_gates
-from server.services import daily_decision_preparation as preparation
-from server.services import daily_decision_strategy_gate as strategy_gate
+from server.services.decision import daily_decision_evidence_automation as facade
+from server.services.decision import daily_decision_evidence_identity as identity
+from server.services.decision import daily_decision_policy_gates as policy_gates
+from server.services.decision import daily_decision_preparation as preparation
+from server.services.decision import daily_decision_strategy_gate as strategy_gate
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SERVICE_ROOT = PROJECT_ROOT / "server" / "services"
+SERVICE_ROOT = PROJECT_ROOT / "server" / "services" / "decision"
 
 MODULES = (
     "daily_decision_evidence_automation.py",
@@ -39,7 +39,10 @@ LOWER_CONSUMER_MODULES = (
 
 
 def _tree(module: str) -> ast.Module:
-    path = SERVICE_ROOT / module
+    if module in LOWER_CONSUMER_MODULES:
+        path = PROJECT_ROOT / "server/services/strategy_scan" / module
+    else:
+        path = SERVICE_ROOT / module
     return ast.parse(path.read_text(encoding="utf-8"), filename=module)
 
 
@@ -72,7 +75,7 @@ def test_daily_decision_evidence_modules_and_functions_stay_bounded() -> None:
 
 def test_original_module_remains_the_stable_public_facade() -> None:
     assert facade.DailyDecisionEvidenceAutomationService.__module__ == (
-        "server.services.daily_decision_evidence_automation"
+        "server.services.decision.daily_decision_evidence_automation"
     )
     assert (
         facade.project_daily_candidate_financial_preflight
@@ -152,7 +155,7 @@ def test_production_outcome_is_structurally_partitioned() -> None:
 def test_split_modules_do_not_reverse_import_facade_or_own_delivery_and_sqlite() -> (
     None
 ):
-    facade_module = "server.services.daily_decision_evidence_automation"
+    facade_module = "server.services.decision.daily_decision_evidence_automation"
     violations: list[str] = []
     for module in (*MODULES, *LOWER_CONSUMER_MODULES):
         imports = _imports(module)
@@ -170,7 +173,7 @@ def test_split_modules_do_not_reverse_import_facade_or_own_delivery_and_sqlite()
 def test_split_modules_use_only_public_cross_module_symbols() -> None:
     violations: list[str] = []
     for module in MODULES:
-        owner = f"server.services.{Path(module).stem}"
+        owner = f"server.services.decision.{Path(module).stem}"
         for node in ast.walk(_tree(module)):
             if not isinstance(node, ast.ImportFrom) or not node.module:
                 continue

@@ -6,8 +6,8 @@ from server.models import PortfolioSnapshot, PositionResponse
 from server.services.current_holding_market_evidence_review import (
     build_current_holding_market_evidence_review,
 )
-from server.services.operations_today import build_overview_attention_items
-from server.services.operations_today_values import attention_items
+from server.services.decision.operations_today import build_overview_attention_items
+from server.services.decision.operations_today_values import attention_items
 
 
 def _review(quote_status: str = "confirmed"):

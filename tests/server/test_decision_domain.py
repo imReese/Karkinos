@@ -21,9 +21,9 @@ import server.services.decision.quality
 
 unexpected = {
     "server.services.decision.plan",
-    "server.services.decision_application",
-    "server.services.decision_projection",
-    "server.services.decision_action_application",
+    "server.services.decision.decision_application",
+    "server.services.decision.decision_projection",
+    "server.services.decision.decision_action_application",
     "server.services.strategy_promotion_pipeline",
     "server.ai_runtime.strategy_research",
 }.intersection(sys.modules)

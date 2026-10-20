@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 
-from server.services.decision_application import (
+from server.services.decision.decision_application import (
     paper_shadow_allows_manual_ticket as _paper_shadow_allows_manual_ticket,
 )
-from server.services.decision_application import (
+from server.services.decision.decision_application import (
     paper_shadow_evidence as _paper_shadow_evidence,
 )
 

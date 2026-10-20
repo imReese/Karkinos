@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from server.services.decision_contracts import (
+from server.services.decision.decision_contracts import (
     ACCOUNT_STRATEGY_CONTROL_KEY,
     STRATEGY_ATTRIBUTION_READY_STATUSES,
     action_trade_date,

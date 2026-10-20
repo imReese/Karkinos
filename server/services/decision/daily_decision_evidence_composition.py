@@ -12,15 +12,18 @@ from data.dataset.reader import daily_bar_dataset_read_scope
 from server.contracts.content_identity import content_fingerprint
 from server.projections.portfolio_read_snapshot import PortfolioReadSnapshotRejected
 from server.services.automation_control import AutomationControlService
-from server.services.daily_decision_evidence_contracts import (
+from server.services.decision.daily_decision_evidence_contracts import (
     QuoteRefresher,
     StatePlanReader,
     StateRiskRunner,
 )
-from server.services.daily_decision_evidence_orchestration import (
+from server.services.decision.daily_decision_evidence_orchestration import (
     InitialDailyCandidateReadConflict,
 )
-from server.services.daily_decision_evidence_values import object_dict, object_list
+from server.services.decision.daily_decision_evidence_values import (
+    object_dict,
+    object_list,
+)
 
 _MARKET_REVISION_CONFLICT = (
     "persisted market facts changed while building the read snapshot"
@@ -282,7 +285,9 @@ def promoted_strategy_state_cache_identity(db: Any) -> str:
         ),
         key=lambda row: str(row.get("strategy_id") or ""),
     )
-    from server.services.recommendation_publication import publication_source_blocker
+    from server.services.decision.recommendation_publication import (
+        publication_source_blocker,
+    )
 
     return "sha256:" + content_fingerprint(
         {

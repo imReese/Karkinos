@@ -148,7 +148,7 @@ def _simulation_policy_semantics(value):
 
 class AiShadowResearchCommandsMixin:
     def publication_service(self):
-        from server.services.recommendation_publication import (
+        from server.services.decision.recommendation_publication import (
             RecommendationPublicationService,
         )
 
@@ -820,7 +820,7 @@ class AiShadowResearchCommandsMixin:
                 + ",".join(blockers or ["unknown"])
             )
         source_candidate_id = str(evidence["source_candidate_id"])
-        from server.services.forward_paper_review import (
+        from server.services.decision.forward_paper_review import (
             verify_forward_paper_review,
         )
 

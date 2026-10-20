@@ -253,7 +253,7 @@ async def test_production_source_reuses_canonical_builders_and_exact_persisted_r
         },
     )
     monkeypatch.setattr(
-        "server.services.operations_projection.build_today_operations_payload",
+        "server.services.decision.operations_projection.build_today_operations_payload",
         build_operations,
     )
     monkeypatch.setattr(

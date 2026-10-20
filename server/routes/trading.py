@@ -432,14 +432,16 @@ def _current_action_manual_ticket_gate(
     """Re-resolve current persisted gates immediately before ticket writes."""
 
     from server.services.account_board_permissions import resolve_board_buy_permissions
-    from server.services.decision_application import (
+    from server.services.decision.decision_application import (
         account_truth_gate_evidence,
         action_trade_date,
         data_freshness_evidence,
         paper_shadow_allows_manual_ticket,
         paper_shadow_evidence,
     )
-    from server.services.decision_projection import daily_candidate_generation_status
+    from server.services.decision.decision_projection import (
+        daily_candidate_generation_status,
+    )
     from server.services.strategy_promotion_pipeline import (
         resolve_strategy_order_generation_gate,
     )

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from server.models import DailyOperationsSummary
-from server.services.operations_today import build_operations_today_summary
+from server.services.decision.operations_today import build_operations_today_summary
 
 
 def _operations(manual_ready_count: int = 1) -> DailyOperationsSummary:

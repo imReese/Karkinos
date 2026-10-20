@@ -8,11 +8,11 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
-from server.services.daily_decision_evidence_contracts import (
+from server.services.decision.daily_decision_evidence_contracts import (
     DAILY_CANDIDATE_PREPARATION_CHECK_RUN_TYPE,
     DAILY_CANDIDATE_PREPARATION_CHECK_SCHEMA_VERSION,
 )
-from server.services.daily_decision_evidence_values import (
+from server.services.decision.daily_decision_evidence_values import (
     count,
     in_daily_candidate_decision_window,
     object_dict,

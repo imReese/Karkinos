@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from server.services.daily_operations import build_daily_operations_summary
+from server.services.decision.daily_operations import build_daily_operations_summary
 
 
 def _candidate(

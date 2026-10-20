@@ -9,17 +9,17 @@ from zoneinfo import ZoneInfo
 from fastapi.routing import APIRoute
 
 from server.routes import decision as decision_routes
-from server.services import decision_application
-from server.services.daily_decision_evidence_identity import (
+from server.services.decision import decision_application
+from server.services.decision.daily_decision_evidence_identity import (
     daily_candidate_input_fingerprint,
     daily_candidate_record_fingerprint,
 )
-from server.services.decision_action_application import read_action_tasks
-from server.services.decision_portfolio_projection import (
+from server.services.decision.decision_action_application import read_action_tasks
+from server.services.decision.decision_portfolio_projection import (
     action_filter_date,
     response_decision_date,
 )
-from server.services.decision_projection import (
+from server.services.decision.decision_projection import (
     daily_candidate_generation_status,
     suppress_unverified_daily_scan_candidates,
 )
@@ -141,7 +141,7 @@ def test_current_decision_excludes_prior_day_action_with_stale_valuation(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        "server.services.decision_portfolio_projection.get_shanghai_now",
+        "server.services.decision.decision_portfolio_projection.get_shanghai_now",
         lambda: datetime(2026, 7, 2, 9, 40, tzinfo=ZoneInfo("Asia/Shanghai")),
     )
     context = {
@@ -234,7 +234,7 @@ def test_decision_trading_plan_route_returns_read_only_order_intent(monkeypatch)
         ),
     )
     monkeypatch.setattr(
-        "server.services.decision_portfolio_projection.get_shanghai_now",
+        "server.services.decision.decision_portfolio_projection.get_shanghai_now",
         lambda: datetime(2026, 7, 1, 9, 46, tzinfo=ZoneInfo("Asia/Shanghai")),
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)

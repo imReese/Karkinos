@@ -7,7 +7,7 @@ from copy import deepcopy
 from typing import Any, Callable
 
 from server.services.asset_metadata import resolve_asset_metadata
-from server.services.decision_contracts import (
+from server.services.decision.decision_contracts import (
     BLOCKING_DATA_STATUSES,
     READY_MANUAL_CONFIRMATION_STATUS,
     TRUSTED_DATA_STATUSES,

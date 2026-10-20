@@ -12,10 +12,10 @@ import pytest
 from core.types import Symbol
 from risk.pre_trade import PreTradeContext, PreTradePolicy
 from server.db import AppDatabase
-from server.services.decision_candidate_market_evidence import (
+from server.services.decision.decision_candidate_market_evidence import (
     candidate_market_evidence,
 )
-from server.services.pre_trade_batch import run_pre_trade_risk_batch
+from server.services.decision.pre_trade_batch import run_pre_trade_risk_batch
 
 
 @dataclass
@@ -873,7 +873,7 @@ def test_batch_pre_trade_risk_rejects_duplicate_decision_identity_before_writes(
     )
     evidence_binding = _persisted_evidence_binding(db)
     monkeypatch.setattr(
-        "server.services.pre_trade_batch.uuid.uuid4",
+        "server.services.decision.pre_trade_batch.uuid.uuid4",
         lambda: SimpleNamespace(hex="same-decision-id"),
     )
 

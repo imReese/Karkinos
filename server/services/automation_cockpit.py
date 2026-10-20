@@ -14,7 +14,7 @@ from server.services.controlled_execution_operator_view import (
 from server.services.current_per_order_review_projection import (
     build_current_per_order_review_summary,
 )
-from server.services.daily_decision_evidence_automation import (
+from server.services.decision.daily_decision_evidence_automation import (
     unavailable_daily_candidate_financial_preflight,
 )
 from server.services.strategy_promotion_pipeline import StrategyPromotionPipeline

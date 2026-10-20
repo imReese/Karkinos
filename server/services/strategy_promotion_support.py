@@ -834,7 +834,7 @@ def resolve_human_ai_shadow_strategy_promotion_binding(
     reader = getattr(db, "get_ai_shadow_strategy_promotion_binding_sync", None)
     raw_binding = reader(candidate_id) if callable(reader) and candidate_id else None
     if human_review.get("forward_review") is not None:
-        from server.services.forward_paper_review import (
+        from server.services.decision.forward_paper_review import (
             verify_forward_paper_review,
         )
 

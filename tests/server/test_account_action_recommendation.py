@@ -11,7 +11,7 @@ from server.projections.account_action_recommendation import (
     resolve_latest_verified_promoted_strategy_scan,
 )
 from server.routes.decision import _current_shadow_qualification_evidence
-from server.services.daily_decision_policy_gates import (
+from server.services.decision.daily_decision_policy_gates import (
     current_account_action_evidence_blockers,
 )
 from server.services.strategy_scan.promoted_strategy_universe_scan import (

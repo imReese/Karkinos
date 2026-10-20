@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from server.services.decision_contracts import TRUSTED_DATA_STATUSES
-from server.services.decision_portfolio_projection import (
+from server.services.decision.decision_contracts import TRUSTED_DATA_STATUSES
+from server.services.decision.decision_portfolio_projection import (
     market_data_summary,
     portfolio_state_summary,
 )

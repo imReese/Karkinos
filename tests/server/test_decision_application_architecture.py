@@ -9,13 +9,13 @@ from pathlib import Path
 
 import pytest
 
-from server.services import decision_application
+from server.services.decision import decision_application
 from server.services.strategy_promotion_pipeline import (
     resolve_strategy_order_generation_gate as canonical_order_generation_gate,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SERVICE_ROOT = PROJECT_ROOT / "server/services"
+SERVICE_ROOT = PROJECT_ROOT / "server/services/decision"
 DECISION_MODULES = {
     SERVICE_ROOT / "decision_action_application.py",
     SERVICE_ROOT / "decision_application.py",
@@ -77,9 +77,11 @@ def _family_dependencies(path: Path) -> set[str]:
     modules = {item.stem for item in DECISION_MODULES}
     dependencies: set[str] = set()
     for imported in _imports(path):
-        if not imported.startswith("server.services.decision_"):
+        if not imported.startswith("server.services.decision.decision_"):
             continue
-        name = imported.removeprefix("server.services.").split(".", maxsplit=1)[0]
+        name = imported.removeprefix("server.services.decision.").split(
+            ".", maxsplit=1
+        )[0]
         if name in modules:
             dependencies.add(name)
     return dependencies
@@ -100,7 +102,7 @@ def _called_names(path: Path) -> set[str]:
 def test_decision_facade_preserves_public_contract_and_identity() -> None:
     for name, expected_signature in PUBLIC_SIGNATURES.items():
         value = getattr(decision_application, name)
-        assert value.__module__ == "server.services.decision_application", name
+        assert value.__module__ == "server.services.decision.decision_application", name
         assert str(inspect.signature(value)) == expected_signature, name
     assert (
         decision_application.resolve_strategy_order_generation_gate

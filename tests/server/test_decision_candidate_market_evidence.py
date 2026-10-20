@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from server.db import AppDatabase
-from server.services.decision_candidate_market_evidence import (
+from server.services.decision.decision_candidate_market_evidence import (
     bind_candidate_market_evidence,
     candidate_market_evidence,
 )

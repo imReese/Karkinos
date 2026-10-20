@@ -154,7 +154,7 @@ def test_automation_cockpit_route_projects_current_financial_preflight(
     tmp_path,
     monkeypatch,
 ) -> None:
-    from server.services.daily_decision_evidence_automation import (
+    from server.services.decision.daily_decision_evidence_automation import (
         unavailable_daily_candidate_financial_preflight,
     )
 
@@ -185,7 +185,7 @@ def test_automation_cockpit_route_projects_current_financial_preflight(
         return projected
 
     monkeypatch.setattr(
-        "server.services.operations_projection.current_decision_and_trading_plan",
+        "server.services.decision.operations_projection.current_decision_and_trading_plan",
         read_current_plan,
     )
     monkeypatch.setattr(
@@ -199,7 +199,7 @@ def test_automation_cockpit_route_projects_current_financial_preflight(
         execution_closure,
     )
     monkeypatch.setattr(
-        "server.services.daily_decision_evidence_automation."
+        "server.services.decision.daily_decision_evidence_automation."
         "project_daily_candidate_financial_preflight",
         financial_preflight,
     )
@@ -345,7 +345,7 @@ def test_daily_candidate_run_uses_canonical_bound_service(
             }
 
     monkeypatch.setattr(
-        "server.services.daily_decision_evidence_automation."
+        "server.services.decision.daily_decision_evidence_automation."
         "build_daily_decision_evidence_automation_service",
         lambda state, **kwargs: _Service(),
     )

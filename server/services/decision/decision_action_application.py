@@ -9,11 +9,11 @@ from fastapi import HTTPException
 
 from core.types import Symbol
 from data.market_data import is_fund_estimate_quote_source
-from server.services.decision_candidate_market_evidence import (
+from server.services.decision.decision_candidate_market_evidence import (
     bind_candidate_market_evidence,
     candidate_market_evidence,
 )
-from server.services.decision_contracts import (
+from server.services.decision.decision_contracts import (
     TRUSTED_DATA_STATUSES,
     action_sort_key,
     action_trade_date,
@@ -34,8 +34,8 @@ async def run_batch_pre_trade_risk(
 ) -> dict[str, Any]:
     """Run the canonical persisted-evidence batch risk gate for one app state."""
 
+    from server.services.decision.pre_trade_batch import run_pre_trade_risk_batch
     from server.services.live_context import LiveContextProvider
-    from server.services.pre_trade_batch import run_pre_trade_risk_batch
 
     if state.db is None:
         raise HTTPException(status_code=503, detail="database is unavailable")

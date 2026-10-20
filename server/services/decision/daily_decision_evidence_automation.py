@@ -17,24 +17,24 @@ from server.services.account_truth_replay import (
     verify_account_truth_replay_evidence,
 )
 from server.services.automation_control import AutomationControlService
-from server.services.daily_decision_background_schedule import (
+from server.services.decision.daily_decision_background_schedule import (
     build_background_schedule_result,
     build_next_verified_trading_window,
     next_trading_day,
     project_daily_candidate_background_schedule,
     unavailable_next_reviewed_window,
 )
-from server.services.daily_decision_evidence_collection import (
+from server.services.decision.daily_decision_evidence_collection import (
     collect_daily_decision_evidence,
 )
-from server.services.daily_decision_evidence_composition import (
+from server.services.decision.daily_decision_evidence_composition import (
     bind_promoted_strategy_scan,
     promoted_scan_cache_key,
 )
-from server.services.daily_decision_evidence_composition import (
+from server.services.decision.daily_decision_evidence_composition import (
     build_daily_decision_evidence_automation_service as compose_daily_decision_evidence_automation_service,
 )
-from server.services.daily_decision_evidence_contracts import (
+from server.services.decision.daily_decision_evidence_contracts import (
     DAILY_CANDIDATE_BACKGROUND_ATTEMPT_RUN_TYPE,
     DAILY_CANDIDATE_BACKGROUND_SCHEDULE_SCHEMA_VERSION,
     DAILY_CANDIDATE_DECISION_WINDOW_END_MINUTE,
@@ -62,21 +62,21 @@ from server.services.daily_decision_evidence_contracts import (
     StatePlanReader,
     StateRiskRunner,
 )
-from server.services.daily_decision_evidence_cycle import (
+from server.services.decision.daily_decision_evidence_cycle import (
     record_cycle as persist_daily_evidence_cycle,
 )
-from server.services.daily_decision_evidence_cycle import (
+from server.services.decision.daily_decision_evidence_cycle import (
     send_evidence_notification,
     send_no_action_notification,
 )
-from server.services.daily_decision_evidence_identity import (
+from server.services.decision.daily_decision_evidence_identity import (
     daily_candidate_input_fingerprint,
     daily_candidate_record_fingerprint,
     evidence_fingerprint,
     fingerprint_json,
     manual_ticket_candidate_fingerprint,
 )
-from server.services.daily_decision_evidence_orchestration import (
+from server.services.decision.daily_decision_evidence_orchestration import (
     InitialDailyCandidateReadConflict,
     finish_background_attempt,
     record_daily_candidate_background_alert,
@@ -85,7 +85,7 @@ from server.services.daily_decision_evidence_orchestration import (
     run_claimed_daily_candidate_preparation_check,
     send_daily_candidate_preparation_notification,
 )
-from server.services.daily_decision_evidence_values import (
+from server.services.decision.daily_decision_evidence_values import (
     aware_datetime,
     candidate_count,
     count,
@@ -109,27 +109,27 @@ from server.services.daily_decision_evidence_values import (
     shanghai_date,
     single_ref,
 )
-from server.services.daily_decision_policy_gates import (
+from server.services.decision.daily_decision_policy_gates import (
     build_daily_candidate_base_gate,
     project_daily_candidate_financial_preflight,
     unavailable_daily_candidate_financial_preflight,
 )
-from server.services.daily_decision_preflight_operator import (
+from server.services.decision.daily_decision_preflight_operator import (
     build_preflight_gate,
     build_preflight_operator_checklist,
     build_preflight_operator_evidence_contract,
     build_preflight_operator_step,
     safe_preflight_blocker,
 )
-from server.services.daily_decision_preparation import (
+from server.services.decision.daily_decision_preparation import (
     build_daily_candidate_preparation_check,
     verify_daily_candidate_preparation_check,
 )
-from server.services.daily_decision_production_outcome import (
+from server.services.decision.daily_decision_production_outcome import (
     build_manual_order_ticket_candidate,
     project_production_outcome,
 )
-from server.services.daily_decision_strategy_gate import (
+from server.services.decision.daily_decision_strategy_gate import (
     build_daily_candidate_strategy_gate_binding,
     daily_candidate_strategy_operating_constraints_blockers,
     resolve_strategy_gate_binding,

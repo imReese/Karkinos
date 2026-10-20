@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from server.services.forward_paper_review import (
+from server.services.decision.forward_paper_review import (
     verify_forward_paper_review,
 )
 from tests.server.test_research_observations_journey import journey as journey

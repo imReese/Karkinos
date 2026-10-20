@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from server.db import AppDatabase
-from server.services.decision_application import (
+from server.services.decision.decision_application import (
     strategy_attribution_gate_evidence as _strategy_attribution_gate_evidence,
 )
 

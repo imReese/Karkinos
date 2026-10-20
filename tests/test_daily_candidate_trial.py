@@ -12,7 +12,7 @@ from server.db import AppDatabase
 from server.services.account_truth_replay import (
     account_truth_replay_evidence_fingerprint,
 )
-from server.services.daily_decision_evidence_automation import (
+from server.services.decision.daily_decision_evidence_automation import (
     DAILY_CANDIDATE_INPUT_IDENTITY_SCHEMA_VERSION,
     DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
     DAILY_DECISION_EVIDENCE_AUTOMATION_SCHEMA_VERSION,

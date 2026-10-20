@@ -9,8 +9,10 @@ import pytest
 from fastapi import HTTPException
 
 from server.db import AppDatabase
-from server.services import daily_decision_evidence_automation as automation_module
-from server.services.daily_decision_evidence_automation import (
+from server.services.decision import (
+    daily_decision_evidence_automation as automation_module,
+)
+from server.services.decision.daily_decision_evidence_automation import (
     DAILY_CANDIDATE_BACKGROUND_ATTEMPT_RUN_TYPE,
     DAILY_CANDIDATE_PREPARATION_CHECK_RUN_TYPE,
     DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
@@ -18,10 +20,10 @@ from server.services.daily_decision_evidence_automation import (
     project_daily_candidate_background_schedule,
     run_daily_decision_evidence_automation_loop,
 )
-from server.services.daily_decision_evidence_composition import (
+from server.services.decision.daily_decision_evidence_composition import (
     build_daily_decision_evidence_automation_service,
 )
-from server.services.daily_decision_evidence_orchestration import (
+from server.services.decision.daily_decision_evidence_orchestration import (
     DailyCandidateRetryWindowClosed,
     InitialDailyCandidateReadConflict,
     run_claimed_background_attempt,
@@ -933,7 +935,7 @@ def test_initial_read_conflict_retries_within_one_claim(tmp_path, monkeypatch) -
     db.init_sync()
     _seed_calendar(db)
     monkeypatch.setattr(
-        "server.services.daily_decision_evidence_orchestration."
+        "server.services.decision.daily_decision_evidence_orchestration."
         "_INITIAL_READ_RETRY_DELAY_SECONDS",
         0,
     )
@@ -988,7 +990,7 @@ def test_exhausted_initial_read_conflict_preserves_original_error_type(
     db.init_sync()
     _seed_calendar(db)
     monkeypatch.setattr(
-        "server.services.daily_decision_evidence_orchestration."
+        "server.services.decision.daily_decision_evidence_orchestration."
         "_INITIAL_READ_RETRY_DELAY_SECONDS",
         0,
     )
@@ -1115,7 +1117,7 @@ def test_initial_read_conflict_stops_at_window_cutoff(tmp_path, monkeypatch) -> 
     db.init_sync()
     _seed_calendar(db)
     monkeypatch.setattr(
-        "server.services.daily_decision_evidence_orchestration."
+        "server.services.decision.daily_decision_evidence_orchestration."
         "_INITIAL_READ_RETRY_DELAY_SECONDS",
         0,
     )

@@ -589,7 +589,7 @@ async def test_verified_final_qualification_policy_publication_and_revocation(
     from server.services.ai_shadow.ai_shadow_research_qualification import (
         AiShadowResearchQualificationService,
     )
-    from server.services.recommendation_publication import (
+    from server.services.decision.recommendation_publication import (
         RecommendationPublicationService,
     )
     from server.services.research_final_evaluation import verify_deployment_validation
@@ -770,7 +770,7 @@ async def test_verified_final_qualification_policy_publication_and_revocation(
                 row["id"] for row in db.get_action_tasks_sync(limit=100)
             } == task_ids
             assert len(db.list_signal_journal_sync(limit=100)) == journal_count
-    from server.services.daily_decision_preparation import (
+    from server.services.decision.daily_decision_preparation import (
         build_daily_candidate_preparation_check,
     )
 
@@ -826,7 +826,9 @@ def _prepare_real_scan_consumer(data, state, valuation):
     import pandas as pd
 
     from data.dataset.reader import read_daily_bar_dataset
-    from server.services.decision_portfolio_projection import portfolio_state_summary
+    from server.services.decision.decision_portfolio_projection import (
+        portfolio_state_summary,
+    )
     from server.services.portfolio.ledger import rebuild_portfolio_from_ledger
     from server.services.strategy_scan.promoted_strategy_universe_scan import (
         PromotedStrategyUniverseScanService,

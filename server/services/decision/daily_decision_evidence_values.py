@@ -8,7 +8,7 @@ import math
 from datetime import datetime
 from typing import Any
 
-from server.services.daily_decision_evidence_contracts import (
+from server.services.decision.daily_decision_evidence_contracts import (
     DAILY_CANDIDATE_DECISION_WINDOW_END_MINUTE,
     DAILY_CANDIDATE_DECISION_WINDOW_START_MINUTE,
     SHANGHAI_TZ,

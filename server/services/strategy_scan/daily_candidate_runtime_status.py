@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from server.services.daily_decision_evidence_contracts import (
+from server.services.decision.daily_decision_evidence_contracts import (
     DAILY_CANDIDATE_BACKGROUND_SCHEDULE_SCHEMA_VERSION,
 )
 

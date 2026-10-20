@@ -84,7 +84,7 @@ def create_router() -> APIRouter:
         from server.services.current_per_order_dossier_factory import (
             build_current_per_order_dossier_service,
         )
-        from server.services.daily_decision_evidence_automation import (
+        from server.services.decision.daily_decision_evidence_automation import (
             project_daily_candidate_financial_preflight,
             unavailable_daily_candidate_financial_preflight,
         )
@@ -123,7 +123,7 @@ def create_router() -> APIRouter:
             ),
         ).summary()
         try:
-            from server.services.operations_projection import (
+            from server.services.decision.operations_projection import (
                 current_decision_and_trading_plan,
             )
 
@@ -197,16 +197,16 @@ def create_router() -> APIRouter:
         """Run the canonical current-facts chain; caller supplies no trade facts."""
 
         from server.dependencies import get_app_state
-        from server.services.daily_decision_evidence_automation import (
+        from server.services.decision.daily_decision_evidence_automation import (
             build_daily_decision_evidence_automation_service,
         )
-        from server.services.decision_application import (
+        from server.services.decision.decision_application import (
             run_batch_pre_trade_risk_for_state,
         )
-        from server.services.market.refresh import refresh_one_quote
-        from server.services.operations_projection import (
+        from server.services.decision.operations_projection import (
             current_decision_and_trading_plan,
         )
+        from server.services.market.refresh import refresh_one_quote
 
         del request
         state = get_app_state()
@@ -257,11 +257,11 @@ def create_router() -> APIRouter:
         request: MarketSessionRunRequest,
     ) -> dict[str, Any]:
         from server.dependencies import get_app_state
+        from server.services.decision.operations_projection import (
+            current_decision_and_trading_plan,
+        )
         from server.services.market_session_automation import (
             MarketSessionAutomationService,
-        )
-        from server.services.operations_projection import (
-            current_decision_and_trading_plan,
         )
 
         state = get_app_state()

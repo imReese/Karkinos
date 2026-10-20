@@ -391,7 +391,7 @@ def resolve_ai_shadow_strategy_promotion_binding(
     state = state if isinstance(state, dict) else {}
     payload = _json_object(state.get("payload_json"))
     if payload.get("decision_source") == "policy":
-        from server.services.recommendation_publication import (
+        from server.services.decision.recommendation_publication import (
             resolve_policy_publication_binding,
         )
 

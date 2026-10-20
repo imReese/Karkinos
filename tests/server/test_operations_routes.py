@@ -11,7 +11,7 @@ from fastapi.routing import APIRoute
 
 from server.db import AppDatabase
 from server.routes import operations as operations_routes
-from server.services import operations_projection
+from server.services.decision import operations_projection
 from tests.paper_shadow_fixtures import insert_paper_shadow_evidence
 
 
@@ -29,7 +29,7 @@ def _endpoint(path: str, method: str = "GET"):
 def _allow_paper_shadow_evaluation(monkeypatch) -> None:
     _freeze_valuation_clock(monkeypatch)
     monkeypatch.setattr(
-        "server.services.decision_application._account_truth_gate_evidence",
+        "server.services.decision.decision_application._account_truth_gate_evidence",
         lambda state: {
             "gate_status": "pass",
             "data_freshness_status": "fresh",
@@ -38,7 +38,7 @@ def _allow_paper_shadow_evaluation(monkeypatch) -> None:
         },
     )
     monkeypatch.setattr(
-        "server.services.decision_application.resolve_strategy_order_generation_gate",
+        "server.services.decision.decision_application.resolve_strategy_order_generation_gate",
         lambda db, strategy_id, *, as_of_date=None: (
             {
                 "status": "pass",
@@ -57,7 +57,7 @@ def _allow_paper_shadow_evaluation(monkeypatch) -> None:
 def _freeze_valuation_clock(monkeypatch) -> None:
     fixture_now = datetime(2026, 7, 1, 1, 46, tzinfo=timezone.utc)
     monkeypatch.setattr(
-        "server.services.decision_portfolio_projection.get_shanghai_now",
+        "server.services.decision.decision_portfolio_projection.get_shanghai_now",
         lambda: fixture_now,
     )
     monkeypatch.setattr(

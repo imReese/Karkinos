@@ -14,7 +14,7 @@ from server.dependencies import (
     get_portfolio_read_request_state,
 )
 from server.services.account_board_permissions import resolve_board_buy_permissions
-from server.services.decision_contracts import (
+from server.services.decision.decision_contracts import (
     TRUSTED_DATA_STATUSES,
     action_trade_date,
     float_or_zero,

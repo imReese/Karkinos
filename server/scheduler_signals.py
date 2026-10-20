@@ -6,7 +6,7 @@ from core.events import SignalEvent
 from core.types import AssetClass, Symbol
 from notification.notifier import format_signal_message
 from server.scheduler_contracts import SchedulerNotifier, SchedulerSignalDatabase
-from server.services.recommendation_flow import build_recommendation_cycle
+from server.services.decision.recommendation_flow import build_recommendation_cycle
 
 
 def handle_scheduler_signal(

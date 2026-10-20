@@ -256,7 +256,7 @@ def test_recovery_fence_is_shared_by_qualification_and_publication_preview(
     db, monkeypatch
 ):
     from server.persistence.ai_shadow_research import ShadowResearchStore
-    from server.services.recommendation_publication import (
+    from server.services.decision.recommendation_publication import (
         RecommendationPublicationService,
     )
     from server.services.valuation_snapshot import build_current_valuation_snapshot

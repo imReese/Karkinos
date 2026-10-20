@@ -21,7 +21,9 @@ from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactRejected,
     DailyStrategyArtifactStore,
 )
-from server.services.decision_portfolio_projection import portfolio_state_summary
+from server.services.decision.decision_portfolio_projection import (
+    portfolio_state_summary,
+)
 from server.services.market_universe_truth import (
     MarketUniversePolicy,
     normalize_a_share_members,

@@ -9,12 +9,12 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MODULES = (
-    "server/services/operations_today.py",
-    "server/services/operations_today_contracts.py",
-    "server/services/operations_today_values.py",
-    "server/services/operations_today_paper_shadow.py",
-    "server/services/operations_today_scheduler.py",
-    "server/services/operations_today_subsystems.py",
+    "server/services/decision/operations_today.py",
+    "server/services/decision/operations_today_contracts.py",
+    "server/services/decision/operations_today_values.py",
+    "server/services/decision/operations_today_paper_shadow.py",
+    "server/services/decision/operations_today_scheduler.py",
+    "server/services/decision/operations_today_subsystems.py",
 )
 MODULE_NAMES = {path.removesuffix(".py").replace("/", ".") for path in MODULES}
 
@@ -68,7 +68,7 @@ def test_operations_today_dependency_graph_is_acyclic_and_uses_public_symbols() 
                 private_imports.append(f"{relative_path}:{line}:{name}")
 
     assert private_imports == []
-    facade = "server.services.operations_today"
+    facade = "server.services.decision.operations_today"
     assert all(
         facade not in dependencies
         for module, dependencies in graph.items()

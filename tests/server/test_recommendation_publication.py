@@ -20,7 +20,7 @@ from server.contracts.recommendation_publication import (
 )
 from server.db import AppDatabase
 from server.persistence.ai_shadow_research import ShadowResearchStore
-from server.services.recommendation_publication import (
+from server.services.decision.recommendation_publication import (
     RecommendationPublicationService,
     publication_source_blocker,
 )
@@ -293,7 +293,7 @@ def test_requalification_of_same_usable_final_does_not_spend_another_publication
     monkeypatch.setattr(
         RecommendationPublicationService, "readiness", lambda *args, **kwargs: readiness
     )
-    import server.services.recommendation_publication as publications
+    import server.services.decision.recommendation_publication as publications
 
     monkeypatch.setattr(
         publications,
@@ -763,7 +763,9 @@ def test_publication_renewal_keeps_own_frozen_mask_without_enabling_simulation(
 def test_preview_permission_clock_uses_shanghai_day(board_preview):
     from server.config import ServerConfig
     from server.services.account_board_permissions import freeze_entry_board_policy
-    from server.services.recommendation_publication import _preview_entry_board_policy
+    from server.services.decision.recommendation_publication import (
+        _preview_entry_board_policy,
+    )
     from tests.server.test_account_board_permissions import _review
 
     db, store, _service, _state = board_preview

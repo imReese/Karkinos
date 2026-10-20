@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from data.dataset.reader import daily_bar_dataset_read_scope
 from server.ai_runtime.store import IdempotencyConflict
-from server.services import decision_application
+from server.services.decision import decision_application
 from server.services.decision.quality import (
     DecisionQualityCaptureRejected,
     DecisionQualityCaptureRequest,
@@ -39,7 +39,7 @@ def create_router() -> APIRouter:
     @router.get("/today")
     async def get_today_decision() -> dict[str, Any]:
         from server.dependencies import get_app_state
-        from server.services.decision_projection import (
+        from server.services.decision.decision_projection import (
             suppress_unverified_daily_scan_candidates,
         )
 
@@ -113,7 +113,9 @@ def create_router() -> APIRouter:
     async def list_daily_reports(limit: int = 20, offset: int = 0) -> dict[str, Any]:
         """Read persisted results for verified trading days, including missing days."""
         from server.dependencies import get_app_state
-        from server.services.daily_decision_report import list_daily_decision_reports
+        from server.services.decision.daily_decision_report import (
+            list_daily_decision_reports,
+        )
 
         try:
             return await asyncio.to_thread(
@@ -131,7 +133,9 @@ def create_router() -> APIRouter:
     async def get_daily_report(report_date: str) -> dict[str, Any]:
         """Read the exact frozen sources for one verified trading day."""
         from server.dependencies import get_app_state
-        from server.services.daily_decision_report import get_daily_decision_report
+        from server.services.decision.daily_decision_report import (
+            get_daily_decision_report,
+        )
         from server.services.strategy_scan.daily_candidate_outcomes import (
             evaluate_daily_candidate_outcomes,
         )
@@ -151,7 +155,7 @@ def create_router() -> APIRouter:
     @router.get("/trading-plan")
     async def get_daily_trading_plan() -> dict[str, Any]:
         from server.dependencies import get_app_state
-        from server.services.decision_projection import (
+        from server.services.decision.decision_projection import (
             suppress_unverified_daily_scan_candidates,
         )
 
@@ -266,10 +270,10 @@ def _current_account_action_evidence(
     trading_plan: dict[str, Any],
     promoted_scan: dict[str, Any],
 ) -> tuple[list[str], str]:
-    from server.services.daily_decision_evidence_identity import (
+    from server.services.decision.daily_decision_evidence_identity import (
         evidence_fingerprint,
     )
-    from server.services.daily_decision_policy_gates import (
+    from server.services.decision.daily_decision_policy_gates import (
         current_account_action_evidence_blockers,
     )
 

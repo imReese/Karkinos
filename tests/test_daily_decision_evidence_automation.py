@@ -7,17 +7,19 @@ import pytest
 
 from server.ai_runtime.contracts import content_fingerprint
 from server.db import AppDatabase
-from server.services import daily_decision_evidence_automation as automation_module
 from server.services.account_truth_replay import (
     account_truth_replay_evidence_fingerprint,
 )
-from server.services.daily_decision_evidence_automation import (
+from server.services.decision import (
+    daily_decision_evidence_automation as automation_module,
+)
+from server.services.decision.daily_decision_evidence_automation import (
     DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
     DailyDecisionEvidenceAutomationService,
     project_daily_candidate_financial_preflight,
     unavailable_daily_candidate_financial_preflight,
 )
-from server.services.daily_decision_evidence_composition import (
+from server.services.decision.daily_decision_evidence_composition import (
     build_daily_decision_evidence_automation_service,
     promoted_scan_cache_key,
     promoted_strategy_state_cache_identity,
@@ -1722,7 +1724,7 @@ def test_daily_candidate_requires_each_intent_to_bind_current_quote(tmp_path) ->
 
 
 def test_is_sha256_accepts_raw_and_prefixed_fingerprints() -> None:
-    from server.services.daily_decision_evidence_values import (
+    from server.services.decision.daily_decision_evidence_values import (
         is_sha256 as is_sha256_evidence,
     )
     from server.services.strategy_scan.daily_candidate_readiness_support import (

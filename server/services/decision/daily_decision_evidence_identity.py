@@ -6,11 +6,14 @@ import hashlib
 import json
 from typing import Any
 
-from server.services.daily_decision_evidence_contracts import (
+from server.services.decision.daily_decision_evidence_contracts import (
     DAILY_CANDIDATE_INPUT_IDENTITY_SCHEMA_VERSION,
     PRODUCTION_RECORD_FIELDS,
 )
-from server.services.daily_decision_evidence_values import object_dict, object_list
+from server.services.decision.daily_decision_evidence_values import (
+    object_dict,
+    object_list,
+)
 
 
 def evidence_fingerprint(

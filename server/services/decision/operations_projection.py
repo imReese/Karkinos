@@ -21,21 +21,21 @@ from server.services.controlled_execution_operator_view import (
 from server.services.controlled_per_order_pilot_readiness import (
     build_controlled_per_order_pilot_readiness as _compose_pilot_readiness,
 )
-from server.services.daily_decision_evidence_automation import (
+from server.services.decision.daily_decision_evidence_automation import (
     project_daily_candidate_background_schedule,
 )
-from server.services.daily_operations import build_daily_operations_summary
-from server.services.decision.plan import build_daily_trading_plan
-from server.services.decision_application import (
+from server.services.decision.daily_operations import build_daily_operations_summary
+from server.services.decision.decision_application import (
     decision_portfolio_context as _decision_portfolio_context,
 )
-from server.services.decision_application import (
+from server.services.decision.decision_application import (
     today_decision_payload as _today_decision_payload,
 )
-from server.services.decision_application import (
+from server.services.decision.decision_application import (
     trading_plan_positions as _trading_plan_positions,
 )
-from server.services.operations_today import build_operations_today_summary
+from server.services.decision.operations_today import build_operations_today_summary
+from server.services.decision.plan import build_daily_trading_plan
 
 
 async def build_today_operations_payload(state: Any) -> dict[str, Any]:

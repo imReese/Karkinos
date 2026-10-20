@@ -63,7 +63,7 @@ def test_decision_uses_persisted_portfolio_and_current_deduplicated_batch(
         lambda now=None: now or valuation_now,
     )
     monkeypatch.setattr(
-        "server.services.decision_portfolio_projection.get_shanghai_now",
+        "server.services.decision.decision_portfolio_projection.get_shanghai_now",
         lambda: valuation_now,
     )
     db = AppDatabase(tmp_path / "app.db")
@@ -161,7 +161,7 @@ def test_decision_uses_persisted_portfolio_and_current_deduplicated_batch(
 
 
 def test_decision_rejects_unparseable_quote_timestamp() -> None:
-    from server.services.decision_application import (
+    from server.services.decision.decision_application import (
         latest_quote_timestamp as _latest_quote_timestamp,
     )
 
@@ -179,7 +179,7 @@ def test_decision_reuses_strategy_gate_only_within_one_response(
         lambda now=None: now or valuation_now,
     )
     monkeypatch.setattr(
-        "server.services.decision_portfolio_projection.get_shanghai_now",
+        "server.services.decision.decision_portfolio_projection.get_shanghai_now",
         lambda: valuation_now,
     )
     db = AppDatabase(tmp_path / "app.db")
@@ -220,7 +220,7 @@ def test_decision_reuses_strategy_gate_only_within_one_response(
         ]
 
     monkeypatch.setattr(
-        "server.services.decision_application.resolve_strategy_order_generation_gate",
+        "server.services.decision.decision_application.resolve_strategy_order_generation_gate",
         strategy_gate,
     )
 
@@ -242,7 +242,7 @@ def test_decision_reuses_strategy_gate_only_within_one_response(
     ] == ["missing_evidence"]
 
     monkeypatch.setattr(
-        "server.services.decision_candidate_projection.action_trade_date",
+        "server.services.decision.decision_candidate_projection.action_trade_date",
         lambda action: "2026-07-11" if action["symbol"] == "600002" else "2026-07-10",
     )
     third = asyncio.run(_endpoint("/api/decision/today")())
@@ -258,7 +258,7 @@ def test_decision_blocks_unconfirmed_fund_estimate_as_persisted_evidence(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
-        "server.services.decision_portfolio_projection.get_shanghai_now",
+        "server.services.decision.decision_portfolio_projection.get_shanghai_now",
         lambda: datetime(2026, 7, 10, 14, 57, tzinfo=ZoneInfo("Asia/Shanghai")),
     )
     db = AppDatabase(tmp_path / "app.db")

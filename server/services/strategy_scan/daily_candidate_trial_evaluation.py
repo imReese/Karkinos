@@ -6,13 +6,13 @@ from datetime import date, datetime
 from typing import Any, Callable
 
 from server.services.account_truth_replay import verify_account_truth_replay_evidence
-from server.services.daily_decision_evidence_contracts import (
+from server.services.decision.daily_decision_evidence_contracts import (
     DAILY_CANDIDATE_DECISION_WINDOW_SCHEMA_VERSION,
     DAILY_CANDIDATE_INPUT_IDENTITY_SCHEMA_VERSION,
     DAILY_CANDIDATE_MAX_QUOTE_AGE_SECONDS,
     DAILY_DECISION_EVIDENCE_AUTOMATION_SCHEMA_VERSION,
 )
-from server.services.daily_decision_evidence_identity import (
+from server.services.decision.daily_decision_evidence_identity import (
     daily_candidate_input_fingerprint,
     daily_candidate_record_fingerprint,
 )

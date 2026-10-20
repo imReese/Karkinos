@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from server.services import operations_projection
+from server.services.decision import operations_projection
 
 
 class PaperShadowRunReviewRequest(BaseModel):

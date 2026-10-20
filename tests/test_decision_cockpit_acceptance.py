@@ -234,7 +234,7 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
         lambda now=None: now or valuation_now,
     )
     monkeypatch.setattr(
-        "server.services.decision_portfolio_projection.get_shanghai_now",
+        "server.services.decision.decision_portfolio_projection.get_shanghai_now",
         lambda: valuation_now,
     )
 
@@ -358,7 +358,7 @@ def test_fixture_cache_to_decision_api_dashboard_contract(
         ),
     )
     monkeypatch.setattr(
-        "server.services.decision_application._account_truth_gate_evidence",
+        "server.services.decision.decision_application._account_truth_gate_evidence",
         lambda state: {
             "gate_status": "pass",
             "data_freshness_status": "fresh",

@@ -1885,7 +1885,7 @@ def test_lifespan_reuses_cached_runtime_config(monkeypatch):
         inert_automation_loop,
     )
     monkeypatch.setattr(
-        "server.services.daily_decision_evidence_automation."
+        "server.services.decision.daily_decision_evidence_automation."
         "run_daily_decision_evidence_automation_loop",
         inert_automation_loop,
     )
@@ -1984,7 +1984,7 @@ def test_lifespan_starts_daily_decision_evidence_automation_with_live_scheduler(
         "notification.notifier.build_notifier", lambda notification: object()
     )
     monkeypatch.setattr(
-        "server.services.daily_decision_evidence_automation."
+        "server.services.decision.daily_decision_evidence_automation."
         "run_daily_decision_evidence_automation_loop",
         fake_decision_evidence_loop,
     )

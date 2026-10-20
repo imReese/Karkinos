@@ -18,7 +18,7 @@ from server.models import (
 from server.projections.portfolio_assets import (
     normalize_asset_class as _normalize_asset_class,
 )
-from server.services.daily_operations import build_daily_operations_summary
+from server.services.decision.daily_operations import build_daily_operations_summary
 
 
 def overview_today_pnl_update(

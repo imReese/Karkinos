@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from server.persistence.signal_journal import SignalJournalRepository
-from server.services.recommendation_flow import build_recommendation_cycle
+from server.services.decision.recommendation_flow import build_recommendation_cycle
 from server.services.strategy_scan.promoted_strategy_universe_scan_support import (
     DECISION_WINDOW_START,
     SHANGHAI_TIME_ZONE,

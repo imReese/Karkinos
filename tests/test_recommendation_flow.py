@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from server.services.recommendation_flow import build_recommendation_cycle
+from server.services.decision.recommendation_flow import build_recommendation_cycle
 
 
 def test_build_recommendation_cycle_normalizes_tasks_and_counts():

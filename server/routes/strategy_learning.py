@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Query
 from server.services.ai_shadow.strategy_learning_review import (
     StrategyLearningReviewService,
 )
-from server.services.decision_outcome_review import (
+from server.services.decision.decision_outcome_review import (
     DecisionOutcomeReviewService,
     DecisionOutcomeReviewStore,
 )

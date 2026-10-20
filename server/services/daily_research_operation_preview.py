@@ -17,8 +17,8 @@ from server.projections.normalized_research_recommendation import (
 from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
 )
-from server.services.daily_decision_background_schedule import next_trading_day
-from server.services.daily_decision_evidence_values import json_object_list
+from server.services.decision.daily_decision_background_schedule import next_trading_day
+from server.services.decision.daily_decision_evidence_values import json_object_list
 from server.services.market_calendar_evidence import validate_verified_market_calendar
 
 DAILY_RESEARCH_OPERATION_PREVIEW_SCHEMA = (

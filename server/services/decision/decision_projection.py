@@ -7,18 +7,18 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from server.services.decision_candidate_market_evidence import (
+from server.services.decision.decision_candidate_market_evidence import (
     bind_candidate_market_evidence,
     candidate_market_evidence,
 )
-from server.services.decision_contracts import (
+from server.services.decision.decision_contracts import (
     DecisionProjectionPorts,
     has_ready_manual_confirmation,
     is_intraday_action,
     overall_decision,
     parse_action_timestamp,
 )
-from server.services.decision_portfolio_projection import (
+from server.services.decision.decision_portfolio_projection import (
     action_filter_date,
     response_decision_date,
 )
@@ -30,10 +30,10 @@ def daily_candidate_generation_status(db: Any, decision_date: str) -> dict[str, 
     from server.projections.account_action_recommendation import (
         resolve_latest_verified_promoted_strategy_scan,
     )
-    from server.services.daily_decision_background_schedule import (
+    from server.services.decision.daily_decision_background_schedule import (
         project_daily_candidate_background_schedule,
     )
-    from server.services.daily_decision_evidence_identity import (
+    from server.services.decision.daily_decision_evidence_identity import (
         daily_candidate_input_fingerprint,
         daily_candidate_record_fingerprint,
     )
@@ -261,7 +261,7 @@ def suppress_unverified_daily_scan_candidates(
 ) -> dict[str, Any]:
     """Hide only same-day promoted-scan tasks lacking a completed run chain."""
 
-    from server.services.decision_workflow_projection import workflow_tasks
+    from server.services.decision.decision_workflow_projection import workflow_tasks
 
     generation = payload.get("generation")
     if payload.get("lane") != "daily":

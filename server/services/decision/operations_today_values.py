@@ -6,10 +6,10 @@ import hashlib
 import json
 from typing import Any, Iterable
 
-from server.services.operations_today_contracts import (
+from server.services.decision.operations_today_contracts import (
     PAPER_SHADOW_MODE as _PAPER_SHADOW_MODE,
 )
-from server.services.operations_today_contracts import (
+from server.services.decision.operations_today_contracts import (
     PAPER_SHADOW_SOURCE as _PAPER_SHADOW_SOURCE,
 )
 

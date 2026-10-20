@@ -19,7 +19,7 @@ from data.dataset.reader import read_daily_bar_dataset
 from data.storage.objects import ContentAddressedObjectStore
 from server.contracts.recommendation_publication import publication_source_blocker
 from server.persistence.ai_shadow_research import ShadowResearchStore
-from server.services.daily_decision_evidence_composition import (
+from server.services.decision.daily_decision_evidence_composition import (
     build_daily_decision_evidence_automation_service,
 )
 from tests.server.test_promoted_strategy_universe_scan import _service, _valuation_id
@@ -265,7 +265,7 @@ def test_independent_preparation_reopens_data_and_current_grant(
     scope_consumer, monkeypatch
 ):
     from server.services import strategy_promotion_pipeline as promotion
-    from server.services.daily_decision_preparation import (
+    from server.services.decision.daily_decision_preparation import (
         build_daily_candidate_preparation_check,
     )
 

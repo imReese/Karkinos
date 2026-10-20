@@ -9,8 +9,8 @@ from typing import Any
 import pytest
 
 from server.contracts.content_identity import content_fingerprint
-from server.services import daily_decision_report as report
-from server.services.daily_decision_evidence_identity import (
+from server.services.decision import daily_decision_report as report
+from server.services.decision.daily_decision_evidence_identity import (
     daily_candidate_input_fingerprint,
     daily_candidate_record_fingerprint,
 )

@@ -99,10 +99,11 @@ from server.ai_runtime.tasks import (
 from server.dependencies import AppState
 from server.persistence.database_identity import require_database_path
 from server.projections import portfolio_application
-from server.services import account_strategy_projections, operations_projection
+from server.services import account_strategy_projections
 from server.services.ai_shadow.ai_context_capture_factory import (
     build_human_context_capture_service as _build_context_capture_service,
 )
+from server.services.decision import operations_projection
 from server.services.research.factory import (
     build_strategy_research_write_service as _build_strategy_research_write_service,
 )

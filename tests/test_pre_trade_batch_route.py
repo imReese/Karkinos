@@ -30,7 +30,7 @@ def _freeze_valuation_clock(monkeypatch, now: datetime) -> None:
         lambda value=None: now,
     )
     monkeypatch.setattr(
-        "server.services.decision_portfolio_projection.get_shanghai_now",
+        "server.services.decision.decision_portfolio_projection.get_shanghai_now",
         lambda: now,
     )
 
@@ -162,7 +162,9 @@ def test_decision_identity_conflict_has_no_allocation_or_risk_writes(
     monkeypatch,
 ) -> None:
     from server.routes import decision as decision_routes
-    from server.services.decision_portfolio_projection import decision_portfolio_context
+    from server.services.decision.decision_portfolio_projection import (
+        decision_portfolio_context,
+    )
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -346,7 +348,7 @@ def test_decision_batch_pre_trade_risk_promotes_ready_trading_plan(
     )
     monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
     monkeypatch.setattr(
-        "server.services.decision_application._account_truth_gate_evidence",
+        "server.services.decision.decision_application._account_truth_gate_evidence",
         lambda state: {
             "gate_status": "pass",
             "data_freshness_status": "fresh",
@@ -355,7 +357,7 @@ def test_decision_batch_pre_trade_risk_promotes_ready_trading_plan(
         },
     )
     monkeypatch.setattr(
-        "server.services.decision_application.resolve_strategy_order_generation_gate",
+        "server.services.decision.decision_application.resolve_strategy_order_generation_gate",
         lambda db, strategy_id, *, as_of_date=None: (
             {
                 "status": "pass",

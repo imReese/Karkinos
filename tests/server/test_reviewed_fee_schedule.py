@@ -205,7 +205,7 @@ def test_reviewed_schedule_preview_binds_exact_reconciled_trade_components(
 def test_final_fee_binding_reopens_review_and_rejects_revocation(tmp_path, monkeypatch):
     from functools import partial
 
-    from server.services.recommendation_publication import (
+    from server.services.decision.recommendation_publication import (
         freeze_deployment_fee_schedule,
         resolve_frozen_deployment_fee_schedule,
     )

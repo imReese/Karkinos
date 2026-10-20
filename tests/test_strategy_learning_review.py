@@ -7,7 +7,7 @@ from server.db import AppDatabase
 from server.services.ai_shadow.strategy_learning_review import (
     StrategyLearningReviewService,
 )
-from server.services.decision_outcome_review import (
+from server.services.decision.decision_outcome_review import (
     DECISION_OUTCOME_REVIEW_CONFIRMATION,
     DecisionOutcomeReviewReplay,
     DecisionOutcomeReviewRequest,

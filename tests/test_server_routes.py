@@ -16,7 +16,7 @@ from fastapi import BackgroundTasks, HTTPException
 from fastapi.routing import APIRoute
 
 from core.types import InstrumentType, Symbol
-from server.services import decision_application
+from server.services.decision import decision_application
 from server.services.market import refresh as market_refresh
 from tests.analytics.test_strategy_validation_matrix import REQUIRED_STRATEGY_IDS
 from tests.portfolio_valuation_fakes import bind_published_valuation

@@ -18,7 +18,7 @@ from server.models import (
     SignalJournalEntry,
     SignalResponse,
 )
-from server.services.decision_outcome_review import (
+from server.services.decision.decision_outcome_review import (
     DecisionOutcomeReviewRejected,
     DecisionOutcomeReviewRequest,
     DecisionOutcomeReviewService,

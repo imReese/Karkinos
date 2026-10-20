@@ -158,19 +158,19 @@ async def lifespan(app: FastAPI):
     from server.services.ai_shadow.ai_shadow_research_job_scheduler import (
         AiShadowResearchJobScheduler,
     )
-    from server.services.daily_decision_evidence_automation import (
+    from server.services.decision.daily_decision_evidence_automation import (
         DAILY_DECISION_EVIDENCE_AUTOMATION_TASK_NAME,
         run_daily_decision_evidence_automation_loop,
     )
-    from server.services.decision_application import (
+    from server.services.decision.decision_application import (
         run_batch_pre_trade_risk_for_state,
+    )
+    from server.services.decision.operations_projection import (
+        current_decision_and_trading_plan,
     )
     from server.services.market.refresh import refresh_one_quote
     from server.services.market_universe_automation import (
         run_market_universe_automation_loop,
-    )
-    from server.services.operations_projection import (
-        current_decision_and_trading_plan,
     )
     from server.services.research_observation_automation import (
         run_research_observation_automation_loop,

@@ -794,7 +794,7 @@ class AiShadowResearchQualificationService:
         timestamp: str,
     ) -> dict[str, Any] | None:
         """Publish only under a real active standing recommendation grant."""
-        from server.services.recommendation_publication import (
+        from server.services.decision.recommendation_publication import (
             RecommendationPublicationService,
         )
 
