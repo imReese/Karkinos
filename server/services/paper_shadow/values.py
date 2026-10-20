@@ -1,0 +1,66 @@
+"""Value predicates, input normalization, and snapshots for paper shadow.
+
+Canonical module in server.services.paper_shadow.
+"""
+
+from __future__ import annotations
+
+from server.services.paper_shadow.paper_shadow_values import (
+    account_truth_snapshot,
+    asset_class,
+    broker_account_truth_state,
+    current_account_facts,
+    decimal_or_zero,
+    decimal_value,
+    dedupe_refs,
+    dict_value,
+    fill_count_by_order,
+    first_ref,
+    float_or_none,
+    input_fingerprint,
+    input_refs,
+    input_snapshot,
+    normalized_outcome_overrides,
+    order_intent_ref,
+    order_intent_snapshot,
+    order_intents,
+    outcome_for_intent,
+    paper_order_context,
+    plan_date,
+    refs_with_prefix,
+    side,
+    stable_order_intent_input,
+    string_or_none,
+    timestamp,
+    value_counts,
+)
+
+__all__ = [
+    "account_truth_snapshot",
+    "asset_class",
+    "broker_account_truth_state",
+    "current_account_facts",
+    "decimal_or_zero",
+    "decimal_value",
+    "dedupe_refs",
+    "dict_value",
+    "fill_count_by_order",
+    "first_ref",
+    "float_or_none",
+    "input_fingerprint",
+    "input_refs",
+    "input_snapshot",
+    "normalized_outcome_overrides",
+    "order_intent_ref",
+    "order_intent_snapshot",
+    "order_intents",
+    "outcome_for_intent",
+    "paper_order_context",
+    "plan_date",
+    "refs_with_prefix",
+    "side",
+    "stable_order_intent_input",
+    "string_or_none",
+    "timestamp",
+    "value_counts",
+]
