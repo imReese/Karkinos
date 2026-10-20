@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import replace
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -137,7 +138,7 @@ def test_tencent_preserves_sdk_dataframe_as_stable_raw_evidence() -> None:
     ).fetch_daily_bars(_request(InstrumentKey("600000", InstrumentType.STOCK)))
 
     payload = json.loads(result.raw_payload)
-    assert payload["schema"] == "akshare.tencent.stock_zh_a_hist_tx.dataframe.v3"
+    assert payload["schema"] == "akshare.tencent.stock_zh_a_hist_tx.dataframe.v4"
     assert payload["sdk_version"] == "1.18.97"
     assert payload["calls"][0]["volume_scale_to_shares"] == "1"
     assert payload["calls"][0]["symbol"] == "sh600000"
@@ -175,7 +176,7 @@ def test_tencent_v2_binds_reviewed_typed_volume_correction(symbol, sdk_volume, s
     batch = AkshareTencentDailyBarProvider(
         client, clock=lambda: AFTER_CLOSE
     ).fetch_daily_bars(_request(InstrumentKey(symbol, InstrumentType.STOCK)))
-    assert batch.adapter_version == "karkinos.akshare_tencent.daily_bar.v3"
+    assert batch.adapter_version == "karkinos.akshare_tencent.daily_bar.v4"
     assert batch.rows[0].volume == shares
     payload = json.loads(batch.raw_payload)
     # The response stays exactly as captured; only canonical normalization
@@ -329,7 +330,7 @@ def _ingest_amount(provider, objects):
         (239516699.99999997, "239516700"),
     ],
 )
-def test_v3_recovers_only_reviewed_sdk_one_ulp_amount_and_preserves_raw(
+def test_v4_retains_reviewed_sdk_one_ulp_amount_recovery_and_preserves_raw(
     tmp_path, captured, expected
 ):
     """Sanitized public-market values reproduce the actual SDK multiplication tail."""
@@ -351,7 +352,7 @@ def test_v3_recovers_only_reviewed_sdk_one_ulp_amount_and_preserves_raw(
         reopened, revision=result.revision, materialization=result.materialization
     )
     assert bars[0].amount == Decimal(expected)
-    assert capture.adapter_version == "karkinos.akshare_tencent.daily_bar.v3"
+    assert capture.adapter_version == "karkinos.akshare_tencent.daily_bar.v4"
     assert result.eligible_for_dataset_publication
 
 
@@ -368,7 +369,7 @@ def test_v3_recovers_only_reviewed_sdk_one_ulp_amount_and_preserves_raw(
         (-5e-324, "1.18.97", "daily_bar_amount_must_be_non_negative"),
     ],
 )
-def test_v3_does_not_round_unreviewed_or_non_binary_precision_loss(
+def test_v4_does_not_round_unreviewed_or_non_binary_amount_precision_loss(
     tmp_path, amount, sdk, cause
 ):
     objects = ContentAddressedObjectStore(tmp_path / "objects")
@@ -379,9 +380,16 @@ def test_v3_does_not_round_unreviewed_or_non_binary_precision_loss(
     assert objects.verify(failure.value.capture.raw_object_ref)
 
 
-@pytest.mark.parametrize("version", ["v1", "v2"])
-def test_legacy_capture_reopens_exact_eight_decimal_tail_without_v3_recalculation(
-    tmp_path, version
+@pytest.mark.parametrize(
+    "version,expected",
+    [
+        ("v1", "239516699.99999997"),
+        ("v2", "239516699.99999997"),
+        ("v3", "239516700"),
+    ],
+)
+def test_legacy_capture_reopens_its_original_amount_normalization(
+    tmp_path, version, expected
 ):
     from data.market.capture import read_provider_capture, read_provider_raw_payload
     from data.providers.tencent import _rows_from_frame
@@ -400,7 +408,9 @@ def test_legacy_capture_reopens_exact_eight_decimal_tail_without_v3_recalculatio
             raw = json.loads(batch.raw_payload)
             raw["schema"] = legacy_format
             for call in raw["calls"]:
-                call.pop("amount_normalization")
+                call.pop("volume_normalization")
+                if version != "v3":
+                    call.pop("amount_normalization")
             rows = _rows_from_frame(
                 frame,
                 instrument=request.instruments[0],
@@ -425,5 +435,175 @@ def test_legacy_capture_reopens_exact_eight_decimal_tail_without_v3_recalculatio
     bars = validate_daily_bar_materialization(
         reopened, revision=result.revision, materialization=result.materialization
     )
-    assert bars[0].amount == Decimal("239516699.99999997")
+    assert bars[0].amount == Decimal(expected)
+    assert result.eligible_for_dataset_publication
+
+
+def _volume_provider(volume, instrument, *, sdk="1.18.97"):
+    client = FakeTencent()
+    client.__version__ = sdk
+    prefix = "sh" if instrument.symbol.startswith(("6", "5")) else "sz"
+    client.frames[prefix + instrument.symbol] = _frame(
+        close=10, volume=volume, amount=1000000
+    )
+    return AkshareTencentDailyBarProvider(client, clock=lambda: AFTER_CLOSE)
+
+
+@pytest.mark.parametrize(
+    "symbol,kind,captured,expected",
+    [
+        ("002244", InstrumentType.STOCK, 33359009.000000004, "33359009"),
+        ("600000", InstrumentType.STOCK, 33359008.999999996, "33359009"),
+        ("300001", InstrumentType.STOCK, 67108863.99999999, "67108864"),
+        ("689001", InstrumentType.STOCK, 33359009.000000004, "33359009"),
+        ("510300", InstrumentType.ETF, 33359009.000000004, "33359009"),
+        ("159915", InstrumentType.ETF, 33359009.000000004, "33359009"),
+    ],
+)
+def test_v4_recovers_reviewed_sdk_one_ulp_volume_and_preserves_raw(
+    tmp_path, symbol, kind, captured, expected
+):
+    from data.market.capture import read_provider_capture, read_provider_raw_payload
+
+    instrument = InstrumentKey(symbol, kind)
+    objects = ContentAddressedObjectStore(tmp_path / "objects")
+    result = ingest_daily_bars(
+        _volume_provider(captured, instrument),
+        objects,
+        request=_request(instrument),
+        quality_policy=RESEARCH_STRICT_DAILY,
+        normalizer_version="karkinos.market.normalize.v1",
+        checked_at=AFTER_CLOSE,
+    )
+    reopened = ContentAddressedObjectStore(tmp_path / "objects")
+    capture = read_provider_capture(reopened, result.capture.capture_ref)
+    raw = json.loads(read_provider_raw_payload(reopened, capture))
+    call = raw["calls"][0]
+    assert (
+        call["frame"]["data"][0][call["frame"]["columns"].index("volume")] == captured
+    )
+    assert call["volume_normalization"] == (
+        "karkinos.akshare.1.18.97.tencent.volume_100_one_binary_ulp.v1"
+    )
+    assert call["volume_scale_to_shares"] == "1"
+    assert capture.adapter_version == "karkinos.akshare_tencent.daily_bar.v4"
+    assert raw["schema"] == "akshare.tencent.stock_zh_a_hist_tx.dataframe.v4"
+    bars = validate_daily_bar_materialization(
+        reopened, revision=result.revision, materialization=result.materialization
+    )
+    assert bars[0].volume == Decimal(expected)
+    assert result.eligible_for_dataset_publication
+
+
+@pytest.mark.parametrize(
+    "volume,sdk,symbol,cause",
+    [
+        (33359009.000000004, "1.18.98", "600000", "exceeds_storage_scale"),
+        (
+            math.nextafter(33359009.000000004, math.inf),
+            "1.18.97",
+            "600000",
+            "exceeds_storage_scale",
+        ),
+        (
+            Decimal("33359009.000000004"),
+            "1.18.97",
+            "600000",
+            "exceeds_storage_scale",
+        ),
+        ("33359009.000000004", "1.18.97", "600000", "exceeds_storage_scale"),
+        (33359009.000000004, "1.18.97", "688001", "exceeds_storage_scale"),
+        (-5e-324, "1.18.97", "600000", "must_be_non_negative"),
+    ],
+)
+def test_v4_volume_recovery_keeps_sdk_prefix_and_storage_boundaries(
+    tmp_path, volume, sdk, symbol, cause
+):
+    instrument = InstrumentKey(symbol, InstrumentType.STOCK)
+    objects = ContentAddressedObjectStore(tmp_path / "objects")
+    with pytest.raises(DailyBarIngestionCapturedFailure) as failure:
+        ingest_daily_bars(
+            _volume_provider(volume, instrument, sdk=sdk),
+            objects,
+            request=_request(instrument),
+            quality_policy=RESEARCH_STRICT_DAILY,
+            normalizer_version="karkinos.market.normalize.v1",
+            checked_at=AFTER_CLOSE,
+        )
+    assert isinstance(failure.value.__cause__, ValueError)
+    assert str(failure.value.__cause__) == "daily_bar_volume_" + cause
+    assert objects.verify(failure.value.capture.raw_object_ref)
+
+
+@pytest.mark.parametrize("volume", [100.25, math.nextafter(float(2**51), math.inf)])
+def test_v4_does_not_recover_fractional_or_ambiguous_integer_volume(volume):
+    instrument = InstrumentKey("600000", InstrumentType.STOCK)
+    batch = _volume_provider(volume, instrument).fetch_daily_bars(_request(instrument))
+    assert batch.rows[0].volume == Decimal(str(volume))
+
+
+@pytest.mark.parametrize("symbol,scale", [("000001", 100), ("688001", 1)])
+def test_v4_preserves_volume_from_sdk_branches_without_binary_multiplication(
+    symbol, scale
+):
+    instrument = InstrumentKey(symbol, InstrumentType.STOCK)
+    volume = 33359009.000000004
+    batch = _volume_provider(volume, instrument).fetch_daily_bars(_request(instrument))
+    assert batch.rows[0].volume == Decimal(str(volume)) * scale
+    call = json.loads(batch.raw_payload)["calls"][0]
+    assert call["volume_scale_to_shares"] == str(scale)
+    assert call["volume_normalization"] is None
+
+
+@pytest.mark.parametrize("version", ["v1", "v2", "v3"])
+def test_legacy_volume_capture_replays_original_tail_without_v4_recalculation(
+    tmp_path, version
+):
+    from data.market.capture import read_provider_raw_payload
+    from data.providers.tencent import _rows_from_frame
+
+    instrument = InstrumentKey("600000", InstrumentType.STOCK)
+    volume = 67108863.99999999
+    current = _volume_provider(volume, instrument)
+    frame = current._client.frames["sh600000"]
+    legacy_version = "karkinos.akshare_tencent.daily_bar." + version
+    legacy_format = "akshare.tencent.stock_zh_a_hist_tx.dataframe." + version
+
+    class LegacyProvider:
+        descriptor = replace(current.descriptor, adapter_version=legacy_version)
+
+        def fetch_daily_bars(self, request):
+            batch = current.fetch_daily_bars(request)
+            assert batch.rows[0].volume == Decimal("67108864")
+            raw = json.loads(batch.raw_payload)
+            raw["schema"] = legacy_format
+            for call in raw["calls"]:
+                call.pop("volume_normalization")
+                if version != "v3":
+                    call.pop("amount_normalization")
+            rows = _rows_from_frame(
+                frame,
+                instrument=instrument,
+                expected_session=DAY,
+                sdk_version="1.18.97",
+                adapter_version=legacy_version,
+            )
+            return replace(
+                batch,
+                adapter_version=legacy_version,
+                payload_format=legacy_format,
+                rows=tuple(rows),
+                raw_payload=json.dumps(raw, sort_keys=True).encode(),
+            )
+
+    objects = ContentAddressedObjectStore(tmp_path / "objects")
+    result = _ingest_amount(LegacyProvider(), objects)
+    reopened = ContentAddressedObjectStore(tmp_path / "objects")
+    raw_before = read_provider_raw_payload(reopened, result.capture)
+    bars = validate_daily_bar_materialization(
+        reopened, revision=result.revision, materialization=result.materialization
+    )
+    assert bars[0].volume == Decimal("67108863.99999999")
+    assert read_provider_raw_payload(reopened, result.capture) == raw_before
+    assert result.capture.adapter_version == legacy_version
     assert result.eligible_for_dataset_publication

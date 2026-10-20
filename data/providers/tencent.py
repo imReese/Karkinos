@@ -10,7 +10,7 @@ import math
 import re
 from collections.abc import Callable
 from datetime import date, datetime, time, timezone
-from decimal import Decimal, InvalidOperation, localcontext
+from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation, localcontext
 from importlib.metadata import version as distribution_version
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
@@ -30,13 +30,16 @@ from data.market.contracts import (
 from data.providers.akshare_sdk import provider_network_env
 from data.source import DataSource, ProviderQuote
 
-AKSHARE_TENCENT_DAILY_BAR_ADAPTER_VERSION = "karkinos.akshare_tencent.daily_bar.v3"
+AKSHARE_TENCENT_DAILY_BAR_ADAPTER_VERSION = "karkinos.akshare_tencent.daily_bar.v4"
 AKSHARE_TENCENT_DAILY_BAR_PAYLOAD_FORMAT = (
-    "akshare.tencent.stock_zh_a_hist_tx.dataframe.v3"
+    "akshare.tencent.stock_zh_a_hist_tx.dataframe.v4"
 )
 _REVIEWED_AKSHARE_VERSION = "1.18.97"
 _AMOUNT_FLOAT_NORMALIZATION = (
     "karkinos.akshare.1.18.97.tencent.amount_10000_one_binary_ulp.v1"
+)
+_VOLUME_FLOAT_NORMALIZATION = (
+    "karkinos.akshare.1.18.97.tencent.volume_100_one_binary_ulp.v1"
 )
 AKSHARE_TENCENT_DAILY_BAR_DESCRIPTOR = MarketDataProviderDescriptor(
     provider="akshare_tencent",
@@ -182,6 +185,12 @@ class AkshareTencentDailyBarProvider:
                     "request": kwargs,
                     "frame": _serialize_dataframe(frame),
                     "volume_scale_to_shares": str(volume_scales[instrument]),
+                    "volume_normalization": (
+                        _VOLUME_FLOAT_NORMALIZATION
+                        if sdk_version == _REVIEWED_AKSHARE_VERSION
+                        and _sdk_multiplies_volume(symbol)
+                        else None
+                    ),
                     "amount_normalization": (
                         _AMOUNT_FLOAT_NORMALIZATION
                         if sdk_version == _REVIEWED_AKSHARE_VERSION
@@ -318,7 +327,13 @@ def _rows_from_frame(
                 high_value=_decimal(item["high"], field="high"),
                 low_value=_decimal(item["low"], field="low"),
                 close_value=_decimal(item["close"], field="close"),
-                volume=_decimal(item["volume"], field="volume") * volume_scale,
+                volume=_normalized_volume(
+                    item["volume"],
+                    instrument=instrument,
+                    sdk_version=sdk_version,
+                    adapter_version=adapter_version,
+                )
+                * volume_scale,
                 amount=_normalized_amount(
                     item["amount"],
                     sdk_version=sdk_version,
@@ -335,6 +350,43 @@ def _rows_from_frame(
     return result
 
 
+def _normalized_volume(
+    value: object,
+    *,
+    instrument: InstrumentKey,
+    sdk_version: str | None,
+    adapter_version: str,
+) -> Decimal:
+    volume = _decimal(value, field="volume")
+    if hasattr(value, "item") and not isinstance(value, (str, bytes, Decimal)):
+        value = value.item()
+    if (
+        adapter_version != "karkinos.akshare_tencent.daily_bar.v4"
+        or sdk_version != _REVIEWED_AKSHARE_VERSION
+        or not isinstance(value, float)
+        or not _sdk_multiplies_volume(_provider_symbol(instrument))
+    ):
+        return volume
+    # This SDK multiplies Tencent's 0.01-lot grid by 100 using binary floats.
+    # Recover only a unique integer-share grid point within one binary ULP;
+    # keep larger differences and exact decimals subject to the storage gate.
+    grid = volume.to_integral_value(rounding=ROUND_HALF_EVEN)
+    ulp = Decimal.from_float(math.ulp(value))
+    with localcontext() as context:
+        context.prec = 80
+        if (
+            grid > 0
+            and ulp < Decimal("0.5")
+            and abs(Decimal.from_float(value) - grid) <= ulp
+        ):
+            return grid
+    return volume
+
+
+def _sdk_multiplies_volume(symbol: str) -> bool:
+    return not symbol.startswith(("sh688", "sz399", "sh000", "sz000"))
+
+
 def _normalized_amount(
     value: object, *, sdk_version: str | None, adapter_version: str
 ) -> Decimal:
@@ -342,7 +394,11 @@ def _normalized_amount(
     if hasattr(value, "item") and not isinstance(value, (str, bytes, Decimal)):
         value = value.item()
     if (
-        adapter_version != "karkinos.akshare_tencent.daily_bar.v3"
+        adapter_version
+        not in {
+            "karkinos.akshare_tencent.daily_bar.v3",
+            "karkinos.akshare_tencent.daily_bar.v4",
+        }
         or sdk_version != _REVIEWED_AKSHARE_VERSION
         or not isinstance(value, float)
     ):
@@ -476,8 +532,8 @@ logger = logging.getLogger(__name__)
 
 _CHINA_MARKET_TZ = ZoneInfo("Asia/Shanghai")
 
-TENCENT_DAILY_BAR_ADAPTER_VERSION = "karkinos.tencent.daily_bar.v2"
-TENCENT_DAILY_BAR_PAYLOAD_FORMAT = "tencent.stock_zh_a_hist_tx.dataframe.v2"
+TENCENT_DAILY_BAR_ADAPTER_VERSION = "karkinos.tencent.daily_bar.v3"
+TENCENT_DAILY_BAR_PAYLOAD_FORMAT = "tencent.stock_zh_a_hist_tx.dataframe.v3"
 TENCENT_DAILY_BAR_DESCRIPTOR = MarketDataProviderDescriptor(
     provider="tencent",
     upstream_group="tencent",

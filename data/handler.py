@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping
 from decimal import Decimal
+from typing import Any
 
 import pandas as pd
 
@@ -48,6 +50,12 @@ class DataHandler:
     def _row_to_event(self, row: pd.Series) -> MarketEvent:
         """将 DataFrame 行转为 MarketEvent。"""
         ts = row.get("timestamp", row.get("日期", row.name))
+        return self._values_to_event(ts, row)
+
+    def _values_to_event(
+        self, ts: Any, row: pd.Series | Mapping[str, Any]
+    ) -> MarketEvent:
+        """Keep time and Decimal conversion identical for both row iterators."""
         if isinstance(ts, str):
             ts = pd.Timestamp(ts).to_pydatetime()
 
@@ -70,6 +78,46 @@ class DataHandler:
             instrument_type=self._instrument_type,
             available_at=available_at,
         )
+
+    def _iter_replay_events(self) -> Iterator[MarketEvent]:
+        """Opt-in tuple iteration for the exact immutable Dataset frame shape."""
+        columns = (
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "amount",
+            "available_at",
+            "captured_at",
+        )
+        if (
+            type(self) is DataHandler
+            and type(self._df) is pd.DataFrame
+            and tuple(self._df.columns) == columns
+        ):
+            dtypes = self._df.dtypes
+            canonical = all(dtypes[name] == object for name in columns[1:7]) and all(
+                isinstance(dtypes[name], pd.DatetimeTZDtype)
+                for name in ("timestamp", "available_at", "captured_at")
+            )
+            if canonical:
+                for values in self._df.itertuples(index=False, name=None):
+                    ts, opening, high, low, close, volume, _, available_at, _ = values
+                    yield self._values_to_event(
+                        ts,
+                        {
+                            "open": opening,
+                            "high": high,
+                            "low": low,
+                            "close": close,
+                            "volume": volume,
+                            "available_at": available_at,
+                        },
+                    )
+                return
+        yield from self
 
     def stream(self):
         """别名：返回迭代器。"""

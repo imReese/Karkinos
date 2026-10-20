@@ -134,6 +134,13 @@ _CALL_PARENT_BAR_INDEXES: ContextVar[
     ]
     | None
 ] = ContextVar("call_verified_parent_bar_indexes", default=None)
+_CALL_VERIFIED_MEMBERSHIPS: ContextVar[
+    dict[
+        tuple[str, int],
+        tuple[DailyBarDatasetSnapshot, dict[date, tuple[InstrumentKey, ...]]],
+    ]
+    | None
+] = ContextVar("call_verified_dataset_memberships", default=None)
 
 
 @contextmanager
@@ -144,9 +151,11 @@ def daily_bar_dataset_read_scope(*, join_existing: bool = False) -> Iterator[Non
         return
     token = _CALL_VERIFIED_DATASETS.set({})
     index_token = _CALL_PARENT_BAR_INDEXES.set({})
+    membership_token = _CALL_VERIFIED_MEMBERSHIPS.set({})
     try:
         yield
     finally:
+        _CALL_VERIFIED_MEMBERSHIPS.reset(membership_token)
         _CALL_PARENT_BAR_INDEXES.reset(index_token)
         _CALL_VERIFIED_DATASETS.reset(token)
 
@@ -212,6 +221,11 @@ def _read_daily_bar_dataset(
         raise DatasetReaderIntegrityError("dataset_reader_manifest_invalid") from exc
 
     bars: list[DailyBarObservation] = []
+    # Repeated rows share immutable identities and instants within this read.
+    # Keep this local: a later cold read must still verify its own source bytes.
+    instruments = {key: key for key in snapshot.instruments}
+    sessions: dict[date, date] = {}
+    instants: dict[datetime, datetime] = {}
     _validate_membership_evidence(store, snapshot)
     memberships = {item.partition_date: item for item in snapshot.session_memberships}
 
@@ -223,21 +237,30 @@ def _read_daily_bar_dataset(
             membership=memberships.get(partition.partition_date),
         )
 
-        bars.extend(partition_bars)
+        bars.extend(
+            replace(
+                bar,
+                instrument=instruments.setdefault(bar.instrument, bar.instrument),
+                session_date=sessions.setdefault(bar.session_date, bar.session_date),
+                event_time=instants.setdefault(bar.event_time, bar.event_time),
+                available_at=instants.setdefault(bar.available_at, bar.available_at),
+                captured_at=instants.setdefault(bar.captured_at, bar.captured_at),
+            )
+            for bar in partition_bars
+        )
+
+    bars.sort(
+        key=lambda bar: (
+            bar.session_date,
+            bar.instrument.instrument_type.value,
+            bar.instrument.symbol,
+        )
+    )
 
     result = DailyBarDatasetReadResult(
         ref=ref,
         snapshot=snapshot,
-        bars=tuple(
-            sorted(
-                bars,
-                key=lambda bar: (
-                    bar.session_date,
-                    bar.instrument.instrument_type.value,
-                    bar.instrument.symbol,
-                ),
-            )
-        ),
+        bars=tuple(bars),
         corporate_action_evidence=read_dataset_corporate_action_evidence(
             store, snapshot
         ),
@@ -803,7 +826,39 @@ def _validate_membership_evidence(
     store, snapshot: DailyBarDatasetSnapshot, *, session_date: date | None = None
 ) -> dict[date, tuple[InstrumentKey, ...]]:
     """Verify actual source bytes/times, without inferring historical membership."""
+    from data.market.capture import ProviderCaptureError
+    from data.providers.baostock import (
+        BaoStockDailyBarError,
+        read_baostock_historical_status,
+    )
+    from data.providers.tushare_status import read_tushare_historical_status
+
+    verified = _CALL_VERIFIED_MEMBERSHIPS.get()
+    cache_key = (
+        (str(store.root.resolve()), id(snapshot))
+        if verified is not None
+        and type(snapshot) is DailyBarDatasetSnapshot
+        and all(
+            type(item) is DailyBarDatasetMembership
+            and isinstance(item.maintenance_instruments, tuple)
+            for item in snapshot.session_memberships
+        )
+        else None
+    )
+    if verified is not None and cache_key is not None and cache_key in verified:
+        # Retaining the immutable snapshot prevents object-id reuse. Only a
+        # completed full validation can populate this request-local projection.
+        _, previous = verified[cache_key]
+        return {
+            day: keys
+            for day, keys in previous.items()
+            if session_date is None or day == session_date
+        }
+
     nontrading = {}
+    # A range capture and master may serve thousands of dates. Reopen their
+    # bytes once in this validation call; a later cold read verifies them again.
+    sources = {}
     for membership in getattr(snapshot, "session_memberships", ()):
         if session_date is not None and membership.partition_date != session_date:
             continue
@@ -811,47 +866,81 @@ def _validate_membership_evidence(
             continue
         members: set[InstrumentKey] = set()
         session_nontrading: set[InstrumentKey] = set()
+        historical_status: dict[InstrumentKey, str] = {}
+        historical_requests = []
         availability = []
         try:
             for identity in membership.source_observation_ids:
-                source = json.loads(store.read_bytes(store.resolve_ref(identity)))
-                if (
-                    source["schema_version"]
-                    not in {
-                        "karkinos.market_universe_snapshot.v2",
-                        "karkinos.market_universe_snapshot.v3",
-                    }
-                    or source["membership_basis"] != "current_active_stock_master"
-                    or source["availability_basis"] != "capture_completed_at"
-                    or source["observation_basis"] != "adapter_response"
-                ):
-                    raise ValueError("unsupported_membership_source")
-                started = datetime.fromisoformat(source["capture_started_at"])
-                completed = datetime.fromisoformat(source["capture_completed_at"])
-                available = datetime.fromisoformat(source["available_at"])
-                if (
-                    any(
-                        value.utcoffset() is None
-                        for value in (started, completed, available)
-                    )
-                    or not started <= completed == available
-                ):
-                    raise ValueError("invalid_membership_source_time")
-                if "source_capture_ids" in source:
-                    from data.store import (
-                        require_stock_master_capture_evidence,
-                        stock_master_nontrading_instruments,
-                    )
-
-                    require_stock_master_capture_evidence(store, source)
-                    session_nontrading.update(
-                        stock_master_nontrading_instruments(
-                            source, session_date=membership.partition_date
+                if identity not in sources:
+                    source = json.loads(store.read_bytes(store.resolve_ref(identity)))
+                    if source.get("schema_version") == "karkinos.provider_capture.v1":
+                        source_kind = (source.get("provider"), source.get("operation"))
+                        if source_kind == ("baostock", "daily_bars"):
+                            read_status = read_baostock_historical_status
+                        elif source_kind == ("tushare", "suspend_d"):
+                            read_status = read_tushare_historical_status
+                        else:
+                            raise ValueError("historical_status_source_unsupported")
+                        sources[identity] = (
+                            "historical_status",
+                            read_status(store, store.resolve_ref(identity)),
                         )
-                    )
+                    else:
+                        sources[identity] = (
+                            "master",
+                            _membership_master_evidence(store, source),
+                        )
+                kind, source = sources[identity]
+                if kind == "historical_status":
+                    capture, request, statuses = source
+                    if membership.decision_at is not None or not (
+                        request.start_date
+                        <= membership.partition_date
+                        <= request.end_date
+                    ):
+                        raise ValueError("historical_status_not_exploratory_or_dated")
+                    historical_requests.append(request)
+                    for key, status in statuses.get(
+                        membership.partition_date, {}
+                    ).items():
+                        if (
+                            key in historical_status
+                            and historical_status[key] != status
+                        ):
+                            if "0" in (historical_status[key], status):
+                                raise ValueError("historical_status_sources_conflict")
+                            # Explicit activity and a resumption/intraday record
+                            # both contradict a full-day halt. The latter alone
+                            # cannot establish a traded bar or active status.
+                            if historical_status[key] == "1":
+                                continue
+                        historical_status[key] = status
+                    availability.append(capture.completed_at)
+                    continue
+                source_members, available, dated_nontrading = source
+                session_nontrading.update(
+                    dated_nontrading.get(membership.partition_date, ())
+                )
                 availability.append(available)
-                for row in source["members"]:
-                    members.add(InstrumentKey(str(row["symbol"]), InstrumentType.STOCK))
+                members.update(source_members)
+            if historical_requests:
+                if not members or any(
+                    not set(request.instruments) <= members
+                    for request in historical_requests
+                ):
+                    raise ValueError("historical_status_membership_source_missing")
+                if any(
+                    status != "0" and key in session_nontrading
+                    for key, status in historical_status.items()
+                ):
+                    raise ValueError("historical_status_sources_conflict")
+                session_nontrading.update(
+                    key for key, status in historical_status.items() if status == "0"
+                )
+                if session_nontrading.intersection(
+                    (*membership.instruments, *membership.maintenance_instruments)
+                ):
+                    raise ValueError("historical_status_traded_membership_conflict")
             if (
                 max(availability) != membership.available_at
                 or not set(membership.instruments) <= members
@@ -864,8 +953,58 @@ def _validate_membership_evidence(
                         key=lambda key: (key.instrument_type.value, key.symbol),
                     )
                 )
-        except (ObjectStoreError, ValueError, TypeError, KeyError) as exc:
+        except (
+            ObjectStoreError,
+            ProviderCaptureError,
+            BaoStockDailyBarError,
+            ValueError,
+            TypeError,
+            KeyError,
+            AttributeError,
+        ) as exc:
             raise DatasetReaderIntegrityError(
                 "dataset_membership_evidence_invalid"
             ) from exc
+    if verified is not None and cache_key is not None and session_date is None:
+        verified[cache_key] = (snapshot, dict(nontrading))
     return nontrading
+
+
+def _membership_master_evidence(store, source):
+    """Replay a master once, preserving its actual date and availability."""
+    if (
+        source["schema_version"]
+        not in {
+            "karkinos.market_universe_snapshot.v2",
+            "karkinos.market_universe_snapshot.v3",
+        }
+        or source["membership_basis"] != "current_active_stock_master"
+        or source["availability_basis"] != "capture_completed_at"
+        or source["observation_basis"] != "adapter_response"
+    ):
+        raise ValueError("unsupported_membership_source")
+    started = datetime.fromisoformat(source["capture_started_at"])
+    completed = datetime.fromisoformat(source["capture_completed_at"])
+    available = datetime.fromisoformat(source["available_at"])
+    if (
+        any(value.utcoffset() is None for value in (started, completed, available))
+        or not started <= completed == available
+    ):
+        raise ValueError("invalid_membership_source_time")
+    dated_nontrading = {}
+    if "source_capture_ids" in source:
+        from data.store import (
+            require_stock_master_capture_evidence,
+            stock_master_nontrading_instruments,
+        )
+
+        require_stock_master_capture_evidence(store, source)
+        day = date.fromisoformat(source["trade_date"])
+        dated_nontrading[day] = stock_master_nontrading_instruments(
+            source, session_date=day
+        )
+    members = {
+        InstrumentKey(str(row["symbol"]), InstrumentType.STOCK)
+        for row in source["members"]
+    }
+    return members, available, dated_nontrading

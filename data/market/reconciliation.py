@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 from enum import Enum
 
@@ -96,6 +97,11 @@ class DailyBarReconciliationPolicy:
                     Decimal(0),
                     Decimal("0.99"),
                 ),
+                "karkinos.tencent_tushare.reported_amount_resolution.v1": (
+                    Decimal(0),
+                    Decimal(0),
+                    Decimal("99.99"),
+                ),
             }
             if amounts.get(self.source_precision_policy) != (
                 self.price_tolerance,
@@ -137,6 +143,17 @@ EASTMONEY_TUSHARE_BSE_RECONCILIATION_V1 = DailyBarReconciliationPolicy(
 BAOSTOCK_TUSHARE_AMOUNT_RECONCILIATION_V1 = DailyBarReconciliationPolicy(
     amount_tolerance=Decimal("0.99"),
     source_precision_policy="karkinos.baostock_tushare.amount_resolution.v1",
+)
+
+
+# Agreement within one Tencent reported 100-CNY unit, not exact traded amount
+# or a bound on true-value error. Only reviewed SSE/SZSE stock captures qualify:
+# both raw responses must reproduce every compared field, Tencent must retain
+# its reviewed amount marker/grid, and TuShare must reproduce reported cents.
+# Prices, volume, event time and suspension stay exact; zero amounts stay exact.
+TENCENT_TUSHARE_REPORTED_AMOUNT_RECONCILIATION_V1 = DailyBarReconciliationPolicy(
+    amount_tolerance=Decimal("99.99"),
+    source_precision_policy="karkinos.tencent_tushare.reported_amount_resolution.v1",
 )
 
 
@@ -289,6 +306,21 @@ def reconcile_daily_bar_revisions_with_bars(
             comparison_provider=comparison_revision.provider,
         )
 
+    elif (
+        policy.source_precision_policy
+        == "karkinos.tencent_tushare.reported_amount_resolution.v1"
+    ):
+        if {primary_revision.provider, comparison_revision.provider} != {
+            "akshare_tencent",
+            "tushare",
+        }:
+            raise ValueError("market_reconciliation_source_precision_pair_invalid")
+        for materialization, bars in (
+            (primary_materialization, primary_bars),
+            (comparison_materialization, comparison_bars),
+        ):
+            _validate_tencent_tushare_reported_amount(store, materialization, bars)
+
     report = reconcile_daily_bars(
         primary_bars,
         comparison_bars,
@@ -349,6 +381,27 @@ def reconcile_daily_bars(
         and {primary_provider, comparison_provider} != {"baostock", "tushare"}
     ):
         raise ValueError("market_reconciliation_source_precision_pair_invalid")
+
+    elif (
+        policy.source_precision_policy
+        == "karkinos.tencent_tushare.reported_amount_resolution.v1"
+    ):
+        if {primary_provider, comparison_provider} != {"akshare_tencent", "tushare"}:
+            raise ValueError("market_reconciliation_source_precision_pair_invalid")
+        for provider, rows in (
+            (primary_provider, primary),
+            (comparison_provider, comparison),
+        ):
+            if any(
+                key.instrument_type is not InstrumentType.STOCK
+                or _bse_instrument(key)
+                or bar.amount
+                % (100 if provider == "akshare_tencent" else Decimal("0.01"))
+                for key, bar in rows.items()
+            ):
+                raise ValueError(
+                    "market_reconciliation_source_precision_evidence_invalid"
+                )
 
     primary_keys = set(primary)
     comparison_keys = set(comparison)
@@ -448,6 +501,175 @@ def _validate_revision_pair(
 
     if primary.provider == comparison.provider:
         raise ValueError("market_reconciliation_same_provider")
+
+
+def _validate_tencent_tushare_reported_amount(store, materialization, bars):
+    """Replay selected cells from immutable SDK responses; never infer raw truth."""
+    import pandas as pd
+
+    from data.providers import tencent, tushare
+
+    capture = read_provider_capture(store, materialization.capture_ref)
+    try:
+        payload = json.loads(read_provider_raw_payload(store, capture))
+        request = json.loads(capture.request_json)
+        start = date.fromisoformat(request["start_date"])
+        end = date.fromisoformat(request["end_date"])
+        requested = {
+            (item["symbol"], item["instrument_type"]) for item in request["instruments"]
+        }
+        wanted = {(bar.instrument.symbol, bar.session_date): bar for bar in bars}
+        if (
+            not wanted
+            or len(wanted) != len(bars)
+            or capture.operation != "daily_bars"
+            or request["kind"] != "daily_bars"
+            or request["frequency"] != "1d"
+            or payload["schema"] != capture.payload_format
+            or any(
+                bar.instrument.instrument_type is not InstrumentType.STOCK
+                or _bse_instrument(bar.instrument)
+                or (bar.instrument.symbol, "stock") not in requested
+                or not start <= bar.session_date <= end
+                for bar in bars
+            )
+        ):
+            raise ValueError
+        is_tencent = capture.provider == "akshare_tencent"
+        if is_tencent:
+            formats = {
+                "karkinos.akshare_tencent.daily_bar.v3": "akshare.tencent.stock_zh_a_hist_tx.dataframe.v3",
+                "karkinos.akshare_tencent.daily_bar.v4": "akshare.tencent.stock_zh_a_hist_tx.dataframe.v4",
+            }
+            if (
+                formats.get(capture.adapter_version) != capture.payload_format
+                or payload["sdk_version"] != "1.18.97"
+            ):
+                raise ValueError
+        elif (
+            capture.provider != "tushare"
+            or capture.adapter_version != "karkinos.tushare.daily_bar.v2"
+            or capture.payload_format
+            not in {
+                "tushare.pro.daily_bar.dataframe.v1",
+                "tushare.pro.market_daily.dataframe.v2",
+            }
+        ):
+            raise ValueError
+        instruments = {bar.instrument.symbol: bar.instrument for bar in bars}
+        actual = {}
+        for call in payload["calls"]:
+            if is_tencent:
+                symbol = str(call["symbol"])[2:]
+                if symbol not in instruments:
+                    continue
+                instrument = instruments[symbol]
+                source_symbol = tencent._provider_symbol(instrument)
+                if (
+                    call["symbol"] != source_symbol
+                    or call["request"]
+                    != {
+                        "symbol": source_symbol,
+                        "start_date": start.strftime("%Y%m%d"),
+                        "end_date": end.strftime("%Y%m%d"),
+                        "adjust": "",
+                    }
+                    or call["amount_normalization"]
+                    != tencent._AMOUNT_FLOAT_NORMALIZATION
+                    or call["volume_scale_to_shares"]
+                    != str(tencent._sdk_volume_scale(instrument, "1.18.97"))
+                    or (
+                        capture.adapter_version.endswith(".v4")
+                        and call["volume_normalization"]
+                        != (
+                            tencent._VOLUME_FLOAT_NORMALIZATION
+                            if tencent._sdk_multiplies_volume(source_symbol)
+                            else None
+                        )
+                    )
+                ):
+                    raise ValueError
+            elif call["endpoint"] != "daily":
+                raise ValueError
+            elif capture.payload_format == "tushare.pro.market_daily.dataframe.v2" and (
+                start != end
+                or call["request"] != {"trade_date": start.strftime("%Y%m%d")}
+            ):
+                raise ValueError
+            columns = call["frame"]["columns"]
+            if len(columns) != len(set(columns)):
+                raise ValueError
+            for values in call["frame"]["data"]:
+                raw = dict(zip(columns, values, strict=True))
+                if is_tencent:
+                    session = tencent._trade_date(raw["date"])
+                else:
+                    symbol = str(raw["ts_code"]).split(".")[0]
+                    if symbol not in instruments:
+                        continue
+                    instrument = instruments[symbol]
+                    expected_code = tushare._request_target(instrument)[1]
+                    if raw["ts_code"] != expected_code or (
+                        capture.payload_format == "tushare.pro.daily_bar.dataframe.v1"
+                        and call["ts_code"] != expected_code
+                    ):
+                        raise ValueError
+                    session = tushare._trade_date(raw["trade_date"])
+                key = (symbol, session)
+                if key not in wanted:
+                    continue
+                if key in actual:
+                    raise ValueError
+                frame = pd.DataFrame([values], columns=columns, dtype=object)
+                if is_tencent:
+                    row = tencent._rows_from_frame(
+                        frame,
+                        instrument=instrument,
+                        expected_session=session,
+                        volume_scale=tencent._sdk_volume_scale(instrument, "1.18.97"),
+                        sdk_version="1.18.97",
+                        adapter_version=capture.adapter_version,
+                    )[0]
+                    if row.amount % 100:
+                        raise ValueError
+                else:
+                    row = tushare._rows_from_frame(
+                        frame,
+                        instrument=instrument,
+                        expected_session=session,
+                        endpoint="daily",
+                    )[0]
+                    if row.amount % Decimal("0.01"):
+                        raise ValueError
+                bar = wanted[key]
+                if (
+                    any(
+                        getattr(row, field + "_value") != getattr(bar, field)
+                        for field in ("open", "high", "low", "close")
+                    )
+                    or row.volume != bar.volume
+                    or row.amount != bar.amount
+                    or row.event_time != bar.event_time
+                    or row.suspended != bar.suspended
+                    or bar.available_at != capture.completed_at
+                    or bar.captured_at != capture.completed_at
+                ):
+                    raise ValueError
+                actual[key] = row
+        if actual.keys() != wanted.keys():
+            raise ValueError
+    except (
+        KeyError,
+        IndexError,
+        TypeError,
+        ValueError,
+        ArithmeticError,
+        tencent.AkshareTencentDailyBarResponseError,
+        tushare.TushareDailyBarResponseError,
+    ) as exc:
+        raise ValueError(
+            "market_reconciliation_source_precision_evidence_invalid"
+        ) from exc
 
 
 def _validate_tushare_amount_precision(
@@ -688,7 +910,11 @@ def _compare_daily_bar(
         primary,
         comparison,
         field="amount",
-        tolerance=policy.amount_tolerance,
+        tolerance=Decimal(0)
+        if policy.source_precision_policy
+        == "karkinos.tencent_tushare.reported_amount_resolution.v1"
+        and (primary.amount == 0 or comparison.amount == 0)
+        else policy.amount_tolerance,
     )
 
     if difference is not None:

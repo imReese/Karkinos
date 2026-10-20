@@ -405,6 +405,108 @@ def _provider_code(instrument: InstrumentKey) -> str:
     return f"{exchange}.{symbol}"
 
 
+def read_baostock_historical_status(store, capture_ref):
+    """Read explicit dated statuses from a reviewed capture, without price bars.
+
+    Missing rows are unknown. Capture completion remains the availability of
+    this historical backfill; it never establishes historical decision timing.
+    These are BaoStock observations, not independent-source status agreement.
+    """
+    from data.market.capture import read_provider_capture, read_provider_raw_payload
+    from data.market.contracts import MAX_DAILY_BAR_RANGE_JOB_INSTRUMENTS
+
+    capture = read_provider_capture(store, capture_ref)
+    if (
+        capture.provider != "baostock"
+        or capture.operation != "daily_bars"
+        or capture.adapter_version != "karkinos.baostock.daily_bar.v2"
+        or capture.payload_format != "baostock.history_k_data_plus.rows.v2"
+    ):
+        raise ValueError("baostock_historical_status_source_invalid")
+    request = json.loads(capture.request_json)
+    instruments = tuple(
+        InstrumentKey.from_values(row["symbol"], row["instrument_type"])
+        for row in request["instruments"]
+        if isinstance(row, dict) and set(row) == {"symbol", "instrument_type"}
+    )
+    planned = DailyBarRequest(
+        instruments,
+        date.fromisoformat(request["start_date"]),
+        date.fromisoformat(request["end_date"]),
+    )
+    if (
+        request != planned.to_capture_request()
+        or len(instruments) > MAX_DAILY_BAR_RANGE_JOB_INSTRUMENTS
+        or (planned.end_date - planned.start_date).days >= 3653
+        or any(key.instrument_type is not InstrumentType.STOCK for key in instruments)
+        or capture.started_at < _session_close_utc(planned.end_date)
+    ):
+        raise ValueError("baostock_historical_status_request_invalid")
+    payload = json.loads(read_provider_raw_payload(store, capture))
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"schema", "request", "calls"}
+        or payload["schema"] != capture.payload_format
+        or payload["request"]
+        != {
+            "frequency": "d",
+            "adjustflag": "3",
+            "start_date": planned.start_date.isoformat(),
+            "end_date": planned.end_date.isoformat(),
+            "fields": list(_FIELDS),
+        }
+        or not isinstance(payload["calls"], list)
+        or len(payload["calls"]) != len(instruments)
+    ):
+        raise ValueError("baostock_historical_status_payload_invalid")
+    expected = {_provider_code(key): key for key in instruments}
+    seen = set()
+    statuses: dict[date, dict[InstrumentKey, str]] = {}
+    parsed_count = 0
+    for call in payload["calls"]:
+        if (
+            not isinstance(call, dict)
+            or set(call) != {"code", "fields", "rows"}
+            or call["code"] not in expected
+            or call["code"] in seen
+            or call["fields"] != list(_FIELDS)
+            or not isinstance(call["rows"], list)
+            or len(call["rows"]) > (planned.end_date - planned.start_date).days + 1
+            or any(
+                not isinstance(row, list)
+                or len(row) != len(_FIELDS)
+                or not all(isinstance(value, str) for value in row)
+                for row in call["rows"]
+            )
+        ):
+            raise ValueError("baostock_historical_status_call_invalid")
+        seen.add(call["code"])
+        key = expected[call["code"]]
+        parsed_count += len(
+            _rows_from_result(
+                call["rows"],
+                fields=_FIELDS,
+                instrument=key,
+                expected_code=call["code"],
+                expected_session=planned.start_date,
+                expected_end=planned.end_date,
+            )
+        )
+        for row in call["rows"]:
+            day = date.fromisoformat(row[0])
+            if day.isoformat() != row[0] or key in statuses.get(day, {}):
+                raise ValueError("baostock_historical_status_session_invalid")
+            if row[-1] == "0" and any(
+                value.strip() and _decimal(value, field=field) != 0
+                for field, value in zip(("volume", "amount"), row[6:8], strict=True)
+            ):
+                raise ValueError("baostock_historical_status_activity_conflict")
+            statuses.setdefault(day, {})[key] = row[-1]
+    if capture.record_count != parsed_count:
+        raise ValueError("baostock_historical_status_record_count_invalid")
+    return capture, planned, statuses
+
+
 def _trade_date(value: str) -> date:
     text = value.strip()
     try:

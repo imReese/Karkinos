@@ -361,6 +361,16 @@ def test_dataset_ref_replays_canonical_market_data(
     assert result.bars[0].close == Decimal("12.34000000")
 
     assert result.bars[1].close == Decimal("10.48000000")
+    assert result.bars == _bars()
+    assert all(
+        bar.instrument is key
+        for bar, key in zip(result.bars, result.snapshot.instruments, strict=True)
+    )
+    for field in ("session_date", "event_time", "available_at", "captured_at"):
+        assert getattr(result.bars[0], field) is getattr(result.bars[1], field)
+    cold = read_daily_bar_dataset(store, dataset_ref)
+    assert cold == result
+    assert cold.bars[0] is not result.bars[0]
 
 
 def test_dataset_table_replay_is_canonical(
