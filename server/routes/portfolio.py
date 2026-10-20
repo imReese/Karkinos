@@ -195,8 +195,10 @@ from server.services.portfolio.ledger import rebuild_portfolio_from_ledger
 from server.services.portfolio.trades import (
     PortfolioTradeCommandService,
 )
-from server.services.risk.risk_engine import build_risk_summary
-from server.services.risk.risk_workspace import build_risk_workspace
+from server.services.risk import (
+    build_risk_summary,
+    build_risk_workspace,
+)
 
 logger = logging.getLogger(__name__)
 
