@@ -60,7 +60,9 @@ from server.account_truth_ledger_support import (
 from server.account_truth_ledger_support import (
     load_canonical_ledger_rows as _load_canonical_ledger_rows,
 )
-from server.services.account.citic.follow_up import build_citic_source_follow_up
+from server.services.controlled_execution.citic.follow_up import (
+    build_citic_source_follow_up,
+)
 
 
 def missing_account_truth_score_payload() -> dict[str, object]:

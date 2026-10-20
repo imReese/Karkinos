@@ -16,38 +16,38 @@ from server.models import (
     AttributionReviewPrerequisite,
     HoldingStrategyAttributionReport,
 )
-from server.services.account.account_strategy_assignment import (
+from server.services.account.strategy import (
     ACCOUNT_STRATEGY_ASSIGNMENT_CONTROL_KEY as _CONTROL_KEY,
 )
-from server.services.account.account_strategy_assignment import (
+from server.services.account.strategy import (
     ACCOUNT_STRATEGY_ASSIGNMENT_LIMITATION as _ASSIGNMENT_LIMITATION,
 )
-from server.services.account.account_strategy_assignment import (
+from server.services.account.strategy import (
     account_strategy_assignment_from_payload as _assignment_from_payload,
 )
-from server.services.account.account_strategy_assignment import (
-    default_account_strategy_assignment as _default_assignment,
-)
-from server.services.account.account_strategy_evidence import (
-    fill_metadata as _fill_metadata,
-)
-from server.services.account.account_strategy_evidence import (
-    linked_strategy_evidence as _linked_strategy_evidence,
-)
-from server.services.account.account_strategy_evidence import (
-    order_source_signal_id as _order_source_signal_id,
-)
-from server.services.account.account_strategy_evidence import (
-    same_symbol as _same_symbol,
-)
-from server.services.account.account_strategy_evidence import (
-    source_signal_id as _source_signal_id,
-)
-from server.services.account.account_strategy_projections import (
+from server.services.account.strategy import (
     build_attribution_summary as _canonical_attribution_summary,
 )
-from server.services.account.account_strategy_projections import (
+from server.services.account.strategy import (
     build_contribution_report as _canonical_contribution_report,
+)
+from server.services.account.strategy import (
+    default_account_strategy_assignment as _default_assignment,
+)
+from server.services.account.strategy import (
+    fill_metadata as _fill_metadata,
+)
+from server.services.account.strategy import (
+    linked_strategy_evidence as _linked_strategy_evidence,
+)
+from server.services.account.strategy import (
+    order_source_signal_id as _order_source_signal_id,
+)
+from server.services.account.strategy import (
+    same_symbol as _same_symbol,
+)
+from server.services.account.strategy import (
+    source_signal_id as _source_signal_id,
 )
 
 _ASSIGNMENT_REGISTRY_KEY = "instrument_strategy_assignments"

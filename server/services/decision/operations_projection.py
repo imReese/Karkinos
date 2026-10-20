@@ -7,7 +7,6 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from server.services.account.citic.follow_up import build_citic_source_follow_up
 from server.services.controlled_execution.broker_adapter_readiness import (
     build_broker_adapter_readiness,
 )
@@ -16,6 +15,9 @@ from server.services.controlled_execution.broker_connector_runtime import (
 )
 from server.services.controlled_execution.broker_connector_soak_promotion import (
     BrokerConnectorSoakPromotionService,
+)
+from server.services.controlled_execution.citic.follow_up import (
+    build_citic_source_follow_up,
 )
 from server.services.controlled_execution.controlled_execution_operator_view import (
     ControlledExecutionOperatorViewService,

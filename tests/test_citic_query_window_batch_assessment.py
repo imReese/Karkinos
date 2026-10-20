@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from server.services.account.citic.query_window_review import (
+from server.services.controlled_execution.citic.query_window_review import (
     project_citic_query_window_batch_assessment,
 )
 

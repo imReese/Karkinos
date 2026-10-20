@@ -1,0 +1,146 @@
+"""Resolve locally reviewed broker board access for candidate eligibility."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict, is_dataclass
+from datetime import date, datetime, timedelta
+from typing import Any
+from zoneinfo import ZoneInfo
+
+from domain.instrument import entry_board_symbols
+from server.contracts.content_identity import content_fingerprint
+from server.contracts.recommendation_publication import (
+    validate_entry_board_policy as validate_entry_board_policy,
+)
+
+BOARD_NAMES = ("chinext", "star", "beijing")
+BOARD_PERMISSION_REVIEW_DAYS = 30
+BOARD_PERMISSION_SOURCE = "self_reported_broker_account"
+_SHANGHAI = ZoneInfo("Asia/Shanghai")
+
+
+def resolve_board_buy_permissions(config: Any, decision_date: str) -> dict[str, Any]:
+    """A dated self-report may qualify a candidate; it never grants trade authority."""
+    unknown = {board: "unknown" for board in BOARD_NAMES}
+    result: dict[str, Any] = {
+        "status": "unavailable",
+        "resolved_for_date": decision_date,
+        "evidence_fingerprint": None,
+        "boards": unknown,
+        "source": None,
+        "reviewed_at": None,
+        "expires_on": None,
+    }
+    raw = getattr(config, "account_board_permissions", None)
+    if is_dataclass(raw) and not isinstance(raw, type):
+        payload = asdict(raw)
+    elif isinstance(raw, dict):
+        payload = dict(raw)
+    else:
+        return result
+    if (
+        payload.get("source") != BOARD_PERMISSION_SOURCE
+        or not str(payload.get("reviewed_by") or "").strip()
+        or not isinstance(payload.get("boards"), dict)
+    ):
+        return result
+    boards = payload["boards"]
+    if set(boards) - set(BOARD_NAMES) or any(
+        status not in {"enabled", "disabled", "unknown"} for status in boards.values()
+    ):
+        return result
+    try:
+        decision_day = date.fromisoformat(decision_date)
+        reviewed = datetime.fromisoformat(str(payload.get("reviewed_at") or ""))
+    except ValueError:
+        return result
+    if reviewed.tzinfo is None or reviewed.utcoffset() is None:
+        return result
+    reviewed_day = reviewed.astimezone(_SHANGHAI).date()
+    expires_on = reviewed_day + timedelta(days=BOARD_PERMISSION_REVIEW_DAYS)
+    if not reviewed_day <= decision_day <= expires_on:
+        return result
+    identity = {
+        "reviewed_at": reviewed.isoformat(),
+        "reviewed_by": str(payload["reviewed_by"]).strip(),
+        "source": BOARD_PERMISSION_SOURCE,
+        "boards": {board: boards.get(board, "unknown") for board in BOARD_NAMES},
+    }
+    return {
+        "status": "current",
+        "resolved_for_date": decision_date,
+        "evidence_fingerprint": "sha256:" + content_fingerprint(identity),
+        "boards": identity["boards"],
+        "source": BOARD_PERMISSION_SOURCE,
+        "reviewed_at": identity["reviewed_at"],
+        "expires_on": expires_on.isoformat(),
+    }
+
+
+def freeze_entry_board_policy(config: Any, decision_date: str) -> dict[str, Any]:
+    """Freeze account entry constraints without reducing market-data coverage."""
+    permissions = resolve_board_buy_permissions(config, decision_date)
+    current = permissions["status"] == "current"
+    allowed = ["main"]
+    excluded = {"star": "unsupported_trade_unit"}
+    for board in ("chinext", "beijing"):
+        if current and permissions["boards"].get(board) == "enabled":
+            allowed.append(board)
+        else:
+            excluded[board] = "permission_disabled_or_unknown"
+    core = {
+        "allowed_boards": sorted(allowed),
+        "permission_evidence_fingerprint": permissions["evidence_fingerprint"],
+        "reviewed_at": permissions["reviewed_at"],
+        "excluded_boards": excluded,
+    }
+    return {**core, "evidence_fingerprint": content_fingerprint(core)}
+
+
+def entry_board_policy_symbols(
+    policy: Mapping[str, Any], symbols: Sequence[str]
+) -> set[str]:
+    return entry_board_symbols(
+        validate_entry_board_policy(policy)["allowed_boards"], symbols
+    )
+
+
+def entry_board_policy_blocker(
+    policy: Mapping[str, Any], permissions: Any, *, decision_date: str
+) -> str | None:
+    """Re-review may renew the same mask; it may never silently change entries."""
+    frozen = validate_entry_board_policy(policy)
+    required = set(frozen["allowed_boards"]) - {"main"}
+    if not required:
+        return None
+    current = permissions if isinstance(permissions, Mapping) else {}
+    boards = current.get("boards")
+    fingerprint = str(current.get("evidence_fingerprint") or "")
+    if (
+        current.get("status") != "current"
+        or current.get("resolved_for_date") != decision_date
+        or not isinstance(boards, Mapping)
+        or not fingerprint.startswith("sha256:")
+        or len(fingerprint) != 71
+        or any(char not in "0123456789abcdef" for char in fingerprint[7:])
+    ):
+        return "deployment_entry_board_permissions_not_current"
+    missing = sorted(board for board in required if boards.get(board) != "enabled")
+    return (
+        "deployment_entry_board_permissions_missing:" + ",".join(missing)
+        if missing
+        else None
+    )
+
+
+__all__ = [
+    "BOARD_NAMES",
+    "BOARD_PERMISSION_REVIEW_DAYS",
+    "BOARD_PERMISSION_SOURCE",
+    "entry_board_policy_blocker",
+    "entry_board_policy_symbols",
+    "freeze_entry_board_policy",
+    "resolve_board_buy_permissions",
+    "validate_entry_board_policy",
+]

@@ -9,7 +9,9 @@ from server.models import (
     CurrentHoldingMarketEvidenceReviewResponse,
     DailyOperationsSummary,
 )
-from server.services.account.citic.follow_up import build_citic_source_follow_up
+from server.services.controlled_execution.citic.follow_up import (
+    build_citic_source_follow_up,
+)
 from server.services.decision.operations_today_paper_shadow import (
     paper_shadow_run_summary as _paper_shadow_run_summary,
 )

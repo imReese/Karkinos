@@ -414,7 +414,7 @@ def test_revoked_grant_excludes_only_policy_source_and_projects_validated_source
 def test_owner_preview_binds_current_scope_and_budget_before_enabling(
     book, monkeypatch
 ):
-    from server.services.account.reviewed_fee_schedule_policy import (
+    from server.services.account.fees.policy import (
         NOTIONAL_ENVELOPE_SCHEMA_VERSION,
         fingerprint_payload,
     )
@@ -581,7 +581,7 @@ def test_owner_preview_binds_current_scope_and_budget_before_enabling(
 def board_preview(book, monkeypatch):
     """Real valuation/policies; the reviewed-fee read boundary is sanitized."""
     from server.config import ServerConfig
-    from server.services.account.reviewed_fee_schedule_policy import (
+    from server.services.account.fees.policy import (
         NOTIONAL_ENVELOPE_SCHEMA_VERSION,
         fingerprint_payload,
     )

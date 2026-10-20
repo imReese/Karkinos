@@ -45,7 +45,9 @@ from server.services.account.account_truth_evidence_scope import (
     nonreviewable_account_truth_evidence_scope_blockers,
     project_account_truth_evidence_scope,
 )
-from server.services.account.citic.follow_up import build_citic_source_follow_up
+from server.services.controlled_execution.citic.follow_up import (
+    build_citic_source_follow_up,
+)
 
 ACCOUNT_TRUTH_EVIDENCE_READINESS_SCHEMA_VERSION = (
     "karkinos.account_truth.evidence_readiness.v2"

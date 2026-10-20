@@ -1,4 +1,4 @@
-"""Executable ownership constraints for the reviewed fee schedule domain."""
+"""Executable ownership constraints for the account fees domain."""
 
 from __future__ import annotations
 
@@ -7,26 +7,26 @@ from pathlib import Path
 
 import pytest
 
+from server.services.account.fees import (
+    ReviewedFeeScheduleResolution as CanonicalResolution,
+)
+from server.services.account.fees import (
+    ReviewedFeeScheduleReviewRepository as CanonicalRepository,
+)
 from server.services.account.reviewed_fee_schedule import (
     ReviewedFeeScheduleResolution,
     ReviewedFeeScheduleReviewRepository,
 )
-from server.services.account.reviewed_fee_schedule_commission import (
-    ReviewedFeeScheduleResolution as CanonicalResolution,
-)
-from server.services.account.reviewed_fee_schedule_repository import (
-    ReviewedFeeScheduleReviewRepository as CanonicalRepository,
-)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SERVICE_ROOT = PROJECT_ROOT / "server/services/account"
+FEES_ROOT = SERVICE_ROOT / "fees"
 DOMAIN_PATHS = {
-    SERVICE_ROOT / "reviewed_fee_schedule.py",
-    SERVICE_ROOT / "reviewed_fee_schedule_commission.py",
-    SERVICE_ROOT / "reviewed_fee_schedule_policy.py",
-    SERVICE_ROOT / "reviewed_fee_schedule_reconciliation.py",
-    SERVICE_ROOT / "reviewed_fee_schedule_repository.py",
-    SERVICE_ROOT / "reviewed_fee_schedule_workflows.py",
+    FEES_ROOT / "commission.py",
+    FEES_ROOT / "policy.py",
+    FEES_ROOT / "reconciliation.py",
+    FEES_ROOT / "repository.py",
+    FEES_ROOT / "workflows.py",
 }
 
 pytestmark = pytest.mark.unit
@@ -47,7 +47,7 @@ def _imports(path: Path) -> set[str]:
 
 
 def test_reviewed_fee_schedule_modules_and_functions_have_zero_size_debt() -> None:
-    assert set(SERVICE_ROOT.glob("reviewed_fee_schedule*.py")) == DOMAIN_PATHS
+    assert set(FEES_ROOT.glob("*.py")) - {FEES_ROOT / "__init__.py"} == DOMAIN_PATHS
     violations: list[str] = []
     for path in sorted(DOMAIN_PATHS):
         source = path.read_text(encoding="utf-8")
@@ -77,7 +77,7 @@ def test_review_repository_is_the_only_service_adapter_to_review_persistence() -
     owners = {
         path.name for path in DOMAIN_PATHS if persistence_module in _imports(path)
     }
-    assert owners == {"reviewed_fee_schedule_repository.py"}
+    assert owners == {"repository.py"}
 
     for path in DOMAIN_PATHS:
         source = path.read_text(encoding="utf-8")

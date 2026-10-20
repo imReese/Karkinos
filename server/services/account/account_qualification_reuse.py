@@ -27,7 +27,7 @@ from server.contracts.normalized_strategy_research import (
     SIMULATION_RESEARCH_NOTIONAL_POLICY_ID,
 )
 from server.contracts.strategy_research import StrategyResearchSelection
-from server.services.account.reviewed_fee_schedule_policy import (
+from server.services.account.fees.policy import (
     REVIEWED_COST_MODEL_PREFIX,
 )
 from server.services.ai_shadow.ai_shadow_research_qualification_support import (

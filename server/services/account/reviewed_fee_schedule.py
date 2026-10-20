@@ -1,8 +1,8 @@
 """Stable public facade for reviewed, account-bound fee schedules.
 
-The implementation is partitioned by policy, persistence, reconciliation, and
-application workflow ownership. This module intentionally keeps the original
-import surface and dependency-injection seam used by deterministic tests.
+The implementation is partitioned within the cohesive domain package
+`server.services.account.fees`. This module keeps the original public facade
+and dependency-injection seam used by deterministic tests.
 """
 
 from __future__ import annotations
@@ -22,33 +22,33 @@ from server.contracts.reviewed_fee_schedule import (
 from server.services.account.account_truth_evidence_readiness import (
     build_account_truth_evidence_readiness,
 )
-from server.services.account.reviewed_fee_schedule_commission import (
+from server.services.account.fees.commission import (
     ReviewedFeeScheduleResolution,
     build_commission_calculator,
     is_reviewed_cost_model_reference,
     reviewed_cost_model_reference,
     validated_notional_envelope,
 )
-from server.services.account.reviewed_fee_schedule_policy import (
+from server.services.account.fees.policy import (
     REVIEWED_COST_MODEL_PREFIX,
     REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSION,
     REVIEWED_FEE_SCHEDULE_RESOLUTION_SCHEMA_VERSION,
 )
-from server.services.account.reviewed_fee_schedule_reconciliation import (
+from server.services.account.fees.reconciliation import (
     active_review_matches_fee_evidence,
 )
-from server.services.account.reviewed_fee_schedule_repository import (
+from server.services.account.fees.repository import (
     ReviewedFeeScheduleReviewRepository,
 )
-from server.services.account.reviewed_fee_schedule_workflows import (
+from server.services.account.fees.workflows import (
     build_reviewed_fee_schedule_preview_workflow,
     build_reviewed_fee_schedule_review_status_workflow,
     resolve_reviewed_fee_schedule_workflow,
 )
-from server.services.account.reviewed_fee_schedule_workflows import (
+from server.services.account.fees.workflows import (
     freeze_deployment_fee_schedule as freeze_deployment_fee_schedule,
 )
-from server.services.account.reviewed_fee_schedule_workflows import (
+from server.services.account.fees.workflows import (
     resolve_frozen_deployment_fee_schedule as resolve_frozen_deployment_fee_schedule,
 )
 

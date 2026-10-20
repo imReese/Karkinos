@@ -51,17 +51,6 @@ from server.account_truth_gate import (
     build_reconciliation_report_for_import_run,
 )
 from server.config import CiticHistoryXlsDirectoryConfig
-from server.services.account.citic.query_window_review import (
-    citic_source_query_window_review_response,
-    latest_citic_query_window_reviews_by_intake,
-    project_citic_query_window_batch_assessment,
-)
-from server.services.account.citic.scope_review import (
-    active_citic_source_scope_review,
-    citic_source_scope_review_response,
-    latest_citic_source_scope_reviews_by_intake,
-    project_citic_source_scope_batch_assessment,
-)
 from server.services.account_truth_views.assessments import (
     citic_history_xls_batch_assessment_response,
     citic_query_window_review_is_active,
@@ -74,6 +63,17 @@ from server.services.account_truth_views.repositories import (
     citic_intake_repository_for_state,
     citic_query_window_review_read_http_exception,
     citic_source_scope_review_read_http_exception,
+)
+from server.services.controlled_execution.citic.query_window_review import (
+    citic_source_query_window_review_response,
+    latest_citic_query_window_reviews_by_intake,
+    project_citic_query_window_batch_assessment,
+)
+from server.services.controlled_execution.citic.scope_review import (
+    active_citic_source_scope_review,
+    citic_source_scope_review_response,
+    latest_citic_source_scope_reviews_by_intake,
+    project_citic_source_scope_batch_assessment,
 )
 
 CITIC_HISTORY_XLS_MAX_BASE64_CHARS = ((CITIC_HISTORY_XLS_MAX_BYTES + 2) // 3) * 4

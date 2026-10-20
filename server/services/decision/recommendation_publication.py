@@ -248,7 +248,7 @@ class RecommendationPublicationService:
                 raise ValueError(
                     "publication_preview_reviewed_account_scope_unavailable"
                 )
-            from server.services.account.reviewed_fee_schedule_commission import (
+            from server.services.account.fees.commission import (
                 validated_notional_envelope,
             )
 
