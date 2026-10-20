@@ -234,3 +234,14 @@ def _promotion_service() -> BrokerConnectorSoakPromotionService:
     from server.dependencies import get_app_state
 
     return build_broker_connector_soak_promotion_service(get_app_state())
+
+
+__all__ = [
+    "BrokerConnectorSoakCaptureRequest",
+    "BrokerConnectorSoakDrillRequest",
+    "BrokerConnectorSoakPromotionAcceptanceRequest",
+    "BrokerConnectorSoakPromotionPreviewRequest",
+    "BrokerConnectorSoakRestartCheckpointCompleteRequest",
+    "BrokerConnectorSoakRunRequest",
+    "create_router",
+]

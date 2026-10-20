@@ -37,3 +37,8 @@ def _service() -> ControlledSessionRuntimeRateLimiterService:
     from server.dependencies import get_app_state
 
     return build_controlled_session_runtime_rate_limiter_service(get_app_state())
+
+
+__all__ = [
+    "create_router",
+]

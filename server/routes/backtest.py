@@ -289,3 +289,8 @@ def create_router() -> APIRouter:
         ).routes
     )
     return router
+
+
+__all__ = [
+    "create_router",
+]

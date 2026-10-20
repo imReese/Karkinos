@@ -122,3 +122,8 @@ def create_router() -> APIRouter:
             raise _error(exc) from exc
 
     return router
+
+
+__all__ = [
+    "create_router",
+]

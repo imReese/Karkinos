@@ -202,3 +202,11 @@ def _current_dossier_service() -> CurrentPerOrderDossierService:
     from server.dependencies import get_app_state
 
     return build_current_per_order_dossier_service(get_app_state())
+
+
+__all__ = [
+    "CurrentPerOrderConfirmationRequest",
+    "PerOrderConfirmationRequest",
+    "PerOrderDossierPreviewRequest",
+    "create_router",
+]

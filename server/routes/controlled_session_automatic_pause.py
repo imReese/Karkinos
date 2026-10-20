@@ -104,3 +104,9 @@ def _orchestrator_service() -> ControlledSessionAutomaticPauseOrchestratorServic
     return build_controlled_session_automatic_pause_orchestrator_service(
         get_app_state()
     )
+
+
+__all__ = [
+    "ControlledSessionPauseEvaluationRequest",
+    "create_router",
+]

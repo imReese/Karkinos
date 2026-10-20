@@ -497,3 +497,9 @@ def create_router() -> APIRouter:
         ).routes
     )
     return router
+
+
+__all__ = [
+    "CITIC_HISTORY_XLS_MAX_BASE64_CHARS",
+    "create_router",
+]

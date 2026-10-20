@@ -625,3 +625,19 @@ def paper_shadow_evidence(
 def paper_shadow_allows_manual_ticket(evidence: dict[str, Any]) -> bool:
     """Compatibility wrapper for canonical manual-ticket admission."""
     return _paper_shadow_allows_manual_ticket(evidence)
+
+
+__all__ = [
+    "DecisionQualityCaptureBody",
+    "account_truth_gate_evidence",
+    "action_trade_date",
+    "create_router",
+    "data_freshness_evidence",
+    "decision_portfolio_context",
+    "paper_shadow_allows_manual_ticket",
+    "paper_shadow_evidence",
+    "resolve_strategy_order_generation_gate",
+    "run_batch_pre_trade_risk_for_state",
+    "today_decision_payload",
+    "trading_plan_positions",
+]

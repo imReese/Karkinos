@@ -103,3 +103,9 @@ def _service() -> ControlledSubmissionLedgerPostingService:
             getattr(config, "trusted_operator_identities", []) or []
         ),
     )
+
+
+__all__ = [
+    "ControlledSubmissionLedgerPostingRequest",
+    "create_router",
+]

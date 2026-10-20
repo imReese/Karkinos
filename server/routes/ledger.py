@@ -431,3 +431,8 @@ def create_router() -> APIRouter:
         return _append_entry(repo, _append_command(body, entry))
 
     return r
+
+
+__all__ = [
+    "create_router",
+]

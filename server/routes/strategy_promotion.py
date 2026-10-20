@@ -86,3 +86,10 @@ def _service() -> StrategyPromotionPipeline:
     from server.dependencies import get_app_state
 
     return StrategyPromotionPipeline(db=get_app_state().db)
+
+
+__all__ = [
+    "StrategyPromotionLifecycleRequest",
+    "StrategyPromotionRequest",
+    "create_router",
+]

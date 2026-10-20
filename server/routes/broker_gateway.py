@@ -215,3 +215,11 @@ def _service() -> BrokerGatewayService:
             current_dossiers.resolve_current_confirmation
         ),
     )
+
+
+__all__ = [
+    "ManualExecutionPreviewRequest",
+    "ManualExecutionRecordRequest",
+    "ManualTicketRequest",
+    "create_router",
+]

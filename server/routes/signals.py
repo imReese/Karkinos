@@ -220,3 +220,9 @@ def _raise_decision_outcome_review_http_error(exc: Exception) -> None:
     if isinstance(exc, (DecisionOutcomeReviewRejected, ValueError)):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     raise exc
+
+
+__all__ = [
+    "SignalJournalReviewRequest",
+    "create_router",
+]

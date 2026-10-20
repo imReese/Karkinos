@@ -128,3 +128,12 @@ def _service() -> ExecutionGatewayVerificationService:
         db=state.db,
         gateways=getattr(state, "execution_gateways", []) or [],
     )
+
+
+__all__ = [
+    "ExecutionGatewayOrderContractPayload",
+    "ExecutionGatewayVerificationPreviewRequest",
+    "ExecutionGatewayVerificationRecordRequest",
+    "ExecutionGatewayVerificationResolveRequest",
+    "create_router",
+]

@@ -222,3 +222,14 @@ def _service() -> ControlledSessionRuntimeAuthorityService:
     from server.dependencies import get_app_state
 
     return build_controlled_session_runtime_authority_service(get_app_state())
+
+
+__all__ = [
+    "ControlledSessionIssuancePreviewRequest",
+    "ControlledSessionIssuanceRequest",
+    "ControlledSessionReplacementPreviewRequest",
+    "ControlledSessionReplacementRequest",
+    "ControlledSessionRevocationPreviewRequest",
+    "ControlledSessionRevocationRequest",
+    "create_router",
+]

@@ -97,3 +97,9 @@ def create_router() -> APIRouter:
         return JSONResponse(status_code=status_code, content=result.to_dict())
 
     return external_router
+
+
+__all__ = [
+    "HumanExternalBacktestReportPayload",
+    "create_router",
+]

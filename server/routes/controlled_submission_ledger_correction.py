@@ -127,3 +127,11 @@ def _service() -> ControlledSubmissionLedgerCorrectionService:
             getattr(config, "trusted_operator_identities", []) or []
         ),
     )
+
+
+__all__ = [
+    "ControlledSubmissionLedgerCorrectionApplyRequest",
+    "ControlledSubmissionLedgerCorrectionPreviewRequest",
+    "CorrectionReason",
+    "create_router",
+]

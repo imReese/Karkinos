@@ -550,3 +550,10 @@ def create_router() -> APIRouter:
         return assignment
 
     return r
+
+
+__all__ = [
+    "build_attribution_summary",
+    "build_contribution_report",
+    "create_router",
+]

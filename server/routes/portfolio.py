@@ -501,3 +501,14 @@ def resolve_projection_sources(
     """Compatibility port for non-HTTP composition callers."""
 
     return _resolve_projection_sources(state, latest_quotes=latest_quotes)
+
+
+__all__ = [
+    "build_account_state_response",
+    "build_portfolio_endpoint_dependencies",
+    "build_portfolio_snapshot",
+    "create_router",
+    "current_valuation_snapshot",
+    "quotes_from_valuation_snapshot",
+    "resolve_projection_sources",
+]

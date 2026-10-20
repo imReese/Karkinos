@@ -315,3 +315,14 @@ def _operator_approval_service() -> OperatorApprovalService:
         db=state.db,
         trusted_identities=trusted_identities,
     )
+
+
+__all__ = [
+    "CapitalAuthorizationContextPayload",
+    "CapitalAuthorizationEvaluationRequest",
+    "CapitalAuthorizationLimitsPayload",
+    "CapitalAuthorizationPolicyPayload",
+    "OperatorApprovalChallengeRequest",
+    "OperatorApprovalVerificationRequest",
+    "create_router",
+]

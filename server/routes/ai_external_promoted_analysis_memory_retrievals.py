@@ -133,3 +133,9 @@ def _raise_domain_http_error(exc: Exception) -> None:
     if isinstance(exc, ValueError):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     raise exc
+
+
+__all__ = [
+    "HumanExternalPromotedAnalysisMemoryRetrievalPayload",
+    "create_router",
+]

@@ -1,5 +1,7 @@
 """Explicit independent paper-book commands nested under a research observation."""
 
+from __future__ import annotations
+
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
@@ -81,3 +83,8 @@ def create_router():
             raise _error(exc) from exc
 
     return router
+
+
+__all__ = [
+    "create_router",
+]
