@@ -484,3 +484,10 @@ def unavailable_daily_candidate_production_readiness(
         ],
     }
     return {**core, "readiness_fingerprint": _fingerprint(core)}
+
+
+__all__ = [
+    "DAILY_CANDIDATE_PRODUCTION_READINESS_SCHEMA_VERSION",
+    "project_daily_candidate_production_readiness",
+    "unavailable_daily_candidate_production_readiness",
+]

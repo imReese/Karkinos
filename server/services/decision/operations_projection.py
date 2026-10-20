@@ -308,3 +308,10 @@ def _safe_pilot_source_list(reader: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     return [dict(item) for item in value if isinstance(item, dict)]
+
+
+__all__ = [
+    "build_controlled_per_order_pilot_readiness",
+    "build_today_operations_payload",
+    "current_decision_and_trading_plan",
+]

@@ -71,3 +71,10 @@ def build_recommendation_cycle(
             "sell_count": sum(1 for task in tasks if task.direction == "sell"),
         },
     )
+
+
+__all__ = [
+    "RecommendationCycle",
+    "RecommendationTask",
+    "build_recommendation_cycle",
+]

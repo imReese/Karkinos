@@ -68,3 +68,8 @@ def persist_recommendation_tasks(
             recommendations,
             current_authority_validator=current_authority_validator,
         )
+
+
+__all__ = [
+    "persist_recommendation_tasks",
+]

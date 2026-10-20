@@ -120,3 +120,10 @@ def _monitor_task_state(task: Any) -> tuple[str, str | None]:
     if failure is None:
         return "completed", None
     return "failed", type(failure).__name__
+
+
+__all__ = [
+    "DAILY_CANDIDATE_RUNTIME_STATUS_SCHEMA_VERSION",
+    "build_daily_candidate_runtime_status",
+    "unavailable_daily_candidate_runtime_status",
+]

@@ -803,3 +803,9 @@ def resolve_policy_publication_binding(
             "strategy_id": strategy_id,
             "decision_source": "policy",
         }, [str(exc)]
+
+
+__all__ = [
+    "RecommendationPublicationService",
+    "resolve_policy_publication_binding",
+]

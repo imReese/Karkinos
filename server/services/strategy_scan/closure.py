@@ -365,3 +365,13 @@ def _fingerprint(value: Any) -> str:
         default=str,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+__all__ = [
+    "DAILY_CANDIDATE_EXECUTION_CLOSURE_SCHEMA_VERSION",
+    "DAILY_CANDIDATE_EXECUTION_EVIDENCE_SUMMARY_SCHEMA_VERSION",
+    "MAX_EXECUTION_CLOSURE_ORDERS",
+    "build_daily_candidate_execution_closure",
+    "project_daily_candidate_execution_evidence_summary",
+    "verify_daily_candidate_execution_closure",
+]
