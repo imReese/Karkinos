@@ -1,6 +1,8 @@
 """Strategy scanning and daily candidate evaluation domain package."""
 
-from server.services.strategy_scan.promoted_strategy_universe_scan import (
+from __future__ import annotations
+
+from server.services.strategy_scan.universe import (
     PromotedStrategyUniverseScanService,
 )
 
