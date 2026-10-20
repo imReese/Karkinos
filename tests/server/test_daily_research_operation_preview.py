@@ -15,7 +15,7 @@ from server.db import AppDatabase
 from server.projections.normalized_research_operation_preview import (
     build_normalized_research_operation_preview,
 )
-from server.services.ai_shadow_research_daily_artifacts import (
+from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
 )
 from server.services.daily_research_operation_preview import (

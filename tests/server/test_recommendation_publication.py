@@ -629,7 +629,7 @@ def _save_simulation_mask(store, mask=None):
     from server.contracts.research_observation_automation import (
         SIMULATION_VALIDATION_AUTHORIZE,
     )
-    from server.services.ai_shadow_research_commands import (
+    from server.services.ai_shadow.ai_shadow_research_commands import (
         simulation_validation_defaults,
     )
 

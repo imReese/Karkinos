@@ -46,7 +46,7 @@ from server.contracts.ai_shadow_research_automation import (
     shadow_research_json_object,
 )
 from server.models import BacktestRequest
-from server.services.ai_shadow_research_support import (
+from server.services.ai_shadow.ai_shadow_research_support import (
     shadow_research_asset_class,
     shadow_research_market_close_as_of,
 )

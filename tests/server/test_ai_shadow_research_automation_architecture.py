@@ -23,7 +23,7 @@ from server.contracts.ai_shadow_research_automation import (
 from server.persistence.ai_shadow_research import (
     ShadowResearchStore as CanonicalShadowResearchStore,
 )
-from server.services.ai_shadow_research_automation import (
+from server.services.ai_shadow.ai_shadow_research_automation import (
     PreparedBaseline,
     ShadowResearchPolicy,
     ShadowResearchRejected,
@@ -35,10 +35,10 @@ from server.services.ai_shadow_research_automation import (
     _iteration_lineage,
     build_current_valuation_snapshot,
 )
-from server.services.ai_shadow_research_policy import (
+from server.services.ai_shadow.ai_shadow_research_policy import (
     build_corrected_panel_rearm_evidence,
 )
-from server.services.ai_shadow_research_support import (
+from server.services.ai_shadow.ai_shadow_research_support import (
     is_after_shadow_research_close,
     shadow_research_failure_code,
 )
@@ -54,7 +54,7 @@ QUALIFICATION_CONTRACT = (
 )
 COMPOSITION = PROJECT_ROOT / "server/composition/ai_shadow_research_automation.py"
 PROJECTION = PROJECT_ROOT / "server/projections/ai_shadow_research.py"
-SERVICE_ROOT = PROJECT_ROOT / "server/services"
+SERVICE_ROOT = PROJECT_ROOT / "server/services/ai_shadow"
 SERVICE_PATHS = {
     SERVICE_ROOT / "ai_shadow_research_automation.py",
     SERVICE_ROOT / "ai_shadow_research_baseline.py",

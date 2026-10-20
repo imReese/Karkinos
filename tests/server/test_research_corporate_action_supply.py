@@ -118,7 +118,7 @@ def test_automatic_full_scope_seed_waits_for_canonical_worker_then_reuses_ca(
         from server.contracts.research_observation_automation import (
             SIMULATION_VALIDATION_AUTHORIZE,
         )
-        from server.services.ai_shadow_research_commands import (
+        from server.services.ai_shadow.ai_shadow_research_commands import (
             simulation_validation_defaults,
         )
 
@@ -167,7 +167,7 @@ def test_automatic_full_scope_seed_waits_for_canonical_worker_then_reuses_ca(
     )
     calls = clocked_worker(monkeypatch, current)
     if simulation:
-        from server.services.ai_shadow_research_workflow import (
+        from server.services.ai_shadow.ai_shadow_research_workflow import (
             AiShadowResearchWorkflowMixin,
         )
 

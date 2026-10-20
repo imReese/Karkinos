@@ -37,10 +37,10 @@ from server.contracts.strategy_research import StrategyResearchSelection
 from server.persistence.ai_shadow_research import ShadowResearchStore
 from server.persistence.backtest_results import insert_backtest_result
 from server.persistence.strategy_research import StrategyResearchAuditStore
-from server.services.ai_shadow_research_daily_artifacts import (
+from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
 )
-from server.services.ai_shadow_research_qualification_support import (
+from server.services.ai_shadow.ai_shadow_research_qualification_support import (
     formula_binding,
     qualification_backtest_values,
 )
@@ -136,7 +136,7 @@ def _save_result(db, result, request, at):
 
 
 def _seed_source_rows(db, research, store, selection, result, request, at):
-    from server.services.ai_shadow_research_support import (
+    from server.services.ai_shadow.ai_shadow_research_support import (
         shadow_research_backtest_source_fingerprint,
     )
 
@@ -586,7 +586,7 @@ async def test_verified_final_qualification_policy_publication_and_revocation(
         CanonicalEvidenceRepository,
     )
     from server.contracts.recommendation_publication import PUBLICATION_REVOKE
-    from server.services.ai_shadow_research_qualification import (
+    from server.services.ai_shadow.ai_shadow_research_qualification import (
         AiShadowResearchQualificationService,
     )
     from server.services.recommendation_publication import (

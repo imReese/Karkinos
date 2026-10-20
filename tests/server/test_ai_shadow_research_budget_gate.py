@@ -8,10 +8,10 @@ from server.contracts.ai_shadow_research_automation import (
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
     ShadowResearchPolicy,
 )
-from server.services.ai_shadow_research_automation import (
+from server.services.ai_shadow.ai_shadow_research_automation import (
     qualification_allows_new_research,
 )
-from server.services.ai_shadow_research_qualification_support import (
+from server.services.ai_shadow.ai_shadow_research_qualification_support import (
     qualification_selection,
 )
 

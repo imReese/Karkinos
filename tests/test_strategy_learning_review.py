@@ -4,6 +4,9 @@ import sqlite3
 from dataclasses import replace
 
 from server.db import AppDatabase
+from server.services.ai_shadow.strategy_learning_review import (
+    StrategyLearningReviewService,
+)
 from server.services.decision_outcome_review import (
     DECISION_OUTCOME_REVIEW_CONFIRMATION,
     DecisionOutcomeReviewReplay,
@@ -14,7 +17,6 @@ from server.services.decision_outcome_review import (
     DecisionOutcomeReviewTarget,
     StoredDecisionOutcomeReview,
 )
-from server.services.strategy_learning_review import StrategyLearningReviewService
 
 
 class FakeReviewStore:

@@ -35,10 +35,10 @@ from server.projections.ai_shadow_research import (
 from server.projections.normalized_research_recommendation import (
     is_valid_normalized_research_recommendation,
 )
-from server.services.ai_shadow_research_daily_artifacts import (
+from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     build_daily_strategy_promotion_binding,
 )
-from server.services.ai_shadow_research_qualification_support import (
+from server.services.ai_shadow.ai_shadow_research_qualification_support import (
     latest_qualification_attempt as read_latest_qualification_attempt,
 )
 from server.services.strategy_promotion_support import (

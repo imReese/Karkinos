@@ -15,7 +15,7 @@ from data.store import DataStore
 from server.ai_runtime.contracts import content_fingerprint
 from server.bootstrap import resolve_data_dir
 from server.contracts.recommendation_publication import publication_source_blocker
-from server.services.ai_shadow_research_daily_artifacts import (
+from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactRejected,
     DailyStrategyArtifactStore,
 )

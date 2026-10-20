@@ -12,7 +12,7 @@ from analytics.strategy_advancement_gate import (
 )
 from server.ai_runtime.contracts import content_fingerprint
 from server.db import AppDatabase
-from server.services.ai_shadow_research_automation import (
+from server.services.ai_shadow.ai_shadow_research_automation import (
     SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
     ShadowResearchStore,
 )

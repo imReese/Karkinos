@@ -43,7 +43,7 @@ from server.contracts.ai_shadow_research_automation import (
 from server.projections.normalized_research_operation_preview import (
     project_normalized_research_operation_preview,
 )
-from server.services.ai_shadow_research_support import (
+from server.services.ai_shadow.ai_shadow_research_support import (
     shadow_research_backtest_source_fingerprint,
     shadow_research_critique_usage,
     shadow_research_failure_code,

@@ -23,7 +23,7 @@ from server.contracts.ai_shadow_research_automation import (
 )
 from server.dependencies import AppState
 from server.release_activation import wait_for_release_activation
-from server.services.ai_shadow_research_job_scheduler import (
+from server.services.ai_shadow.ai_shadow_research_job_scheduler import (
     shadow_research_provider_config_fingerprint,
 )
 

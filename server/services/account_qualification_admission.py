@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from server.services.ai_shadow_research_qualification_support import (
+from server.services.ai_shadow.ai_shadow_research_qualification_support import (
     qualification_clock_time,
     qualification_market_open_blackout,
 )

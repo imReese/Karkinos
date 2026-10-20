@@ -20,12 +20,12 @@ from server.contracts.ai_shadow_research_qualification import (
     ShadowResearchQualificationRejected,
 )
 from server.db import AppDatabase
-from server.services import ai_shadow_research_baseline as baseline_runtime
-from server.services.ai_shadow_research_baseline import (
+from server.services.ai_shadow import ai_shadow_research_baseline as baseline_runtime
+from server.services.ai_shadow.ai_shadow_research_baseline import (
     _initialize_default_baseline_seed,
     _load_baseline_seed,
 )
-from server.services.ai_shadow_research_qualification import (
+from server.services.ai_shadow.ai_shadow_research_qualification import (
     AiShadowResearchQualificationService,
 )
 from server.services.research.datasets import (
@@ -193,7 +193,7 @@ async def test_clean_workspace_initializes_default_baseline_seed(tmp_path) -> No
 
     # Clean workspace missing universe raises baseline_universe_replay_missing gracefully
     from data.store import DataStore
-    from server.services.ai_shadow_research_qualification_support import (
+    from server.services.ai_shadow.ai_shadow_research_qualification_support import (
         QualificationBaselinePreparer,
     )
 

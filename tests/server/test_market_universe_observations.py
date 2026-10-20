@@ -12,7 +12,9 @@ import pytest
 from data.store import DataStore
 from server.contracts.ai_shadow_research_automation import ShadowResearchRejected
 from server.db import AppDatabase
-from server.services.ai_shadow_research_baseline import _load_baseline_universe
+from server.services.ai_shadow.ai_shadow_research_baseline import (
+    _load_baseline_universe,
+)
 from server.services.market_universe_automation import (
     MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION,
     MarketUniverseAutomationService,

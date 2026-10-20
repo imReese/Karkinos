@@ -55,7 +55,7 @@ from server.services.account_qualification_reuse import (
     reusable_terminal_qualification_result,
     select_oldest_retryable_source_run_id,
 )
-from server.services.ai_shadow_research_qualification_support import (
+from server.services.ai_shadow.ai_shadow_research_qualification_support import (
     QUALIFICATION_COMPARISON_SCHEMA,
     QUALIFICATION_MARKET_OPEN_BLACKOUT_CODE,
     QUALIFICATION_NOTIONAL_POLICY_ID,
@@ -74,7 +74,7 @@ from server.services.ai_shadow_research_qualification_support import (
     qualification_selection,
     record_blocked_qualification_attempt,
 )
-from server.services.ai_shadow_research_support import (
+from server.services.ai_shadow.ai_shadow_research_support import (
     shadow_research_backtest_source_fingerprint,
     shadow_research_json_object,
     shadow_research_market_close_as_of,

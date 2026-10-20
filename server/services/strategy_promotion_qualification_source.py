@@ -13,7 +13,7 @@ from server.contracts.daily_strategy_artifacts import (
     DAILY_STRATEGY_PROMOTION_BINDING_SCHEMA,
 )
 from server.persistence.ai_shadow_research import ShadowResearchStore
-from server.services.ai_shadow_research_daily_artifacts import (
+from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
 )
 

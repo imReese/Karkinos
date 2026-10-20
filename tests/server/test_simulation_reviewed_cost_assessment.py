@@ -34,8 +34,10 @@ from server.ai_runtime.strategy_research_backtest import (
 )
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.http.strategy_models import BacktestRequest
-from server.services.ai_shadow_research_commands import simulation_validation_defaults
-from server.services.ai_shadow_research_support import (
+from server.services.ai_shadow.ai_shadow_research_commands import (
+    simulation_validation_defaults,
+)
+from server.services.ai_shadow.ai_shadow_research_support import (
     shadow_research_backtest_source_fingerprint,
 )
 from server.services.market_universe_truth import (
@@ -568,7 +570,7 @@ def test_independent_simulation_and_completed_qualification_never_supply_own_gra
 
 
 def test_frozen_simulation_cash_is_exact_and_requires_available_account_equity():
-    from server.services.ai_shadow_research_qualification_support import (
+    from server.services.ai_shadow.ai_shadow_research_qualification_support import (
         qualification_initial_cash,
     )
 

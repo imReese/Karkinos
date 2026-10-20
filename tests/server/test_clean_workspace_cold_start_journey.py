@@ -40,11 +40,11 @@ from server.db import AppDatabase
 from server.persistence.backtest_results import resolve_etf_backtest_record
 from server.routes import research_observations as obs_routes
 from server.routes import research_paper_books as paper_routes
-from server.services.ai_shadow_research_baseline import (
+from server.services.ai_shadow.ai_shadow_research_baseline import (
     _initialize_default_baseline_seed,
     _load_baseline_seed,
 )
-from server.services.ai_shadow_research_qualification_support import (
+from server.services.ai_shadow.ai_shadow_research_qualification_support import (
     QualificationBaselinePreparer,
 )
 from server.services.etf_rotation_automation import EtfRotationAutomationService

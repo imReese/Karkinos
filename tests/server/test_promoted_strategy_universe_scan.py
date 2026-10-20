@@ -17,7 +17,7 @@ from server.db import AppDatabase
 from server.projections.account_action_recommendation import (
     resolve_latest_verified_promoted_strategy_scan,
 )
-from server.services.ai_shadow_research_daily_artifacts import (
+from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactRejected,
     DailyStrategyArtifactStore,
 )

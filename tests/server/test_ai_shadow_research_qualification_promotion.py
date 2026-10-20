@@ -11,7 +11,9 @@ from server.contracts.ai_shadow_research_qualification import (
     SHADOW_RESEARCH_QUALIFICATION_CONFIRMATION,
 )
 from server.http.ai_shadow_research_qualification import create_router
-from server.services.ai_shadow_research_commands import AiShadowResearchCommandsMixin
+from server.services.ai_shadow.ai_shadow_research_commands import (
+    AiShadowResearchCommandsMixin,
+)
 from server.services.strategy_promotion_support import (
     AI_SHADOW_QUALIFICATION_READINESS_SCHEMA,
     ai_shadow_qualification_readiness_binding_blockers,
@@ -182,7 +184,7 @@ def test_qualification_command_promotes_source_id_to_paper_shadow_only(
     service._db = Database()
     service._utc_now = lambda: "2026-09-01T10:00:00+00:00"
     monkeypatch.setattr(
-        "server.services.ai_shadow_research_commands."
+        "server.services.ai_shadow.ai_shadow_research_commands."
         "resolve_ai_shadow_qualification_promotion_evidence",
         lambda db, candidate_id, **kwargs: (evidence, []),
     )
@@ -246,7 +248,7 @@ def test_qualification_promotion_preflight_failure_performs_zero_writes(
     service._db = object()
     service._utc_now = lambda: "2026-09-01T10:00:00+00:00"
     monkeypatch.setattr(
-        "server.services.ai_shadow_research_commands."
+        "server.services.ai_shadow.ai_shadow_research_commands."
         "resolve_ai_shadow_qualification_promotion_evidence",
         lambda db, candidate_id, **kwargs: (
             {"status": "blocked"},

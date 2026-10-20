@@ -24,7 +24,7 @@ from server.persistence.ai_shadow_research_worker_jobs import (
     AiShadowResearchWorkerJobStore,
 )
 from server.persistence.database_identity import require_database_path
-from server.services.ai_shadow_research_daily_artifacts import (
+from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
 )
 from server.services.reviewed_fee_schedule import (
@@ -74,7 +74,7 @@ def compose_ai_shadow_research_worker(
 def read_ai_shadow_research_worker_status(state: AppState) -> dict[str, Any]:
     """Compose one provider-free worker queue projection."""
 
-    from server.services.ai_shadow_research_worker_status import (
+    from server.services.ai_shadow.ai_shadow_research_worker_status import (
         build_ai_shadow_research_worker_status,
     )
 

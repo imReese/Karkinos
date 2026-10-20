@@ -25,11 +25,13 @@ from server.db import AppDatabase
 from server.dependencies import AppState
 from server.http.ai_shadow_research_qualification import create_router
 from server.projections import portfolio_application
-from server.services.ai_shadow_research_commands import AiShadowResearchCommandsMixin
-from server.services.ai_shadow_research_qualification import (
+from server.services.ai_shadow.ai_shadow_research_commands import (
+    AiShadowResearchCommandsMixin,
+)
+from server.services.ai_shadow.ai_shadow_research_qualification import (
     AiShadowResearchQualificationService,
 )
-from server.services.ai_shadow_research_qualification_support import (
+from server.services.ai_shadow.ai_shadow_research_qualification_support import (
     record_blocked_qualification_attempt,
 )
 
@@ -401,7 +403,7 @@ async def test_background_loop_blocks_account_bound_research_on_account_failure(
     caplog: pytest.LogCaptureFixture,
     tmp_path,
 ) -> None:
-    from server.services import ai_shadow_research_automation as runtime
+    from server.services.ai_shadow import ai_shadow_research_automation as runtime
 
     events: list[str] = []
 
@@ -457,7 +459,7 @@ async def test_background_loop_enqueues_when_new_research_can_fix_qualification(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
-    from server.services import ai_shadow_research_automation as runtime
+    from server.services.ai_shadow import ai_shadow_research_automation as runtime
 
     events: list[str] = []
 
@@ -515,8 +517,8 @@ async def test_normalized_background_admission_uses_policy_and_durable_scheduler
     from server.persistence.ai_shadow_research_worker_jobs import (
         AiShadowResearchWorkerJobStore,
     )
-    from server.services import ai_shadow_research_automation as runtime
-    from server.services.ai_shadow_research_job_scheduler import (
+    from server.services.ai_shadow import ai_shadow_research_automation as runtime
+    from server.services.ai_shadow.ai_shadow_research_job_scheduler import (
         AiShadowResearchJobScheduler,
     )
     from server.services.trading_controls import TradingControlState

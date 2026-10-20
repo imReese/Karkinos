@@ -413,7 +413,7 @@ def _build_shadow_job_scheduler(state: Any) -> Any:
     from server.composition.ai_shadow_research_automation import (
         compose_ai_shadow_research_job_scheduler,
     )
-    from server.services.ai_shadow_research_job_scheduler import (
+    from server.services.ai_shadow.ai_shadow_research_job_scheduler import (
         AiShadowResearchJobScheduler,
     )
 

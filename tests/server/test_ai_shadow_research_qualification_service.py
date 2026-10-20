@@ -40,7 +40,7 @@ from server.services.account_qualification_reuse import (
     _terminal_candidate_set_matches,
     select_oldest_retryable_source_run_id,
 )
-from server.services.ai_shadow_research_qualification import (
+from server.services.ai_shadow.ai_shadow_research_qualification import (
     AiShadowResearchQualificationService,
 )
 
@@ -1551,7 +1551,7 @@ async def test_terminal_reuse_reopens_full_scope_writer_comparisons(
     from server.persistence.ai_shadow_research import ShadowResearchStore
     from server.services.account_board_permissions import freeze_entry_board_policy
     from server.services.account_qualification_admission import QualificationAdmission
-    from server.services.ai_shadow_research_qualification_support import (
+    from server.services.ai_shadow.ai_shadow_research_qualification_support import (
         qualification_selection,
     )
     from server.services.market_universe_truth import (

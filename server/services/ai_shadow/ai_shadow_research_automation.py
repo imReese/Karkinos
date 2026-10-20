@@ -59,25 +59,31 @@ from server.contracts.ai_shadow_research_automation import (
 from server.dependencies import AppState
 from server.persistence.ai_shadow_research import ShadowResearchStore
 from server.release_activation import wait_for_release_activation
-from server.services.ai_shadow_research_baseline import AiShadowResearchBaselineMixin
-from server.services.ai_shadow_research_candidate_workflow import (
+from server.services.ai_shadow.ai_shadow_research_baseline import (
+    AiShadowResearchBaselineMixin,
+)
+from server.services.ai_shadow.ai_shadow_research_candidate_workflow import (
     AiShadowResearchCandidateWorkflowMixin,
 )
-from server.services.ai_shadow_research_commands import AiShadowResearchCommandsMixin
-from server.services.ai_shadow_research_daily_artifacts import (
+from server.services.ai_shadow.ai_shadow_research_commands import (
+    AiShadowResearchCommandsMixin,
+)
+from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
 )
-from server.services.ai_shadow_research_policy import (
+from server.services.ai_shadow.ai_shadow_research_policy import (
     build_corrected_panel_rearm_evidence,
 )
-from server.services.ai_shadow_research_support import (
+from server.services.ai_shadow.ai_shadow_research_support import (
     AiShadowResearchSupportMixin,
     NullShadowResearchEventBus,
     is_after_shadow_research_close,
     shadow_research_backtest_source_fingerprint,
     shadow_research_failure_code,
 )
-from server.services.ai_shadow_research_workflow import AiShadowResearchWorkflowMixin
+from server.services.ai_shadow.ai_shadow_research_workflow import (
+    AiShadowResearchWorkflowMixin,
+)
 from server.services.valuation_snapshot import build_current_valuation_snapshot
 
 logger = logging.getLogger(__name__)

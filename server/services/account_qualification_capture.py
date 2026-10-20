@@ -14,7 +14,7 @@ from server.contracts.ai_shadow_research_qualification import (
     ShadowResearchQualificationRejected,
 )
 from server.contracts.content_identity import content_fingerprint
-from server.services.ai_shadow_research_qualification_support import (
+from server.services.ai_shadow.ai_shadow_research_qualification_support import (
     account_total_equity,
     valid_fingerprint,
     valuation_fingerprint,

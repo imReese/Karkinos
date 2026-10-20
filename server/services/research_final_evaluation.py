@@ -144,29 +144,29 @@ def sealed_execution_code_binding() -> dict[str, Any]:
         "data/providers/tushare_corporate_actions.py",
         "data/storage/objects.py",
         "server/contracts/ai_shadow_research_automation.py",
-        "server/services/ai_shadow_research_commands.py",
-        "server/services/ai_shadow_research_workflow.py",
+        "server/services/ai_shadow/ai_shadow_research_commands.py",
+        "server/services/ai_shadow/ai_shadow_research_workflow.py",
         "server/persistence/strategy_research_sealed.py",
         "server/persistence/jobs.py",
         "server/contracts/jobs.py",
         "server/persistence/research_observations.py",
-        "server/services/ai_shadow_research_qualification.py",
+        "server/services/ai_shadow/ai_shadow_research_qualification.py",
         "server/projections/daily_strategy_research_candidates.py",
         "server/projections/daily_strategy_artifacts.py",
         "server/projections/normalized_research_recommendation.py",
         "server/services/account_qualification_reuse.py",
-        "server/services/ai_shadow_research_candidate_workflow.py",
+        "server/services/ai_shadow/ai_shadow_research_candidate_workflow.py",
         "server/contracts/normalized_strategy_research.py",
         "server/ai_runtime/strategy_research_support.py",
         "server/ai_runtime/strategy_research_privacy.py",
-        "server/services/ai_shadow_research_baseline.py",
+        "server/services/ai_shadow/ai_shadow_research_baseline.py",
         "server/persistence/research_paper_books.py",
         "server/persistence/ai_shadow_research_qualification_promotion.py",
         "server/persistence/ai_shadow_research_qualification.py",
         "server/persistence/ai_shadow_research_qualification_candidate_uow.py",
         "server/contracts/ai_shadow_research_qualification.py",
-        "server/services/ai_shadow_research_support.py",
-        "server/services/ai_shadow_research_qualification_support.py",
+        "server/services/ai_shadow/ai_shadow_research_support.py",
+        "server/services/ai_shadow/ai_shadow_research_qualification_support.py",
     )
     payload = {
         "purpose": "frozen_future_evaluation_implementation",
@@ -1626,7 +1626,7 @@ def _build_simulation_account_replay(db, store, result, evidence, grant, *, data
 def _verify_simulation_account_applicability(db, store, result, evidence, grant):
     """Reopen immutable replay provenance; daily consumers do not rerun a kernel."""
     from server.persistence.ai_shadow_research import ShadowResearchStore
-    from server.services.ai_shadow_research_support import (
+    from server.services.ai_shadow.ai_shadow_research_support import (
         shadow_research_backtest_source_fingerprint,
     )
 

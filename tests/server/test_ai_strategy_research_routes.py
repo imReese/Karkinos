@@ -30,7 +30,7 @@ from server.routes.ai_strategy_research import (
     _strategy_research_model_timeout_seconds,
     create_router,
 )
-from server.services.ai_shadow_research_automation import (
+from server.services.ai_shadow.ai_shadow_research_automation import (
     SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
     SHADOW_RESEARCH_CITATION_CALL_EXTENSION_CONFIRMATION,
     SHADOW_RESEARCH_CORRECTED_PANEL_CITATION_RESUME_CONFIRMATION,

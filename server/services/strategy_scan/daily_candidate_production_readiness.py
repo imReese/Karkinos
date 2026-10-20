@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from server.services.ai_shadow_research_automation import (
+from server.services.ai_shadow.ai_shadow_research_automation import (
     SHADOW_RESEARCH_MAX_CANDIDATES,
     SHADOW_RESEARCH_MAX_PROVIDER_CALLS,
     SHADOW_RESEARCH_POLICY_CONFIRMATION,

@@ -22,7 +22,9 @@ from server.contracts.ai_shadow_research_qualification import (
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.strategy_research import StrategyResearchSelection
 from server.projections.daily_strategy_artifacts import ranking_metrics
-from server.services.ai_shadow_research_baseline import AiShadowResearchBaselineMixin
+from server.services.ai_shadow.ai_shadow_research_baseline import (
+    AiShadowResearchBaselineMixin,
+)
 from server.services.market_hours import get_shanghai_now
 from server.services.valuation_snapshot import valuation_snapshot_from_row
 

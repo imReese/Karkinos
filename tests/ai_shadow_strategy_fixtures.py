@@ -34,12 +34,12 @@ from data.handler import DataHandler
 from data.store import DataStore
 from server.ai_runtime.contracts import content_fingerprint
 from server.ai_runtime.strategy_research import StrategyResearchAuditStore
-from server.services.ai_shadow_research_automation import (
+from server.services.ai_shadow.ai_shadow_research_automation import (
     SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
     ShadowResearchStore,
     _backtest_source_fingerprint,
 )
-from server.services.ai_shadow_research_daily_artifacts import (
+from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
     build_daily_strategy_promotion_binding,
 )

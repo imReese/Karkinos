@@ -53,7 +53,7 @@ from server.config import AIProviderConfig, ServerConfig
 from server.db import AppDatabase
 from server.dependencies import AppState
 from server.models import BacktestRequest
-from server.services.ai_shadow_research_automation import (
+from server.services.ai_shadow.ai_shadow_research_automation import (
     SHADOW_RESEARCH_ACCOUNT_BOUND_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
     SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL,
@@ -80,7 +80,7 @@ from server.services.ai_shadow_research_automation import (
     _failure_code,
     _iteration_lineage,
 )
-from server.services.ai_shadow_research_daily_artifacts import (
+from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactRejected,
     DailyStrategyArtifactStore,
     build_daily_strategy_promotion_binding,
@@ -1036,11 +1036,11 @@ async def test_corrected_panel_resume_runs_only_failed_critique_then_four_rounds
     service.update_policy(_account_bound_policy_payload(enabled=True))
     monkeypatch.setattr(service, "_prepare_baseline", lambda policy: prepared)
     monkeypatch.setattr(
-        "server.services.ai_shadow_research_automation._build_corrected_panel_rearm_evidence",
+        "server.services.ai_shadow.ai_shadow_research_automation._build_corrected_panel_rearm_evidence",
         lambda current: evidence,
     )
     monkeypatch.setattr(
-        "server.services.ai_shadow_research_automation.build_current_valuation_snapshot",
+        "server.services.ai_shadow.ai_shadow_research_automation.build_current_valuation_snapshot",
         lambda db, persist: {
             "snapshot_id": "valuation-new",
             "ledger_cutoff_id": 1,
@@ -3876,7 +3876,7 @@ async def test_five_round_policy_critiques_blocked_candidates_and_feeds_measured
         raise AssertionError("normalized-notional discovery must not read valuation")
 
     monkeypatch.setattr(
-        "server.services.ai_shadow_research_automation.build_current_valuation_snapshot",
+        "server.services.ai_shadow.ai_shadow_research_automation.build_current_valuation_snapshot",
         unexpected_valuation,
     )
 
@@ -4156,7 +4156,7 @@ async def test_fifth_round_timeout_resume_preserves_four_rounds_and_uses_two_cal
 
     monkeypatch.setattr(service, "_prepare_baseline", lambda policy: prepared)
     monkeypatch.setattr(
-        "server.services.ai_shadow_research_automation.build_current_valuation_snapshot",
+        "server.services.ai_shadow.ai_shadow_research_automation.build_current_valuation_snapshot",
         _complete_valuation,
     )
     result = await service.run_once()
@@ -4344,7 +4344,7 @@ async def test_full_cycle_is_idempotent_and_stops_at_human_research_pool(
         raise AssertionError("normalized-notional discovery must not read valuation")
 
     monkeypatch.setattr(
-        "server.services.ai_shadow_research_automation.build_current_valuation_snapshot",
+        "server.services.ai_shadow.ai_shadow_research_automation.build_current_valuation_snapshot",
         unexpected_account_valuation,
     )
 
@@ -4405,7 +4405,7 @@ async def test_running_market_date_claim_prevents_concurrent_provider_reentry(
         service, "_prepare_baseline", lambda policy: _prepared_baseline()
     )
     monkeypatch.setattr(
-        "server.services.ai_shadow_research_automation.build_current_valuation_snapshot",
+        "server.services.ai_shadow.ai_shadow_research_automation.build_current_valuation_snapshot",
         _complete_valuation,
     )
     claimed, reused = store.claim_run(
@@ -4550,7 +4550,7 @@ async def test_provider_exception_is_audited_failed_and_replay_does_not_retry(
         service, "_prepare_baseline", lambda policy: _prepared_baseline()
     )
     monkeypatch.setattr(
-        "server.services.ai_shadow_research_automation.build_current_valuation_snapshot",
+        "server.services.ai_shadow.ai_shadow_research_automation.build_current_valuation_snapshot",
         _complete_valuation,
     )
 
@@ -4590,7 +4590,7 @@ async def test_provider_rejection_keeps_exact_safe_failure_code(
         service, "_prepare_baseline", lambda policy: _prepared_baseline()
     )
     monkeypatch.setattr(
-        "server.services.ai_shadow_research_automation.build_current_valuation_snapshot",
+        "server.services.ai_shadow.ai_shadow_research_automation.build_current_valuation_snapshot",
         _complete_valuation,
     )
 
@@ -5244,7 +5244,7 @@ async def test_kill_switch_change_after_local_backtest_blocks_deepseek_critique(
         service, "_prepare_baseline", lambda policy: _prepared_baseline()
     )
     monkeypatch.setattr(
-        "server.services.ai_shadow_research_automation.build_current_valuation_snapshot",
+        "server.services.ai_shadow.ai_shadow_research_automation.build_current_valuation_snapshot",
         _complete_valuation,
     )
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from server.services.ai_shadow_research_worker_status import (
+from server.services.ai_shadow.ai_shadow_research_worker_status import (
     build_ai_shadow_research_worker_status,
 )
 

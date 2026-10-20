@@ -12,8 +12,8 @@ from server.db import AppDatabase
 from server.projections.normalized_research_recommendation import (
     is_valid_normalized_research_recommendation,
 )
-from server.services.ai_shadow_research_automation import ShadowResearchStore
-from server.services.ai_shadow_research_daily_artifacts import (
+from server.services.ai_shadow.ai_shadow_research_automation import ShadowResearchStore
+from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactRejected,
     DailyStrategyArtifactStore,
     build_daily_strategy_selection,
@@ -228,7 +228,9 @@ def _record_normalized_batch(
 def test_saved_v1_recommendation_retains_fingerprint_and_order_on_read(
     tmp_path, monkeypatch
 ) -> None:
-    from server.services import ai_shadow_research_daily_artifacts as service
+    from server.services.ai_shadow import (
+        ai_shadow_research_daily_artifacts as service,
+    )
 
     def legacy_selection(**kwargs):
         selection = build_daily_strategy_selection(**kwargs)

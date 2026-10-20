@@ -17,12 +17,12 @@ from server.config import AIProviderConfig, ServerConfig
 from server.contracts.ai_shadow_research_automation import ShadowResearchRejected
 from server.db import AppDatabase
 from server.dependencies import AppState
-from server.services.ai_shadow_research_automation import (
+from server.services.ai_shadow.ai_shadow_research_automation import (
     SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
     AiShadowResearchAutomationService,
     ShadowResearchStore,
 )
-from server.services.ai_shadow_research_daily_artifacts import (
+from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
 )
 from server.services.trading_controls import TradingControlState

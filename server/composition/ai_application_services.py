@@ -100,7 +100,7 @@ from server.dependencies import AppState
 from server.persistence.database_identity import require_database_path
 from server.projections import portfolio_application
 from server.services import account_strategy_projections, operations_projection
-from server.services.ai_context_capture_factory import (
+from server.services.ai_shadow.ai_context_capture_factory import (
     build_human_context_capture_service as _build_context_capture_service,
 )
 from server.services.research.factory import (
@@ -108,10 +108,10 @@ from server.services.research.factory import (
 )
 
 if TYPE_CHECKING:
-    from server.services.ai_shadow_research_automation import (
+    from server.services.ai_shadow.ai_shadow_research_automation import (
         AiShadowResearchAutomationService,
     )
-    from server.services.ai_shadow_research_qualification import (
+    from server.services.ai_shadow.ai_shadow_research_qualification import (
         AiShadowResearchQualificationService,
     )
 
@@ -629,7 +629,7 @@ def build_shadow_research_write_service(
 ) -> AiShadowResearchAutomationService:
     if state.db is None:
         raise ConnectivityConfigurationError("database is not initialized")
-    from server.services.ai_shadow_research_automation import (
+    from server.services.ai_shadow.ai_shadow_research_automation import (
         build_ai_shadow_research_automation_service,
     )
 
@@ -656,7 +656,7 @@ def build_shadow_research_qualification_service(
     from server.composition.ai_shadow_research_automation import (
         compose_ai_shadow_research_qualification_service,
     )
-    from server.services.ai_shadow_research_qualification import (
+    from server.services.ai_shadow.ai_shadow_research_qualification import (
         AiShadowResearchQualificationService,
     )
 
@@ -676,7 +676,7 @@ def build_shadow_research_read_service(
     state: AppState,
 ) -> AiShadowResearchAutomationService:
     """Build a read projection without initializing tables or market storage."""
-    from server.services.ai_shadow_research_automation import (
+    from server.services.ai_shadow.ai_shadow_research_automation import (
         AiShadowResearchAutomationService,
         ShadowResearchStore,
     )

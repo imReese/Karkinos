@@ -152,10 +152,10 @@ async def lifespan(app: FastAPI):
         initialize_ai_shadow_research_qualification_persistence,
     )
     from server.config import BrokerStatementCollectorConfig, ServerConfig
-    from server.services.ai_shadow_research_automation import (
+    from server.services.ai_shadow.ai_shadow_research_automation import (
         run_ai_shadow_research_automation_loop,
     )
-    from server.services.ai_shadow_research_job_scheduler import (
+    from server.services.ai_shadow.ai_shadow_research_job_scheduler import (
         AiShadowResearchJobScheduler,
     )
     from server.services.daily_decision_evidence_automation import (

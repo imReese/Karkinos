@@ -5,7 +5,7 @@ import pytest
 
 from server.ai_runtime.capture import CaptureSelectionError
 from server.ai_runtime.provider_connectivity import ConnectivityConfigurationError
-from server.services.ai_context_capture_factory import (
+from server.services.ai_shadow.ai_context_capture_factory import (
     database_path as capture_database_path,
 )
 from server.services.research.factory import (

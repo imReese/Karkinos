@@ -37,7 +37,7 @@ from server.contracts.daily_strategy_artifacts import (
     DAILY_STRATEGY_PROMOTION_BINDING_SCHEMA,
 )
 from server.projections.valuation_snapshot import ledger_identity_from_rows
-from server.services.ai_shadow_research_daily_artifacts import (
+from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactRejected,
     DailyStrategyArtifactStore,
     build_daily_strategy_promotion_binding,

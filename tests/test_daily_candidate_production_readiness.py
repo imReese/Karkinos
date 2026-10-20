@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 from server.ai_runtime.contracts import content_fingerprint
-from server.services.ai_shadow_research_automation import (
+from server.services.ai_shadow.ai_shadow_research_automation import (
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
 )
 from server.services.automation_cockpit import (

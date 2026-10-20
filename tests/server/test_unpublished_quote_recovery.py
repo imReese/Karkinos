@@ -20,7 +20,7 @@ from server.persistence.valuation_publication_recovery import (
 from server.persistence.valuation_recovery_preview import (
     preview_unpublished_quote_recovery,
 )
-from server.services.ai_shadow_research_qualification_support import (
+from server.services.ai_shadow.ai_shadow_research_qualification_support import (
     require_complete_valuation,
 )
 from tests.server.test_publication_recovery_replay import _finish, _quote, _run

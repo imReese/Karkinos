@@ -18,7 +18,9 @@ RESEARCH_CANDIDATE_PROJECTION = (
 )
 SQLITE_REPOSITORY = PROJECT_ROOT / "server/persistence/daily_strategy_artifacts.py"
 BACKUP_REPOSITORY = PROJECT_ROOT / "server/persistence/daily_strategy_backups.py"
-SERVICE = PROJECT_ROOT / "server/services/ai_shadow_research_daily_artifacts.py"
+SERVICE = (
+    PROJECT_ROOT / "server/services/ai_shadow/ai_shadow_research_daily_artifacts.py"
+)
 PRODUCTION_FILES = (
     CONTRACT,
     NORMALIZED_RESEARCH_CONTRACT,

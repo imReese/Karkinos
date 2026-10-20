@@ -155,7 +155,7 @@ def test_reserved_start_waits_then_resumes_exact_cash_fees_and_keeps_owner_pause
             SIMULATION_VALIDATION_AUTHORIZE,
             validate_simulation_validation_policy,
         )
-        from server.services.ai_shadow_research_commands import (
+        from server.services.ai_shadow.ai_shadow_research_commands import (
             simulation_validation_defaults,
         )
 

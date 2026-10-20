@@ -196,7 +196,7 @@ def test_qualification_rejects_tampered_persisted_valuation_content(tmp_path):
     from server.contracts.ai_shadow_research_qualification import (
         ShadowResearchQualificationRejected,
     )
-    from server.services.ai_shadow_research_qualification_support import (
+    from server.services.ai_shadow.ai_shadow_research_qualification_support import (
         require_complete_valuation,
     )
 

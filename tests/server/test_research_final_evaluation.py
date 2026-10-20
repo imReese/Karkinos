@@ -1000,7 +1000,7 @@ async def test_late_market_delivery_waits_then_evaluates_same_champion(harness):
 async def test_automatic_completed_batch_freezes_selected_champion_before_cutoff(
     harness, monkeypatch
 ):
-    from server.services.ai_shadow_research_automation import (
+    from server.services.ai_shadow.ai_shadow_research_automation import (
         AiShadowResearchAutomationService,
         ShadowResearchStore,
     )

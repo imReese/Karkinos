@@ -11,7 +11,7 @@ from server.contracts.ai_shadow_research_qualification import (
 from server.db import AppDatabase
 from server.persistence.market_calendar import MarketCalendarRepository
 from server.projections.valuation_snapshot import valuation_snapshot_from_row
-from server.services.ai_shadow_research_qualification_support import (
+from server.services.ai_shadow.ai_shadow_research_qualification_support import (
     require_current_valuation_trade_date,
 )
 from server.services.market_calendar_dates import latest_verified_closed_trading_date

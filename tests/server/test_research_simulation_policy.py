@@ -24,7 +24,7 @@ from server.contracts.research_observation_automation import (
     validate_simulation_validation_policy,
 )
 from server.db import AppDatabase
-from server.services.ai_shadow_research_commands import (
+from server.services.ai_shadow.ai_shadow_research_commands import (
     AiShadowResearchCommandsMixin,
     simulation_validation_defaults,
 )
@@ -218,7 +218,7 @@ def test_simulation_is_explicit_noncapital_and_old_research_updates_preserve_it(
             }
         )
     assert commands.get_policy().simulation_validation == revoked
-    from server.services.ai_shadow_research_workflow import (
+    from server.services.ai_shadow.ai_shadow_research_workflow import (
         AiShadowResearchWorkflowMixin,
     )
 
@@ -349,7 +349,7 @@ def test_full_scope_simulation_reserves_without_account_or_reviewed_fees(
     assert "publication_grant" not in binding and "fee_schedule" not in binding
     assert binding["initial_cash"] == "123456"
     assert binding["error_budget"]["attempt_count"] == 1
-    from server.services.ai_shadow_research_automation import (
+    from server.services.ai_shadow.ai_shadow_research_automation import (
         AiShadowResearchAutomationService,
     )
 
@@ -401,10 +401,10 @@ def test_nondefault_sim_notional_reaches_baseline_request_and_saved_selection(
         RestrictedFormulaBacktestAdapter,
     )
     from server.ai_runtime.strategy_research_support import selection_from_session
-    from server.services.ai_shadow_research_baseline import (
+    from server.services.ai_shadow.ai_shadow_research_baseline import (
         _resolve_baseline_initial_cash,
     )
-    from server.services.ai_shadow_research_workflow import (
+    from server.services.ai_shadow.ai_shadow_research_workflow import (
         AiShadowResearchWorkflowMixin,
     )
 
@@ -469,7 +469,7 @@ def test_nondefault_sim_notional_reaches_baseline_request_and_saved_selection(
 def test_seed_declaration_has_stable_history_floor_across_new_market_dates(
     harness, monkeypatch
 ):
-    from server.services.ai_shadow_research_baseline import (
+    from server.services.ai_shadow.ai_shadow_research_baseline import (
         AiShadowResearchBaselineMixin,
     )
     from server.services.market_universe_truth import normalize_a_share_members
@@ -477,7 +477,7 @@ def test_seed_declaration_has_stable_history_floor_across_new_market_dates(
 
     h = harness
     monkeypatch.setattr(
-        "server.services.ai_shadow_research_baseline.verified_trading_dates",
+        "server.services.ai_shadow.ai_shadow_research_baseline.verified_trading_dates",
         lambda _db, *, start_date, end_date: [
             day
             for i in range(1, 21)
@@ -553,7 +553,7 @@ def test_sim_notional_survives_immutable_daily_backup_without_account_authority(
     from server.services.account_qualification_reuse import (
         require_normalized_source_selection,
     )
-    from server.services.ai_shadow_research_daily_artifacts import (
+    from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
         DailyStrategyArtifactStore,
     )
     from tests.server.test_ai_shadow_research_daily_artifacts import (

@@ -27,7 +27,7 @@ from server.contracts.normalized_strategy_research import (
     SIMULATION_RESEARCH_NOTIONAL_POLICY_ID,
 )
 from server.contracts.strategy_research import StrategyResearchSelection
-from server.services.ai_shadow_research_qualification_support import (
+from server.services.ai_shadow.ai_shadow_research_qualification_support import (
     QUALIFICATION_COMPARISON_SCHEMA,
     QUALIFICATION_NOTIONAL_POLICY_ID,
     FrozenQualificationSource,
@@ -43,7 +43,7 @@ from server.services.ai_shadow_research_qualification_support import (
     valid_fingerprint,
     valuation_fingerprint,
 )
-from server.services.ai_shadow_research_support import (
+from server.services.ai_shadow.ai_shadow_research_support import (
     shadow_research_backtest_source_fingerprint,
     shadow_research_market_close_as_of,
 )

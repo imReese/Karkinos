@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 from server.contracts.content_identity import content_fingerprint
 from server.persistence.database_identity import optional_database_path
-from server.services.ai_shadow_research_daily_artifacts import (
+from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
 )
 from server.services.daily_decision_background_schedule import next_trading_day

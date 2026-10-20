@@ -24,11 +24,11 @@ from server.dependencies import AppState
 from server.persistence.ai_shadow_research_worker_jobs import (
     AiShadowResearchWorkerJobStore,
 )
-from server.services.ai_shadow_research_job_scheduler import (
+from server.services.ai_shadow.ai_shadow_research_job_scheduler import (
     AiShadowResearchJobScheduler,
     shadow_research_provider_config_fingerprint,
 )
-from server.services.ai_shadow_research_worker import (
+from server.services.ai_shadow.ai_shadow_research_worker import (
     AiShadowResearchWorker,
     AiShadowResearchWorkerLeaseLost,
 )
@@ -431,7 +431,7 @@ async def test_worker_waits_for_release_activation_before_claim(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from server.services import ai_shadow_research_worker as worker_runtime
+    from server.services.ai_shadow import ai_shadow_research_worker as worker_runtime
 
     state, _policy = _state(tmp_path)
     events: list[str] = []
@@ -507,7 +507,7 @@ async def test_delayed_provider_worker_does_not_block_independent_decision_work(
 @pytest.mark.unit
 def test_fastapi_lifespan_has_no_external_research_construction() -> None:
     from server.app import lifespan
-    from server.services.ai_shadow_research_automation import (
+    from server.services.ai_shadow.ai_shadow_research_automation import (
         run_ai_shadow_research_automation_loop,
     )
 
