@@ -163,6 +163,8 @@ class MarketSyncApiRequest(BaseModel):
     skip_calendar: bool = False
     skip_quotes: bool = False
     force: bool = False
+    exchanges: list[str] = Field(default_factory=lambda: ["SSE", "SZSE"])
+    universe_snapshot_id: str | None = None
 
 
 class MarketSyncApiResponse(BaseModel):
@@ -177,6 +179,9 @@ class MarketSyncApiResponse(BaseModel):
     quotes_updated: int
     items: list[dict[str, Any]] = Field(default_factory=list)
     message: str
+    jobs: list[dict[str, Any]] = Field(default_factory=list)
+    scope: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
 
 
 __all__ = (

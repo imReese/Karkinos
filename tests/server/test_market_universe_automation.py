@@ -313,6 +313,57 @@ def test_market_universe_automation_resumes_without_refetching_frozen_dates(
     assert payload["remote_bar_refresh_attempt_count"] == 70
 
 
+def test_internal_partial_receipt_cannot_freeze_full_market_history(tmp_path):
+    """Enough rows and a full final day do not prove internal daily coverage."""
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _verified_calendar(db)
+    store = DataStore(tmp_path / "market")
+    source = _Source()
+    dates = [
+        day.date().isoformat() for day in pd.bdate_range(end="2026-08-21", periods=80)
+    ]
+    partial_day = dates[20]
+    for day in dates:
+        frame = source.fetch_market_daily_bars(day)
+        if day == partial_day:
+            frame = frame.iloc[:1]
+        store.ingest_market_daily_batch(
+            trade_date=day, provider_name="unit_fixture", bars=frame
+        )
+    original = store.get_market_daily_ingestion_receipt(
+        trade_date=partial_day, provider_name="unit_fixture"
+    )
+    source.daily_calls.clear()
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-04-01"
+        ),
+        data_store=store,
+        source=source,
+    )
+    result = service.run_due(
+        now=datetime(2026, 8, 23, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
+    )
+    payload = json.loads(result["payload_json"])
+    assert result["status"] == "failed"
+    assert payload["full_market_history_frozen"] is False
+    assert payload["full_market_missing_receipt_date_count"] == 0
+    assert payload["full_market_partial_receipt_dates"] == [partial_day]
+    assert payload["full_market_uncovered_symbol_session_count"] == 999
+    assert payload["persisted_bar_ready_count"] == 1000
+    assert payload["latest_cross_section_row_count"] == 1000
+    assert payload["history_repair_entrypoint"] == "market_sync.full-market"
+    assert source.daily_calls == []  # Legacy receipt bytes must remain immutable.
+    assert (
+        store.get_market_daily_ingestion_receipt(
+            trade_date=partial_day, provider_name="unit_fixture"
+        )
+        == original
+    )
+
+
 def test_market_universe_routes_security_master_and_daily_bars_separately(
     monkeypatch,
     tmp_path,
@@ -467,6 +518,16 @@ def test_per_symbol_ingestion_never_relabels_existing_cache_as_provider_evidence
     class Source:
         def list_symbols(self):
             return [f"{600000 + i:06d}" for i in range(41)]
+
+        def list_symbol_metadata(self):
+            return [
+                {
+                    "symbol": symbol,
+                    "display_name": f"示例股票{symbol}",
+                    "list_date": "2026-08-24" if symbol == "600040" else "2020-01-01",
+                }
+                for symbol in self.list_symbols()
+            ]
 
         def fetch_bars(self, symbol, **kwargs):
             calls.append(symbol)

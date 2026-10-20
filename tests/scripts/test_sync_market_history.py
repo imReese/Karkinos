@@ -14,9 +14,7 @@ import pandas as pd
 import pytest
 
 from scripts.data.sync_market_history import (
-    _load_tushare_token,
     _maybe_mirror_to_repo,
-    _sync_full_market_daily,
     main,
     parse_args,
 )
@@ -29,7 +27,8 @@ def test_parse_args_defaults():
     assert args.symbols is None
     assert args.start == "2020-01-01"
     assert args.end is None
-    assert args.throttle == 0.6
+    assert args.throttle is None
+    assert args.exchanges == "SSE,SZSE"
     assert args.mirror_to_repo is False
     assert args.force is False
 
@@ -60,20 +59,6 @@ def test_parse_args_full_market_and_custom_options():
     assert args.data_dir == "/tmp/karkinos-data"
 
 
-def test_load_tushare_token(monkeypatch, tmp_path):
-    monkeypatch.delenv("KARKINOS_TUSHARE_TOKEN", raising=False)
-    # 1. From environment
-    monkeypatch.setenv("KARKINOS_TUSHARE_TOKEN", "token_from_env_123")
-    assert _load_tushare_token() == "token_from_env_123"
-
-    # 2. Unset
-    monkeypatch.delenv("KARKINOS_TUSHARE_TOKEN", raising=False)
-    with patch("scripts.data.sync_market_history.Path.home", return_value=tmp_path):
-        with patch("scripts.data.sync_market_history.REPO_ROOT", tmp_path):
-            token = _load_tushare_token()
-            assert token is None
-
-
 def test_main_standard_sync(monkeypatch, tmp_path):
     now = datetime.now()
     mock_summary = MarketSyncSummary(
@@ -96,69 +81,6 @@ def test_main_standard_sync(monkeypatch, tmp_path):
         assert mock_service.sync.called
         req = mock_service.sync.call_args[0][0]
         assert req.universe == "core"
-
-
-def test_sync_full_market_daily_missing_token(monkeypatch, tmp_path):
-    monkeypatch.delenv("KARKINOS_TUSHARE_TOKEN", raising=False)
-    with patch(
-        "scripts.data.sync_market_history._load_tushare_token", return_value=None
-    ):
-        rc = _sync_full_market_daily(
-            data_dir=tmp_path,
-            start_date="2021-01-01",
-            end_date="2021-01-05",
-            throttle=0.0,
-        )
-        assert rc == 1
-
-
-def test_sync_full_market_daily_success(monkeypatch, tmp_path):
-    with (
-        patch(
-            "scripts.data.sync_market_history._load_tushare_token",
-            return_value="dummy_token",
-        ),
-        patch(
-            "data.store.DataStore.get_market_daily_ingestion_receipt", return_value=None
-        ),
-        patch("data.store.DataStore.ingest_market_daily_batch") as mock_ingest,
-        patch(
-            "data.providers.tushare.TushareSource.fetch_market_daily_bars"
-        ) as mock_fetch,
-    ):
-        mock_fetch.return_value = pd.DataFrame(
-            [
-                {
-                    "symbol": "600000",
-                    "open": 10.0,
-                    "high": 10.5,
-                    "low": 9.8,
-                    "close": 10.2,
-                    "volume": 1000,
-                }
-            ]
-        )
-
-        with patch(
-            "server.persistence.market_calendar.MarketCalendarRepository"
-        ) as mock_cal_repo:
-            repo_instance = MagicMock()
-            repo_instance.get_snapshot.return_value = {
-                "days_json": '[{"date": "2021-01-04", "is_trading_day": true}]'
-            }
-            mock_cal_repo.return_value = repo_instance
-            app_db = tmp_path / "app.db"
-            app_db.touch()
-
-            rc = _sync_full_market_daily(
-                data_dir=tmp_path,
-                start_date="2021-01-01",
-                end_date="2021-01-05",
-                throttle=0.0,
-            )
-            assert rc == 0
-            assert mock_fetch.called
-            assert mock_ingest.called
 
 
 @pytest.mark.parametrize("destination_locked", [False, True])
@@ -258,398 +180,57 @@ def test_maybe_mirror_to_repo_keeps_committed_wal_and_active_snapshots(
     ) is (not destination_locked)
 
 
-def test_full_market_interrupt_exits_nonzero_and_resumes_missing_dates(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from core.types import BarFrequency, InstrumentType
-    from data.store import DataStore
-    from scripts.data import sync_market_history
-
-    data_dir = tmp_path / "data"
-    data_dir.mkdir()
-    (data_dir / "app.db").touch()
-    monkeypatch.setenv("KARKINOS_DATA_DIR", str(data_dir))
-    monkeypatch.setattr(sync_market_history, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(sync_market_history.Path, "home", lambda: tmp_path)
-    monkeypatch.setattr(
-        sync_market_history, "_load_tushare_token", lambda: "synthetic-unused-token"
+@pytest.mark.parametrize(
+    "status,expected_code", [("queued", 2), ("failed", 1), ("success", 0)]
+)
+def test_full_market_cli_uses_shared_service_and_honest_exit_status(
+    tmp_path, status, expected_code
+):
+    service = MagicMock()
+    service.sync.return_value = MarketSyncSummary(
+        status=status,
+        started_at="fixture",
+        completed_at="fixture",
+        duration_seconds=0,
+        error="missing calendar" if status == "failed" else None,
     )
-    calendar = MagicMock()
-    calendar.get_snapshot.return_value = {
-        "days_json": (
-            '[{"date":"2026-10-12","is_trading_day":true},'
-            '{"date":"2026-10-13","is_trading_day":true}]'
-        )
-    }
-    monkeypatch.setattr(
-        "server.persistence.market_calendar.MarketCalendarRepository",
-        lambda _path: calendar,
-    )
-    requested_dates: list[str] = []
-    interrupted = False
-
-    def fetch(_source: object, trade_date: str) -> pd.DataFrame:
-        nonlocal interrupted
-        requested_dates.append(trade_date)
-        if trade_date == "2026-10-13" and not interrupted:
-            interrupted = True
-            raise KeyboardInterrupt
-        return pd.DataFrame(
-            [
-                {
-                    "symbol": "600000",
-                    "timestamp": pd.Timestamp(trade_date),
-                    "open": 10.0,
-                    "high": 11.0,
-                    "low": 9.0,
-                    "close": 10.5,
-                    "volume": 1000.0,
-                    "amount": 10500.0,
-                }
-            ]
-        )
-
-    monkeypatch.setattr(
-        "data.providers.tushare.TushareSource.fetch_market_daily_bars", fetch
-    )
-    arguments = [
-        "--universe",
-        "full-market",
-        "--start",
-        "2026-10-12",
-        "--end",
-        "2026-10-13",
-        "--throttle",
-        "0",
-        "--data-dir",
-        str(data_dir),
-    ]
-    with pytest.raises(SystemExit) as result:
-        main(arguments)
-    assert result.value.code == 130
-    assert requested_dates == ["2026-10-12", "2026-10-13"]
-
-    store = DataStore(data_dir)
-    first_receipt = store.get_market_daily_ingestion_receipt(
-        trade_date="2026-10-12", provider_name="tushare"
-    )
-    assert first_receipt is not None
-    assert first_receipt["row_count"] == 1
-    assert (
-        store.get_market_daily_ingestion_receipt(
-            trade_date="2026-10-13", provider_name="tushare"
-        )
-        is None
-    )
-    first_bars = store.load_bars(
-        "600000", BarFrequency.DAILY, instrument_type=InstrumentType.STOCK
-    )
-    assert first_bars is not None
-    assert first_bars["timestamp"].dt.strftime("%Y-%m-%d").tolist() == ["2026-10-12"]
-
-    requested_dates.clear()
-    main(arguments)
-    assert requested_dates == ["2026-10-13"]
-    assert (
-        store.get_market_daily_ingestion_receipt(
-            trade_date="2026-10-12", provider_name="tushare"
-        )
-        == first_receipt
-    )
-    second_receipt = store.get_market_daily_ingestion_receipt(
-        trade_date="2026-10-13", provider_name="tushare"
-    )
-    assert second_receipt is not None
-    assert second_receipt["row_count"] == 1
-    bars = store.load_bars(
-        "600000", BarFrequency.DAILY, instrument_type=InstrumentType.STOCK
-    )
-    assert bars is not None
-    assert bars["timestamp"].dt.strftime("%Y-%m-%d").tolist() == [
-        "2026-10-12",
-        "2026-10-13",
-    ]
-
-    requested_dates.clear()
-    main(arguments)
-    assert requested_dates == []
-    assert (
-        store.get_market_daily_ingestion_receipt(
-            trade_date="2026-10-13", provider_name="tushare"
-        )
-        == second_receipt
-    )
-
-
-@pytest.mark.parametrize("local_database_exists", [False, True])
-def test_full_market_calendar_fallback_uses_canonical_snapshot_and_saves_receipts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, local_database_exists: bool
-) -> None:
-    from core.types import BarFrequency, InstrumentType
-    from data.market_calendar import build_static_market_calendar_snapshot
-    from data.store import DataStore
-    from scripts.data import sync_market_history
-
-    data_dir = tmp_path / "data"
-    data_dir.mkdir()
-    if local_database_exists:
-        (data_dir / "app.db").touch()
-    monkeypatch.setenv("KARKINOS_DATA_DIR", str(data_dir))
-    monkeypatch.setattr(sync_market_history, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(sync_market_history.Path, "home", lambda: tmp_path)
-    monkeypatch.setattr(
-        sync_market_history, "_load_tushare_token", lambda: "synthetic-unused-token"
-    )
-    repository = MagicMock()
-    repository.get_snapshot.return_value = None
-    repository_factory = MagicMock(return_value=repository)
-    monkeypatch.setattr(
-        "server.persistence.market_calendar.MarketCalendarRepository",
-        repository_factory,
-    )
-    snapshot = build_static_market_calendar_snapshot(
-        exchange="SSE",
-        year=2026,
-        provider="synthetic",
-        open_dates=["2026-10-09", "2026-10-12", "2026-10-13", "2026-10-15"],
-        fetched_at="2026-10-16T00:00:00+08:00",
-    )
-    fetch_snapshot = MagicMock(return_value=snapshot)
-    calendar_factory = MagicMock(
-        return_value=SimpleNamespace(fetch_snapshot=fetch_snapshot)
-    )
-    monkeypatch.setattr(
-        "data.market_calendar.build_market_calendar_provider", calendar_factory
-    )
-    fetched_dates: list[str] = []
-
-    def fetch(_source: object, trade_date: str) -> pd.DataFrame:
-        fetched_dates.append(trade_date)
-        return pd.DataFrame(
-            [
-                {
-                    "symbol": "600000",
-                    "timestamp": pd.Timestamp(trade_date),
-                    "open": 10.0,
-                    "high": 11.0,
-                    "low": 9.0,
-                    "close": 10.5,
-                    "volume": 1000.0,
-                    "amount": 10500.0,
-                }
-            ]
-        )
-
-    monkeypatch.setattr(
-        "data.providers.tushare.TushareSource.fetch_market_daily_bars", fetch
-    )
-    main(
-        [
+    with patch(
+        "scripts.data.sync_market_history.MarketSyncService", return_value=service
+    ):
+        args = [
             "--universe",
             "full-market",
             "--start",
-            "2026-10-10",
+            "2020-01-01",
             "--end",
-            "2026-10-14",
-            "--throttle",
-            "0",
+            "2026-10-19",
             "--data-dir",
-            str(data_dir),
+            str(tmp_path),
         ]
-    )
-
-    assert repository_factory.call_count == int(local_database_exists)
-    if local_database_exists:
-        repository.get_snapshot.assert_called_once_with(exchange="SSE", year=2026)
-    calendar_factory.assert_called_once_with("akshare")
-    fetch_snapshot.assert_called_once_with(exchange="SSE", year=2026)
-    assert fetched_dates == ["2026-10-12", "2026-10-13"]
-    store = DataStore(data_dir)
-    for day in fetched_dates:
-        receipt = store.get_market_daily_ingestion_receipt(
-            trade_date=day, provider_name="tushare"
-        )
-        assert receipt is not None
-        assert receipt["row_count"] == 1
-    bars = store.load_bars(
-        "600000", BarFrequency.DAILY, instrument_type=InstrumentType.STOCK
-    )
-    assert bars is not None
-    assert bars["timestamp"].dt.strftime("%Y-%m-%d").tolist() == fetched_dates
+        if expected_code:
+            with pytest.raises(SystemExit) as exc:
+                main(args)
+            assert exc.value.code == expected_code
+        else:
+            main(args)
+    req = service.sync.call_args.args[0]
+    assert req.universe == "full-market"
+    assert req.start_date == "2020-01-01"
+    assert req.end_date == "2026-10-19"
+    assert req.exchanges == ("SSE", "SZSE")
 
 
-@pytest.mark.parametrize("local_years", [(2025,), (2026,), (), (2025, 2026)])
-def test_full_market_fills_each_missing_calendar_year_and_reuses_receipts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, local_years: tuple[int, ...]
-) -> None:
-    from core.types import BarFrequency, InstrumentType
-    from data.market_calendar import build_static_market_calendar_snapshot
-    from data.store import DataStore
-    from scripts.data import sync_market_history
-    from server.db import AppDatabase
-    from server.persistence.market_calendar import MarketCalendarRepository
-
-    data_dir = tmp_path / "data"
-    data_dir.mkdir()
-    AppDatabase(data_dir / "app.db").init_sync()
-    repo = MarketCalendarRepository(str(data_dir / "app.db"))
-    snapshots = {
-        year: build_static_market_calendar_snapshot(
-            exchange="SSE",
-            year=year,
-            provider="synthetic",
-            open_dates=[day],
-            fetched_at="2026-01-06T00:00:00+08:00",
-        )
-        for year, day in [(2025, "2025-12-31"), (2026, "2026-01-05")]
-    }
-    for year in local_years:
-        repo.upsert_snapshot(snapshots[year])
-    monkeypatch.setattr(sync_market_history, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(sync_market_history.Path, "home", lambda: tmp_path)
-    monkeypatch.setattr(sync_market_history, "_load_tushare_token", lambda: "fixture")
-    calendar_requests = []
-
-    def fetch_calendar(*, exchange, year):
-        assert exchange == "SSE"
-        calendar_requests.append(year)
-        return snapshots[year]
-
-    monkeypatch.setattr(
-        "data.market_calendar.build_market_calendar_provider",
-        lambda _name: SimpleNamespace(fetch_snapshot=fetch_calendar),
-    )
-    bar_requests = []
-
-    def fetch_bars(_source, trade_date):
-        bar_requests.append(trade_date)
-        return pd.DataFrame(
-            [
-                {
-                    "symbol": "600000",
-                    "timestamp": pd.Timestamp(trade_date),
-                    "open": 10.0,
-                    "high": 11.0,
-                    "low": 9.0,
-                    "close": 10.5,
-                    "volume": 1000.0,
-                    "amount": 10500.0,
-                }
-            ]
-        )
-
-    monkeypatch.setattr(
-        "data.providers.tushare.TushareSource.fetch_market_daily_bars", fetch_bars
-    )
-    arguments = [
-        "--universe",
-        "full-market",
-        "--start",
-        "2025-12-31",
-        "--end",
-        "2026-01-05",
-        "--throttle",
-        "0",
-        "--data-dir",
-        str(data_dir),
-    ]
-    main(arguments)
-    assert calendar_requests == [
-        year for year in (2025, 2026) if year not in local_years
-    ]
-    assert bar_requests == ["2025-12-31", "2026-01-05"]
-    store = DataStore(data_dir)
-    receipts = {
-        day: store.get_market_daily_ingestion_receipt(
-            trade_date=day, provider_name="tushare"
-        )
-        for day in bar_requests
-    }
-    assert all(
-        receipt is not None and receipt["row_count"] == 1
-        for receipt in receipts.values()
-    )
-    bars = store.load_bars(
-        "600000", BarFrequency.DAILY, instrument_type=InstrumentType.STOCK
-    )
-    assert bars is not None
-    assert bars["timestamp"].dt.strftime("%Y-%m-%d").tolist() == bar_requests
-    bar_requests.clear()
-    main(arguments)
-    assert bar_requests == []
-    assert {
-        day: store.get_market_daily_ingestion_receipt(
-            trade_date=day, provider_name="tushare"
-        )
-        for day in receipts
-    } == receipts
-
-
-@pytest.mark.parametrize(
-    "calendar_state", ["closed", "empty-cache", "provider-fails", "provider-empty"]
-)
-def test_full_market_calendar_distinguishes_closed_days_from_missing_evidence(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, calendar_state: str
-) -> None:
-    from dataclasses import replace
-
-    from data.market_calendar import build_static_market_calendar_snapshot
-    from scripts.data import sync_market_history
-    from server.db import AppDatabase
-    from server.persistence.market_calendar import MarketCalendarRepository
-
-    data_dir = tmp_path / "data"
-    data_dir.mkdir()
-    AppDatabase(data_dir / "app.db").init_sync()
-    repo = MarketCalendarRepository(str(data_dir / "app.db"))
-    snapshot = build_static_market_calendar_snapshot(
-        exchange="SSE",
-        year=2026,
-        provider="synthetic",
-        open_dates=["2026-01-05"],
-        fetched_at="2026-01-06T00:00:00+08:00",
-    )
-    if calendar_state in {"closed", "empty-cache"}:
-        repo.upsert_snapshot(
-            snapshot if calendar_state == "closed" else replace(snapshot, days=())
-        )
-    monkeypatch.setattr(sync_market_history, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(sync_market_history.Path, "home", lambda: tmp_path)
-    monkeypatch.setattr(sync_market_history, "_load_tushare_token", lambda: "fixture")
-    fetch_calendar = MagicMock(
-        return_value=replace(snapshot, days=())
-        if calendar_state == "provider-empty"
-        else snapshot
-    )
-    if calendar_state == "provider-fails":
-        fetch_calendar.side_effect = OSError("synthetic calendar unavailable")
-    monkeypatch.setattr(
-        "data.market_calendar.build_market_calendar_provider",
-        lambda _name: SimpleNamespace(fetch_snapshot=fetch_calendar),
-    )
-    fetch_bars = MagicMock(
-        side_effect=AssertionError("No bars without an open session")
-    )
-    monkeypatch.setattr(
-        "data.providers.tushare.TushareSource.fetch_market_daily_bars", fetch_bars
-    )
-    arguments = [
-        "--universe",
-        "full-market",
-        "--start",
-        "2026-01-03",
-        "--end",
-        "2026-01-04",
-        "--throttle",
-        "0",
-        "--data-dir",
-        str(data_dir),
-    ]
-    if calendar_state in {"provider-fails", "provider-empty"}:
-        with pytest.raises(SystemExit) as result:
-            main(arguments)
-        assert result.value.code == 1
-    else:
-        main(arguments)
-    assert fetch_calendar.call_count == int(calendar_state != "closed")
-    fetch_bars.assert_not_called()
+def test_full_market_rejects_meta_only_mirror_before_submitting(tmp_path):
+    with patch("scripts.data.sync_market_history.MarketSyncService") as service:
+        with pytest.raises(SystemExit) as exc:
+            main(
+                [
+                    "--universe",
+                    "full-market",
+                    "--mirror-to-repo",
+                    "--data-dir",
+                    str(tmp_path),
+                ]
+            )
+        assert exc.value.code == 1
+        service.assert_not_called()

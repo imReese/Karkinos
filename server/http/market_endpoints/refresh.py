@@ -215,6 +215,8 @@ def create_router(dependencies: RefreshEndpointDependencies) -> APIRouter:
             skip_calendar=request.skip_calendar,
             skip_quotes=request.skip_quotes,
             force=request.force,
+            exchanges=tuple(request.exchanges),
+            universe_snapshot_id=request.universe_snapshot_id,
         )
         asyncio_mod = dependencies.asyncio_provider()
         summary = await asyncio_mod.to_thread(service.sync, sync_req)
@@ -239,6 +241,9 @@ def create_router(dependencies: RefreshEndpointDependencies) -> APIRouter:
                 }
                 for item in summary.items
             ],
+            jobs=summary.jobs,
+            scope=summary.scope,
+            error=summary.error,
             message=f"Market sync {summary.status}: {summary.successful_targets}/{summary.total_targets} succeeded",
         )
 
@@ -278,6 +283,9 @@ def create_router(dependencies: RefreshEndpointDependencies) -> APIRouter:
                 }
                 for item in summary.items
             ],
+            jobs=summary.jobs,
+            scope=summary.scope,
+            error=summary.error,
             message=f"Latest sync {summary.status}: {summary.successful_targets}/{summary.total_targets} succeeded",
         )
 

@@ -135,12 +135,28 @@ Specialized tooling is grouped under `broker/`, `ci/`, `data/`, `release/`, and 
 # 同步核心宇宙（基准指数 + 主流ETF + 持仓基金 + 自选股）从 2020 至今的所有历史与今日收盘
 uv run --locked python scripts/data/sync_market_history.py --universe core --start 2020-01-01
 
-# 全市场 A 股 5,000+ 标的按交易日批量高速回补（断点续传、日历查验、自动记账）
-uv run --locked python scripts/data/sync_market_history.py --universe full-market --start 2021-01-01 --end 2024-12-31
+# 沪深全市场历史：自动截至可采集的收盘日，默认不包含北交所
+uv run --locked python scripts/data/sync_market_history.py --universe full-market --start 2020-01-01
 
 # 指定任意股票代码高速拉取完整历史并沉淀至本地
 uv run --locked python scripts/data/sync_market_history.py --symbols 600519,300750 --start 2015-01-01
 ```
+
+`full-market` 与 HTTP `/api/market/sync` 共用市场同步服务，复用现有
+`market_daily_verified` 队列和 data worker。需要已有、带观测时间和上市日期的完整证券主数据快照，
+以及请求区间内逐年经过核验的交易日历；缺失时明确失败，不访问另一个工作区的数据库作为回退。
+使用正常运行的 data worker（`python -m server --data-worker`）执行采集、双源核对和发布；
+不另设补数 worker。任务在 `app.db` 中持久化，验证数据和原始证据在 `research/` 中持久化，
+发布后登记 Dataset Catalog。旧 SQLite 回执和已冻结研究输入保持原值，新的研究可使用已有
+verified Dataset supplement 机制补足旧回执缺失的股票。
+
+退出码 `0` 表示全部任务的 Dataset 已登记且可离线重放；`2` 表示任务仍在排队或运行；
+`1` 表示失败。重复同一范围会复用任务；通过输出中的快照 ID 配合
+`--universe-snapshot-id` 固定证券主数据，`GET /api/market/sync/status` 会读取持久任务状态。
+`--exchanges SSE,SZSE,BSE` 可显式加入北交所。当前存续股票及其观测到的上市/退市日期
+只定义研究范围，不等于完整历史 PIT 成分。缺少行情不能自动解释成停牌。
+`--force` 创建新的观测轮次而不覆盖旧证据；`--throttle` 仅为兼容旧命令保留，节流和额度由 worker 管理。
+`full-market` 不支持仅复制 `meta.db` 的 `--mirror-to-repo`，迁移应保留整个数据目录。
 
 ## 数据源安全配置
 

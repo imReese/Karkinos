@@ -24,6 +24,7 @@ from server.services.market.calendar import (
     latest_verified_closed_trading_date,
     validate_verified_market_calendar,
 )
+from server.services.market.history import history_session_symbols
 from server.services.market.hours import get_shanghai_now
 from server.services.market.market_universe_truth import (
     MarketUniversePolicy,
@@ -35,7 +36,7 @@ from server.services.market.market_universe_truth import (
 logger = logging.getLogger(__name__)
 
 MARKET_UNIVERSE_AUTOMATION_SCHEMA_PREFIX = "karkinos.market_universe_automation."
-MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION = "karkinos.market_universe_automation.v6"
+MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION = "karkinos.market_universe_automation.v7"
 MARKET_UNIVERSE_AUTOMATION_RUN_TYPE = "market_universe_sync"
 MARKET_UNIVERSE_AUTOMATION_INTERVAL_SECONDS = 60 * 60
 
@@ -162,7 +163,7 @@ class MarketUniverseAutomationService:
                 },
             )
         run_id = (
-            "market_universe_sync:v6:"
+            "market_universe_sync:v7:"
             f"{master_provider_name}:{daily_provider_name}:{trade_date}"
         )
         existing = self._db.get_automation_run_sync(run_id)
@@ -404,6 +405,7 @@ class MarketUniverseAutomationService:
                 daily_provider_name=daily_provider_name,
                 trading_dates=trading_dates,
                 members=members,
+                member_metadata=snapshot.get("member_metadata") or [],
             )
             blockers = coverage["blockers"]
             status = "completed" if not blockers else "failed"
@@ -467,7 +469,14 @@ class MarketUniverseAutomationService:
             )
 
     def _history_coverage(
-        self, *, start_date, trade_date, daily_provider_name, trading_dates, members
+        self,
+        *,
+        start_date,
+        trade_date,
+        daily_provider_name,
+        trading_dates,
+        members,
+        member_metadata=(),
     ):
         receipts = self._data_store.list_market_daily_ingestion_receipts(
             start_date=start_date.isoformat(),
@@ -494,6 +503,19 @@ class MarketUniverseAutomationService:
         missing_receipt_dates = sorted(set(trading_dates) - receipt_dates)
         if missing_receipt_dates:
             blockers.append("full_market_daily_receipt_coverage_incomplete")
+        partial_dates = []
+        missing_symbol_sessions = 0
+        for receipt in receipts:
+            session = str(receipt["trade_date"])
+            if session not in trading_dates:
+                continue
+            expected = history_session_symbols(members, member_metadata, session)
+            missing = expected - set(receipt.get("symbols") or [])
+            if missing:
+                partial_dates.append(session)
+                missing_symbol_sessions += len(missing)
+        if partial_dates:
+            blockers.append("full_market_daily_symbol_coverage_unverified")
         end_receipt: Mapping[str, Any] = next(
             (
                 item
@@ -519,12 +541,19 @@ class MarketUniverseAutomationService:
             "full_market_daily_receipt_count": len(receipts),
             "full_market_missing_receipt_dates": missing_receipt_dates[:100],
             "full_market_missing_receipt_date_count": len(missing_receipt_dates),
+            "full_market_partial_receipt_dates": partial_dates[:100],
+            "full_market_partial_receipt_date_count": len(partial_dates),
+            "full_market_uncovered_symbol_session_count": missing_symbol_sessions,
+            "history_repair_entrypoint": "market_sync.full-market"
+            if partial_dates
+            else None,
             "persisted_bar_ready_count": ready,
             "persisted_bar_excluded_count": len(members) - ready,
             "minimum_persisted_bar_ready_count": minimum_ready_count,
             "latest_cross_section_row_count": end_cross_section_count,
             "minimum_latest_cross_section_row_count": minimum_end_cross_section_count,
-            "full_market_history_frozen": not missing_receipt_dates,
+            "full_market_history_frozen": not missing_receipt_dates
+            and not partial_dates,
             "blockers": blockers,
             "retryable": bool(blockers),
         }

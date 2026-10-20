@@ -99,7 +99,7 @@ class MarketSyncItem:
 
 @dataclass(slots=True)
 class MarketSyncSummary:
-    status: str  # "success", "partial", "failed"
+    status: str  # "success", "partial", "failed", "queued"
     started_at: str
     completed_at: str
     duration_seconds: float
@@ -109,11 +109,14 @@ class MarketSyncSummary:
     failed_targets: int = 0
     quotes_updated: int = 0
     items: list[MarketSyncItem] = field(default_factory=list)
+    jobs: list[dict[str, Any]] = field(default_factory=list)
+    scope: dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
 
 
 @dataclass(slots=True)
 class MarketSyncRequest:
-    universe: str = "core"  # "core", "indices", "etfs", "funds", "stocks", "all"
+    universe: str = "core"  # core, indices, etfs, funds, stocks, all, full-market
     symbols: list[str] | None = None
     asset_class: str | None = None
     instrument_type: str | None = None
@@ -122,6 +125,8 @@ class MarketSyncRequest:
     skip_calendar: bool = False
     skip_quotes: bool = False
     force: bool = False
+    exchanges: tuple[str, ...] = ("SSE", "SZSE")
+    universe_snapshot_id: str | None = None
 
 
 def _daily_close_trade_date(
@@ -204,7 +209,107 @@ class MarketSyncService:
         return self._data_store
 
     def get_last_summary(self) -> MarketSyncSummary | None:
+        if self._last_summary is not None and self._last_summary.jobs:
+            self._refresh_history_jobs(self._last_summary)
         return self._last_summary
+
+    def _refresh_history_jobs(self, summary: MarketSyncSummary) -> None:
+        from server.persistence.jobs import SQLiteJobStore
+        from server.services.market.history import history_job_result
+
+        store = SQLiteJobStore(self._get_db().path)
+        results = []
+        for previous in summary.jobs:
+            job = store.get(previous["job_id"])
+            if job is None:
+                results.append(
+                    {
+                        **previous,
+                        "status": "failed",
+                        "error": "market_history_job_missing",
+                    }
+                )
+            else:
+                results.append(history_job_result(self._data_dir / "research", job))
+        summary.jobs = results
+        complete = {
+            symbol
+            for job in results
+            if job["status"] == "succeeded"
+            for symbol in job["symbols"]
+        }
+        failed = {
+            symbol
+            for job in results
+            if job["status"] == "failed"
+            for symbol in job["symbols"]
+        }
+        summary.successful_targets = len(complete)
+        summary.failed_targets = len(failed)
+        summary.status = (
+            "success"
+            if all(job["status"] == "succeeded" for job in results)
+            else "partial"
+            if failed and complete
+            else "failed"
+            if failed
+            else "queued"
+        )
+
+    def _sync_full_market_history(
+        self,
+        req: MarketSyncRequest,
+        start: date,
+        end: date,
+        *,
+        started_at: datetime,
+        calendar_years: list[int],
+    ) -> MarketSyncSummary:
+        from server.bootstrap import load_runtime_config
+        from server.services.market.history import enqueue_full_market_history
+
+        summary = MarketSyncSummary(
+            status="failed",
+            started_at=started_at.isoformat(),
+            completed_at=started_at.isoformat(),
+            duration_seconds=0,
+            calendar_years=calendar_years,
+        )
+        try:
+            if req.symbols or req.asset_class or req.instrument_type:
+                raise ValueError("market_history_full_market_scope_conflict")
+            db = self._get_db()
+            if db is None:
+                raise ValueError("market_history_app_database_unavailable")
+            jobs, scope = enqueue_full_market_history(
+                db=db,
+                config=self._config or load_runtime_config(),
+                data_store=self._data_store,
+                exchanges=req.exchanges,
+                snapshot_id=req.universe_snapshot_id,
+                start_date=start,
+                end_date=end,
+                now=datetime.now(_SHANGHAI),
+                reobserve=req.force,
+            )
+            summary.scope = scope
+            summary.total_targets = scope["interval_member_count"]
+            summary.jobs = [
+                {
+                    "job_id": job.job_id,
+                    "symbols": [row["symbol"] for row in job.payload["instruments"]],
+                }
+                for job in jobs
+            ]
+            self._refresh_history_jobs(summary)
+        except Exception as exc:
+            logger.warning("Full-market history planning failed", exc_info=True)
+            summary.error = str(exc)
+        completed = datetime.now()
+        summary.completed_at = completed.isoformat()
+        summary.duration_seconds = round((completed - started_at).total_seconds(), 3)
+        self._last_summary = summary
+        return summary
 
     def resolve_targets(self, request: MarketSyncRequest) -> list[SyncTarget]:
         """Resolve concrete sync targets from request scope and database."""
@@ -231,6 +336,8 @@ class MarketSyncService:
             return targets
 
         scope = request.universe.lower().strip()
+        if scope not in {"core", "all", "indices", "etfs", "funds", "stocks"}:
+            raise ValueError("market_sync_universe_invalid")
         targets: list[SyncTarget] = []
         sync_all = scope in ("core", "all")
 
@@ -559,11 +666,27 @@ class MarketSyncService:
             if req.end_date
             else datetime.now(_SHANGHAI).replace(hour=23, minute=59, second=59)
         )
+        if req.universe.lower().strip() == "full-market" and req.end_date is None:
+            current = datetime.now(_SHANGHAI)
+            end_date = (
+                current if current.time() >= time(16) else current - timedelta(days=1)
+            )
+        if start_date > end_date:
+            raise ValueError("market_sync_date_range_invalid")
 
         calendar_years: list[int] = []
         if not req.skip_calendar:
             calendar_years = self.sync_calendar(
                 start_date.year, end_date.year, force=req.force
+            )
+
+        if req.universe.lower().strip() == "full-market":
+            return self._sync_full_market_history(
+                req,
+                start_date.date(),
+                end_date.date(),
+                started_at=start_time,
+                calendar_years=calendar_years,
             )
 
         targets = self.resolve_targets(req)
