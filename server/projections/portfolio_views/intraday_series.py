@@ -53,7 +53,7 @@ from server.services.account.daily_performance import (
     mark_position_daily,
     price_at_tick,
 )
-from server.services.market_hours import get_shanghai_now
+from server.services.market.hours import get_shanghai_now
 from server.services.position_presence import (
     is_economically_zero_quantity,
 )

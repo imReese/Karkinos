@@ -6,7 +6,7 @@ import json
 from collections import Counter
 from typing import Any
 
-from server.services.verified_daily_market_data import (
+from server.services.market.verified_daily_market_data import (
     VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT,
 )
 

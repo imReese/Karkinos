@@ -6,7 +6,6 @@ import inspect
 from copy import deepcopy
 from typing import Any, Callable
 
-from server.services.asset_metadata import resolve_asset_metadata
 from server.services.decision.decision_contracts import (
     BLOCKING_DATA_STATUSES,
     READY_MANUAL_CONFIRMATION_STATUS,
@@ -19,6 +18,7 @@ from server.services.decision.decision_contracts import (
     json_object,
     normalize_decision_action,
 )
+from server.services.market.asset_metadata import resolve_asset_metadata
 
 
 async def validation_by_strategy_id(db: Any) -> dict[str, dict[str, Any]]:

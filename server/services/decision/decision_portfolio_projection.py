@@ -22,7 +22,7 @@ from server.services.decision.decision_contracts import (
     float_or_zero,
     parse_action_timestamp,
 )
-from server.services.market_hours import get_shanghai_now
+from server.services.market.hours import get_shanghai_now
 from server.services.position_presence import is_economically_zero_quantity
 
 

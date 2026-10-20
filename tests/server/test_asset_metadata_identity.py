@@ -10,7 +10,7 @@ from core.types import AssetClass, InstrumentType
 from domain.instrument import make_etf, make_open_end_fund, make_stock
 from server.db import AppDatabase
 from server.routes.market import create_router
-from server.services.asset_metadata import resolve_asset_metadata
+from server.services.market.asset_metadata import resolve_asset_metadata
 
 
 def _state(db=None):

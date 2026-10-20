@@ -20,12 +20,12 @@ from data.storage.objects import ContentAddressedObjectStore
 from data.store import DataStore
 from server.bootstrap import resolve_data_dir
 from server.release_activation import wait_for_release_activation
-from server.services.market_calendar_dates import (
+from server.services.market.calendar import (
     latest_verified_closed_trading_date,
+    validate_verified_market_calendar,
 )
-from server.services.market_calendar_evidence import validate_verified_market_calendar
-from server.services.market_hours import get_shanghai_now
-from server.services.market_universe_truth import (
+from server.services.market.hours import get_shanghai_now
+from server.services.market.market_universe_truth import (
     MarketUniversePolicy,
     market_universe_observation,
     normalize_a_share_members,

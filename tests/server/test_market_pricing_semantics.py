@@ -14,7 +14,7 @@ from server.projections.quote_status import (
     quote_valuation_status,
 )
 from server.projections.valuation_snapshot import build_current_valuation_snapshot
-from server.services.market_calendar_dates import project_market_session
+from server.services.market.calendar import project_market_session
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 SATURDAY = datetime(2026, 9, 12, 17, 46, tzinfo=SHANGHAI)

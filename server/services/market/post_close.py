@@ -18,7 +18,7 @@ from server.contracts.quote_ingestion import (
     QuoteIngestionCommand,
     quote_timestamp_instant,
 )
-from server.services.market_calendar_dates import (
+from server.services.market.calendar import (
     resolve_latest_verified_closed_trading_date,
 )
 

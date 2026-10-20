@@ -228,7 +228,7 @@ class RecommendationPublicationService:
                 build_current_valuation_snapshot,
                 portfolio_equity_from_valuation,
             )
-            from server.services.market_universe_truth import (
+            from server.services.market.market_universe_truth import (
                 MarketUniversePolicy,
                 market_deployment_scope,
             )

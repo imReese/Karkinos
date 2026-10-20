@@ -15,12 +15,12 @@ from server.db import AppDatabase
 from server.services.ai_shadow.ai_shadow_research_baseline import (
     _load_baseline_universe,
 )
-from server.services.market_universe_automation import (
+from server.services.market.market_universe_automation import (
     MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION,
     MarketUniverseAutomationService,
     validate_market_universe_automation_payload,
 )
-from server.services.market_universe_truth import (
+from server.services.market.market_universe_truth import (
     MARKET_UNIVERSE_SNAPSHOT_SCHEMA_VERSION,
     MarketUniversePolicy,
     MarketUniverseRejected,

@@ -31,7 +31,7 @@ from server.services.account.account_board_permissions import (
     BOARD_PERMISSION_SOURCE,
     resolve_board_buy_permissions,
 )
-from server.services.asset_metadata import (
+from server.services.market.asset_metadata import (
     build_asset_metadata_status,
     iter_configured_asset_metadata,
     metadata_configured_count,

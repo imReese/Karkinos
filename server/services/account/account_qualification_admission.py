@@ -10,7 +10,7 @@ from server.services.ai_shadow.ai_shadow_research_qualification_support import (
     qualification_clock_time,
     qualification_market_open_blackout,
 )
-from server.services.market_hours import get_shanghai_now
+from server.services.market.hours import get_shanghai_now
 
 
 class QualificationAdmissionDeferred(Exception):

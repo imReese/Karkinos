@@ -22,8 +22,8 @@ from server.ai_runtime.formula_dsl import (
     validate_formula_ast,
 )
 from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
-from server.services.market_universe_automation import verified_trading_dates
-from server.services.market_universe_truth import (
+from server.services.market.market_universe_automation import verified_trading_dates
+from server.services.market.market_universe_truth import (
     FULL_MARKET_UNIVERSE_TRUTH_SCHEMA_VERSION,
     MarketUniversePolicy,
     build_full_market_universe_truth,

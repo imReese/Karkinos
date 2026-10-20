@@ -24,7 +24,7 @@ from server.persistence.daily_candidate_outcome_store import (
     replay_research_dataset_snapshot,
 )
 from server.persistence.database_identity import optional_database_path
-from server.services.market_calendar_evidence import validate_verified_market_calendar
+from server.services.market.calendar import validate_verified_market_calendar
 
 _HORIZONS = (1, 5, 20)
 _SHANGHAI = ZoneInfo("Asia/Shanghai")

@@ -45,21 +45,21 @@ from server.persistence.market_daily_call_budget import (
     reserve_market_daily_provider_call,
 )
 from server.routes import market
-from server.services.daily_market_collection import (
+from server.services.market.daily_market_collection import (
     DAILY_MARKET_COLLECTION_JOB,
     DailyMarketCollectionJobRequest,
     DailyMarketCollectionService,
     collection_capture_completed_at,
 )
-from server.services.research.dataset_inputs import load_dataset_backtest_inputs
-from server.services.research.datasets import dataset_summary
-from server.services.verified_daily_market_data import (
+from server.services.market.verified_daily_market_data import (
     VERIFIED_DAILY_MARKET_JOB_SCHEMA_VERSION,
     VerifiedDailyMarketDataNotPublishable,
     VerifiedDailyMarketDataRequestError,
     VerifiedDailyMarketDataService,
     VerifiedDailyMarketJobRequest,
 )
+from server.services.research.dataset_inputs import load_dataset_backtest_inputs
+from server.services.research.datasets import dataset_summary
 from server.workers.data_worker import execute_daily_market_collection_job
 
 DAY = date(2026, 9, 17)
@@ -221,7 +221,7 @@ def _service(
         call_log=call_log,
     )
     monkeypatch.setattr(
-        "server.services.verified_daily_market_data.provider_registry_for_config",
+        "server.services.market.verified_daily_market_data.provider_registry_for_config",
         lambda config, include_tdx=False: registry,
     )
     return VerifiedDailyMarketDataService(
@@ -232,7 +232,7 @@ def _service(
 
 def _collection_service(tmp_path, monkeypatch, registry):
     monkeypatch.setattr(
-        "server.services.daily_market_collection.provider_registry_for_config",
+        "server.services.market.daily_market_collection.provider_registry_for_config",
         lambda config, include_tdx=False: registry,
     )
     return DailyMarketCollectionService(
@@ -915,7 +915,7 @@ def test_blocked_collection_quality_stays_visible_without_source_switch(
 def test_collection_fences_quality_publication_after_lease_loss(tmp_path, monkeypatch):
     service = _collection_service(tmp_path, monkeypatch, _registry())
     monkeypatch.setattr(
-        "server.services.daily_market_collection.publish_market_quality_evidence",
+        "server.services.market.daily_market_collection.publish_market_quality_evidence",
         lambda *args: pytest.fail("quality evidence published after lease loss"),
     )
 
@@ -1049,7 +1049,7 @@ def test_verified_service_does_not_date_check_before_provider_captures(
 ) -> None:
     service = _service(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        "server.services.verified_daily_market_data._utc_now",
+        "server.services.market.verified_daily_market_data._utc_now",
         lambda value: CAPTURED - timedelta(seconds=1),
     )
 

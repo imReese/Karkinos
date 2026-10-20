@@ -10,7 +10,7 @@ from data.dataset.manifest import (
     publish_daily_bar_dataset_manifest,
 )
 from data.store import DataStore
-from server.services.market_universe_truth import normalize_a_share_members
+from server.services.market.market_universe_truth import normalize_a_share_members
 from server.services.research_observation_inputs import (
     read_research_observation_dataset,
 )

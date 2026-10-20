@@ -13,7 +13,7 @@ from data.market_calendar import (
     build_static_market_calendar_snapshot,
 )
 from server.db import AppDatabase
-from server.services.market_calendar_automation import (
+from server.services.market.calendar_automation import (
     MarketCalendarAutomationService,
     market_calendar_automation_years,
 )

@@ -12,7 +12,9 @@ from server.services.automation_cockpit import (
 from server.services.current_per_order_dossier import (
     CURRENT_PER_ORDER_CANDIDATES_SCHEMA_VERSION,
 )
-from server.services.market_session_automation import MarketSessionAutomationService
+from server.services.market.market_session_automation import (
+    MarketSessionAutomationService,
+)
 from server.services.trading_controls import TradingControlState
 
 

@@ -14,7 +14,8 @@ from data.source_policy import MarketDataUseCase
 from data.source_routing import preferred_legacy_provider
 from server.contracts.http.market import QuoteRefreshSymbolResult
 from server.projections.quote_status import parse_quote_timestamp
-from server.services.asset_metadata import resolve_asset_metadata
+from server.services.market.asset_metadata import resolve_asset_metadata
+from server.services.market.hours import is_cn_trading_session
 from server.services.market.identity import (
     instrument_type_for_refresh as _instrument_type_for_refresh,
 )
@@ -36,7 +37,6 @@ from server.services.market.quotes import (
     build_quote_ingestion_command,
     persist_quote_ingestion,
 )
-from server.services.market_hours import is_cn_trading_session
 
 logger = logging.getLogger(__name__)
 

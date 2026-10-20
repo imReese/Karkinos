@@ -15,7 +15,7 @@ from server.services.decision.daily_decision_background_schedule import (
 from server.services.decision.daily_decision_evidence_contracts import (
     DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
 )
-from server.services.market_calendar_evidence import (
+from server.services.market.calendar import (
     validate_verified_market_calendar,
 )
 from server.services.strategy_promotion_pipeline import (

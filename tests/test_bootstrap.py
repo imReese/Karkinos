@@ -1880,7 +1880,7 @@ def test_lifespan_reuses_cached_runtime_config(monkeypatch):
         "notification.notifier.build_notifier", lambda notification: object()
     )
     monkeypatch.setattr(
-        "server.services.market_universe_automation."
+        "server.services.market.market_universe_automation."
         "run_market_universe_automation_loop",
         inert_automation_loop,
     )
@@ -1989,7 +1989,7 @@ def test_lifespan_starts_daily_decision_evidence_automation_with_live_scheduler(
         fake_decision_evidence_loop,
     )
     monkeypatch.setattr(
-        "server.services.market_universe_automation."
+        "server.services.market.market_universe_automation."
         "run_market_universe_automation_loop",
         fake_market_universe_loop,
     )

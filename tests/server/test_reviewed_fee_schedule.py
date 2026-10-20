@@ -291,7 +291,7 @@ def test_current_account_buys_require_reviewed_action_date_and_keep_exits(
         freeze_deployment_fee_schedule,
         resolve_frozen_deployment_fee_schedule,
     )
-    from server.services.market_universe_truth import MarketUniversePolicy
+    from server.services.market.market_universe_truth import MarketUniversePolicy
     from server.services.strategy_scan.promoted_strategy_universe_scan_support import (
         account_eligible_signals,
     )

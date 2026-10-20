@@ -23,7 +23,7 @@ from server.projections.quote_status import (
     parse_quote_timestamp,
     quote_live_ttl_seconds,
 )
-from server.services.market_hours import get_shanghai_now
+from server.services.market.hours import get_shanghai_now
 
 
 @dataclass(frozen=True, slots=True)

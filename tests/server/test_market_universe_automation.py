@@ -11,13 +11,13 @@ import pytest
 from core.types import BarFrequency, InstrumentType
 from data.store import DataStore
 from server.db import AppDatabase
-from server.services.market_universe_automation import (
+from server.services.market.market_universe_automation import (
     MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION,
     MarketUniverseAutomationService,
     validate_market_universe_automation_payload,
     verified_trading_dates,
 )
-from server.services.market_universe_truth import (
+from server.services.market.market_universe_truth import (
     normalize_a_share_members,
 )
 
@@ -187,7 +187,7 @@ def test_market_universe_automation_blocks_without_verified_calendar(tmp_path) -
 def test_failed_run_records_source_bound_master_and_does_not_bypass_backoff(
     tmp_path, monkeypatch
 ):
-    from server.services.market_universe_truth import MarketUniversePolicy
+    from server.services.market.market_universe_truth import MarketUniversePolicy
     from tests.data.providers.test_official_stock_master import _bound
     from tests.server.test_verified_interval_dataset import DAYS, NOW
 
@@ -196,11 +196,11 @@ def test_failed_run_records_source_bound_master_and_does_not_bypass_backoff(
     db.init_sync()
     market = DataStore(tmp_path)
     monkeypatch.setattr(
-        "server.services.market_universe_automation.latest_verified_closed_trading_date",
+        "server.services.market.market_universe_automation.latest_verified_closed_trading_date",
         lambda *_a, **_kw: DAYS[-1].isoformat(),
     )
     monkeypatch.setattr(
-        "server.services.market_universe_automation.verified_trading_dates",
+        "server.services.market.market_universe_automation.verified_trading_dates",
         lambda *_a, **_kw: [day.isoformat() for day in DAYS],
     )
     attempts = []
@@ -318,7 +318,7 @@ def test_market_universe_routes_security_master_and_daily_bars_separately(
     tmp_path,
 ) -> None:
     from data.source_policy import MarketDataUseCase
-    from server.services import market_universe_automation
+    from server.services.market import market_universe_automation
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -456,7 +456,7 @@ def test_research_calendar_rejects_missing_year_and_broken_verification(
 def test_per_symbol_ingestion_never_relabels_existing_cache_as_provider_evidence(
     tmp_path,
 ):
-    from server.services.market_universe_truth import MarketUniversePolicy
+    from server.services.market.market_universe_truth import MarketUniversePolicy
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()

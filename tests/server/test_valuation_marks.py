@@ -471,7 +471,7 @@ def test_legacy_v6_baseline_classification_preserves_snapshot_identity(tmp_path)
 def test_verified_market_session_has_explicit_current_day_phase(
     tmp_path, hour, minute, status
 ):
-    from server.services.market_calendar_dates import project_market_session
+    from server.services.market.calendar import project_market_session
 
     session = project_market_session(
         _book(tmp_path), MONDAY.replace(hour=hour, minute=minute)

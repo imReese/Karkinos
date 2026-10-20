@@ -19,7 +19,7 @@ from server.services.account.account_board_permissions import (
     resolve_board_buy_permissions,
     validate_entry_board_policy,
 )
-from server.services.market_hours import get_shanghai_now
+from server.services.market.hours import get_shanghai_now
 
 
 def _review(

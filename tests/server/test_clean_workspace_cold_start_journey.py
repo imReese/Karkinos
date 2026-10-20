@@ -47,7 +47,7 @@ from server.services.ai_shadow.ai_shadow_research_baseline import (
 from server.services.ai_shadow.ai_shadow_research_qualification_support import (
     QualificationBaselinePreparer,
 )
-from server.services.etf_rotation_automation import EtfRotationAutomationService
+from server.services.market.etf_rotation_automation import EtfRotationAutomationService
 from server.services.research_observations import (
     ResearchObservationService,
     observation_code_binding,
@@ -276,7 +276,7 @@ async def test_clean_workspace_cold_start_full_journey(tmp_path, monkeypatch):
     # -------------------------------------------------------------------------
     # Step 6: Verify report selection, paper book linkage, and deep-link consistency
     # -------------------------------------------------------------------------
-    from server.services.etf_rotation_automation import (
+    from server.services.market.etf_rotation_automation import (
         DEFAULT_STRATEGY_PARAMS,
         ETF_METADATA,
     )

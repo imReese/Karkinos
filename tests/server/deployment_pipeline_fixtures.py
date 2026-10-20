@@ -25,8 +25,8 @@ from data.storage.objects import ContentAddressedObjectStore
 from data.store import DataStore
 from server.db import AppDatabase
 from server.persistence.market_calendar import MarketCalendarRepository
-from server.services.market_calendar_evidence import validate_verified_market_calendar
-from server.services.market_universe_truth import (
+from server.services.market.calendar import validate_verified_market_calendar
+from server.services.market.market_universe_truth import (
     MarketUniversePolicy,
     market_deployment_scope,
     normalize_a_share_members,

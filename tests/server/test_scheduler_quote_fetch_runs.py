@@ -33,7 +33,9 @@ from server.services.account.valuation_snapshot import build_current_valuation_s
 def isolated_rotation_data(monkeypatch, tmp_path):
     # Stock quote publication also attempts the unrelated ETF refresh. Keep
     # that real side path in this test's directory, never the owner's store.
-    from server.services.etf_rotation_automation import EtfRotationAutomationService
+    from server.services.market.etf_rotation_automation import (
+        EtfRotationAutomationService,
+    )
 
     monkeypatch.setattr(
         EtfRotationAutomationService, "default_data_dir", tmp_path / "rotation-data"
@@ -1963,7 +1965,7 @@ def test_scheduler_retries_fund_confirmation_until_all_targets_persisted(
         Symbol("019998"): make_open_end_fund("019998", "示例基金 A"),
         Symbol("019999"): make_open_end_fund("019999", "示例基金 B"),
     }
-    from server.services.market_calendar_dates import (
+    from server.services.market.calendar import (
         resolve_latest_verified_closed_trading_date,
     )
 

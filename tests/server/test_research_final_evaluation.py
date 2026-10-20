@@ -293,7 +293,7 @@ def harness(tmp_path, monkeypatch):
 
     h.adapter.run_sealed = run_sealed
     monkeypatch.setattr(
-        "server.services.market_universe_automation.verified_trading_dates",
+        "server.services.market.market_universe_automation.verified_trading_dates",
         lambda *a, **k: [f"2026-01-{i:02}" for i in range(1, 21)],
     )
     return h

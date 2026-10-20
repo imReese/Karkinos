@@ -32,7 +32,7 @@ from server.projections.quote_status import (
 from server.services.account.daily_performance import (
     calculate_account_daily_performance,
 )
-from server.services.asset_metadata import resolve_asset_metadata
+from server.services.market.asset_metadata import resolve_asset_metadata
 
 _ASSET_CLASS_LABELS = {
     "stock": "股票",

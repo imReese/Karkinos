@@ -17,18 +17,18 @@ from data.market.contracts import DailyBarRequest
 from data.storage.objects import ContentAddressedObjectStore
 from data.store import DataStore
 from server.persistence.jobs import SQLiteJobStore
-from server.services.market_universe_truth import (
+from server.services.market.market_universe_truth import (
     MarketUniversePolicy,
     build_market_universe_truth,
     normalize_a_share_members,
+)
+from server.services.market.verified_daily_market_jobs import (
+    enqueue_verified_daily_market_jobs_for_range,
 )
 from server.services.research.datasets import (
     ResearchDatasetError,
     ensure_forward_seed_for_source,
     publish_verified_interval_dataset,
-)
-from server.services.verified_daily_market_jobs import (
-    enqueue_verified_daily_market_jobs_for_range,
 )
 from tests.server.test_market_universe_truth import _bars
 from tests.server.test_verified_interval_dataset import (
@@ -226,7 +226,9 @@ def test_full_scope_defaults_evaluate_every_member_and_legacy_retains_40(tmp_pat
 
 
 def test_full_scope_excludes_known_special_names_and_blocks_unknown_names(tmp_path):
-    from server.services.market_universe_truth import market_master_buy_instruments
+    from server.services.market.market_universe_truth import (
+        market_master_buy_instruments,
+    )
 
     symbols = [str(600000 + index) for index in range(5)]
     market = DataStore(tmp_path / "market")
@@ -272,7 +274,7 @@ def test_final_resolver_waits_then_consumes_real_dated_scope_inputs(tmp_path):
     from data.dataset.model import DatasetRef
     from server.persistence.automation_runs import AutomationRunRepository
     from server.persistence.research_observations import ResearchObservationsRepository
-    from server.services.market_universe_truth import market_deployment_scope
+    from server.services.market.market_universe_truth import market_deployment_scope
     from server.services.research.datasets import resolve_deployment_evaluation_dataset
 
     objects, original = _composed(tmp_path)
@@ -376,7 +378,7 @@ def test_final_dataset_manifest_is_only_a_rejection_prefilter(
 ):
     from server.persistence.automation_runs import AutomationRunRepository
     from server.persistence.research_observations import ResearchObservationsRepository
-    from server.services.market_universe_truth import market_deployment_scope
+    from server.services.market.market_universe_truth import market_deployment_scope
     from server.services.research.datasets import resolve_deployment_evaluation_dataset
 
     objects, original = _composed(tmp_path)
@@ -514,7 +516,7 @@ def test_seed_waits_for_real_jobs_then_binds_only_current_observed_membership(
 
     from data.source_policy import FREE_CN_RESEARCH_V1
     from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
-    from server.services.market_universe_truth import market_deployment_scope
+    from server.services.market.market_universe_truth import market_deployment_scope
 
     db = _db(tmp_path)
     market_store = DataStore(tmp_path / "market")
@@ -547,7 +549,9 @@ def test_seed_waits_for_real_jobs_then_binds_only_current_observed_membership(
     assert pending["status"] == "waiting"
     assert len(pending["job_ids"]) == 1
     root = tmp_path / "research"
-    from server.services.verified_daily_market_jobs import VERIFIED_DAILY_MARKET_JOB
+    from server.services.market.verified_daily_market_jobs import (
+        VERIFIED_DAILY_MARKET_JOB,
+    )
     from tests.server.test_verified_daily_market_range import _service
 
     service, _, _ = _service(tmp_path, monkeypatch)
@@ -598,9 +602,13 @@ def test_pending_seed_keeps_fixed_range_across_latest_session_then_appends_only_
     from data.dataset.model import DatasetRef
     from data.source_policy import FREE_CN_RESEARCH_V1
     from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
-    from server.services.market_universe_truth import market_deployment_scope
-    from server.services.verified_daily_market_data import VerifiedDailyMarketJobRequest
-    from server.services.verified_daily_market_jobs import VERIFIED_DAILY_MARKET_JOB
+    from server.services.market.market_universe_truth import market_deployment_scope
+    from server.services.market.verified_daily_market_data import (
+        VerifiedDailyMarketJobRequest,
+    )
+    from server.services.market.verified_daily_market_jobs import (
+        VERIFIED_DAILY_MARKET_JOB,
+    )
     from tests.server.test_verified_daily_market_range import DAYS as THREE_DAYS
     from tests.server.test_verified_daily_market_range import _service
 
@@ -728,7 +736,7 @@ def test_explicit_pending_origin_inherits_stable_start_without_rewriting_old_rec
     from data.source_policy import FREE_CN_RESEARCH_V1
     from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
     from server.persistence.automation_runs import AutomationRunRepository
-    from server.services.market_universe_truth import market_deployment_scope
+    from server.services.market.market_universe_truth import market_deployment_scope
     from server.services.research.datasets import (
         forward_seed_origin_id,
         read_forward_seed_origin,
@@ -863,13 +871,13 @@ def test_seed_blocks_session_budget_before_any_job_is_queued(
 ):
     from types import SimpleNamespace
 
-    from server.services.market_universe_truth import market_deployment_scope
+    from server.services.market.market_universe_truth import market_deployment_scope
 
     def forbidden_queue(*_args, **_kwargs):
         raise AssertionError("resource rejection must precede queueing")
 
     monkeypatch.setattr(
-        "server.services.verified_daily_market_jobs.enqueue_verified_daily_market_jobs_for_range",
+        "server.services.market.verified_daily_market_jobs.enqueue_verified_daily_market_jobs_for_range",
         forbidden_queue,
     )
     source = {
@@ -899,7 +907,7 @@ def test_seed_blocks_session_budget_before_any_job_is_queued(
 def test_seed_blocks_instrument_budget_before_any_job_is_queued(tmp_path, monkeypatch):
     from types import SimpleNamespace
 
-    from server.services.market_universe_truth import market_deployment_scope
+    from server.services.market.market_universe_truth import market_deployment_scope
 
     market = DataStore(tmp_path / "market")
     market.save_market_universe_snapshot(
@@ -915,7 +923,7 @@ def test_seed_blocks_instrument_budget_before_any_job_is_queued(tmp_path, monkey
         raise AssertionError("resource rejection must precede queueing")
 
     monkeypatch.setattr(
-        "server.services.verified_daily_market_jobs.enqueue_verified_daily_market_jobs_for_range",
+        "server.services.market.verified_daily_market_jobs.enqueue_verified_daily_market_jobs_for_range",
         forbidden_queue,
     )
     source = {
@@ -951,7 +959,7 @@ def test_seed_warmup_uses_actual_receipt_rows_without_inventing_ipo_history(tmp_
 
     from data.source_policy import FREE_CN_RESEARCH_V1
     from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
-    from server.services.market_universe_truth import market_deployment_scope
+    from server.services.market.market_universe_truth import market_deployment_scope
 
     db = _db(tmp_path)
     market = DataStore(tmp_path / "market")
@@ -1004,7 +1012,9 @@ def test_seed_warmup_uses_actual_receipt_rows_without_inventing_ipo_history(tmp_
     )
     assert result["status"] == "waiting", result
     jobs = [SQLiteJobStore(db.path).get(job_id) for job_id in result["job_ids"]]
-    from server.services.verified_daily_market_data import VerifiedDailyMarketJobRequest
+    from server.services.market.verified_daily_market_data import (
+        VerifiedDailyMarketJobRequest,
+    )
 
     assert len(jobs) == 1
     request = VerifiedDailyMarketJobRequest.from_payload(jobs[0].payload)
@@ -1026,8 +1036,10 @@ def test_seed_warmup_preserves_a_real_nontrading_gap_and_symbol_order(tmp_path):
     import pandas as pd
 
     from data.source_policy import FREE_CN_RESEARCH_V1
-    from server.services.market_universe_truth import market_deployment_scope
-    from server.services.verified_daily_market_data import VerifiedDailyMarketJobRequest
+    from server.services.market.market_universe_truth import market_deployment_scope
+    from server.services.market.verified_daily_market_data import (
+        VerifiedDailyMarketJobRequest,
+    )
 
     days = (DAYS[0] - timedelta(days=1), *DAYS)
     db = _db(tmp_path, trading_days=days)
@@ -1098,7 +1110,7 @@ def test_dynamic_membership_adds_current_master_and_keeps_only_held_exits(
     from data.dataset.model import DatasetRef
     from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
     from server.services import research_observation_data_preparation as preparation
-    from server.services.market_universe_truth import market_deployment_scope
+    from server.services.market.market_universe_truth import market_deployment_scope
     from tests.server.test_verified_interval_dataset import _calendar
 
     objects, result = _composed(tmp_path)

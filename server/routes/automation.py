@@ -260,7 +260,7 @@ def create_router() -> APIRouter:
         from server.services.decision.operations_projection import (
             current_decision_and_trading_plan,
         )
-        from server.services.market_session_automation import (
+        from server.services.market.market_session_automation import (
             MarketSessionAutomationService,
         )
 

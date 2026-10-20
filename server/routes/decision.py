@@ -233,7 +233,7 @@ def _build_daily_trading_plan_for_state(
         build_account_action_recommendation,
         resolve_latest_verified_promoted_strategy_scan,
     )
-    from server.services.asset_metadata import resolve_asset_metadata
+    from server.services.market.asset_metadata import resolve_asset_metadata
 
     promoted_scan = resolve_latest_verified_promoted_strategy_scan(
         getattr(state, "db", None),

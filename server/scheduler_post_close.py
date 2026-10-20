@@ -12,15 +12,15 @@ from core.types import AssetClass, InstrumentType
 from data.source_policy import MarketDataUseCase
 from data.source_routing import preferred_legacy_provider
 from server.scheduler_loop import runtime_quotes_from_persisted
+from server.services.market.calendar import (
+    resolve_latest_verified_closed_trading_date,
+)
 from server.services.market.fund_nav import (
     is_confirmed_fund_nav_quote,
     refresh_fund_nav_quotes,
 )
+from server.services.market.hours import get_shanghai_now
 from server.services.market.post_close import publish_post_close_stock_quotes
-from server.services.market_calendar_dates import (
-    resolve_latest_verified_closed_trading_date,
-)
-from server.services.market_hours import get_shanghai_now
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +218,7 @@ class SchedulerPostCloseMixin:
             result.replayed,
         )
         try:
-            from server.services.etf_rotation_automation import (
+            from server.services.market.etf_rotation_automation import (
                 EtfRotationAutomationService,
             )
 

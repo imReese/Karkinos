@@ -48,7 +48,7 @@ from server.services.ai_shadow.ai_shadow_research_commands import (
 from server.services.ai_shadow.ai_shadow_research_support import (
     shadow_research_backtest_source_fingerprint,
 )
-from server.services.market_universe_truth import (
+from server.services.market.market_universe_truth import (
     MarketUniversePolicy,
     market_deployment_scope,
     normalize_a_share_members,
@@ -254,7 +254,7 @@ synthetic-sell-001,trade_sell,2026-01-06T10:10:00+08:00,2026-01-07,600000.SH,syn
         "effective_checkpoint": "2026-01-20",
     }
     monkeypatch.setattr(
-        "server.services.market_universe_automation.verified_trading_dates",
+        "server.services.market.market_universe_automation.verified_trading_dates",
         lambda _db, *, start_date, end_date, **_: [
             f"2026-01-{i:02}"
             for i in range(1, 32)

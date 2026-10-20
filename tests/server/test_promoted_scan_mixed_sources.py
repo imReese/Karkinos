@@ -11,7 +11,7 @@ from execution.commission import StockACommission
 from server.db import AppDatabase
 from server.persistence.strategy_research import StrategyResearchAuditStore
 from server.services.account.account_board_permissions import freeze_entry_board_policy
-from server.services.market_universe_truth import MarketUniversePolicy
+from server.services.market.market_universe_truth import MarketUniversePolicy
 from server.services.strategy_scan.promoted_strategy_universe_scan_support import (
     account_eligible_signals,
 )

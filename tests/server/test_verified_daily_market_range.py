@@ -21,11 +21,7 @@ from data.providers.baostock import BAOSTOCK_DAILY_BAR_DESCRIPTOR
 from data.providers.tencent import AKSHARE_TENCENT_DAILY_BAR_DESCRIPTOR
 from data.storage.objects import ContentAddressedObjectStore
 from server.persistence.jobs import SQLiteJobStore, job_id_for
-from server.services.research.datasets import (
-    ResearchDatasetError,
-    publish_verified_interval_dataset,
-)
-from server.services.verified_daily_market_data import (
+from server.services.market.verified_daily_market_data import (
     VERIFIED_DAILY_MARKET_JOB_SCHEMA_VERSION,
     VERIFIED_DAILY_MARKET_RANGE_JOB_SCHEMA_VERSION,
     VerifiedDailyMarketDataNotPublishable,
@@ -33,9 +29,13 @@ from server.services.verified_daily_market_data import (
     VerifiedDailyMarketDataService,
     VerifiedDailyMarketJobRequest,
 )
-from server.services.verified_daily_market_jobs import (
+from server.services.market.verified_daily_market_jobs import (
     VERIFIED_DAILY_MARKET_JOB,
     enqueue_verified_daily_market_jobs_for_range,
+)
+from server.services.research.datasets import (
+    ResearchDatasetError,
+    publish_verified_interval_dataset,
 )
 from tests.server.test_verified_daily_market_data import FakeDailyProvider
 from tests.server.test_verified_daily_market_jobs import _calendar, _config, _store
@@ -105,7 +105,7 @@ def _service(tmp_path, monkeypatch, *, missing=None, conflict=False):
         )
     )
     monkeypatch.setattr(
-        "server.services.verified_daily_market_data.provider_registry_for_config",
+        "server.services.market.verified_daily_market_data.provider_registry_for_config",
         lambda *_args, **_kwargs: registry,
     )
     return (
@@ -197,7 +197,7 @@ def test_reverify_actual_capture_lineage_without_any_new_provider_call(
         )
     )
     monkeypatch.setattr(
-        "server.services.verified_daily_market_data.provider_registry_for_config",
+        "server.services.market.verified_daily_market_data.provider_registry_for_config",
         lambda *_a, **_kw: registry,
     )
     db = _db(tmp_path, trading_days=DAYS)
@@ -613,7 +613,7 @@ def test_range_http_is_explicit_and_old_http_remains_daily(tmp_path):
 
 
 def test_range_calendar_expands_only_with_explicit_bounded_budget(tmp_path):
-    from server.services.market_calendar_dates import (
+    from server.services.market.calendar import (
         resolve_verified_closed_trading_dates_in_range,
     )
 

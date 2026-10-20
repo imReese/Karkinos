@@ -17,7 +17,7 @@ from server.services.decision.daily_decision_evidence_contracts import (
     SHANGHAI_TZ,
 )
 from server.services.decision.daily_decision_evidence_values import json_object_list
-from server.services.market_calendar_evidence import (
+from server.services.market.calendar import (
     validate_verified_market_calendar,
 )
 

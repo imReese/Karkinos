@@ -540,7 +540,7 @@ class EtfRotationAutomationService:
             return False
         try:
             from server.db import AppDatabase
-            from server.services.market_calendar_dates import project_market_session
+            from server.services.market.calendar import project_market_session
 
             session = project_market_session(AppDatabase(cls._database_path))
             latest = session.get("latest_completed_trade_date")

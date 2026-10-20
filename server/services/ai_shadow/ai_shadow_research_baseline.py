@@ -58,10 +58,10 @@ from server.services.backtest_result_projection import (
 from server.services.backtest_views.strategy_inputs import (
     validate_backtest_strategy_params,
 )
-from server.services.market_universe_automation import (
+from server.services.market.market_universe_automation import (
     verified_trading_dates,
 )
-from server.services.market_universe_truth import (
+from server.services.market.market_universe_truth import (
     MarketUniversePolicy,
     MarketUniverseRejected,
     build_market_universe_truth,
@@ -73,7 +73,7 @@ from strategy.schema import StrategyParameterValidationError
 class AiShadowResearchBaselineMixin:
     def _validation_seed_source(self, policy, grant):
         """Declare warmup inputs without running a backtest or invoking a model."""
-        from server.services.market_universe_truth import (
+        from server.services.market.market_universe_truth import (
             market_master_buy_instruments,
             require_complete_market_universe_snapshot,
         )

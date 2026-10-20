@@ -13,12 +13,12 @@ from core.types import InstrumentKey, InstrumentType
 from data.source_policy import CN_RESEARCH_V1, FREE_CN_RESEARCH_V1
 from server.db import AppDatabase
 from server.persistence.jobs import SQLiteJobStore
-from server.services.daily_market_collection import (
+from server.services.market.calendar import VerifiedClosedTradingDate
+from server.services.market.daily_market_collection import (
     DailyMarketCollectionFailure,
     DailyMarketCollectionJobRequest,
 )
-from server.services.market_calendar_dates import VerifiedClosedTradingDate
-from server.services.verified_daily_market_jobs import (
+from server.services.market.verified_daily_market_jobs import (
     DAILY_MARKET_COLLECTION_JOB,
     enqueue_latest_daily_market_collection_jobs,
 )

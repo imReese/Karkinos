@@ -349,7 +349,9 @@ async def reserve_final_research_evaluation(
         from datetime import timedelta
 
         from server.contracts.http.strategy_models import BacktestCostAssumptions
-        from server.services.market_universe_automation import verified_trading_dates
+        from server.services.market.market_universe_automation import (
+            verified_trading_dates,
+        )
 
         if (
             selection.deployment_scope != simulation["deployment_scope"]
@@ -442,7 +444,9 @@ async def reserve_final_research_evaluation(
         )
         from datetime import timedelta
 
-        from server.services.market_universe_automation import verified_trading_dates
+        from server.services.market.market_universe_automation import (
+            verified_trading_dates,
+        )
 
         opening_days = verified_trading_dates(
             db,
@@ -702,7 +706,9 @@ async def _evaluate_claimed_champion(
             research_end=selection.end_date,
             sealed_end=binding["partition"]["sealed_end"],
         )
-        from server.services.market_universe_automation import verified_trading_dates
+        from server.services.market.market_universe_automation import (
+            verified_trading_dates,
+        )
 
         trading_dates = verified_trading_dates(
             calendar_db,
@@ -1131,7 +1137,7 @@ def require_new_publication_final_evaluation(
 def _next_verified_session_opens(db, trading_dates):
     from datetime import date, time, timedelta
 
-    from server.services.market_universe_automation import verified_trading_dates
+    from server.services.market.market_universe_automation import verified_trading_dates
 
     last = date.fromisoformat(trading_dates[-1])
     end = min(last + timedelta(days=31), date(last.year, 12, 31))
@@ -1248,7 +1254,7 @@ def _deployment_assessment(
     }
     import json
 
-    from server.services.market_universe_truth import (
+    from server.services.market.market_universe_truth import (
         MarketUniversePolicy,
         market_master_buy_instruments,
     )
@@ -1555,7 +1561,7 @@ def _build_simulation_account_replay(db, store, result, evidence, grant, *, data
         RestrictedFormulaBacktestAdapter,
     )
     from server.ai_runtime.strategy_research_support import selection_from_session
-    from server.services.market_universe_automation import verified_trading_dates
+    from server.services.market.market_universe_automation import verified_trading_dates
 
     resolution, proof = _simulation_account_replay_inputs(
         db, store, result, evidence, grant

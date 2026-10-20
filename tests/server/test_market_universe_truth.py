@@ -7,7 +7,7 @@ import pytest
 
 from core.types import BarFrequency, InstrumentType, Symbol
 from data.store import DataStore
-from server.services.market_universe_truth import (
+from server.services.market.market_universe_truth import (
     MarketUniversePolicy,
     MarketUniverseRejected,
     build_market_universe_truth,

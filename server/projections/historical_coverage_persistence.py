@@ -32,7 +32,7 @@ from server.projections.portfolio_views.historical_coverage import (
     HistoricalCoverageEvidence,
     build_historical_coverage,
 )
-from server.services.market_hours import get_shanghai_now
+from server.services.market.hours import get_shanghai_now
 
 
 def read_historical_coverage(state: AppState) -> HistoricalCoverageReport:

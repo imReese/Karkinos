@@ -23,7 +23,7 @@ from server.contracts.content_identity import content_fingerprint
 from server.persistence.ai_shadow_research import ShadowResearchStore
 from server.persistence.automation_runs import AutomationRunRepository
 from server.persistence.strategy_research import StrategyResearchAuditStore
-from server.services.market_universe_truth import (
+from server.services.market.market_universe_truth import (
     MarketUniversePolicy,
     market_deployment_scope,
     normalize_a_share_members,

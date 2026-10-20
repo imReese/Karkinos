@@ -21,7 +21,7 @@ from data.providers.eastmoney import (
     read_official_stock_master_captures,
 )
 from data.store import DataStore, require_stock_master_capture_evidence
-from server.services.market_universe_truth import (
+from server.services.market.market_universe_truth import (
     MarketUniversePolicy,
     market_master_buy_instruments,
     normalize_a_share_members,

@@ -24,7 +24,7 @@ from data.store import DataStore
 from domain.instrument import make_stock
 from execution.commission import StockACommission
 from execution.slippage import FixedSlippage
-from server.services.market_universe_truth import normalize_a_share_members
+from server.services.market.market_universe_truth import normalize_a_share_members
 from tests.data.providers import test_official_stock_master as official
 from tests.server.test_verified_interval_dataset import _verified_day
 

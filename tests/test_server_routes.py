@@ -282,7 +282,7 @@ def test_app_registers_execution_reconciliation_route():
 
 
 def test_asset_metadata_resolver_accepts_supported_config_shapes():
-    from server.services.asset_metadata import (
+    from server.services.market.asset_metadata import (
         build_asset_metadata_status,
         resolve_asset_metadata,
     )
@@ -328,7 +328,7 @@ def test_asset_metadata_resolver_accepts_supported_config_shapes():
 
 
 def test_asset_metadata_resolver_prefers_local_db_metadata():
-    from server.services.asset_metadata import (
+    from server.services.market.asset_metadata import (
         build_asset_metadata_status,
         resolve_asset_metadata,
     )
@@ -383,7 +383,7 @@ def test_asset_metadata_resolver_prefers_local_db_metadata():
 
 
 def test_asset_metadata_status_deduplicates_by_symbol_and_normalized_class():
-    from server.services.asset_metadata import build_asset_metadata_status
+    from server.services.market.asset_metadata import build_asset_metadata_status
 
     class FakeDb:
         def list_instrument_metadata_sync(self):
@@ -438,7 +438,7 @@ def test_asset_metadata_status_deduplicates_by_symbol_and_normalized_class():
 
 
 def test_asset_metadata_status_reports_missing_symbols_and_template():
-    from server.services.asset_metadata import build_asset_metadata_status
+    from server.services.market.asset_metadata import build_asset_metadata_status
 
     state = SimpleNamespace(
         config=SimpleNamespace(

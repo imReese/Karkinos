@@ -25,7 +25,9 @@ from server.http.market_endpoints.dependencies import HealthEndpointDependencies
 from server.persistence.market_daily_call_budget import (
     market_daily_provider_call_budget_status,
 )
-from server.services.daily_market_collection import list_daily_market_collection_quality
+from server.services.market.daily_market_collection import (
+    list_daily_market_collection_quality,
+)
 
 
 def create_router(dependencies: HealthEndpointDependencies) -> APIRouter:

@@ -10,9 +10,10 @@ from server.models import (
 from server.projections.quote_status import (
     parse_quote_timestamp as _parse_quote_timestamp,
 )
-from server.services.asset_metadata import (
+from server.services.market.asset_metadata import (
     metadata_configured_count,
 )
+from server.services.market.hours import is_cn_trading_session
 from server.services.market.identity import (
     is_real_persistent_quote as _is_real_persistent_quote,
 )
@@ -21,7 +22,6 @@ from server.services.market.refresh import (
 )
 from server.services.market.refresh import quote_metadata as _quote_metadata
 from server.services.market.refresh import shanghai_now as _shanghai_now
-from server.services.market_hours import is_cn_trading_session
 from server.services.market_views.health_inputs import (
     adapt_latest_quote_for_health,
     aggregate_market_data_health_status,

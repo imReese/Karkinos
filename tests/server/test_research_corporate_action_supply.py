@@ -21,15 +21,17 @@ from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
 from server.persistence.automation_runs import AutomationRunRepository
 from server.persistence.jobs import SQLiteJobStore
 from server.services import research_corporate_action_jobs as supply
-from server.services.market_universe_truth import (
+from server.services.market.market_universe_truth import (
     MarketUniversePolicy,
     market_deployment_scope,
     normalize_a_share_members,
 )
+from server.services.market.verified_daily_market_data import (
+    VerifiedDailyMarketJobRequest,
+)
+from server.services.market.verified_daily_market_jobs import VERIFIED_DAILY_MARKET_JOB
 from server.services.research.datasets import ensure_forward_seed_for_source
 from server.services.research_observation_data_preparation import _publish_append
-from server.services.verified_daily_market_data import VerifiedDailyMarketJobRequest
-from server.services.verified_daily_market_jobs import VERIFIED_DAILY_MARKET_JOB
 from server.workers import data_worker
 from tests.server.test_dataset_corporate_actions import _response
 from tests.server.test_deployment_scope_datasets import SECOND, _composed

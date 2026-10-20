@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
-from server.services.etf_rotation_automation import EtfRotationAutomationService
+from server.services.market.etf_rotation_automation import EtfRotationAutomationService
 
 
 class RebalanceEvaluationRequest(BaseModel):

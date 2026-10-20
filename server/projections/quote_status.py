@@ -15,8 +15,8 @@ from data.market_data import (
     PUBLISHED_FUND_NAV_QUOTE_SOURCES,
     is_fund_estimate_quote_source,
 )
-from server.services.market_calendar_dates import project_market_session
-from server.services.market_hours import get_shanghai_now, is_cn_trading_session
+from server.services.market.calendar import project_market_session
+from server.services.market.hours import get_shanghai_now, is_cn_trading_session
 
 _CN_MORNING_OPEN = time(9, 30)
 _FUND_ESTIMATE_QUOTE_SOURCES = FUND_ESTIMATE_QUOTE_SOURCES | {"eastmoney_fund_page"}

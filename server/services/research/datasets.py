@@ -67,14 +67,14 @@ from data.storage.objects import (
     ObjectNotFoundError,
 )
 from server.persistence.jobs import SQLiteJobStore
-from server.services.market_calendar_evidence import validate_verified_market_calendar
-from server.services.verified_daily_market_data import (
+from server.services.market.calendar import validate_verified_market_calendar
+from server.services.market.verified_daily_market_data import (
     VerifiedDailyMarketDataRequestError,
     VerifiedDailyMarketJobRequest,
     is_verified_daily_resolver_policy,
     verified_daily_resolver_policy_id,
 )
-from server.services.verified_daily_market_jobs import (
+from server.services.market.verified_daily_market_jobs import (
     MAX_VERIFIED_DAILY_JOB_INSTRUMENTS,
     VERIFIED_DAILY_MARKET_JOB,
 )
@@ -1043,7 +1043,7 @@ def _existing_forward_seed(
 
 
 def _forward_seed_jobs(db, config, *, expected, prefix, through, now, replacements):
-    from server.services.verified_daily_market_jobs import (
+    from server.services.market.verified_daily_market_jobs import (
         enqueue_verified_daily_market_jobs_for_range,
     )
 
@@ -1233,7 +1233,7 @@ def revise_pending_forward_seed_origin(
         raise ValueError("forward_seed_origin_revision_scope_mismatch")
     canonical_alias = None
     if declared_start_date is not None:
-        from server.services.market_calendar_dates import (
+        from server.services.market.calendar import (
             resolve_verified_closed_trading_dates_in_range,
         )
 
@@ -1338,11 +1338,11 @@ def ensure_forward_seed_for_source(
     from data.store import DataStore
     from server.bootstrap import resolve_data_dir
     from server.persistence.automation_runs import AutomationRunRepository
-    from server.services.market_calendar_dates import (
+    from server.services.market.calendar import (
         resolve_latest_verified_closed_trading_date,
         resolve_verified_closed_trading_dates_in_range,
     )
-    from server.services.market_universe_truth import (
+    from server.services.market.market_universe_truth import (
         MarketUniversePolicy,
         market_deployment_scope,
         market_master_buy_instruments,
@@ -1662,7 +1662,7 @@ def resolve_deployment_evaluation_dataset(
     from server.persistence.automation_runs import AutomationRunRepository
     from server.persistence.research_observations import ResearchObservationsRepository
     from server.persistence.research_paper_books import ResearchPaperBooksRepository
-    from server.services.market_universe_truth import (
+    from server.services.market.market_universe_truth import (
         MarketUniversePolicy,
         market_master_buy_instruments,
     )
@@ -1870,7 +1870,7 @@ def verified_dataset_dates(
     for year in range(start.year, end.year + 1):
         row = db.get_market_calendar_snapshot_sync(exchange="SSE", year=year)
         if not validate_verified_market_calendar(row).verified and config is not None:
-            from server.services.market_calendar_automation import (
+            from server.services.market.calendar_automation import (
                 MarketCalendarAutomationService,
             )
 

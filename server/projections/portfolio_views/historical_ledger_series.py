@@ -24,7 +24,7 @@ from server.projections.quote_status import (
     parse_quote_timestamp as _parse_quote_timestamp,
 )
 from server.projections.service import PortfolioReplayAccumulator
-from server.services.market_calendar_evidence import validate_verified_market_calendar
+from server.services.market.calendar import validate_verified_market_calendar
 
 _CN_AFTERNOON_CLOSE = time(15, 0)
 _SH_TZ = ZoneInfo("Asia/Shanghai")

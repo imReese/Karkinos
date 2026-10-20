@@ -50,17 +50,17 @@ from server.services.backtest_views.strategy_inputs import (
     load_signal_preview_bars,
     run_strategy_signal_preview,
 )
-from server.services.market_calendar_evidence import validate_verified_market_calendar
+from server.services.market.calendar import validate_verified_market_calendar
+from server.services.market.verified_daily_market_data import (
+    VerifiedDailyMarketJobRequest,
+    verified_daily_resolver_policy_id,
+)
+from server.services.market.verified_daily_market_jobs import VERIFIED_DAILY_MARKET_JOB
 from server.services.research.dataset_inputs import load_dataset_backtest_inputs
 from server.services.research.datasets import (
     ResearchDatasetError,
     publish_verified_interval_dataset,
 )
-from server.services.verified_daily_market_data import (
-    VerifiedDailyMarketJobRequest,
-    verified_daily_resolver_policy_id,
-)
-from server.services.verified_daily_market_jobs import VERIFIED_DAILY_MARKET_JOB
 
 DAYS = (date(2026, 9, 17), date(2026, 9, 18))
 STOCK = InstrumentKey("600000", InstrumentType.STOCK)

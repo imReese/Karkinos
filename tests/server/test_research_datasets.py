@@ -470,7 +470,7 @@ def test_calendar_is_verified_and_does_not_infer_weekdays(monkeypatch):
         row["official_verification_status"] = "verified"
 
     monkeypatch.setattr(
-        "server.services.market_calendar_automation.MarketCalendarAutomationService.sync_year",
+        "server.services.market.calendar_automation.MarketCalendarAutomationService.sync_year",
         sync,
     )
     assert (

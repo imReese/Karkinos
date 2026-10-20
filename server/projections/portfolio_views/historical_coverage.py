@@ -31,8 +31,10 @@ from server.projections.portfolio_views.historical_ledger_series import (
 )
 from server.projections.quote_status import parse_quote_timestamp
 from server.projections.service import PortfolioReplayAccumulator
-from server.services.market_calendar_dates import POST_CLOSE_INGESTION_TIME
-from server.services.market_calendar_evidence import validate_verified_market_calendar
+from server.services.market.calendar import (
+    POST_CLOSE_INGESTION_TIME,
+    validate_verified_market_calendar,
+)
 
 _SH = ZoneInfo("Asia/Shanghai")
 

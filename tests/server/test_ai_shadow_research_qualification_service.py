@@ -1558,7 +1558,7 @@ async def test_terminal_reuse_reopens_full_scope_writer_comparisons(
     from server.services.ai_shadow.ai_shadow_research_qualification_support import (
         qualification_selection,
     )
-    from server.services.market_universe_truth import (
+    from server.services.market.market_universe_truth import (
         MarketUniversePolicy,
         market_deployment_scope,
     )

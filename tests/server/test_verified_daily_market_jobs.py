@@ -16,9 +16,9 @@ from server.db import AppDatabase
 from server.dependencies import AppState, AppStateContextMiddleware
 from server.http.backtest_endpoints.datasets import create_router
 from server.persistence.jobs import SQLiteJobStore
-from server.services.daily_market_collection import DAILY_MARKET_COLLECTION_JOB
-from server.services.market_calendar_dates import VerifiedClosedTradingDate
-from server.services.verified_daily_market_jobs import (
+from server.services.market.calendar import VerifiedClosedTradingDate
+from server.services.market.daily_market_collection import DAILY_MARKET_COLLECTION_JOB
+from server.services.market.verified_daily_market_jobs import (
     VERIFIED_DAILY_MARKET_JOB,
     VerifiedDailyMarketJobPlanningError,
     enqueue_latest_daily_market_collection_jobs,
@@ -496,13 +496,13 @@ def test_automatic_collection_reobserves_once_after_next_closed_session(
     assert base is not None and base.payload["trade_date"] == "2026-09-17"
     store.finish(base.lease, now=NOW, result_ref="quality:sha256:" + "a" * 64)
     monkeypatch.setattr(
-        "server.services.verified_daily_market_jobs.collection_capture_completed_at",
+        "server.services.market.verified_daily_market_jobs.collection_capture_completed_at",
         lambda *args, **kwargs: datetime(2026, 9, 17, 8, tzinfo=timezone.utc),
     )
 
     revised = enqueue_latest_daily_market_collection_jobs(db, _config(), store, now=NOW)
     monkeypatch.setattr(
-        "server.services.verified_daily_market_jobs.collection_capture_completed_at",
+        "server.services.market.verified_daily_market_jobs.collection_capture_completed_at",
         lambda *args, **kwargs: pytest.fail(
             "existing revision should not reread base objects"
         ),
@@ -529,7 +529,7 @@ def test_automatic_collection_reobserves_once_after_next_closed_session(
         claimed_revision.lease, now=NOW, result_ref="quality:sha256:" + "c" * 64
     )
     monkeypatch.setattr(
-        "server.services.verified_daily_market_jobs._planning_facts",
+        "server.services.market.verified_daily_market_jobs._planning_facts",
         lambda *args: (
             (
                 VerifiedClosedTradingDate(
@@ -569,7 +569,7 @@ def test_automatic_collection_skips_late_baseline(tmp_path, monkeypatch):
     assert base is not None
     store.finish(base.lease, now=NOW, result_ref="quality:sha256:" + "a" * 64)
     monkeypatch.setattr(
-        "server.services.verified_daily_market_jobs.collection_capture_completed_at",
+        "server.services.market.verified_daily_market_jobs.collection_capture_completed_at",
         lambda *args, **kwargs: datetime(2026, 9, 18, 8, 1, tzinfo=timezone.utc),
     )
 

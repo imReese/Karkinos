@@ -26,7 +26,7 @@ from server.services.account.valuation_snapshot import valuation_snapshot_from_r
 from server.services.ai_shadow.ai_shadow_research_baseline import (
     AiShadowResearchBaselineMixin,
 )
-from server.services.market_hours import get_shanghai_now
+from server.services.market.hours import get_shanghai_now
 
 _FINGERPRINT = re.compile(r"^(?:sha256:)?[a-f0-9]{64}$")
 _FAILURE_CODE = re.compile(r"^[A-Za-z0-9_-]+$")

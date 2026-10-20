@@ -52,7 +52,7 @@ def _scoped_formula_inputs(
     from data.providers.tdx import TDX_PROVIDER_DESCRIPTOR
     from data.storage.objects import ContentAddressedObjectStore
     from data.store import normalize_stock_master_metadata
-    from server.services.market_universe_truth import (
+    from server.services.market.market_universe_truth import (
         MarketUniversePolicy,
         market_deployment_scope,
         normalize_a_share_members,

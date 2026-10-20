@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from server.services.market_calendar_dates import (
+from server.services.market.calendar import (
     resolve_latest_verified_closed_trading_date,
     resolve_verified_closed_trading_dates,
 )

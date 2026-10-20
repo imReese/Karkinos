@@ -28,7 +28,7 @@ from server.services.ai_shadow.ai_shadow_research_commands import (
     AiShadowResearchCommandsMixin,
     simulation_validation_defaults,
 )
-from server.services.market_universe_truth import (
+from server.services.market.market_universe_truth import (
     MarketUniversePolicy,
     market_deployment_scope,
 )
@@ -311,7 +311,7 @@ def test_full_scope_simulation_reserves_without_account_or_reviewed_fees(
                 (json.dumps(metrics), identity),
             )
     monkeypatch.setattr(
-        "server.services.market_universe_automation.verified_trading_dates",
+        "server.services.market.market_universe_automation.verified_trading_dates",
         lambda _db, *, start_date, end_date: [
             day
             for i in range(1, 21)
@@ -473,7 +473,7 @@ def test_seed_declaration_has_stable_history_floor_across_new_market_dates(
     from server.services.ai_shadow.ai_shadow_research_baseline import (
         AiShadowResearchBaselineMixin,
     )
-    from server.services.market_universe_truth import normalize_a_share_members
+    from server.services.market.market_universe_truth import normalize_a_share_members
     from server.services.research.datasets import forward_seed_origin_id
 
     h = harness

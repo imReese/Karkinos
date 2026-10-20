@@ -79,7 +79,7 @@ from server.services.ai_shadow.ai_shadow_research_support import (
     shadow_research_json_object,
     shadow_research_market_close_as_of,
 )
-from server.services.market_calendar_dates import latest_verified_closed_trading_date
+from server.services.market.calendar import latest_verified_closed_trading_date
 from server.services.strategy_promotion_support import (
     AI_SHADOW_QUALIFICATION_READINESS_SCHEMA,
     STRATEGY_PROMOTION_SCHEMA_VERSION,

@@ -7,8 +7,8 @@ from typing import Any
 
 from core.types import InstrumentType
 from server.ai_runtime.contracts import content_fingerprint
-from server.services.market_universe_automation import verified_trading_dates
-from server.services.market_universe_truth import (
+from server.services.market.market_universe_automation import verified_trading_dates
+from server.services.market.market_universe_truth import (
     MarketUniversePolicy,
     require_complete_market_universe_snapshot,
 )

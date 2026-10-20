@@ -15,7 +15,7 @@ from server.contracts.portfolio_cash_flows import CashFlowWrite
 from server.db import AppDatabase
 from server.persistence.backtest_results import insert_backtest_result
 from server.routes.etf_rebalance import create_router
-from server.services.etf_rotation_automation import EtfRotationAutomationService
+from server.services.market.etf_rotation_automation import EtfRotationAutomationService
 from server.services.portfolio.trades import (
     ManualTradeRequest,
     PortfolioTradeCommandService,
@@ -348,7 +348,7 @@ def test_default_market_directory_uses_selected_runtime_not_cwd(
 def test_cached_plan_fails_closed_when_session_changes(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, change: str
 ):
-    from server.services import market_calendar_dates
+    from server.services.market import calendar as market_calendar_dates
 
     monkeypatch.setenv("KARKINOS_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(EtfRotationAutomationService, "default_data_dir", None)

@@ -22,7 +22,7 @@ from server.services.decision.daily_decision_evidence_identity import (
     daily_candidate_input_fingerprint,
     daily_candidate_record_fingerprint,
 )
-from server.services.market_calendar_evidence import validate_verified_market_calendar
+from server.services.market.calendar import validate_verified_market_calendar
 from server.services.strategy_scan.promoted_strategy_universe_scan import (
     PROMOTED_STRATEGY_UNIVERSE_SCAN_RUN_TYPE,
 )

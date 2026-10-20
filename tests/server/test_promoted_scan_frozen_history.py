@@ -9,7 +9,7 @@ import pandas as pd
 from data.research_market_data import resolve_daily_bar_receipts
 from data.store import DataStore
 from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
-from server.services.market_universe_truth import (
+from server.services.market.market_universe_truth import (
     MarketUniversePolicy,
     normalize_a_share_members,
 )

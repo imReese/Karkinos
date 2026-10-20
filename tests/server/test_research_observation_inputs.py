@@ -36,6 +36,9 @@ from server.ai_runtime.formula_dsl import (
     FORMULA_AST_CONTRACT,
     FormulaBinding,
 )
+from server.services.market.verified_daily_market_data import (
+    verified_daily_resolver_policy_id,
+)
 from server.services.research_observation_inputs import (
     ResearchObservationInputError,
     latest_closed_session,
@@ -43,7 +46,6 @@ from server.services.research_observation_inputs import (
     observation_outcome_sessions,
     read_research_observation_dataset,
 )
-from server.services.verified_daily_market_data import verified_daily_resolver_policy_id
 
 STOCK = InstrumentKey("600000", InstrumentType.STOCK)
 DAYS = tuple(date(2026, 9, n) for n in (14, 15, 16, 17, 18, 21, 22, 23))

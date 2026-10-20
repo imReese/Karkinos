@@ -39,21 +39,36 @@ from server.release_activation import (
     is_release_activation_guarded,
     wait_for_release_activation,
 )
-from server.services.daily_market_collection import (
+from server.services.market.calendar import (
+    project_market_session,
+    resolve_verified_closed_trading_dates,
+    resolve_verified_closed_trading_dates_in_range,
+    validate_verified_market_calendar,
+)
+from server.services.market.calendar_automation import MarketCalendarAutomationService
+from server.services.market.daily_market_collection import (
     DAILY_MARKET_COLLECTION_JOB,
     DailyMarketCollectionFailure,
     DailyMarketCollectionJobRequest,
     DailyMarketCollectionService,
     collection_capture_completed_at,
 )
-from server.services.market_calendar_automation import MarketCalendarAutomationService
-from server.services.market_calendar_dates import (
-    project_market_session,
-    resolve_verified_closed_trading_dates,
-    resolve_verified_closed_trading_dates_in_range,
+from server.services.market.hours import get_shanghai_now
+from server.services.market.verified_daily_market_data import (
+    VERIFIED_DAILY_MARKET_RANGE_JOB_SCHEMA_VERSION,
+    VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT,
+    VerifiedDailyMarketDataNotPublishable,
+    VerifiedDailyMarketDataRequestError,
+    VerifiedDailyMarketDataService,
+    VerifiedDailyMarketDataUnavailable,
+    VerifiedDailyMarketJobRequest,
+    VerifiedDailySourceResolution,
 )
-from server.services.market_calendar_evidence import validate_verified_market_calendar
-from server.services.market_hours import get_shanghai_now
+from server.services.market.verified_daily_market_jobs import (
+    VERIFIED_DAILY_MARKET_JOB,
+    enqueue_latest_daily_market_collection_jobs,
+    supported_watchlist_instruments,
+)
 from server.services.research_corporate_action_jobs import (
     CORPORATE_ACTION_DAY_JOB,
     CorporateActionDayService,
@@ -64,21 +79,6 @@ from server.services.research_observation_data_preparation import (
     observation_daily_job_grant,
     require_observation_preparation_job,
     run_research_observation_data_preparation_once,
-)
-from server.services.verified_daily_market_data import (
-    VERIFIED_DAILY_MARKET_RANGE_JOB_SCHEMA_VERSION,
-    VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT,
-    VerifiedDailyMarketDataNotPublishable,
-    VerifiedDailyMarketDataRequestError,
-    VerifiedDailyMarketDataService,
-    VerifiedDailyMarketDataUnavailable,
-    VerifiedDailyMarketJobRequest,
-    VerifiedDailySourceResolution,
-)
-from server.services.verified_daily_market_jobs import (
-    VERIFIED_DAILY_MARKET_JOB,
-    enqueue_latest_daily_market_collection_jobs,
-    supported_watchlist_instruments,
 )
 from server.workers.presence import run_with_presence
 

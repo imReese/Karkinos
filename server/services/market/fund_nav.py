@@ -16,11 +16,11 @@ from data.manager import build_sources
 from data.market_data import is_fund_estimate_quote_source
 from data.source_policy import MarketDataUseCase, source_policy_for_config
 from data.source_routing import preferred_legacy_provider
+from server.services.market.hours import get_shanghai_now
 from server.services.market.quotes import (
     build_quote_ingestion_command,
     persist_quote_ingestion,
 )
-from server.services.market_hours import get_shanghai_now
 
 logger = logging.getLogger(__name__)
 

@@ -9,11 +9,11 @@ from fastapi.routing import APIRoute
 
 from server.db import AppDatabase
 from server.routes import market
-from server.services.verified_daily_market_data import (
+from server.services.market.verified_daily_market_data import (
     VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT,
     VerifiedDailySourceResolution,
 )
-from server.services.verified_source_health import (
+from server.services.market.verified_source_health import (
     VERIFIED_SOURCE_HEALTH_SCHEMA_VERSION,
     build_verified_source_health_response,
 )

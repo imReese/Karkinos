@@ -42,7 +42,7 @@ from server.services.account.valuation_snapshot import (
     load_persisted_quote_rows,
     select_latest_observation_rows,
 )
-from server.services.market_hours import get_shanghai_now, is_cn_trading_session
+from server.services.market.hours import get_shanghai_now, is_cn_trading_session
 
 
 def collect_latest_quote_timestamps(state) -> dict[str, str]:

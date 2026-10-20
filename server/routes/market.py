@@ -67,7 +67,7 @@ from server.models import (
     WatchlistItem,
 )
 from server.persistence.market_bars import read_market_bars as _read_market_bars
-from server.services.asset_metadata import (
+from server.services.market.asset_metadata import (
     metadata_configured_count,
     resolve_asset_metadata,
 )
@@ -84,6 +84,9 @@ from server.services.market.refresh import (
 from server.services.market.refresh import refresh_one_quote as _refresh_one_quote
 from server.services.market.refresh import run_blocking_fetch as _run_blocking_fetch
 from server.services.market.refresh import shanghai_now as _shanghai_now
+from server.services.market.verified_source_health import (
+    build_verified_source_health_response as _build_verified_source_health_response,
+)
 from server.services.market_views.backfill import (
     backfill_instrument_metadata as _backfill_instrument_metadata,
 )
@@ -207,9 +210,6 @@ from server.services.market_views.health_projection import (
     build_research_note_stats as _build_research_note_stats,
 )
 from server.services.portfolio.ledger import rebuild_portfolio_from_ledger
-from server.services.verified_source_health import (
-    build_verified_source_health_response as _build_verified_source_health_response,
-)
 
 logger = logging.getLogger(__name__)
 

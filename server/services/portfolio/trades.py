@@ -18,13 +18,13 @@ from server.contracts.portfolio_trades import (
     PendingFundOrderWrite,
     PendingFundOrderWriteResult,
 )
-from server.services.asset_metadata import resolve_asset_metadata
 from server.services.manual_trade_fees import (
     MANUAL_FEE_INPUT_RULE_ID,
     MANUAL_FEE_INPUT_RULE_VERSION,
     manual_fee_input_payload,
     resolve_manual_trade_fee_breakdown,
 )
+from server.services.market.asset_metadata import resolve_asset_metadata
 from server.services.market.hours import get_shanghai_now
 from server.services.portfolio.ledger import rebuild_portfolio_from_ledger
 

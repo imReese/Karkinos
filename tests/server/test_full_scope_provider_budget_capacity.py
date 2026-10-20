@@ -16,12 +16,14 @@ from server.persistence.market_daily_call_budget import (
     market_daily_provider_call_budget_status,
     reserve_market_daily_provider_call,
 )
-from server.services.research_corporate_action_jobs import CORPORATE_ACTION_DAY_JOB
-from server.services.verified_daily_market_data import VerifiedDailyMarketJobRequest
-from server.services.verified_daily_market_jobs import (
+from server.services.market.verified_daily_market_data import (
+    VerifiedDailyMarketJobRequest,
+)
+from server.services.market.verified_daily_market_jobs import (
     VERIFIED_DAILY_MARKET_JOB,
     enqueue_verified_daily_market_jobs_for_range,
 )
+from server.services.research_corporate_action_jobs import CORPORATE_ACTION_DAY_JOB
 from tests.server.test_verified_daily_market_jobs import _calendar, _store
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")

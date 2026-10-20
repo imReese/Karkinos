@@ -61,7 +61,7 @@ def simulation_validation_defaults(now: datetime) -> dict[str, Any]:
     from server.services.account.account_board_permissions import (
         freeze_entry_board_policy,
     )
-    from server.services.market_universe_truth import (
+    from server.services.market.market_universe_truth import (
         MarketUniversePolicy,
         market_deployment_scope,
     )
@@ -191,7 +191,7 @@ class AiShadowResearchCommandsMixin:
             from server.contracts.research_observation_automation import (
                 validate_simulation_validation_policy,
             )
-            from server.services.market_universe_truth import (
+            from server.services.market.market_universe_truth import (
                 MarketUniversePolicy,
                 market_deployment_scope,
             )

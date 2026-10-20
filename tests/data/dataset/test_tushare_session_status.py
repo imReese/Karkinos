@@ -232,7 +232,7 @@ def test_tushare_counterevidence_alone_never_excludes_instruments(
 def test_actual_dated_master_halt_and_tushare_resumption_conflict(tmp_path, reverse):
     from data.dataset.model import DailyBarDatasetMembership
     from data.store import normalize_stock_master_metadata
-    from server.services.market_universe_truth import normalize_a_share_members
+    from server.services.market.market_universe_truth import normalize_a_share_members
     from tests.data.providers.test_official_stock_master import (
         _capture as official_capture,
     )

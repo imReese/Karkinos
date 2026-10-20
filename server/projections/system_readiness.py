@@ -19,7 +19,7 @@ from server.projections.quote_status import (
     quote_valuation_status,
 )
 from server.projections.valuation_snapshot import valuation_snapshot_from_row
-from server.services.market_calendar_dates import project_market_session
+from server.services.market.calendar import project_market_session
 
 
 def _state(

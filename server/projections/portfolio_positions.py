@@ -27,7 +27,7 @@ from server.services.account.daily_performance import (
     build_position_daily_context,
     mark_position_daily,
 )
-from server.services.market_hours import get_shanghai_now
+from server.services.market.hours import get_shanghai_now
 from server.services.portfolio.ledger import (
     rebuild_portfolio_from_entries,
     rebuild_portfolio_from_ledger,

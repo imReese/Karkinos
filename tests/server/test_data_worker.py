@@ -22,7 +22,7 @@ from server.persistence.market_daily_call_budget import (
     market_daily_provider_call_budget_status,
     reserve_market_daily_provider_call,
 )
-from server.services.verified_daily_market_data import (
+from server.services.market.verified_daily_market_data import (
     VERIFIED_DAILY_MARKET_RANGE_JOB_SCHEMA_VERSION,
     VerifiedDailyMarketDataNotPublishable,
     VerifiedDailyMarketDataService,
@@ -1128,10 +1128,12 @@ async def test_forward_input_gets_last_budget_slot_before_watchlist_backfill(
     from core.types import InstrumentKey, InstrumentType
     from data.providers.baostock import BAOSTOCK_DAILY_BAR_DESCRIPTOR
     from data.source_policy import FREE_CN_RESEARCH_V1
-    from server.services.market_calendar_evidence import (
+    from server.services.market.calendar import (
         validate_verified_market_calendar,
     )
-    from server.services.verified_daily_market_data import VerifiedDailyMarketJobRequest
+    from server.services.market.verified_daily_market_data import (
+        VerifiedDailyMarketJobRequest,
+    )
     from tests.server.test_verified_daily_worker_gate import DAY, _calendar
 
     db = AppDatabase(tmp_path / "app.db")

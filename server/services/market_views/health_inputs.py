@@ -13,7 +13,7 @@ from server.models import (
     MarketCalendarSnapshotResponse,
     MarketHealthQuote,
 )
-from server.services.asset_metadata import (
+from server.services.market.asset_metadata import (
     resolve_asset_metadata,
 )
 from server.services.market.indices import (
