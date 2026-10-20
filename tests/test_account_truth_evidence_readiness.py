@@ -13,7 +13,7 @@ from account_truth.evidence_scope_review import (
     EvidenceScopeReview,
     EvidenceScopeReviewRepository,
 )
-from server.services.account_truth_evidence_readiness import (
+from server.services.account.account_truth_evidence_readiness import (
     apply_account_truth_evidence_scope_review,
     build_account_truth_evidence_readiness,
     build_account_truth_evidence_scope,
@@ -131,16 +131,16 @@ def test_build_readiness_uses_an_explicit_frozen_clock(tmp_path, monkeypatch):
     observed: list[datetime] = []
     state = SimpleNamespace(db=SimpleNamespace(_path=tmp_path / "app.db"))
     monkeypatch.setattr(
-        "server.services.account_truth_evidence_readiness."
+        "server.services.account.account_truth_evidence_readiness."
         "build_latest_account_truth_score_payload",
         lambda state: _score(),
     )
     monkeypatch.setattr(
-        "server.services.account_truth_evidence_readiness.build_citic_source_follow_up",
+        "server.services.account.account_truth_evidence_readiness.build_citic_source_follow_up",
         lambda path: _follow_up(),
     )
     monkeypatch.setattr(
-        "server.services.account_truth_evidence_readiness."
+        "server.services.account.account_truth_evidence_readiness."
         "build_account_truth_evidence_scope",
         lambda **kwargs: _complete_scope(),
     )
@@ -156,7 +156,7 @@ def test_build_readiness_uses_an_explicit_frozen_clock(tmp_path, monkeypatch):
         }
 
     monkeypatch.setattr(
-        "server.services.account_truth_evidence_readiness."
+        "server.services.account.account_truth_evidence_readiness."
         "build_latest_account_truth_promotion_evidence",
         promotion_at_clock,
     )

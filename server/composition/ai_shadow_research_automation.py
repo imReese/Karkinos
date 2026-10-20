@@ -24,12 +24,12 @@ from server.persistence.ai_shadow_research_worker_jobs import (
     AiShadowResearchWorkerJobStore,
 )
 from server.persistence.database_identity import require_database_path
-from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
-    DailyStrategyArtifactStore,
-)
-from server.services.reviewed_fee_schedule import (
+from server.services.account.reviewed_fee_schedule import (
     build_reviewed_fee_schedule_review_status,
     resolve_reviewed_fee_schedule,
+)
+from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
+    DailyStrategyArtifactStore,
 )
 
 ServiceT = TypeVar("ServiceT")

@@ -1158,7 +1158,7 @@ def test_exploration_policy_needs_no_final_dates():
 
 
 def test_exploration_and_unready_final_batches_cannot_starve_ready_backlog():
-    from server.services.account_qualification_reuse import (
+    from server.services.account.account_qualification_reuse import (
         select_oldest_retryable_source_run_id,
     )
 
@@ -1226,7 +1226,7 @@ def test_replacement_reserve_quotes_real_fees_and_slippage_instead_of_fixed_perc
 
     calculator = MultiAssetCommission()
     monkeypatch.setattr(
-        "server.services.reviewed_fee_schedule.resolve_frozen_deployment_fee_schedule",
+        "server.services.account.reviewed_fee_schedule.resolve_frozen_deployment_fee_schedule",
         lambda *args: SimpleNamespace(commission_calc=calculator),
     )
     book = {

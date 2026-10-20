@@ -257,7 +257,7 @@ def create_router() -> APIRouter:
         payload: ShadowRunRequest | None = None,
     ) -> dict:
         from server.dependencies import get_app_state
-        from server.services.account_paper_shadow import (
+        from server.services.account.account_paper_shadow import (
             orchestrate_account_paper_shadow,
         )
 
@@ -431,7 +431,9 @@ def _current_action_manual_ticket_gate(
 ) -> dict[str, Any]:
     """Re-resolve current persisted gates immediately before ticket writes."""
 
-    from server.services.account_board_permissions import resolve_board_buy_permissions
+    from server.services.account.account_board_permissions import (
+        resolve_board_buy_permissions,
+    )
     from server.services.decision.decision_application import (
         account_truth_gate_evidence,
         action_trade_date,

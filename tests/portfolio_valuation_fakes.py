@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from server.services.valuation_snapshot import build_current_valuation_snapshot
+from server.services.account.valuation_snapshot import build_current_valuation_snapshot
 
 
 def _current_quote_rows(db: Any) -> list[dict[str, Any]]:

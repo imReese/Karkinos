@@ -129,7 +129,7 @@ async def start_reserved_champion_observation(
         service = ResearchObservationService(db, clock=lambda: now)
         observation = service.repository.get(identity)
         if observation is None:
-            from server.services.account_board_permissions import (
+            from server.services.account.account_board_permissions import (
                 entry_board_policy_blocker,
                 resolve_board_buy_permissions,
             )

@@ -34,6 +34,14 @@ from server.ai_runtime.strategy_research_backtest import (
 )
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.http.strategy_models import BacktestRequest
+from server.services.account.reviewed_fee_schedule import (
+    REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION,
+    REVIEWED_FEE_SCHEDULE_REVOCATION_CONFIRMATION,
+    ReviewedFeeScheduleReviewRepository,
+    build_reviewed_fee_schedule_preview,
+    freeze_deployment_fee_schedule,
+    resolve_reviewed_fee_schedule,
+)
 from server.services.ai_shadow.ai_shadow_research_commands import (
     simulation_validation_defaults,
 )
@@ -50,14 +58,6 @@ from server.services.research_final_evaluation import (
     _simulation_reviewed_assessment,
     _verify_simulation_account_applicability,
     build_simulation_account_replay,
-)
-from server.services.reviewed_fee_schedule import (
-    REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION,
-    REVIEWED_FEE_SCHEDULE_REVOCATION_CONFIRMATION,
-    ReviewedFeeScheduleReviewRepository,
-    build_reviewed_fee_schedule_preview,
-    freeze_deployment_fee_schedule,
-    resolve_reviewed_fee_schedule,
 )
 from tests.server.test_ai_shadow_research_qualification_persistence import (
     _atomic_candidate_args,

@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from server.services.account_truth_replay import verify_account_truth_replay_evidence
+from server.services.account.account_truth_replay import (
+    verify_account_truth_replay_evidence,
+)
 from server.services.decision.daily_decision_evidence_contracts import (
     DAILY_CANDIDATE_DECISION_WINDOW_SCHEMA_VERSION,
     DAILY_CANDIDATE_MANUAL_TICKET_SCHEMA_VERSION,

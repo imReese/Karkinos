@@ -12,7 +12,7 @@ from typing import Any
 from core.types import InstrumentKey
 from data.market_data import is_fund_estimate_quote_source
 from server.projections.quote_status import quote_status
-from server.services.valuation_snapshot import (
+from server.services.account.valuation_snapshot import (
     load_persisted_quote_rows,
     select_latest_observation_rows,
 )

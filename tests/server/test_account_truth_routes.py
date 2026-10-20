@@ -32,13 +32,13 @@ from account_truth.reconciliation import RECONCILIATION_SCHEMA_VERSION
 from account_truth.score import ACCOUNT_TRUTH_SCORE_SCHEMA_VERSION
 from server.config import CiticHistoryXlsDirectoryConfig
 from server.db import AppDatabase
-from server.services.account_truth_evidence_readiness import (
+from server.services.account.account_truth_evidence_readiness import (
     ACCOUNT_TRUTH_EVIDENCE_READINESS_SCHEMA_VERSION,
 )
-from server.services.account_truth_evidence_readiness_support import (
+from server.services.account.account_truth_evidence_readiness_support import (
     ACCOUNT_TRUTH_EVIDENCE_SCOPE_SCHEMA_VERSION,
 )
-from server.services.account_truth_evidence_scope_review import (
+from server.services.account.account_truth_evidence_scope_review import (
     ACCOUNT_TRUTH_EVIDENCE_SCOPE_REVIEW_COMMAND_SCHEMA_VERSION,
 )
 

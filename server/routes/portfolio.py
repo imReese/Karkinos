@@ -179,7 +179,11 @@ from server.projections.service import (
     build_equity_curve_from_db,
     build_equity_series_from_db,
 )
-from server.services.account_state import build_account_state_projection
+from server.services.account.account_state import build_account_state_projection
+from server.services.account.valuation_snapshot import (
+    build_current_valuation_snapshot,
+    valuation_snapshot_from_row,
+)
 from server.services.current_holding_market_evidence_review import (
     build_current_holding_market_evidence_review,
 )
@@ -193,10 +197,6 @@ from server.services.portfolio.trades import (
 )
 from server.services.risk_engine import build_risk_summary
 from server.services.risk_workspace import build_risk_workspace
-from server.services.valuation_snapshot import (
-    build_current_valuation_snapshot,
-    valuation_snapshot_from_row,
-)
 
 logger = logging.getLogger(__name__)
 

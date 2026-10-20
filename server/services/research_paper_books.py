@@ -1089,7 +1089,7 @@ class ResearchPaperBookService:
                     raise ValueError("paper_book_target_policy_conflict")
                 frozen_entry = book["policy"].get("entry_board_policy")
                 if frozen_entry is not None:
-                    from server.services.account_board_permissions import (
+                    from server.services.account.account_board_permissions import (
                         entry_board_policy_symbols,
                     )
 

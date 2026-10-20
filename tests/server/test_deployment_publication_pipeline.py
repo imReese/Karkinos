@@ -37,6 +37,16 @@ from server.contracts.strategy_research import StrategyResearchSelection
 from server.persistence.ai_shadow_research import ShadowResearchStore
 from server.persistence.backtest_results import insert_backtest_result
 from server.persistence.strategy_research import StrategyResearchAuditStore
+from server.services.account.reviewed_fee_schedule import (
+    REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION,
+    ReviewedFeeScheduleReviewRepository,
+    build_reviewed_fee_schedule_preview,
+    resolve_reviewed_fee_schedule,
+)
+from server.services.account.valuation_snapshot import (
+    build_current_valuation_snapshot,
+    portfolio_equity_from_valuation,
+)
 from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
 )
@@ -46,16 +56,6 @@ from server.services.ai_shadow.ai_shadow_research_qualification_support import (
 )
 from server.services.research_final_evaluation import (
     reserve_final_research_evaluation,
-)
-from server.services.reviewed_fee_schedule import (
-    REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION,
-    ReviewedFeeScheduleReviewRepository,
-    build_reviewed_fee_schedule_preview,
-    resolve_reviewed_fee_schedule,
-)
-from server.services.valuation_snapshot import (
-    build_current_valuation_snapshot,
-    portfolio_equity_from_valuation,
 )
 from tests.server.test_recommendation_publication import _grant
 from tests.server.test_reviewed_fee_schedule import _patch_ready_account_truth, _state
@@ -450,7 +450,7 @@ async def test_verified_final_qualification_policy_publication_and_revocation(
     )
     valuation_clock = [frozen_at]
     monkeypatch.setattr(
-        "server.services.valuation_snapshot.build_current_valuation_snapshot",
+        "server.services.account.valuation_snapshot.build_current_valuation_snapshot",
         lambda db, **kwargs: build_current_valuation_snapshot(
             db, persist=kwargs.get("persist", False), now=valuation_clock[0]
         ),

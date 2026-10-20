@@ -10,7 +10,7 @@ from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
 from execution.commission import StockACommission
 from server.db import AppDatabase
 from server.persistence.strategy_research import StrategyResearchAuditStore
-from server.services.account_board_permissions import freeze_entry_board_policy
+from server.services.account.account_board_permissions import freeze_entry_board_policy
 from server.services.market_universe_truth import MarketUniversePolicy
 from server.services.strategy_scan.promoted_strategy_universe_scan_support import (
     account_eligible_signals,
@@ -76,7 +76,7 @@ def mixed(tmp_path, monkeypatch):
         },
     )
     monkeypatch.setattr(
-        "server.services.reviewed_fee_schedule.resolve_frozen_deployment_fee_schedule",
+        "server.services.account.reviewed_fee_schedule.resolve_frozen_deployment_fee_schedule",
         lambda *args: SimpleNamespace(
             commission_calc=StockACommission(min_commission=Decimal("7")),
             review=SimpleNamespace(

@@ -12,7 +12,7 @@ from account_truth.source_fact_continuity import (
     assess_account_truth_source_fact_history_continuity,
     source_fact_continuity_allows_inheritance,
 )
-from server.services.account_truth_evidence_readiness import (
+from server.services.account.account_truth_evidence_readiness import (
     build_account_truth_evidence_scope,
     project_account_truth_evidence_scope,
 )

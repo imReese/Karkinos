@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 from core.types import Symbol
 from data.market_data import is_fund_estimate_quote_source
+from server.services.account.valuation_snapshot import is_asset_class_valuation_healthy
 from server.services.decision.decision_candidate_market_evidence import (
     bind_candidate_market_evidence,
     candidate_market_evidence,
@@ -19,7 +20,6 @@ from server.services.decision.decision_contracts import (
     action_trade_date,
     int_or_none,
 )
-from server.services.valuation_snapshot import is_asset_class_valuation_healthy
 
 
 async def run_batch_pre_trade_risk(

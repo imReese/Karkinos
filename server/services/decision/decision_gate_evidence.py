@@ -115,10 +115,10 @@ def strategy_attribution_gate_evidence(
             ],
         }
 
-    from server.services.account_strategy_assignment import (
+    from server.services.account.account_strategy_assignment import (
         account_strategy_assignment_from_payload,
     )
-    from server.services.account_strategy_projections import (
+    from server.services.account.account_strategy_projections import (
         build_attribution_summary,
         build_contribution_report,
     )

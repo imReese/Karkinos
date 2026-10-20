@@ -8,7 +8,9 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from server.services.account_paper_shadow import orchestrate_account_paper_shadow
+from server.services.account.account_paper_shadow import (
+    orchestrate_account_paper_shadow,
+)
 
 
 def test_orchestrate_rejects_uninitialized_database() -> None:

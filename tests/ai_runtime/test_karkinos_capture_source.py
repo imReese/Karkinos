@@ -257,7 +257,7 @@ async def test_production_source_reuses_canonical_builders_and_exact_persisted_r
         build_operations,
     )
     monkeypatch.setattr(
-        "server.services.account_strategy_projections.build_contribution_report",
+        "server.services.account.account_strategy_projections.build_contribution_report",
         build_contribution,
     )
     monkeypatch.setattr(
@@ -417,7 +417,7 @@ async def test_strategy_contribution_capture_rejects_financial_identity_drift(
         build_portfolio,
     )
     monkeypatch.setattr(
-        "server.services.account_strategy_projections.build_contribution_report",
+        "server.services.account.account_strategy_projections.build_contribution_report",
         lambda db, assignment: FixtureModel(
             {
                 "strategy_id": assignment.strategy_id,
@@ -471,7 +471,7 @@ async def test_incomplete_strategy_contribution_remains_blocked_evidence(monkeyp
         },
     )
     monkeypatch.setattr(
-        "server.services.account_strategy_projections.build_contribution_report",
+        "server.services.account.account_strategy_projections.build_contribution_report",
         lambda db, assignment: FixtureModel(
             {
                 "strategy_id": assignment.strategy_id,

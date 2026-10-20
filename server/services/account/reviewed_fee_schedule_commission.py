@@ -19,7 +19,7 @@ from server.contracts.reviewed_fee_schedule import (
     ReviewedFeeScheduleRejected,
     ReviewedFeeScheduleReview,
 )
-from server.services.reviewed_fee_schedule_policy import (
+from server.services.account.reviewed_fee_schedule_policy import (
     NOTIONAL_ENVELOPE_SCHEMA_VERSION,
     REVIEWED_COST_MODEL_PREFIX,
     REVIEWED_FEE_SCHEDULE_RESOLUTION_SCHEMA_VERSION,

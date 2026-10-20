@@ -35,9 +35,9 @@ SERVICE_MODULES = (
     "server/services/paper_shadow_run.py",
     "server/services/paper_shadow_values.py",
     "server/persistence/controlled_ledger_posting_uow.py",
-    "server/services/account_truth_evidence_readiness.py",
-    "server/services/account_truth_evidence_readiness_support.py",
-    "server/services/account_truth_evidence_scope.py",
+    "server/services/account/account_truth_evidence_readiness.py",
+    "server/services/account/account_truth_evidence_readiness_support.py",
+    "server/services/account/account_truth_evidence_scope.py",
     "server/services/capital_scaling_evidence_contracts.py",
     "server/services/capital_scaling_evidence_values.py",
     "server/services/capital_scaling_execution_facts.py",
@@ -64,7 +64,7 @@ SERVICE_MODULES = (
     "server/services/strategy_promotion_support.py",
 )
 PURE_MODULES = (
-    "server/services/account_truth_evidence_readiness_support.py",
+    "server/services/account/account_truth_evidence_readiness_support.py",
     "server/account_truth_gate_support.py",
     "server/account_truth_gate_values.py",
     "server/services/automation_alert_support.py",

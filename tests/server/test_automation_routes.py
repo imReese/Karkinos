@@ -189,7 +189,7 @@ def test_automation_cockpit_route_projects_current_financial_preflight(
         read_current_plan,
     )
     monkeypatch.setattr(
-        "server.services.reviewed_fee_schedule."
+        "server.services.account.reviewed_fee_schedule."
         "build_reviewed_fee_schedule_review_status",
         reviewed_fees,
     )

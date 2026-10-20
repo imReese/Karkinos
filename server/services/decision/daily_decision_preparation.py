@@ -38,7 +38,7 @@ def build_daily_candidate_preparation_check(
         ACCOUNT_TRUTH_PROMOTION_EVIDENCE_SCHEMA_VERSION,
         build_latest_account_truth_promotion_evidence,
     )
-    from server.services.reviewed_fee_schedule import (
+    from server.services.account.reviewed_fee_schedule import (
         build_reviewed_fee_schedule_review_status,
     )
     from server.services.strategy_promotion_pipeline import (

@@ -26,7 +26,7 @@ from core.types import (
 from data.store import DataStore
 from domain.instrument import make_etf, make_open_end_fund
 from server.db import AppDatabase
-from server.services.valuation_snapshot import build_current_valuation_snapshot
+from server.services.account.valuation_snapshot import build_current_valuation_snapshot
 
 
 @pytest.fixture(autouse=True)

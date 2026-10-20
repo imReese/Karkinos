@@ -30,7 +30,9 @@ REVOKE = {
 async def test_publication_write_accepts_the_previewed_board_binding_only_on_write(
     monkeypatch,
 ):
-    from server.services.account_board_permissions import freeze_entry_board_policy
+    from server.services.account.account_board_permissions import (
+        freeze_entry_board_policy,
+    )
 
     policy = freeze_entry_board_policy(SimpleNamespace(), "2026-08-24")
     writes = []

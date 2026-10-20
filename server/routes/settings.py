@@ -27,7 +27,7 @@ from server.models import (
     LiveStatusResponse,
     SettingsResponse,
 )
-from server.services.account_board_permissions import (
+from server.services.account.account_board_permissions import (
     BOARD_PERMISSION_SOURCE,
     resolve_board_buy_permissions,
 )

@@ -11,7 +11,7 @@ from typing import Any
 from account_truth.broker_evidence import BrokerEvidenceRepository
 from account_truth.manual_review import ManualReviewRepository
 from server.account_truth_gate import broker_events_for_import_run
-from server.services.valuation_snapshot import (
+from server.services.account.valuation_snapshot import (
     ledger_identity_from_rows,
     valuation_snapshot_from_row,
 )

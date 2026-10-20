@@ -13,7 +13,7 @@ from server.models import (
     AccountStrategyAssignment,
     AccountStrategyContributionReport,
 )
-from server.services.valuation_snapshot import (
+from server.services.account.valuation_snapshot import (
     build_current_valuation_snapshot,
     valuation_snapshot_from_row,
 )

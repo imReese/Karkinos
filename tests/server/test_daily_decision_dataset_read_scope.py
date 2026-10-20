@@ -278,7 +278,7 @@ def test_independent_preparation_reopens_data_and_current_grant(
         lambda _: {},
     )
     monkeypatch.setattr(
-        "server.services.reviewed_fee_schedule.build_reviewed_fee_schedule_review_status",
+        "server.services.account.reviewed_fee_schedule.build_reviewed_fee_schedule_review_status",
         lambda *_, **__: {},
     )
     for index in range(2):

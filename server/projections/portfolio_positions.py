@@ -23,7 +23,7 @@ from server.projections.quote_status import (
     parse_quote_timestamp as _parse_quote_timestamp,
 )
 from server.projections.quote_status import quote_performance_session_date
-from server.services.daily_performance import (
+from server.services.account.daily_performance import (
     build_position_daily_context,
     mark_position_daily,
 )

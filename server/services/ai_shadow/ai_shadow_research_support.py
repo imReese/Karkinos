@@ -25,7 +25,7 @@ from server.contracts.ai_shadow_research_automation import (
     shadow_research_json_list,
     shadow_research_json_object,
 )
-from server.services.reviewed_fee_schedule import ReviewedFeeScheduleRejected
+from server.services.account.reviewed_fee_schedule import ReviewedFeeScheduleRejected
 
 logger = logging.getLogger(__name__)
 

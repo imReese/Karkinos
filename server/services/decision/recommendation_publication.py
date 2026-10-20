@@ -27,13 +27,13 @@ from server.contracts.recommendation_publication import (
 from server.contracts.recommendation_publication import (
     publication_source_blocker as publication_source_blocker,
 )
-from server.services.reviewed_fee_schedule import (
+from server.services.account.reviewed_fee_schedule import (
     freeze_deployment_fee_schedule as freeze_deployment_fee_schedule,
 )
-from server.services.reviewed_fee_schedule import (
+from server.services.account.reviewed_fee_schedule import (
     resolve_frozen_deployment_fee_schedule as resolve_frozen_deployment_fee_schedule,
 )
-from server.services.valuation_snapshot import (
+from server.services.account.valuation_snapshot import (
     require_valuation_recovery_clear,
 )
 
@@ -73,7 +73,7 @@ def _preview_entry_board_policy(db: Any, config: Any, now: datetime):
     from server.contracts.research_observation_automation import (
         validate_simulation_validation_policy,
     )
-    from server.services.account_board_permissions import (
+    from server.services.account.account_board_permissions import (
         entry_board_policy_blocker,
         freeze_entry_board_policy,
         resolve_board_buy_permissions,
@@ -128,7 +128,7 @@ class RecommendationPublicationService:
         try:
             policy = read_publication_grant(self.db, require_active=False)
             if policy["enabled"]:
-                from server.services.account_board_permissions import (
+                from server.services.account.account_board_permissions import (
                     validate_entry_board_policy,
                 )
 
@@ -221,16 +221,16 @@ class RecommendationPublicationService:
         """Bind reviewable owner settings to current local account and scope facts."""
         try:
             from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
+            from server.services.account.reviewed_fee_schedule import (
+                build_reviewed_fee_schedule_review_status,
+            )
+            from server.services.account.valuation_snapshot import (
+                build_current_valuation_snapshot,
+                portfolio_equity_from_valuation,
+            )
             from server.services.market_universe_truth import (
                 MarketUniversePolicy,
                 market_deployment_scope,
-            )
-            from server.services.reviewed_fee_schedule import (
-                build_reviewed_fee_schedule_review_status,
-            )
-            from server.services.valuation_snapshot import (
-                build_current_valuation_snapshot,
-                portfolio_equity_from_valuation,
             )
 
             valuation = build_current_valuation_snapshot(self.db, persist=False)
@@ -246,7 +246,7 @@ class RecommendationPublicationService:
                 raise ValueError(
                     "publication_preview_reviewed_account_scope_unavailable"
                 )
-            from server.services.reviewed_fee_schedule_commission import (
+            from server.services.account.reviewed_fee_schedule_commission import (
                 validated_notional_envelope,
             )
 
@@ -515,10 +515,12 @@ class RecommendationPublicationService:
     def readiness(
         self, qualification_id: str, grant: Mapping[str, Any], *, fresh: bool
     ) -> dict[str, Any]:
+        from server.services.account.valuation_snapshot import (
+            build_current_valuation_snapshot,
+        )
         from server.services.strategy_promotion_support import (
             resolve_ai_shadow_qualification_promotion_evidence,
         )
-        from server.services.valuation_snapshot import build_current_valuation_snapshot
 
         evidence, blockers = resolve_ai_shadow_qualification_promotion_evidence(
             self.db, qualification_id, require_human_approval=False

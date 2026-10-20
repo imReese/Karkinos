@@ -11,6 +11,10 @@ from typing import Any, Callable
 
 from server.account_truth_gate import build_latest_account_truth_promotion_evidence
 from server.dependencies import AppState
+from server.services.account.session_start_account_truth import (
+    SESSION_START_ACCOUNT_TRUTH_MAX_AGE_SECONDS,
+    SessionStartAccountTruthService,
+)
 from server.services.broker_connector_runtime import build_broker_connectors
 from server.services.broker_connector_soak_promotion import (
     BrokerConnectorSoakPromotionService,
@@ -57,10 +61,6 @@ from server.services.manual_broker_cancellation_evidence import (
     ManualBrokerCancellationEvidenceService,
 )
 from server.services.per_order_confirmation import PerOrderConfirmationService
-from server.services.session_start_account_truth import (
-    SESSION_START_ACCOUNT_TRUTH_MAX_AGE_SECONDS,
-    SessionStartAccountTruthService,
-)
 
 
 def build_broker_connector_soak_promotion_service(

@@ -12,15 +12,15 @@ from analytics.strategy_advancement_gate import (
 )
 from server.ai_runtime.contracts import content_fingerprint
 from server.db import AppDatabase
+from server.services.account.reviewed_fee_schedule import (
+    REVIEWED_FEE_SCHEDULE_REVOCATION_CONFIRMATION,
+    ReviewedFeeScheduleReviewRepository,
+)
 from server.services.ai_shadow.ai_shadow_research_automation import (
     SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
     ShadowResearchStore,
 )
 from server.services.per_order_gateway_evidence import _resolve_decision_action
-from server.services.reviewed_fee_schedule import (
-    REVIEWED_FEE_SCHEDULE_REVOCATION_CONFIRMATION,
-    ReviewedFeeScheduleReviewRepository,
-)
 from server.services.strategy_promotion_pipeline import (
     STRATEGY_LIFECYCLE_SAFETY_CONFIRMATION,
     STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION,

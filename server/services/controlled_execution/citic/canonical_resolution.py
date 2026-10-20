@@ -28,7 +28,7 @@ def record_citic_source_canonical_resolution(
 ) -> dict[str, object]:
     """Resolve the exact current legacy source set against one active scope review."""
     from server.account_truth_gate import build_latest_account_truth_score_payload
-    from server.services.account_truth_evidence_readiness import (
+    from server.services.account.account_truth_evidence_readiness import (
         build_account_truth_evidence_scope,
     )
 

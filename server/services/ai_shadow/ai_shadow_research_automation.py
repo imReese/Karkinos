@@ -59,6 +59,7 @@ from server.contracts.ai_shadow_research_automation import (
 from server.dependencies import AppState
 from server.persistence.ai_shadow_research import ShadowResearchStore
 from server.release_activation import wait_for_release_activation
+from server.services.account.valuation_snapshot import build_current_valuation_snapshot
 from server.services.ai_shadow.ai_shadow_research_baseline import (
     AiShadowResearchBaselineMixin,
 )
@@ -84,7 +85,6 @@ from server.services.ai_shadow.ai_shadow_research_support import (
 from server.services.ai_shadow.ai_shadow_research_workflow import (
     AiShadowResearchWorkflowMixin,
 )
-from server.services.valuation_snapshot import build_current_valuation_snapshot
 
 logger = logging.getLogger(__name__)
 

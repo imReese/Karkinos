@@ -37,6 +37,9 @@ from server.contracts.controlled_session_envelope import (
 from server.contracts.controlled_session_envelope import (
     CONTROLLED_SESSION_STATUS_SCHEMA_VERSION,
 )
+from server.services.account.session_start_account_truth import (
+    resolve_session_start_account_truth_binding,
+)
 from server.services.broker_connector_soak import BrokerConnectorSoakService
 from server.services.capital_authorization_audit import (
     CAPITAL_AUTHORIZATION_EVENT_ENTITY_TYPE as CAPITAL_AUTHORIZATION_EVENT_ENTITY_TYPE,
@@ -72,9 +75,6 @@ from server.services.execution_gateway_verification_binding import (
 )
 from server.services.execution_identity import build_order_fingerprint
 from server.services.operator_approval import resolve_operator_approval
-from server.services.session_start_account_truth import (
-    resolve_session_start_account_truth_binding,
-)
 
 _REQUIRED_GATEWAY_EVIDENCE = _envelope_policy.REQUIRED_GATEWAY_EVIDENCE
 _time_and_request_blockers = _envelope_policy.time_and_request_blockers

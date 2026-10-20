@@ -187,7 +187,9 @@ def test_future_only_held_history_preserves_missing_observation_error():
 
 
 def test_account_entry_mask_preserves_full_forecasts_and_allows_maintenance_exit():
-    from server.services.account_board_permissions import freeze_entry_board_policy
+    from server.services.account.account_board_permissions import (
+        freeze_entry_board_policy,
+    )
 
     symbols = ["600000", "300001", "688001", "920001"]
     data = prepared({s: frame(["2026-09-17", "2026-09-18"]) for s in symbols})

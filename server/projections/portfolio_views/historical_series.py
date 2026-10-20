@@ -34,10 +34,10 @@ from server.projections.quote_status import (
     parse_quote_timestamp as _parse_quote_timestamp,
 )
 from server.projections.quote_status import quote_valuation_status
-from server.services.market_hours import get_shanghai_now
-from server.services.valuation_snapshot import (
+from server.services.account.valuation_snapshot import (
     valuation_identity_fields,
 )
+from server.services.market_hours import get_shanghai_now
 
 _CN_AFTERNOON_CLOSE = time(15, 0)
 

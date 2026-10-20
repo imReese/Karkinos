@@ -16,7 +16,7 @@ from server.contracts.reviewed_fee_schedule import (
 from server.persistence.reviewed_fee_schedule_reviews import (
     ReviewedFeeScheduleReviewStore,
 )
-from server.services.reviewed_fee_schedule_policy import (
+from server.services.account.reviewed_fee_schedule_policy import (
     SAFE_ID_PATTERN,
     fingerprint_payload,
     review_from_row,

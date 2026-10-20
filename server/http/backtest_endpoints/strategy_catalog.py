@@ -66,10 +66,10 @@ def create_router(dependencies: StrategyCatalogEndpointDependencies) -> APIRoute
         )
         from server.account_truth_gate import build_latest_account_truth_score_payload
         from server.dependencies import get_app_state
-        from server.services.account_strategy_assignment import (
+        from server.services.account.account_strategy_assignment import (
             account_strategy_assignment_from_payload,
         )
-        from server.services.account_strategy_projections import (
+        from server.services.account.account_strategy_projections import (
             build_attribution_summary,
             build_contribution_report,
         )

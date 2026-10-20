@@ -16,8 +16,8 @@ from server.projections.controlled_ledger_correction import (
     build_controlled_ledger_correction_plan,
     correction_plan_fingerprint,
 )
+from server.services.account.valuation_snapshot import build_current_valuation_snapshot
 from server.services.operator_approval import resolve_operator_approval_with_proof
-from server.services.valuation_snapshot import build_current_valuation_snapshot
 
 CONTROLLED_SUBMISSION_LEDGER_CORRECTION_SCHEMA_VERSION = (
     "karkinos.controlled_submission_ledger_correction.v1"

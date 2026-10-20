@@ -15,6 +15,7 @@ from data.store import DataStore
 from server.ai_runtime.contracts import content_fingerprint
 from server.bootstrap import resolve_data_dir
 from server.contracts.recommendation_publication import publication_source_blocker
+from server.services.account.valuation_snapshot import is_asset_class_valuation_healthy
 from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactRejected,
     DailyStrategyArtifactStore,
@@ -54,7 +55,6 @@ from server.services.strategy_scan.promoted_strategy_universe_scan_validation im
     current_scan_input_blockers,
     portfolio_stock_symbols,
 )
-from server.services.valuation_snapshot import is_asset_class_valuation_healthy
 
 PROMOTED_STRATEGY_UNIVERSE_SCAN_SCHEMA_VERSION = (
     "karkinos.promoted_strategy_universe_scan.v1"
@@ -480,10 +480,10 @@ class PromotedStrategyUniverseScanService:
         if persist_actions and not action_blockers and selected_signals:
 
             def current_authority_validator():
-                from server.services.account_board_permissions import (
+                from server.services.account.account_board_permissions import (
                     resolve_board_buy_permissions,
                 )
-                from server.services.valuation_snapshot import (
+                from server.services.account.valuation_snapshot import (
                     build_current_valuation_snapshot,
                 )
 

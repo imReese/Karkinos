@@ -40,14 +40,14 @@ from server.contracts.normalized_strategy_research import (
     SIMULATION_RESEARCH_NOTIONAL_POLICY_ID,
 )
 from server.contracts.strategy_research import StrategyResearchSelection
-from server.services.account_qualification_admission import (
+from server.services.account.account_qualification_admission import (
     QualificationAdmission,
     QualificationAdmissionDeferred,
 )
-from server.services.account_qualification_capture import (
+from server.services.account.account_qualification_capture import (
     capture_qualification_account_state,
 )
-from server.services.account_qualification_reuse import (
+from server.services.account.account_qualification_reuse import (
     require_current_qualification_valuation,
     require_normalized_source_selection,
     require_qualification_source_run_id,
@@ -243,7 +243,7 @@ class AiShadowResearchQualificationService:
                     saved_run.get("account_truth_scope_fingerprint")
                     == publication_grant["account_scope_fingerprint"]
                 ):
-                    from server.services.valuation_snapshot import (
+                    from server.services.account.valuation_snapshot import (
                         portfolio_equity_from_valuation,
                     )
 

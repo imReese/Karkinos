@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 import server.routes.session_start_account_truth as route_module
 from server.app import create_app
 from server.routes.session_start_account_truth import create_router
-from server.services.session_start_account_truth import (
+from server.services.account.session_start_account_truth import (
     SESSION_START_ACCOUNT_TRUTH_ACKNOWLEDGEMENT,
     SessionStartAccountTruthRejected,
 )

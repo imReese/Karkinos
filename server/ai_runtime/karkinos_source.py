@@ -284,7 +284,7 @@ def _strategy_contribution_projection(
     report_builder: Callable[[Any, Any], Any],
 ) -> CapturedProjection:
     """Wrap the existing contribution projection without recalculating it."""
-    from server.services.account_strategy_assignment import (
+    from server.services.account.account_strategy_assignment import (
         ACCOUNT_STRATEGY_ASSIGNMENT_CONTROL_KEY,
         account_strategy_assignment_from_payload,
         default_account_strategy_assignment,

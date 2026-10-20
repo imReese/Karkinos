@@ -13,7 +13,9 @@ from server.dependencies import (
     bind_portfolio_read_request_state,
     get_portfolio_read_request_state,
 )
-from server.services.account_board_permissions import resolve_board_buy_permissions
+from server.services.account.account_board_permissions import (
+    resolve_board_buy_permissions,
+)
 from server.services.decision.decision_contracts import (
     TRUSTED_DATA_STATUSES,
     action_trade_date,
@@ -43,7 +45,9 @@ def decision_portfolio_context(state: Any) -> dict[str, Any]:
             quotes_from_valuation_snapshot,
             resolve_projection_sources,
         )
-        from server.services.valuation_snapshot import build_current_valuation_snapshot
+        from server.services.account.valuation_snapshot import (
+            build_current_valuation_snapshot,
+        )
 
         snapshot_scope = (
             bind_portfolio_read_request_state()
@@ -236,7 +240,7 @@ def portfolio_state_summary(
         "board_buy_permissions": board_permissions,
     }
     if isinstance(snapshot, Mapping):
-        from server.services.valuation_snapshot import valuation_identity_fields
+        from server.services.account.valuation_snapshot import valuation_identity_fields
 
         result.update(valuation_identity_fields(dict(snapshot)))
         result["valuation_lanes"] = [

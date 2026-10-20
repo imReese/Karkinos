@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from server.account_truth_gate import build_latest_account_truth_promotion_evidence
-from server.services.session_start_account_truth import (
+from server.services.account.session_start_account_truth import (
     SESSION_START_ACCOUNT_TRUTH_ACKNOWLEDGEMENT,
     SESSION_START_ACCOUNT_TRUTH_MAX_AGE_SECONDS,
     SessionStartAccountTruthRejected,

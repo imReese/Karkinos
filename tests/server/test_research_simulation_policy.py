@@ -323,7 +323,8 @@ def test_full_scope_simulation_reserves_without_account_or_reviewed_fees(
         raise AssertionError("account fee/valuation must not authorize independent SIM")
 
     monkeypatch.setattr(
-        "server.services.valuation_snapshot.build_current_valuation_snapshot", forbidden
+        "server.services.account.valuation_snapshot.build_current_valuation_snapshot",
+        forbidden,
     )
     reserved = asyncio.run(
         reserve_final_research_evaluation(
@@ -550,7 +551,7 @@ def test_sim_notional_survives_immutable_daily_backup_without_account_authority(
     tmp_path, mixed_binding
 ):
     from server.contracts.strategy_research import StrategyResearchSelection
-    from server.services.account_qualification_reuse import (
+    from server.services.account.account_qualification_reuse import (
         require_normalized_source_selection,
     )
     from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (

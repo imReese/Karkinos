@@ -32,6 +32,10 @@ from server.contracts.ai_shadow_research_automation import (
     build_shadow_research_iteration_context,
 )
 from server.contracts.strategy_research import STRATEGY_RESEARCH_PROMPT_VERSION
+from server.services.account.reviewed_fee_schedule import (
+    ReviewedFeeScheduleReadRejected,
+    ReviewedFeeScheduleRejected,
+)
 from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactRejected,
 )
@@ -39,10 +43,6 @@ from server.services.ai_shadow.ai_shadow_research_support import (
     is_after_shadow_research_close,
     shadow_research_failure_code,
     shadow_research_market_close_as_of,
-)
-from server.services.reviewed_fee_schedule import (
-    ReviewedFeeScheduleReadRejected,
-    ReviewedFeeScheduleRejected,
 )
 
 logger = logging.getLogger(__name__)

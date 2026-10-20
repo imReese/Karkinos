@@ -215,7 +215,7 @@ class ResearchObservationService:
             request["resource_limits"] = dict(resource_limits)
         if authorization_binding is not None:
             request["authorization_binding"] = dict(authorization_binding)
-            from server.services.account_board_permissions import (
+            from server.services.account.account_board_permissions import (
                 validate_entry_board_policy,
             )
 

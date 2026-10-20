@@ -318,7 +318,9 @@ def policy_entry_signals(signals, *, portfolio, decision_date, db):
     from domain.instrument import entry_board_symbols
     from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
     from server.contracts.recommendation_publication import validate_entry_board_policy
-    from server.services.account_board_permissions import entry_board_policy_blocker
+    from server.services.account.account_board_permissions import (
+        entry_board_policy_blocker,
+    )
 
     selected, blocked, profiles = [], [], {}
     for row in signals:
@@ -1039,7 +1041,7 @@ def _portfolio_account_signals(
         allocate_formula_targets,
     )
     from server.persistence.strategy_research import StrategyResearchAuditStore
-    from server.services.reviewed_fee_schedule import (
+    from server.services.account.reviewed_fee_schedule import (
         resolve_frozen_deployment_fee_schedule,
     )
 

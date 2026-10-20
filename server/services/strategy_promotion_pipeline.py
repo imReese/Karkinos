@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from server.services.reviewed_fee_schedule import active_review_matches_fee_evidence
+from server.services.account.reviewed_fee_schedule import (
+    active_review_matches_fee_evidence,
+)
 from server.services.strategy_promotion_support import (
     AI_SHADOW_STRATEGY_PREFIX,
     STRATEGY_PROMOTION_SCHEMA_VERSION,

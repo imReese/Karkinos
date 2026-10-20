@@ -11,7 +11,7 @@ from fastapi.routing import APIRoute
 from server.config import AccountBoardPermissionsConfig, ServerConfig
 from server.contracts.http.settings_models import BoardBuyPermissionsUpdate
 from server.routes.settings import create_router
-from server.services.account_board_permissions import (
+from server.services.account.account_board_permissions import (
     BOARD_PERMISSION_SOURCE,
     entry_board_policy_blocker,
     entry_board_policy_symbols,

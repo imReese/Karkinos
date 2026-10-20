@@ -21,12 +21,11 @@ from account_truth.evidence_scope_review import EvidenceScopeReviewRepository
 from core.types import CommissionType, OrderSide
 from server.config import BrokerFeeScheduleConfig
 from server.db import AppDatabase
-from server.services.account_truth_evidence_readiness import (
+from server.services.account.account_truth_evidence_readiness import (
     build_account_truth_evidence_scope,
     project_account_truth_evidence_scope,
 )
-from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
-from server.services.reviewed_fee_schedule import (
+from server.services.account.reviewed_fee_schedule import (
     REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION,
     REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSION,
     REVIEWED_FEE_SCHEDULE_REVOCATION_CONFIRMATION,
@@ -39,6 +38,7 @@ from server.services.reviewed_fee_schedule import (
     resolve_reviewed_fee_schedule,
     reviewed_cost_model_reference,
 )
+from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
 
 _BROKER_TRADES = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method
 synthetic-buy-001,trade_buy,2026-01-05T09:35:00+08:00,2026-01-06,600000.SH,synthetic stock,stock,CNY,1000,10.00,10000.00,5.00,0.00,-10005.10,89994.90,1000,10.01,synthetic buy,0.10,broker_remaining_cost
@@ -137,7 +137,7 @@ def _state(
 
 def _patch_ready_account_truth(monkeypatch, imported) -> None:
     monkeypatch.setattr(
-        "server.services.reviewed_fee_schedule.build_account_truth_evidence_readiness",
+        "server.services.account.reviewed_fee_schedule.build_account_truth_evidence_readiness",
         lambda state: {
             "status": "ready",
             "account_truth_import_run_id": imported.import_run_id,
@@ -151,7 +151,7 @@ def _patch_ready_account_truth(monkeypatch, imported) -> None:
         },
     )
     monkeypatch.setattr(
-        "server.services.reviewed_fee_schedule.build_latest_account_truth_promotion_evidence",
+        "server.services.account.reviewed_fee_schedule.build_latest_account_truth_promotion_evidence",
         lambda state: {
             "status": "clear",
             "import_run_id": imported.import_run_id,
@@ -284,12 +284,14 @@ def test_current_account_buys_require_reviewed_action_date_and_keep_exits(
 
     from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
     from server.persistence.strategy_research import StrategyResearchAuditStore
-    from server.services.account_board_permissions import freeze_entry_board_policy
-    from server.services.market_universe_truth import MarketUniversePolicy
-    from server.services.reviewed_fee_schedule import (
+    from server.services.account.account_board_permissions import (
+        freeze_entry_board_policy,
+    )
+    from server.services.account.reviewed_fee_schedule import (
         freeze_deployment_fee_schedule,
         resolve_frozen_deployment_fee_schedule,
     )
+    from server.services.market_universe_truth import MarketUniversePolicy
     from server.services.strategy_scan.promoted_strategy_universe_scan_support import (
         account_eligible_signals,
     )
@@ -1043,7 +1045,7 @@ def test_fee_schedule_http_workflow_rechecks_drift_and_revokes_exact_review(
     assert outside_action_window["provider_contacted"] is False
 
     monkeypatch.setattr(
-        "server.services.reviewed_fee_schedule.build_latest_account_truth_promotion_evidence",
+        "server.services.account.reviewed_fee_schedule.build_latest_account_truth_promotion_evidence",
         lambda state: {
             "status": "clear",
             "import_run_id": imported.import_run_id,
@@ -1142,11 +1144,11 @@ def test_reviewed_fee_schedule_survives_only_valid_daily_snapshot_lineage(
         return context["promotion"]
 
     monkeypatch.setattr(
-        "server.services.reviewed_fee_schedule.build_account_truth_evidence_readiness",
+        "server.services.account.reviewed_fee_schedule.build_account_truth_evidence_readiness",
         readiness_at_clock,
     )
     monkeypatch.setattr(
-        "server.services.reviewed_fee_schedule.build_latest_account_truth_promotion_evidence",
+        "server.services.account.reviewed_fee_schedule.build_latest_account_truth_promotion_evidence",
         promotion_at_clock,
     )
     preview = build_reviewed_fee_schedule_preview(

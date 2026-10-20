@@ -29,11 +29,10 @@ from server.contracts.reviewed_fee_schedule import (
     ReviewedFeeScheduleReadRejected,
     ReviewedFeeScheduleRejected,
 )
-from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
-from server.services.reviewed_fee_schedule_commission import (
+from server.services.account.reviewed_fee_schedule_commission import (
     validated_notional_envelope,
 )
-from server.services.reviewed_fee_schedule_policy import (
+from server.services.account.reviewed_fee_schedule_policy import (
     NOTIONAL_ENVELOPE_SCHEMA_VERSION,
     REVIEWED_FEE_SCHEDULE_PREVIEW_SCHEMA_VERSION,
     SUPPORTED_ASSET_CLASSES,
@@ -46,9 +45,10 @@ from server.services.reviewed_fee_schedule_policy import (
     normalize_reviewed_asset_classes,
     reviewed_asset_classes_from_preview,
 )
-from server.services.reviewed_fee_schedule_repository import (
+from server.services.account.reviewed_fee_schedule_repository import (
     ReviewedFeeScheduleReviewRepository,
 )
+from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
 
 
 def compare_schedule_to_events(

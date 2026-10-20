@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from server.services.citic_source_scope_review import (
+from server.services.account.citic.scope_review import (
     project_citic_source_scope_batch_assessment,
 )
 

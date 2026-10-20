@@ -55,7 +55,9 @@ def build_strategy_research_write_service(
         if external
         else None
     )
-    from server.services.reviewed_fee_schedule import resolve_reviewed_fee_schedule
+    from server.services.account.reviewed_fee_schedule import (
+        resolve_reviewed_fee_schedule,
+    )
 
     model_timeout_seconds = strategy_research_model_timeout_seconds(settings)
     return StrategyResearchService(

@@ -24,7 +24,7 @@ from server.contracts.http.account_truth import (
     ReviewedFeeScheduleReviewRevoke,
 )
 from server.http.account_truth_endpoints.dependencies import ReviewEndpointDependencies
-from server.services.reviewed_fee_schedule import (
+from server.services.account.reviewed_fee_schedule import (
     REVIEWED_FEE_SCHEDULE_APPROVAL_CONFIRMATION,
     REVIEWED_FEE_SCHEDULE_REVOCATION_CONFIRMATION,
     ReviewedFeeScheduleReadRejected,

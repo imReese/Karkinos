@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from server.db import AppDatabase
-from server.services.session_start_account_truth import (
+from server.services.account.session_start_account_truth import (
     SESSION_START_ACCOUNT_TRUTH_ACKNOWLEDGEMENT,
     SESSION_START_ACCOUNT_TRUTH_EVENT_TYPE,
     SessionStartAccountTruthRejected,

@@ -210,7 +210,7 @@ def _reserved_execution_costs(db, binding, universe):
         return SimpleNamespace(
             commission_calc=costs.commission_calc, fee_evidence=evidence
         )
-    from server.services.reviewed_fee_schedule import (
+    from server.services.account.reviewed_fee_schedule import (
         resolve_frozen_deployment_fee_schedule,
     )
 
@@ -392,7 +392,7 @@ async def reserve_final_research_evaluation(
         from zoneinfo import ZoneInfo
 
         from server.contracts.recommendation_publication import publication_time
-        from server.services.account_board_permissions import (
+        from server.services.account.account_board_permissions import (
             entry_board_policy_blocker,
             resolve_board_buy_permissions,
         )
@@ -418,7 +418,7 @@ async def reserve_final_research_evaluation(
             != grant["deployment_scope_fingerprint"]
         ):
             raise StrategyResearchRejected("deployment_grant_scope_mismatch")
-        from server.services.valuation_snapshot import (
+        from server.services.account.valuation_snapshot import (
             build_current_valuation_snapshot,
             portfolio_equity_from_valuation,
         )
@@ -433,7 +433,7 @@ async def reserve_final_research_evaluation(
         )
         if cash <= 0:
             raise StrategyResearchRejected("deployment_initial_cash_invalid")
-        from server.services.reviewed_fee_schedule import (
+        from server.services.account.reviewed_fee_schedule import (
             freeze_deployment_fee_schedule,
         )
 
@@ -1159,7 +1159,7 @@ def _replacement_transition_reserve(restored, binding, result, db):
     from backtest.costs import RESEARCH_SLIPPAGE_BPS
     from core.types import OrderSide
     from domain.instrument import make_research_stock
-    from server.services.reviewed_fee_schedule import (
+    from server.services.account.reviewed_fee_schedule import (
         resolve_frozen_deployment_fee_schedule,
     )
 
@@ -1412,7 +1412,7 @@ def _simulation_account_replay_inputs(db, store, result, evidence, grant):
     remains authoritative, and every frozen comparator is replayed with it.
     """
 
-    from server.services.reviewed_fee_schedule import (
+    from server.services.account.reviewed_fee_schedule import (
         resolve_frozen_deployment_fee_schedule,
     )
 
@@ -1752,7 +1752,7 @@ def verify_deployment_validation(
         != binding["fee_schedule"]["cost_model_reference"]
     ):
         raise StrategyResearchRejected("deployment_qualified_fee_schedule_drift")
-    from server.services.reviewed_fee_schedule import (
+    from server.services.account.reviewed_fee_schedule import (
         resolve_frozen_deployment_fee_schedule,
     )
 

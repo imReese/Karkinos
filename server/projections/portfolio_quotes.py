@@ -38,11 +38,11 @@ from server.projections.valuation_snapshot import (
     build_current_valuation_snapshot as build_current_valuation_projection,
 )
 from server.projections.valuation_snapshot import select_authoritative_valuation_marks
-from server.services.market_hours import get_shanghai_now, is_cn_trading_session
-from server.services.valuation_snapshot import (
+from server.services.account.valuation_snapshot import (
     load_persisted_quote_rows,
     select_latest_observation_rows,
 )
+from server.services.market_hours import get_shanghai_now, is_cn_trading_session
 
 
 def collect_latest_quote_timestamps(state) -> dict[str, str]:

@@ -14,7 +14,7 @@ from fastapi.routing import APIRoute
 from server.contracts.quote_ingestion import QuoteIngestionCommand
 from server.db import AppDatabase
 from server.projections.valuation_snapshot import load_persisted_quote_rows
-from server.services.valuation_snapshot import (
+from server.services.account.valuation_snapshot import (
     VALUATION_POLICY_VERSION,
     build_current_valuation_snapshot,
 )
@@ -1143,7 +1143,7 @@ def test_valuation_snapshot_routes_separate_create_and_read(monkeypatch, tmp_pat
 def test_existing_persisted_snapshot_rebuilds_lanes_without_identity_migration(
     tmp_path,
 ):
-    from server.services.valuation_snapshot import valuation_snapshot_from_row
+    from server.services.account.valuation_snapshot import valuation_snapshot_from_row
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()

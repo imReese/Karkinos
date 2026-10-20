@@ -256,10 +256,12 @@ def test_recovery_fence_is_shared_by_qualification_and_publication_preview(
     db, monkeypatch
 ):
     from server.persistence.ai_shadow_research import ShadowResearchStore
+    from server.services.account.valuation_snapshot import (
+        build_current_valuation_snapshot,
+    )
     from server.services.decision.recommendation_publication import (
         RecommendationPublicationService,
     )
-    from server.services.valuation_snapshot import build_current_valuation_snapshot
 
     valuation = build_current_valuation_snapshot(db, now=NOW, persist=True)
     assert valuation["status"] == "complete"
@@ -267,7 +269,7 @@ def test_recovery_fence_is_shared_by_qualification_and_publication_preview(
     with pytest.raises(ValueError, match="valuation_publication_recovery_required"):
         require_complete_valuation(valuation, db)
     monkeypatch.setattr(
-        "server.services.valuation_snapshot.build_current_valuation_snapshot",
+        "server.services.account.valuation_snapshot.build_current_valuation_snapshot",
         lambda *args, **kwargs: valuation,
     )
     service = RecommendationPublicationService(

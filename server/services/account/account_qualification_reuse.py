@@ -27,6 +27,9 @@ from server.contracts.normalized_strategy_research import (
     SIMULATION_RESEARCH_NOTIONAL_POLICY_ID,
 )
 from server.contracts.strategy_research import StrategyResearchSelection
+from server.services.account.reviewed_fee_schedule_policy import (
+    REVIEWED_COST_MODEL_PREFIX,
+)
 from server.services.ai_shadow.ai_shadow_research_qualification_support import (
     QUALIFICATION_COMPARISON_SCHEMA,
     QUALIFICATION_NOTIONAL_POLICY_ID,
@@ -47,7 +50,6 @@ from server.services.ai_shadow.ai_shadow_research_support import (
     shadow_research_backtest_source_fingerprint,
     shadow_research_market_close_as_of,
 )
-from server.services.reviewed_fee_schedule_policy import REVIEWED_COST_MODEL_PREFIX
 
 
 def require_qualification_source_run_id(value: Any) -> str:

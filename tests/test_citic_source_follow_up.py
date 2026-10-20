@@ -26,7 +26,7 @@ from account_truth.citic_source_query_window_review import (
 )
 from account_truth.citic_source_scope_review import CiticSourceScopeReviewRepository
 from account_truth.evidence_scope_review import EvidenceScopeReviewRepository
-from server.services.citic_source_follow_up import build_citic_source_follow_up
+from server.services.account.citic.follow_up import build_citic_source_follow_up
 
 _PRIVATE_SOURCE = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method,broker_order_id,client_order_id
 private-buy,trade_buy,2026-05-05T09:35:00+08:00,2026-05-06,PRIVATE-SYMBOL,PRIVATE-NAME,stock,CNY,100,10,1000,0,0,-1005,,,,PRIVATE-NOTE,0,,PRIVATE-ORDER,

@@ -46,6 +46,7 @@ from server.contracts.ai_shadow_research_automation import (
     shadow_research_json_object,
 )
 from server.models import BacktestRequest
+from server.services.account.reviewed_fee_schedule import ReviewedFeeScheduleRejected
 from server.services.ai_shadow.ai_shadow_research_support import (
     shadow_research_asset_class,
     shadow_research_market_close_as_of,
@@ -65,7 +66,6 @@ from server.services.market_universe_truth import (
     MarketUniverseRejected,
     build_market_universe_truth,
 )
-from server.services.reviewed_fee_schedule import ReviewedFeeScheduleRejected
 from strategy.registry import StrategyRegistry
 from strategy.schema import StrategyParameterValidationError
 
@@ -339,7 +339,7 @@ class AiShadowResearchBaselineMixin:
                 for key in ("grant_id", "generation", "initial_cash")
             }
         if entry_board_policy is not None:
-            from server.services.account_board_permissions import (
+            from server.services.account.account_board_permissions import (
                 validate_entry_board_policy,
             )
 

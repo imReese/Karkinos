@@ -17,6 +17,7 @@ from server.db import AppDatabase
 from server.projections.account_action_recommendation import (
     resolve_latest_verified_promoted_strategy_scan,
 )
+from server.services.account.valuation_snapshot import build_current_valuation_snapshot
 from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactRejected,
     DailyStrategyArtifactStore,
@@ -34,7 +35,6 @@ from server.services.strategy_scan.promoted_strategy_universe_scan import (
 from server.services.strategy_scan.promoted_strategy_universe_scan_support import (
     account_eligible_signals,
 )
-from server.services.valuation_snapshot import build_current_valuation_snapshot
 
 
 def _valuation_id(db):
@@ -471,7 +471,9 @@ def test_current_account_and_market_change_after_evaluation_blocks_atomic_tasks(
 def test_current_board_permission_revoked_after_evaluation_blocks_atomic_tasks(
     tmp_path, monkeypatch
 ):
-    from server.services.account_board_permissions import resolve_board_buy_permissions
+    from server.services.account.account_board_permissions import (
+        resolve_board_buy_permissions,
+    )
 
     db, service, _ = _service(tmp_path, produces_signals=True, special_symbol="301251")
     db.insert_ledger_entry_sync(
@@ -632,7 +634,9 @@ def test_chinext_research_signal_needs_current_account_permission_before_ranking
         service.current_input_blockers(scan=unknown, portfolio_summary=portfolio) == []
     )
 
-    from server.services.account_board_permissions import resolve_board_buy_permissions
+    from server.services.account.account_board_permissions import (
+        resolve_board_buy_permissions,
+    )
 
     service._config.account_board_permissions = _board_review("chinext", "enabled")
     permitted_portfolio = {
@@ -772,7 +776,9 @@ def test_portfolio_policy_filters_frozen_board_universe_before_ranking(
     from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
     from execution.commission import StockACommission
     from server.persistence.strategy_research import StrategyResearchAuditStore
-    from server.services.account_board_permissions import freeze_entry_board_policy
+    from server.services.account.account_board_permissions import (
+        freeze_entry_board_policy,
+    )
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -813,7 +819,7 @@ def test_portfolio_policy_filters_frozen_board_universe_before_ranking(
         },
     )
     monkeypatch.setattr(
-        "server.services.reviewed_fee_schedule.resolve_frozen_deployment_fee_schedule",
+        "server.services.account.reviewed_fee_schedule.resolve_frozen_deployment_fee_schedule",
         lambda *args: SimpleNamespace(
             commission_calc=StockACommission(),
             review=SimpleNamespace(

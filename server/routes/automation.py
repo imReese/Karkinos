@@ -80,6 +80,9 @@ def create_router() -> APIRouter:
             build_latest_account_truth_promotion_evidence,
         )
         from server.dependencies import get_app_state
+        from server.services.account.reviewed_fee_schedule import (
+            build_reviewed_fee_schedule_review_status,
+        )
         from server.services.automation_cockpit import AutomationCockpitService
         from server.services.current_per_order_dossier_factory import (
             build_current_per_order_dossier_service,
@@ -87,9 +90,6 @@ def create_router() -> APIRouter:
         from server.services.decision.daily_decision_evidence_automation import (
             project_daily_candidate_financial_preflight,
             unavailable_daily_candidate_financial_preflight,
-        )
-        from server.services.reviewed_fee_schedule import (
-            build_reviewed_fee_schedule_review_status,
         )
         from server.services.strategy_scan.daily_candidate_execution_closure import (
             build_daily_candidate_execution_closure,
@@ -178,7 +178,7 @@ def create_router() -> APIRouter:
         request: DailyPaperShadowRunRequest,
     ) -> dict[str, Any]:
         from server.dependencies import get_app_state
-        from server.services.account_paper_shadow import (
+        from server.services.account.account_paper_shadow import (
             orchestrate_account_paper_shadow,
         )
 

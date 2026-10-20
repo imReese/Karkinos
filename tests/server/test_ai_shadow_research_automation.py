@@ -53,6 +53,7 @@ from server.config import AIProviderConfig, ServerConfig
 from server.db import AppDatabase
 from server.dependencies import AppState
 from server.models import BacktestRequest
+from server.services.account.reviewed_fee_schedule import ReviewedFeeScheduleRejected
 from server.services.ai_shadow.ai_shadow_research_automation import (
     SHADOW_RESEARCH_ACCOUNT_BOUND_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_CAPITAL_MODE_ACCOUNT_BOUND,
@@ -91,7 +92,6 @@ from server.services.market_universe_truth import (
     normalize_a_share_members,
     preliminary_research_panel_symbols,
 )
-from server.services.reviewed_fee_schedule import ReviewedFeeScheduleRejected
 from server.services.trading_controls import TradingControlState
 from tests.ai_shadow_strategy_fixtures import seed_ai_shadow_canonical_sources
 

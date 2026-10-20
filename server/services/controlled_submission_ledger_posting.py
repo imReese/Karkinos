@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 from account_truth.broker_evidence import BrokerEvidenceRepository
 from server.account_truth_gate import broker_events_for_import_run
+from server.services.account.valuation_snapshot import build_current_valuation_snapshot
 from server.services.controlled_submission_ledger_posting_support import (
     aware_utc as _aware_utc,
 )
@@ -38,7 +39,6 @@ from server.services.controlled_submission_ledger_posting_support import (
     safety_flags as _safety_flags,
 )
 from server.services.operator_approval import resolve_operator_approval_with_proof
-from server.services.valuation_snapshot import build_current_valuation_snapshot
 
 CONTROLLED_SUBMISSION_LEDGER_POSTING_SCHEMA_VERSION = (
     "karkinos.controlled_submission_ledger_posting.v1"

@@ -33,7 +33,7 @@ from account_truth.manual_review import (
     ManualReviewReadRejected,
     ManualReviewRepository,
 )
-from server.services.reviewed_fee_schedule import (
+from server.services.account.reviewed_fee_schedule import (
     ReviewedFeeScheduleReadRejected,
     ReviewedFeeScheduleRejected,
     ReviewedFeeScheduleReviewRepository,

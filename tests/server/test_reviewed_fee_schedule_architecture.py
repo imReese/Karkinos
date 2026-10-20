@@ -7,19 +7,19 @@ from pathlib import Path
 
 import pytest
 
-from server.services.reviewed_fee_schedule import (
+from server.services.account.reviewed_fee_schedule import (
     ReviewedFeeScheduleResolution,
     ReviewedFeeScheduleReviewRepository,
 )
-from server.services.reviewed_fee_schedule_commission import (
+from server.services.account.reviewed_fee_schedule_commission import (
     ReviewedFeeScheduleResolution as CanonicalResolution,
 )
-from server.services.reviewed_fee_schedule_repository import (
+from server.services.account.reviewed_fee_schedule_repository import (
     ReviewedFeeScheduleReviewRepository as CanonicalRepository,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SERVICE_ROOT = PROJECT_ROOT / "server/services"
+SERVICE_ROOT = PROJECT_ROOT / "server/services/account"
 DOMAIN_PATHS = {
     SERVICE_ROOT / "reviewed_fee_schedule.py",
     SERVICE_ROOT / "reviewed_fee_schedule_commission.py",

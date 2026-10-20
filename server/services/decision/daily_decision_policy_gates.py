@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from server.services.account.valuation_snapshot import is_asset_class_valuation_healthy
 from server.services.decision.daily_decision_evidence_contracts import (
     DAILY_CANDIDATE_FINANCIAL_PREFLIGHT_SCHEMA_VERSION,
     DAILY_CANDIDATE_MAX_QUOTE_AGE_SECONDS,
@@ -38,7 +39,6 @@ from server.services.decision.daily_decision_preflight_operator import (
     build_preflight_operator_step,
     safe_preflight_blocker,
 )
-from server.services.valuation_snapshot import is_asset_class_valuation_healthy
 
 _ACCOUNT_ACTION_READ_ONLY_WINDOW_BLOCKERS = {
     "decision_generated_outside_reviewed_window",

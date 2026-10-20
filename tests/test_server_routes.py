@@ -2289,7 +2289,9 @@ def test_market_quote_refresh_without_symbols_includes_default_indices(
 def test_market_quote_refresh_records_successful_fetch_run(monkeypatch, tmp_path):
     from server.db import AppDatabase
     from server.routes import market as market_routes
-    from server.services.valuation_snapshot import build_current_valuation_snapshot
+    from server.services.account.valuation_snapshot import (
+        build_current_valuation_snapshot,
+    )
 
     router = market_routes.create_router()
     refresh_route = next(

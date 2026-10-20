@@ -28,7 +28,7 @@ from server.projections.service import (
     build_equity_series_from_entries,
     build_portfolio_projection,
 )
-from server.services.account_state import build_account_state_projection
+from server.services.account.account_state import build_account_state_projection
 from server.services.risk_engine import build_risk_summary
 from server.services.risk_workspace import build_risk_workspace
 

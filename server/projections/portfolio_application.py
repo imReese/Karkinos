@@ -73,16 +73,16 @@ from server.projections.portfolio_snapshot_projection import (
 from server.projections.portfolio_snapshot_projection import (
     build_portfolio_snapshot_sync as _build_portfolio_snapshot_sync,
 )
-from server.services.account_state import build_account_state_projection
+from server.services.account.account_state import build_account_state_projection
+from server.services.account.valuation_snapshot import (
+    valuation_identity_fields,
+)
 from server.services.asset_metadata import resolve_asset_metadata
 from server.services.market_hours import get_shanghai_now
 from server.services.position_presence import (
     classify_position_presence,
 )
 from server.services.risk_engine import build_risk_summary
-from server.services.valuation_snapshot import (
-    valuation_identity_fields,
-)
 
 
 async def build_portfolio_snapshot(

@@ -30,7 +30,9 @@ NOW = "2026-10-15T10:00:00+00:00"
 
 
 def _grant(**patch):
-    from server.services.account_board_permissions import freeze_entry_board_policy
+    from server.services.account.account_board_permissions import (
+        freeze_entry_board_policy,
+    )
 
     statistical = {
         "method": "paired_moving_block_bootstrap.v1",
@@ -412,7 +414,7 @@ def test_revoked_grant_excludes_only_policy_source_and_projects_validated_source
 def test_owner_preview_binds_current_scope_and_budget_before_enabling(
     book, monkeypatch
 ):
-    from server.services.reviewed_fee_schedule_policy import (
+    from server.services.account.reviewed_fee_schedule_policy import (
         NOTIONAL_ENVELOPE_SCHEMA_VERSION,
         fingerprint_payload,
     )
@@ -443,7 +445,9 @@ def test_owner_preview_binds_current_scope_and_budget_before_enabling(
             },
         }
 
-    from server.services.valuation_snapshot import build_current_valuation_snapshot
+    from server.services.account.valuation_snapshot import (
+        build_current_valuation_snapshot,
+    )
 
     db.insert_ledger_entry_sync(
         entry_type="cash_deposit",
@@ -455,18 +459,18 @@ def test_owner_preview_binds_current_scope_and_budget_before_enabling(
         db, now=datetime.fromisoformat(NOW)
     )
     monkeypatch.setattr(
-        "server.services.valuation_snapshot.build_current_valuation_snapshot",
+        "server.services.account.valuation_snapshot.build_current_valuation_snapshot",
         lambda db, **kwargs: real_valuation,
     )
     monkeypatch.setattr(
-        "server.services.reviewed_fee_schedule.build_reviewed_fee_schedule_review_status",
+        "server.services.account.reviewed_fee_schedule.build_reviewed_fee_schedule_review_status",
         lambda state: review_status(),
     )
     service = RecommendationPublicationService(
         db, store, now=lambda: datetime.fromisoformat(NOW), state=object()
     )
     monkeypatch.setattr(
-        "server.services.reviewed_fee_schedule.build_reviewed_fee_schedule_review_status",
+        "server.services.account.reviewed_fee_schedule.build_reviewed_fee_schedule_review_status",
         lambda state: review_status(end="2026-12-31"),
     )
     uncovered = service.preview({})
@@ -475,7 +479,7 @@ def test_owner_preview_binds_current_scope_and_budget_before_enabling(
         "publication_preview_reviewed_fee_checkpoint_not_covered"
     ]
     monkeypatch.setattr(
-        "server.services.reviewed_fee_schedule.build_reviewed_fee_schedule_review_status",
+        "server.services.account.reviewed_fee_schedule.build_reviewed_fee_schedule_review_status",
         lambda state: review_status(),
     )
     preview = service.preview({"max_final_tests": 10})
@@ -561,7 +565,7 @@ def test_owner_preview_binds_current_scope_and_budget_before_enabling(
     assert Decimal(saved["policy"]["max_initial_cash"]) == Decimal("50000")
     assert saved["policy"]["statistical_policy"] == proposed["statistical_policy"]
     monkeypatch.setattr(
-        "server.services.reviewed_fee_schedule.build_reviewed_fee_schedule_review_status",
+        "server.services.account.reviewed_fee_schedule.build_reviewed_fee_schedule_review_status",
         lambda state: review_status("10000"),
     )
     bounded = service.preview({})
@@ -577,11 +581,13 @@ def test_owner_preview_binds_current_scope_and_budget_before_enabling(
 def board_preview(book, monkeypatch):
     """Real valuation/policies; the reviewed-fee read boundary is sanitized."""
     from server.config import ServerConfig
-    from server.services.reviewed_fee_schedule_policy import (
+    from server.services.account.reviewed_fee_schedule_policy import (
         NOTIONAL_ENVELOPE_SCHEMA_VERSION,
         fingerprint_payload,
     )
-    from server.services.valuation_snapshot import build_current_valuation_snapshot
+    from server.services.account.valuation_snapshot import (
+        build_current_valuation_snapshot,
+    )
 
     db, store = book
     db.insert_ledger_entry_sync(
@@ -598,11 +604,11 @@ def board_preview(book, monkeypatch):
     }
     envelope["evidence_fingerprint"] = fingerprint_payload(envelope)
     monkeypatch.setattr(
-        "server.services.valuation_snapshot.build_current_valuation_snapshot",
+        "server.services.account.valuation_snapshot.build_current_valuation_snapshot",
         lambda _db, **_: valuation,
     )
     monkeypatch.setattr(
-        "server.services.reviewed_fee_schedule.build_reviewed_fee_schedule_review_status",
+        "server.services.account.reviewed_fee_schedule.build_reviewed_fee_schedule_review_status",
         lambda _: {
             "status": "active",
             "review": {
@@ -690,7 +696,9 @@ def test_sim_mask_revalidates_current_permissions_before_publication_grant_write
     board_preview, permissions
 ):
     from server.config import ServerConfig
-    from server.services.account_board_permissions import freeze_entry_board_policy
+    from server.services.account.account_board_permissions import (
+        freeze_entry_board_policy,
+    )
     from tests.server.test_account_board_permissions import _review
 
     db, store, service, state = board_preview
@@ -762,7 +770,9 @@ def test_publication_renewal_keeps_own_frozen_mask_without_enabling_simulation(
 
 def test_preview_permission_clock_uses_shanghai_day(board_preview):
     from server.config import ServerConfig
-    from server.services.account_board_permissions import freeze_entry_board_policy
+    from server.services.account.account_board_permissions import (
+        freeze_entry_board_policy,
+    )
     from server.services.decision.recommendation_publication import (
         _preview_entry_board_policy,
     )
@@ -907,7 +917,7 @@ def test_readiness_requires_verified_scope_capital_and_grant_bound_final_budget(
 
 
 def test_portfolio_equity_replays_real_frozen_ledger_and_rejects_drift(book):
-    from server.services.valuation_snapshot import (
+    from server.services.account.valuation_snapshot import (
         build_current_valuation_snapshot,
         portfolio_equity_from_valuation,
     )

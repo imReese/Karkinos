@@ -9,10 +9,10 @@ from server.models import (
     AccountStrategyAttributionSummary,
     AccountStrategyContributionReport,
 )
-from server.services.account_strategy_assignment import (
+from server.services.account.account_strategy_assignment import (
     ACCOUNT_STRATEGY_ASSIGNMENT_LIMITATION,
 )
-from server.services.account_strategy_evidence import linked_strategy_evidence
+from server.services.account.account_strategy_evidence import linked_strategy_evidence
 from server.services.strategy_contribution import build_strategy_contribution_report
 
 _PNL_PENDING_LIMITATION = (

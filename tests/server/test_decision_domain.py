@@ -29,7 +29,7 @@ unexpected = {
 }.intersection(sys.modules)
 assert not unexpected, sorted(unexpected)
 
-from server.services import account_paper_shadow
+from server.services.account import account_paper_shadow
 
 plan = account_paper_shadow.decision_plan.build_daily_trading_plan(
     decision_payload={"decision_date": "2026-09-01"},

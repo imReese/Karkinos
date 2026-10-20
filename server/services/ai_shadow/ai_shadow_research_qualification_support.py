@@ -22,11 +22,11 @@ from server.contracts.ai_shadow_research_qualification import (
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.strategy_research import StrategyResearchSelection
 from server.projections.daily_strategy_artifacts import ranking_metrics
+from server.services.account.valuation_snapshot import valuation_snapshot_from_row
 from server.services.ai_shadow.ai_shadow_research_baseline import (
     AiShadowResearchBaselineMixin,
 )
 from server.services.market_hours import get_shanghai_now
-from server.services.valuation_snapshot import valuation_snapshot_from_row
 
 _FINGERPRINT = re.compile(r"^(?:sha256:)?[a-f0-9]{64}$")
 _FAILURE_CODE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -115,7 +115,7 @@ def qualification_backtest_values(
 
 
 def require_complete_valuation(value: Any, db: Any) -> dict[str, Any]:
-    from server.services.valuation_snapshot import (
+    from server.services.account.valuation_snapshot import (
         require_valuation_recovery_clear,
     )
 

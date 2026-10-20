@@ -20,7 +20,9 @@ from execution.commission import (
 from execution.slippage import PercentSlippage
 from server.contracts.http.strategy_models import BacktestCostAssumptions
 from server.contracts.reviewed_fee_schedule import ReviewedFeeScheduleRejected
-from server.services.reviewed_fee_schedule import resolve_frozen_deployment_fee_schedule
+from server.services.account.reviewed_fee_schedule import (
+    resolve_frozen_deployment_fee_schedule,
+)
 
 
 def quote_formula_purchase(

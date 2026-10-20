@@ -31,7 +31,7 @@ def create_router() -> APIRouter:
     @router.post("/paper-shadow/run")
     async def run_paper_shadow_daily() -> dict[str, Any]:
         from server.dependencies import get_app_state
-        from server.services.account_paper_shadow import (
+        from server.services.account.account_paper_shadow import (
             orchestrate_account_paper_shadow,
         )
 

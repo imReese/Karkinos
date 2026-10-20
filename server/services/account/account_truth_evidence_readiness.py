@@ -9,43 +9,43 @@ from server.account_truth_gate import (
     build_latest_account_truth_promotion_evidence,
     build_latest_account_truth_score_payload,
 )
-from server.services.account_truth_evidence_readiness_support import (
+from server.services.account.account_truth_evidence_readiness_support import (
     ACCOUNT_TRUTH_EVIDENCE_SCOPE_SCHEMA_VERSION,
 )
-from server.services.account_truth_evidence_readiness_support import (
+from server.services.account.account_truth_evidence_readiness_support import (
     db_path_for_state as _db_path_for_state,
 )
-from server.services.account_truth_evidence_readiness_support import (
+from server.services.account.account_truth_evidence_readiness_support import (
     fingerprint as _fingerprint,
 )
-from server.services.account_truth_evidence_readiness_support import (
+from server.services.account.account_truth_evidence_readiness_support import (
     freshness_item as _freshness_item,
 )
-from server.services.account_truth_evidence_readiness_support import (
+from server.services.account.account_truth_evidence_readiness_support import (
     item_from_score_component as _item_from_score_component,
 )
-from server.services.account_truth_evidence_readiness_support import (
+from server.services.account.account_truth_evidence_readiness_support import (
     legacy_source_resolution_projection as _legacy_source_resolution_projection,
 )
-from server.services.account_truth_evidence_readiness_support import (
+from server.services.account.account_truth_evidence_readiness_support import (
     missing_evidence_scope as _missing_evidence_scope,
 )
-from server.services.account_truth_evidence_readiness_support import (
+from server.services.account.account_truth_evidence_readiness_support import (
     readiness_item as _item,
 )
-from server.services.account_truth_evidence_readiness_support import (
+from server.services.account.account_truth_evidence_readiness_support import (
     safe_nonnegative_int as _safe_nonnegative_int,
 )
-from server.services.account_truth_evidence_readiness_support import (
+from server.services.account.account_truth_evidence_readiness_support import (
     unique_strings as _unique_strings,
 )
-from server.services.account_truth_evidence_scope import (
+from server.services.account.account_truth_evidence_scope import (
     apply_account_truth_evidence_scope_review,
     build_account_truth_evidence_scope,
     nonreviewable_account_truth_evidence_scope_blockers,
     project_account_truth_evidence_scope,
 )
-from server.services.citic_source_follow_up import build_citic_source_follow_up
+from server.services.account.citic.follow_up import build_citic_source_follow_up
 
 ACCOUNT_TRUTH_EVIDENCE_READINESS_SCHEMA_VERSION = (
     "karkinos.account_truth.evidence_readiness.v2"

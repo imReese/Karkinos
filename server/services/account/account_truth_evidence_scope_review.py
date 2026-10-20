@@ -14,7 +14,7 @@ from server.account_truth_gate import (
     broker_events_for_import_run,
     build_latest_account_truth_score_payload,
 )
-from server.services.account_truth_evidence_readiness import (
+from server.services.account.account_truth_evidence_readiness import (
     build_account_truth_evidence_readiness,
     build_account_truth_evidence_scope,
     nonreviewable_account_truth_evidence_scope_blockers,

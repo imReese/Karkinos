@@ -7,7 +7,7 @@ import pytest
 
 from server.ai_runtime.contracts import content_fingerprint
 from server.db import AppDatabase
-from server.services.account_truth_replay import (
+from server.services.account.account_truth_replay import (
     account_truth_replay_evidence_fingerprint,
 )
 from server.services.decision import (
