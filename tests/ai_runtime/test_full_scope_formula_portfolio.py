@@ -111,7 +111,7 @@ def test_actual_quantity_holds_until_exit_then_reentry_across_three_consumers(pr
     from zoneinfo import ZoneInfo
 
     from backtest.paper_replay import PublishedPaperTarget, replay_paper_book
-    from server.services.promoted_strategy_universe_scan_support import (
+    from server.services.strategy_scan.promoted_strategy_universe_scan_support import (
         evaluate_strategy_signals,
     )
 

@@ -28,7 +28,7 @@ from data.store import DataStore
 from server.contracts.content_identity import content_fingerprint
 from server.routes import decision as decision_routes
 from server.services import daily_decision_report
-from server.services.daily_candidate_outcomes import (
+from server.services.strategy_scan.daily_candidate_outcomes import (
     evaluate_daily_candidate_outcomes,
 )
 

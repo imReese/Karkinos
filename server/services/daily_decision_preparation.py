@@ -6,9 +6,6 @@ from typing import Any
 
 from data.dataset.reader import daily_bar_dataset_read_scope
 from server.services.automation_control import AutomationControlService
-from server.services.daily_candidate_execution_closure import (
-    build_daily_candidate_execution_closure,
-)
 from server.services.daily_decision_evidence_contracts import (
     DAILY_CANDIDATE_PREPARATION_CHECK_SCHEMA_VERSION,
 )
@@ -22,6 +19,9 @@ from server.services.daily_decision_evidence_values import (
     shanghai_date,
 )
 from server.services.daily_decision_preflight_operator import build_preflight_gate
+from server.services.strategy_scan.daily_candidate_execution_closure import (
+    build_daily_candidate_execution_closure,
+)
 
 
 @daily_bar_dataset_read_scope(join_existing=True)
@@ -36,15 +36,15 @@ def build_daily_candidate_preparation_check(
         ACCOUNT_TRUTH_PROMOTION_EVIDENCE_SCHEMA_VERSION,
         build_latest_account_truth_promotion_evidence,
     )
-    from server.services.daily_candidate_execution_closure import (
-        verify_daily_candidate_execution_closure,
-    )
     from server.services.reviewed_fee_schedule import (
         build_reviewed_fee_schedule_review_status,
     )
     from server.services.strategy_promotion_pipeline import (
         StrategyPromotionPipeline,
         resolve_strategy_order_generation_gate,
+    )
+    from server.services.strategy_scan.daily_candidate_execution_closure import (
+        verify_daily_candidate_execution_closure,
     )
 
     automation_status = AutomationControlService(

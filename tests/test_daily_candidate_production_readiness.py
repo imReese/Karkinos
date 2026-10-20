@@ -9,7 +9,7 @@ from server.services.ai_shadow_research_automation import (
 from server.services.automation_cockpit import (
     AUTOMATION_COCKPIT_SCHEMA_VERSION,
 )
-from server.services.daily_candidate_production_readiness import (
+from server.services.strategy_scan.daily_candidate_production_readiness import (
     project_daily_candidate_production_readiness,
     unavailable_daily_candidate_production_readiness,
 )

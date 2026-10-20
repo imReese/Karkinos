@@ -13,7 +13,7 @@ from server.services.market_universe_truth import (
     MarketUniversePolicy,
     normalize_a_share_members,
 )
-from server.services.promoted_strategy_universe_scan_support import (
+from server.services.strategy_scan.promoted_strategy_universe_scan_support import (
     evaluate_promoted_strategy_market,
     promoted_history_start,
 )

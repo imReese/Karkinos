@@ -131,10 +131,10 @@ def create_router() -> APIRouter:
     async def get_daily_report(report_date: str) -> dict[str, Any]:
         """Read the exact frozen sources for one verified trading day."""
         from server.dependencies import get_app_state
-        from server.services.daily_candidate_outcomes import (
+        from server.services.daily_decision_report import get_daily_decision_report
+        from server.services.strategy_scan.daily_candidate_outcomes import (
             evaluate_daily_candidate_outcomes,
         )
-        from server.services.daily_decision_report import get_daily_decision_report
 
         try:
             db = get_app_state().db
@@ -284,7 +284,7 @@ def _current_account_action_evidence(
     if promoted_scan.get("verified") is True:
         try:
             from server.services.automation_control import AutomationControlService
-            from server.services.promoted_strategy_universe_scan import (
+            from server.services.strategy_scan.promoted_strategy_universe_scan import (
                 PromotedStrategyUniverseScanService,
             )
 

@@ -11,7 +11,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import ProxyHandler, Request, build_opener
 
-from server.services.daily_candidate_production_readiness import (
+from server.services.strategy_scan.daily_candidate_production_readiness import (
     project_daily_candidate_production_readiness,
     unavailable_daily_candidate_production_readiness,
 )

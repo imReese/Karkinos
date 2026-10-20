@@ -572,12 +572,12 @@ def test_promoted_scan_cache_reopens_current_inputs_before_reuse(monkeypatch) ->
             self.plan_reader = plan_reader
 
     monkeypatch.setattr(
-        "server.services.promoted_strategy_universe_scan."
+        "server.services.strategy_scan.promoted_strategy_universe_scan."
         "PromotedStrategyUniverseScanService",
         Scanner,
     )
     monkeypatch.setattr(
-        "server.services.daily_candidate_quote_freeze.DailyCandidateQuoteFreezeService",
+        "server.services.strategy_scan.daily_candidate_quote_freeze.DailyCandidateQuoteFreezeService",
         QuoteFreezer,
     )
     state = type(
@@ -1722,14 +1722,14 @@ def test_daily_candidate_requires_each_intent_to_bind_current_quote(tmp_path) ->
 
 
 def test_is_sha256_accepts_raw_and_prefixed_fingerprints() -> None:
-    from server.services.daily_candidate_readiness_support import (
-        is_sha256 as is_sha256_support,
-    )
-    from server.services.daily_candidate_trial_values import (
-        is_sha256 as is_sha256_trial,
-    )
     from server.services.daily_decision_evidence_values import (
         is_sha256 as is_sha256_evidence,
+    )
+    from server.services.strategy_scan.daily_candidate_readiness_support import (
+        is_sha256 as is_sha256_support,
+    )
+    from server.services.strategy_scan.daily_candidate_trial_values import (
+        is_sha256 as is_sha256_trial,
     )
 
     funcs = [is_sha256_evidence, is_sha256_support, is_sha256_trial]

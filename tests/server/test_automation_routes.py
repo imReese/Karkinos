@@ -194,7 +194,7 @@ def test_automation_cockpit_route_projects_current_financial_preflight(
         reviewed_fees,
     )
     monkeypatch.setattr(
-        "server.services.daily_candidate_execution_closure."
+        "server.services.strategy_scan.daily_candidate_execution_closure."
         "build_daily_candidate_execution_closure",
         execution_closure,
     )

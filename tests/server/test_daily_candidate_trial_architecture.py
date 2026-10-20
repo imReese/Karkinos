@@ -4,15 +4,22 @@ import ast
 import inspect
 from pathlib import Path
 
-from server.services.daily_candidate_trial import DailyCandidateTrialService
+from server.services.strategy_scan.daily_candidate_trial import (
+    DailyCandidateTrialService,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SERVICE_PATH = PROJECT_ROOT / "server/services/daily_candidate_trial.py"
-EVALUATION_PATH = PROJECT_ROOT / "server/services/daily_candidate_trial_evaluation.py"
-TICKET_EVALUATION_PATH = (
-    PROJECT_ROOT / "server/services/daily_candidate_trial_ticket_evaluation.py"
+SERVICE_PATH = PROJECT_ROOT / "server/services/strategy_scan/daily_candidate_trial.py"
+EVALUATION_PATH = (
+    PROJECT_ROOT / "server/services/strategy_scan/daily_candidate_trial_evaluation.py"
 )
-VALUES_PATH = PROJECT_ROOT / "server/services/daily_candidate_trial_values.py"
+TICKET_EVALUATION_PATH = (
+    PROJECT_ROOT
+    / "server/services/strategy_scan/daily_candidate_trial_ticket_evaluation.py"
+)
+VALUES_PATH = (
+    PROJECT_ROOT / "server/services/strategy_scan/daily_candidate_trial_values.py"
+)
 
 
 def _tree(path: Path) -> ast.Module:
@@ -57,14 +64,25 @@ def test_daily_candidate_trial_modules_have_single_directional_dependencies() ->
     evaluation_imports = _imports(EVALUATION_PATH)
     ticket_imports = _imports(TICKET_EVALUATION_PATH)
 
-    assert "server.services.daily_candidate_trial_evaluation" in facade_imports
-    assert "server.services.daily_candidate_trial_values" in facade_imports
     assert (
-        "server.services.daily_candidate_trial_ticket_evaluation" in evaluation_imports
+        "server.services.strategy_scan.daily_candidate_trial_evaluation"
+        in facade_imports
     )
-    assert "server.services.daily_candidate_trial" not in evaluation_imports
-    assert "server.services.daily_candidate_trial" not in ticket_imports
-    assert "server.services.daily_candidate_trial_evaluation" not in ticket_imports
+    assert (
+        "server.services.strategy_scan.daily_candidate_trial_values" in facade_imports
+    )
+    assert (
+        "server.services.strategy_scan.daily_candidate_trial_ticket_evaluation"
+        in evaluation_imports
+    )
+    assert (
+        "server.services.strategy_scan.daily_candidate_trial" not in evaluation_imports
+    )
+    assert "server.services.strategy_scan.daily_candidate_trial" not in ticket_imports
+    assert (
+        "server.services.strategy_scan.daily_candidate_trial_evaluation"
+        not in ticket_imports
+    )
 
 
 def test_daily_candidate_trial_replay_layers_are_read_only_and_non_authorizing() -> (

@@ -9,9 +9,9 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 REVIEWED_MODULES = (
-    "server/services/promoted_strategy_universe_scan.py",
-    "server/services/promoted_strategy_universe_scan_persistence.py",
-    "server/services/promoted_strategy_universe_scan_support.py",
+    "server/services/strategy_scan/promoted_strategy_universe_scan.py",
+    "server/services/strategy_scan/promoted_strategy_universe_scan_persistence.py",
+    "server/services/strategy_scan/promoted_strategy_universe_scan_support.py",
     "server/services/broker_connector_soak_promotion.py",
     "server/services/broker_connector_soak_promotion_evidence.py",
     "server/services/broker_connector_soak_promotion_values.py",

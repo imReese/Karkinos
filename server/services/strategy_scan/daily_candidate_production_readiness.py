@@ -14,68 +14,78 @@ from server.services.automation_cockpit import (
     AUTOMATION_COCKPIT_SCHEMA_PREFIX,
     AUTOMATION_COCKPIT_SCHEMA_VERSION,
 )
-from server.services.daily_candidate_production_readiness_evidence import (
+from server.services.strategy_scan.daily_candidate_production_readiness_evidence import (
     CANONICAL_EVIDENCE_AUTHORITY as _CANONICAL_EVIDENCE_AUTHORITY,
 )
-from server.services.daily_candidate_production_readiness_evidence import (
+from server.services.strategy_scan.daily_candidate_production_readiness_evidence import (
     OPERATOR_EVIDENCE_CONTRACT_VERSION as _OPERATOR_EVIDENCE_CONTRACT_VERSION,
 )
-from server.services.daily_candidate_production_readiness_evidence import (
+from server.services.strategy_scan.daily_candidate_production_readiness_evidence import (
     execution_evidence_contract_blockers as _execution_evidence_contract_blockers,
 )
-from server.services.daily_candidate_production_readiness_evidence import (
+from server.services.strategy_scan.daily_candidate_production_readiness_evidence import (
     operator_checklist_contract_blockers as _operator_checklist_contract_blockers,
 )
-from server.services.daily_candidate_production_readiness_evidence import (
+from server.services.strategy_scan.daily_candidate_production_readiness_evidence import (
     project_execution_evidence as _project_execution_evidence,
 )
-from server.services.daily_candidate_production_readiness_evidence import (
+from server.services.strategy_scan.daily_candidate_production_readiness_evidence import (
     project_next_reviewed_window as _project_next_reviewed_window,
 )
-from server.services.daily_candidate_production_readiness_evidence import (
+from server.services.strategy_scan.daily_candidate_production_readiness_evidence import (
     project_operator_checklist as _project_operator_checklist,
 )
-from server.services.daily_candidate_production_readiness_evidence import (
+from server.services.strategy_scan.daily_candidate_production_readiness_evidence import (
     summarize_operator_blockers as _summarize_operator_blockers,
 )
-from server.services.daily_candidate_production_readiness_evidence import (
+from server.services.strategy_scan.daily_candidate_production_readiness_evidence import (
     unavailable_next_reviewed_window_projection as _unavailable_next_reviewed_window_projection,
 )
-from server.services.daily_candidate_readiness_support import (
+from server.services.strategy_scan.daily_candidate_readiness_support import (
     fingerprint as _fingerprint,
 )
-from server.services.daily_candidate_readiness_support import (
+from server.services.strategy_scan.daily_candidate_readiness_support import (
     is_nonnegative_int as _is_nonnegative_int,
 )
-from server.services.daily_candidate_readiness_support import (
+from server.services.strategy_scan.daily_candidate_readiness_support import (
     is_safe_code as _is_safe_code,
 )
-from server.services.daily_candidate_readiness_support import (
+from server.services.strategy_scan.daily_candidate_readiness_support import (
     is_safe_code_list as _is_safe_code_list,
 )
-from server.services.daily_candidate_readiness_support import is_sha256 as _is_sha256
-from server.services.daily_candidate_readiness_support import mapping as _mapping
-from server.services.daily_candidate_readiness_support import (
+from server.services.strategy_scan.daily_candidate_readiness_support import (
+    is_sha256 as _is_sha256,
+)
+from server.services.strategy_scan.daily_candidate_readiness_support import (
+    mapping as _mapping,
+)
+from server.services.strategy_scan.daily_candidate_readiness_support import (
     matches_fingerprint as _matches_fingerprint,
 )
-from server.services.daily_candidate_readiness_support import (
+from server.services.strategy_scan.daily_candidate_readiness_support import (
     non_authority_boundary_blockers as _non_authority_boundary_blockers,
 )
-from server.services.daily_candidate_readiness_support import (
+from server.services.strategy_scan.daily_candidate_readiness_support import (
     nonnegative_int as _nonnegative_int,
 )
-from server.services.daily_candidate_readiness_support import (
+from server.services.strategy_scan.daily_candidate_readiness_support import (
     research_policy_blockers as _research_policy_blockers,
 )
-from server.services.daily_candidate_readiness_support import safe_code as _safe_code
-from server.services.daily_candidate_readiness_support import (
+from server.services.strategy_scan.daily_candidate_readiness_support import (
+    safe_code as _safe_code,
+)
+from server.services.strategy_scan.daily_candidate_readiness_support import (
     safe_fingerprint as _safe_fingerprint,
 )
-from server.services.daily_candidate_readiness_support import (
+from server.services.strategy_scan.daily_candidate_readiness_support import (
     schema_blockers as _schema_blockers,
 )
-from server.services.daily_candidate_readiness_support import strings as _strings
-from server.services.daily_candidate_readiness_support import unique as _unique
+from server.services.strategy_scan.daily_candidate_readiness_support import (
+    strings as _strings,
+)
+from server.services.strategy_scan.daily_candidate_readiness_support import (
+    unique as _unique,
+)
 
 DAILY_CANDIDATE_PRODUCTION_READINESS_SCHEMA_VERSION = (
     "karkinos.daily_candidate_production_readiness.v2"

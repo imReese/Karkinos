@@ -26,10 +26,10 @@ from server.services.market_universe_truth import (
     MarketUniversePolicy,
     normalize_a_share_members,
 )
-from server.services.promoted_strategy_universe_scan import (
+from server.services.strategy_scan.promoted_strategy_universe_scan import (
     PromotedStrategyUniverseScanService,
 )
-from server.services.promoted_strategy_universe_scan_support import (
+from server.services.strategy_scan.promoted_strategy_universe_scan_support import (
     account_eligible_signals,
 )
 from server.services.valuation_snapshot import build_current_valuation_snapshot
@@ -1495,7 +1495,7 @@ def test_promoted_strategy_scan_succeeds_with_heterogeneous_providers(
 
 
 def test_resolve_daily_bar_receipt_provider_resolution(tmp_path) -> None:
-    from server.services.promoted_strategy_universe_scan_support import (
+    from server.services.strategy_scan.promoted_strategy_universe_scan_support import (
         resolve_daily_bar_receipt_provider,
     )
 
@@ -1563,7 +1563,7 @@ def test_resolve_daily_bar_receipt_provider_resolution(tmp_path) -> None:
 
 
 def test_resolve_daily_bar_receipts_heterogeneous_window(tmp_path) -> None:
-    from server.services.promoted_strategy_universe_scan_support import (
+    from server.services.strategy_scan.promoted_strategy_universe_scan_support import (
         resolve_daily_bar_receipts,
     )
 

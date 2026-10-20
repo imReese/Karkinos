@@ -5,7 +5,7 @@ from datetime import datetime
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
-from server.services.daily_candidate_quote_freeze import (
+from server.services.strategy_scan.daily_candidate_quote_freeze import (
     DailyCandidateQuoteFreezeService,
 )
 

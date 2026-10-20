@@ -440,11 +440,11 @@ def _current_action_manual_ticket_gate(
         paper_shadow_evidence,
     )
     from server.services.decision_projection import daily_candidate_generation_status
-    from server.services.promoted_strategy_universe_scan_support import (
-        board_buy_blocker,
-    )
     from server.services.strategy_promotion_pipeline import (
         resolve_strategy_order_generation_gate,
+    )
+    from server.services.strategy_scan.promoted_strategy_universe_scan_support import (
+        board_buy_blocker,
     )
 
     db = getattr(state, "db", None)

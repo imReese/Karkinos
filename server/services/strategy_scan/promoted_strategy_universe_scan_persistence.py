@@ -8,11 +8,11 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from server.persistence.signal_journal import SignalJournalRepository
-from server.services.promoted_strategy_universe_scan_support import (
+from server.services.recommendation_flow import build_recommendation_cycle
+from server.services.strategy_scan.promoted_strategy_universe_scan_support import (
     DECISION_WINDOW_START,
     SHANGHAI_TIME_ZONE,
 )
-from server.services.recommendation_flow import build_recommendation_cycle
 
 _WRITE_LOCK = threading.Lock()
 

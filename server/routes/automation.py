@@ -84,18 +84,18 @@ def create_router() -> APIRouter:
         from server.services.current_per_order_dossier_factory import (
             build_current_per_order_dossier_service,
         )
-        from server.services.daily_candidate_execution_closure import (
-            build_daily_candidate_execution_closure,
-        )
-        from server.services.daily_candidate_runtime_status import (
-            build_daily_candidate_runtime_status,
-        )
         from server.services.daily_decision_evidence_automation import (
             project_daily_candidate_financial_preflight,
             unavailable_daily_candidate_financial_preflight,
         )
         from server.services.reviewed_fee_schedule import (
             build_reviewed_fee_schedule_review_status,
+        )
+        from server.services.strategy_scan.daily_candidate_execution_closure import (
+            build_daily_candidate_execution_closure,
+        )
+        from server.services.strategy_scan.daily_candidate_runtime_status import (
+            build_daily_candidate_runtime_status,
         )
 
         state = get_app_state()
@@ -220,7 +220,9 @@ def create_router() -> APIRouter:
     @r.get("/daily-candidate/trial")
     async def get_daily_candidate_trial() -> dict[str, Any]:
         from server.dependencies import get_app_state
-        from server.services.daily_candidate_trial import DailyCandidateTrialService
+        from server.services.strategy_scan.daily_candidate_trial import (
+            DailyCandidateTrialService,
+        )
 
         return DailyCandidateTrialService(db=get_app_state().db).get_status()
 
@@ -229,7 +231,7 @@ def create_router() -> APIRouter:
         request: DailyCandidateTrialReviewRequest,
     ) -> dict[str, Any]:
         from server.dependencies import get_app_state
-        from server.services.daily_candidate_trial import (
+        from server.services.strategy_scan.daily_candidate_trial import (
             DailyCandidateTrialReviewRejected,
             DailyCandidateTrialService,
         )
@@ -244,7 +246,9 @@ def create_router() -> APIRouter:
     @r.get("/daily-candidate/trial/reviews")
     async def list_daily_candidate_trial_reviews() -> list[dict[str, Any]]:
         from server.dependencies import get_app_state
-        from server.services.daily_candidate_trial import DailyCandidateTrialService
+        from server.services.strategy_scan.daily_candidate_trial import (
+            DailyCandidateTrialService,
+        )
 
         return DailyCandidateTrialService(db=get_app_state().db).list_reviews()
 

@@ -12,7 +12,7 @@ from server.services.market_universe_truth import (
     MarketUniversePolicy,
     require_complete_market_universe_snapshot,
 )
-from server.services.promoted_strategy_universe_scan_support import (
+from server.services.strategy_scan.promoted_strategy_universe_scan_support import (
     account_eligible_signals,
     active_action_blockers,
     aggregate_ranked_signals,

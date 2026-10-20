@@ -5,22 +5,30 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
-from server.services.daily_candidate_readiness_support import (
+from server.services.strategy_scan.daily_candidate_readiness_support import (
     is_nonnegative_int as _is_nonnegative_int,
 )
-from server.services.daily_candidate_readiness_support import (
+from server.services.strategy_scan.daily_candidate_readiness_support import (
     is_safe_code as _is_safe_code,
 )
-from server.services.daily_candidate_readiness_support import (
+from server.services.strategy_scan.daily_candidate_readiness_support import (
     is_safe_code_list as _is_safe_code_list,
 )
-from server.services.daily_candidate_readiness_support import is_sha256 as _is_sha256
-from server.services.daily_candidate_readiness_support import mapping as _mapping
-from server.services.daily_candidate_readiness_support import (
+from server.services.strategy_scan.daily_candidate_readiness_support import (
+    is_sha256 as _is_sha256,
+)
+from server.services.strategy_scan.daily_candidate_readiness_support import (
+    mapping as _mapping,
+)
+from server.services.strategy_scan.daily_candidate_readiness_support import (
     matches_fingerprint as _matches_fingerprint,
 )
-from server.services.daily_candidate_readiness_support import safe_code as _safe_code
-from server.services.daily_candidate_readiness_support import strings as _strings
+from server.services.strategy_scan.daily_candidate_readiness_support import (
+    safe_code as _safe_code,
+)
+from server.services.strategy_scan.daily_candidate_readiness_support import (
+    strings as _strings,
+)
 
 OPERATOR_EVIDENCE_CONTRACT_VERSION = "karkinos.daily_candidate_operator_evidence.v1"
 CANONICAL_EVIDENCE_AUTHORITY = "canonical_persisted_evidence_only"

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from server.services.daily_candidate_runtime_status import (
+from server.services.strategy_scan.daily_candidate_runtime_status import (
     build_daily_candidate_runtime_status,
 )
 

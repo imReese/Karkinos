@@ -21,10 +21,14 @@ from server.services.ai_shadow_research_daily_artifacts import (
 )
 from server.services.market_universe_automation import verified_trading_dates
 from server.services.market_universe_truth import MarketUniversePolicy
-from server.services.promoted_strategy_universe_scan_persistence import (
+from server.services.strategy_promotion_pipeline import (
+    AI_SHADOW_STRATEGY_PREFIX,
+    resolve_strategy_order_generation_gate,
+)
+from server.services.strategy_scan.promoted_strategy_universe_scan_persistence import (
     persist_recommendation_tasks,
 )
-from server.services.promoted_strategy_universe_scan_support import (
+from server.services.strategy_scan.promoted_strategy_universe_scan_support import (
     SIGNAL_SELECTION_POLICY,
     account_eligible_signals,
     active_action_blockers,
@@ -46,13 +50,9 @@ from server.services.promoted_strategy_universe_scan_support import (
     resolve_daily_bar_receipts,
     truth_projection,
 )
-from server.services.promoted_strategy_universe_scan_validation import (
+from server.services.strategy_scan.promoted_strategy_universe_scan_validation import (
     current_scan_input_blockers,
     portfolio_stock_symbols,
-)
-from server.services.strategy_promotion_pipeline import (
-    AI_SHADOW_STRATEGY_PREFIX,
-    resolve_strategy_order_generation_gate,
 )
 from server.services.valuation_snapshot import is_asset_class_valuation_healthy
 

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from server.ai_runtime.contracts import content_fingerprint
 from server.db import AppDatabase
-from server.services.daily_candidate_execution_closure import (
+from server.services.execution_reconciliation import ExecutionReconciliationService
+from server.services.oms import OmsService
+from server.services.strategy_scan.daily_candidate_execution_closure import (
     build_daily_candidate_execution_closure,
     project_daily_candidate_execution_evidence_summary,
     verify_daily_candidate_execution_closure,
 )
-from server.services.execution_reconciliation import ExecutionReconciliationService
-from server.services.oms import OmsService
 
 
 def _db_and_oms(tmp_path) -> tuple[AppDatabase, OmsService]:

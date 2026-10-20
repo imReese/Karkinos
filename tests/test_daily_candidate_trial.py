@@ -6,19 +6,11 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-import server.services.daily_candidate_trial as daily_candidate_trial_module
+import server.services.strategy_scan.daily_candidate_trial as daily_candidate_trial_module
 from server.ai_runtime.contracts import content_fingerprint
 from server.db import AppDatabase
 from server.services.account_truth_replay import (
     account_truth_replay_evidence_fingerprint,
-)
-from server.services.daily_candidate_execution_closure import (
-    build_daily_candidate_execution_closure,
-)
-from server.services.daily_candidate_trial import (
-    DAILY_CANDIDATE_TRIAL_REVIEW_CONFIRMATION,
-    DailyCandidateTrialReviewRejected,
-    DailyCandidateTrialService,
 )
 from server.services.daily_decision_evidence_automation import (
     DAILY_CANDIDATE_INPUT_IDENTITY_SCHEMA_VERSION,
@@ -30,6 +22,14 @@ from server.services.daily_decision_evidence_automation import (
 )
 from server.services.execution_reconciliation import ExecutionReconciliationService
 from server.services.oms import OmsService
+from server.services.strategy_scan.daily_candidate_execution_closure import (
+    build_daily_candidate_execution_closure,
+)
+from server.services.strategy_scan.daily_candidate_trial import (
+    DAILY_CANDIDATE_TRIAL_REVIEW_CONFIRMATION,
+    DailyCandidateTrialReviewRejected,
+    DailyCandidateTrialService,
+)
 from tests.paper_shadow_fixtures import insert_paper_shadow_evidence
 
 STRATEGY_ADVANCEMENT_REF = "strategy_advancement:" + "a" * 64

@@ -7,7 +7,7 @@ import pytest
 
 from server.db import AppDatabase
 from server.persistence.signal_journal import SignalJournalRepository
-from server.services.promoted_strategy_universe_scan_persistence import (
+from server.services.strategy_scan.promoted_strategy_universe_scan_persistence import (
     persist_recommendation_tasks,
 )
 

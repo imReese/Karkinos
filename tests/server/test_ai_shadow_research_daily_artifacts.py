@@ -18,7 +18,7 @@ from server.services.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
     build_daily_strategy_selection,
 )
-from server.services.promoted_strategy_universe_scan import (
+from server.services.strategy_scan.promoted_strategy_universe_scan import (
     PromotedStrategyUniverseScanService,
 )
 from tests.ai_shadow_strategy_fixtures import seed_ai_shadow_canonical_sources

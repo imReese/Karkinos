@@ -46,10 +46,10 @@ def build_daily_decision_evidence_automation_service(
     service_type: Callable[..., Any],
 ) -> Any:
     """Bind explicit application adapters to the background evidence service."""
-    from server.services.daily_candidate_quote_freeze import (
+    from server.services.strategy_scan.daily_candidate_quote_freeze import (
         DailyCandidateQuoteFreezeService,
     )
-    from server.services.promoted_strategy_universe_scan import (
+    from server.services.strategy_scan.promoted_strategy_universe_scan import (
         PromotedStrategyUniverseScanService,
     )
 

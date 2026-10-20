@@ -7,9 +7,6 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from server.services.daily_candidate_execution_closure import (
-    build_daily_candidate_execution_closure,
-)
 from server.services.daily_decision_evidence_contracts import (
     DAILY_CANDIDATE_INPUT_IDENTITY_SCHEMA_VERSION,
     DAILY_DECISION_EVIDENCE_AUTOMATION_RUN_TYPE,
@@ -32,6 +29,9 @@ from server.services.daily_decision_evidence_values import (
     risk_summary as build_risk_summary,
 )
 from server.services.daily_decision_production_outcome import project_production_outcome
+from server.services.strategy_scan.daily_candidate_execution_closure import (
+    build_daily_candidate_execution_closure,
+)
 
 logger = logging.getLogger(__name__)
 
