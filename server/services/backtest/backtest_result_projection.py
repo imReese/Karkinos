@@ -1,5 +1,7 @@
 """Compatibility façade for canonical backtest-result projections."""
 
+from __future__ import annotations
+
 from server.projections.backtest_result import (
     backtest_evidence_from_payload,
     build_backtest_report_metrics_json,

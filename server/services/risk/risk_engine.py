@@ -1,3 +1,8 @@
+"""Compatibility facade for portfolio risk calculation engine.
+
+Re-exports from server.services.risk.engine.
+"""
+
 from __future__ import annotations
 
 from server.services.risk.engine import build_risk_summary
