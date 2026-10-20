@@ -12,12 +12,12 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from server.services import (
+from server.services.decision import (
     decision_application,
     decision_projection,
-    paper_shadow_run,
 )
 from server.services.decision import plan as decision_plan
+from server.services.paper_shadow import paper_shadow_run
 
 
 async def orchestrate_account_paper_shadow(

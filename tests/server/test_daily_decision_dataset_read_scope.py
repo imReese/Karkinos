@@ -31,8 +31,8 @@ def _compose_reader(
     scanner, state, portfolio, decision_day, monkeypatch, *, on_quote=None
 ):
     """Bind actual scanner/freezer instances and synthetic external quote I/O."""
-    from server.services import daily_candidate_quote_freeze as quotes
-    from server.services import promoted_strategy_universe_scan as scans
+    from server.services.strategy_scan import daily_candidate_quote_freeze as quotes
+    from server.services.strategy_scan import promoted_strategy_universe_scan as scans
 
     actual_freezer = quotes.DailyCandidateQuoteFreezeService
     monkeypatch.setattr(

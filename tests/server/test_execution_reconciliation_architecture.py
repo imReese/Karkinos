@@ -22,7 +22,7 @@ from server.services.controlled_execution.execution_reconciliation import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SERVICE_ROOT = PROJECT_ROOT / "server/services"
+SERVICE_ROOT = PROJECT_ROOT / "server/services/controlled_execution"
 CONTRACT = PROJECT_ROOT / "server/contracts/execution_reconciliation.py"
 SERVICE_PATHS = {
     SERVICE_ROOT / "execution_reconciliation.py",
@@ -52,7 +52,7 @@ def _imports(path: Path) -> set[str]:
 
 def _family_dependencies(path: Path) -> set[str]:
     return {
-        imported.removeprefix("server.services.")
+        imported.removeprefix("server.services.controlled_execution.")
         for imported in _imports(path)
         if imported.startswith(
             "server.services.controlled_execution.execution_reconciliation"
