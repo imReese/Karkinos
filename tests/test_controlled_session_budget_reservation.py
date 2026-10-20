@@ -8,7 +8,7 @@ from threading import Barrier
 import pytest
 
 from server.db import AppDatabase
-from server.services.controlled_session_budget_reservation import (
+from server.services.controlled_execution.controlled_session_budget_reservation import (
     CONTROLLED_SESSION_BUDGET_RESERVATION_ACKNOWLEDGEMENT,
     CONTROLLED_SESSION_BUDGET_RESERVATION_REJECTION_EVENT_TYPE,
     ControlledSessionBudgetReservationRejected,

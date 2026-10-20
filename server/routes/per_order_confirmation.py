@@ -10,11 +10,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from server.composition.controlled_execution_services import (
     build_per_order_confirmation_service,
 )
-from server.services.current_per_order_dossier import CurrentPerOrderDossierService
-from server.services.current_per_order_dossier_factory import (
+from server.services.controlled_execution.current_per_order_dossier import (
+    CurrentPerOrderDossierService,
+)
+from server.services.controlled_execution.current_per_order_dossier_factory import (
     build_current_per_order_dossier_service,
 )
-from server.services.per_order_confirmation import (
+from server.services.controlled_execution.per_order_confirmation import (
     PER_ORDER_CONFIRMATION_ACKNOWLEDGEMENT,
     PerOrderConfirmationRejected,
     PerOrderConfirmationService,

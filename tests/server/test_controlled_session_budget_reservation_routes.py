@@ -9,7 +9,7 @@ import server.composition.controlled_execution_services as controlled_services
 import server.routes.controlled_session_budget_reservation as route_module
 from server.app import create_app
 from server.routes.controlled_session_budget_reservation import create_router
-from server.services.controlled_session_budget_reservation import (
+from server.services.controlled_execution.controlled_session_budget_reservation import (
     CONTROLLED_SESSION_BUDGET_RESERVATION_ACKNOWLEDGEMENT,
     ControlledSessionBudgetReservationRejected,
 )

@@ -8,18 +8,18 @@ from pathlib import Path
 
 import pytest
 
-import server.services.broker_gateway as gateway_module
-from server.services.broker_gateway import BrokerGatewayService
+import server.services.controlled_execution.broker_gateway as gateway_module
+from server.services.controlled_execution.broker_gateway import BrokerGatewayService
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FAMILY = (
     "server/contracts/broker_gateway.py",
-    "server/services/broker_gateway.py",
-    "server/services/broker_gateway_execution.py",
-    "server/services/broker_gateway_gates.py",
-    "server/services/broker_gateway_manual_tickets.py",
-    "server/services/broker_gateway_queries.py",
-    "server/services/broker_gateway_values.py",
+    "server/services/controlled_execution/broker_gateway.py",
+    "server/services/controlled_execution/broker_gateway_execution.py",
+    "server/services/controlled_execution/broker_gateway_gates.py",
+    "server/services/controlled_execution/broker_gateway_manual_tickets.py",
+    "server/services/controlled_execution/broker_gateway_queries.py",
+    "server/services/controlled_execution/broker_gateway_values.py",
 )
 FAMILY_MODULES = {path.removesuffix(".py").replace("/", ".") for path in FAMILY}
 PUBLIC_SIGNATURES = {
@@ -147,7 +147,10 @@ def test_broker_gateway_family_has_zero_size_debt() -> None:
 
 
 def test_facade_preserves_public_identity_signatures_and_compatibility_names() -> None:
-    assert BrokerGatewayService.__module__ == "server.services.broker_gateway"
+    assert (
+        BrokerGatewayService.__module__
+        == "server.services.controlled_execution.broker_gateway"
+    )
     assert gateway_module.BROKER_GATEWAY_SCHEMA_VERSION == (
         "karkinos.broker_gateway.v1"
     )
@@ -188,11 +191,11 @@ def test_family_dependency_graph_is_one_way_acyclic_and_uses_public_symbols() ->
 
     assert private_imports == []
     assert forbidden_runtime_dependencies == []
-    assert graph["server.services.broker_gateway_values"] == set()
+    assert graph["server.services.controlled_execution.broker_gateway_values"] == set()
     assert all(
-        "server.services.broker_gateway" not in dependencies
+        "server.services.controlled_execution.broker_gateway" not in dependencies
         for module, dependencies in graph.items()
-        if module != "server.services.broker_gateway"
+        if module != "server.services.controlled_execution.broker_gateway"
     )
 
     visiting: set[str] = set()
@@ -227,7 +230,9 @@ def test_values_module_is_pure_and_facade_owns_broker_evidence_composition() -> 
             for dependency, _, _ in _imports(relative_path)
         )
     }
-    assert evidence_readers == {"server/services/broker_gateway.py"}
+    assert evidence_readers == {
+        "server/services/controlled_execution/broker_gateway.py"
+    }
 
 
 def test_facade_retains_runtime_composition_monkeypatch_seams(monkeypatch) -> None:

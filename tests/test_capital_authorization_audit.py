@@ -4,12 +4,12 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from server.db import AppDatabase
-from server.services.capital_authorization import (
+from server.services.controlled_execution.capital_authorization import (
     CapitalAuthorizationContext,
     CapitalAuthorizationLimits,
     CapitalAuthorizationPolicy,
 )
-from server.services.capital_authorization_audit import (
+from server.services.controlled_execution.capital_authorization_audit import (
     CAPITAL_AUTHORIZATION_EVENT_TYPE,
     CapitalAuthorizationAuditService,
 )

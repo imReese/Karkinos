@@ -25,14 +25,18 @@ from account_truth.broker_execution_edge_conformance_fixtures import (
 )
 from server.config import TrustedOperatorIdentityConfig
 from server.db import AppDatabase
-from server.services.broker_adapter_readiness import build_broker_adapter_readiness
-from server.services.controlled_broker_write_release import (
+from server.services.controlled_execution.broker_adapter_readiness import (
+    build_broker_adapter_readiness,
+)
+from server.services.controlled_execution.controlled_broker_write_release import (
     CONTROLLED_BROKER_WRITE_RELEASE_ACKNOWLEDGEMENT,
     CONTROLLED_BROKER_WRITE_RELEASE_REVOCATION_ACKNOWLEDGEMENT,
     ControlledBrokerWriteReleaseRejected,
     ControlledBrokerWriteReleaseService,
 )
-from server.services.operator_approval import OperatorApprovalService
+from server.services.controlled_execution.operator_approval import (
+    OperatorApprovalService,
+)
 from tests.test_per_order_confirmation import _record_observing_adapter_release
 
 NOW = datetime(2026, 7, 18, 2, 15, tzinfo=timezone.utc)
@@ -508,7 +512,7 @@ def test_newer_exact_scope_readonly_release_invalidates_old_write_release(
         "manifest_fingerprint": "7" * 64,
     }
     monkeypatch.setattr(
-        "server.services.controlled_broker_write_release.build_broker_adapter_readiness",
+        "server.services.controlled_execution.controlled_broker_write_release.build_broker_adapter_readiness",
         lambda _: {**readiness, "latest_release": newer, "releases": [newer, old]},
     )
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from server.db import AppDatabase
-from server.services.oms import OmsService
+from server.services.controlled_execution.oms import OmsService
 
 
 def _service(tmp_path) -> OmsService:

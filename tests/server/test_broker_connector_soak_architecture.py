@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 
 from server.projections import broker_connector_soak as projections
-from server.services import broker_connector_soak as service
+from server.services.controlled_execution import broker_connector_soak as service
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SERVICE = PROJECT_ROOT / "server/services/broker_connector_soak.py"
+SERVICE = PROJECT_ROOT / "server/services/controlled_execution/broker_connector_soak.py"
 PROJECTIONS = PROJECT_ROOT / "server/projections/broker_connector_soak.py"
 PERSISTENCE = PROJECT_ROOT / "server/persistence/broker_connector_soak.py"
 PRODUCTION_FILES = (SERVICE, PROJECTIONS, PERSISTENCE)

@@ -24,7 +24,10 @@ from server.contracts.paper_shadow import (
     PaperShadowOrderFact,
     PaperShadowRunPersistence,
 )
-from server.services.oms import OMS_SCHEMA_VERSION, PAPER_SHADOW_INITIAL_STATUS
+from server.services.controlled_execution.oms import (
+    OMS_SCHEMA_VERSION,
+    PAPER_SHADOW_INITIAL_STATUS,
+)
 from server.services.paper_shadow_contracts import (
     PAPER_SHADOW_EXECUTION_MODE,
     PAPER_SHADOW_RUN_SCHEMA_VERSION,

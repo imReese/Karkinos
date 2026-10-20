@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from server.composition.controlled_execution_services import (
     build_controlled_session_budget_reservation_service,
 )
-from server.services.controlled_session_budget_reservation import (
+from server.services.controlled_execution.controlled_session_budget_reservation import (
     CONTROLLED_SESSION_BUDGET_RESERVATION_ACKNOWLEDGEMENT,
     ControlledSessionBudgetReservationRejected,
     ControlledSessionBudgetReservationService,

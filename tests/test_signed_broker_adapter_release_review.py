@@ -25,8 +25,10 @@ from account_truth.broker_adapter_release import (
 )
 from server.config import TrustedOperatorIdentityConfig
 from server.db import AppDatabase
-from server.services.operator_approval import OperatorApprovalService
-from server.services.signed_broker_adapter_release_review import (
+from server.services.controlled_execution.operator_approval import (
+    OperatorApprovalService,
+)
+from server.services.controlled_execution.signed_broker_adapter_release_review import (
     SIGNED_BROKER_ADAPTER_RELEASE_REVIEW_ACTION,
     SIGNED_BROKER_ADAPTER_RELEASE_REVIEW_ARTIFACT_TYPE,
     SignedBrokerAdapterReleaseReviewRejected,

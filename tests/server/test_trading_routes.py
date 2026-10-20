@@ -17,7 +17,7 @@ from core.events import OrderIntentEvent, RiskDecisionEvent
 from core.types import OrderSide, Symbol
 from server.db import AppDatabase
 from server.routes import trading as trading_routes
-from server.services.trading_controls import (
+from server.services.controlled_execution.trading_controls import (
     AUTOMATIC_TRADING_DISABLE_ACKNOWLEDGEMENT,
     AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
     TradingControlState,

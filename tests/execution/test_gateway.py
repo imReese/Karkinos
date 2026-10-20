@@ -13,7 +13,9 @@ from core.events import OrderEvent, OrderIntentEvent, RiskDecisionEvent
 from core.types import AssetClass, OrderSide, OrderType, Symbol
 from execution.gateway import ManualConfirmGateway
 from server.db import AppDatabase
-from server.services.manual_order_tickets import RuntimeManualOrderTicketAdapter
+from server.services.controlled_execution.manual_order_tickets import (
+    RuntimeManualOrderTicketAdapter,
+)
 
 
 def _gateway(bus: EventBus, db: AppDatabase) -> ManualConfirmGateway:

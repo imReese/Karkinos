@@ -25,8 +25,10 @@ def run_backtest_risk_preview(
 ) -> dict[str, Any]:
     """Evaluate a signal candidate through pre-trade risk without side effects."""
     from risk.pre_trade import PreTradePolicy, preview_pre_trade_risk
-    from server.services.live_context import LiveContextProvider
-    from server.services.trading_controls import TradingControlState
+    from server.services.controlled_execution.live_context import LiveContextProvider
+    from server.services.controlled_execution.trading_controls import (
+        TradingControlState,
+    )
 
     side = risk_preview_order_side(request.action)
     if side is None:

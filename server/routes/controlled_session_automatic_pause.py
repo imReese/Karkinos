@@ -12,10 +12,10 @@ from server.composition.controlled_execution_services import (
     build_controlled_session_automatic_pause_service,
     build_controlled_session_live_gate_service,
 )
-from server.services.controlled_session_automatic_pause import (
+from server.services.controlled_execution.controlled_session_automatic_pause import (
     ControlledSessionAutomaticPauseService,
 )
-from server.services.controlled_session_live_gates import (
+from server.services.controlled_execution.controlled_session_live_gates import (
     ControlledSessionAutomaticPauseOrchestratorService,
     ControlledSessionLiveGateRejected,
     ControlledSessionLiveGateSnapshotService,

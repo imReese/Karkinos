@@ -18,7 +18,7 @@ from domain.instrument import make_etf
 from execution.slippage import PercentSlippage
 from risk.pre_trade import PreTradeContext, PreTradePolicy, PreTradeRiskManager
 from server.db import AppDatabase
-from server.services.trading_controls import TradingControlState
+from server.services.controlled_execution.trading_controls import TradingControlState
 from strategy.base import Strategy
 
 

@@ -8,12 +8,12 @@ from threading import Barrier
 import pytest
 
 from server.db import AppDatabase
-from server.services.controlled_session_runtime_rate_limiter import (
+from server.services.controlled_execution.controlled_session_runtime_rate_limiter import (
     CONTROLLED_SESSION_RATE_REJECTION_EVENT_TYPE,
     ControlledSessionRateAdmissionRejected,
     ControlledSessionRuntimeRateLimiterService,
 )
-from server.services.trading_controls import (
+from server.services.controlled_execution.trading_controls import (
     AUTOMATIC_TRADING_DISABLE_ACKNOWLEDGEMENT,
     AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
     TradingControlState,

@@ -7,11 +7,11 @@ from typing import Any
 
 from server.services.automation_alerts import AutomationAlertService
 from server.services.automation_control import AutomationControlService
-from server.services.broker_gateway import BrokerGatewayService
-from server.services.controlled_execution_operator_view import (
+from server.services.controlled_execution.broker_gateway import BrokerGatewayService
+from server.services.controlled_execution.controlled_execution_operator_view import (
     ControlledExecutionOperatorViewService,
 )
-from server.services.current_per_order_review_projection import (
+from server.services.controlled_execution.current_per_order_review_projection import (
     build_current_per_order_review_summary,
 )
 from server.services.decision.daily_decision_evidence_automation import (

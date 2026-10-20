@@ -9,14 +9,14 @@ from pathlib import Path
 import pytest
 
 import server.contracts.controlled_broker_submission as canonical_contract
-import server.services.controlled_broker_submission as submission_module
-from server.services.controlled_broker_submission import (
+import server.services.controlled_execution.controlled_broker_submission as submission_module
+from server.services.controlled_execution.controlled_broker_submission import (
     ControlledBrokerSubmissionRejected,
     ControlledBrokerSubmissionService,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SERVICE_ROOT = PROJECT_ROOT / "server/services"
+SERVICE_ROOT = PROJECT_ROOT / "server/services/controlled_execution"
 CONTRACT = PROJECT_ROOT / "server/contracts/controlled_broker_submission.py"
 SERVICE_PATHS = {
     SERVICE_ROOT / "controlled_broker_submission.py",
@@ -71,10 +71,10 @@ def _getattr_literals(path: Path) -> list[str]:
 
 def test_submission_facade_preserves_public_contract() -> None:
     assert ControlledBrokerSubmissionService.__module__ == (
-        "server.services.controlled_broker_submission"
+        "server.services.controlled_execution.controlled_broker_submission"
     )
     assert ControlledBrokerSubmissionRejected.__module__ == (
-        "server.services.controlled_broker_submission"
+        "server.services.controlled_execution.controlled_broker_submission"
     )
 
     constant_names = {
@@ -218,8 +218,8 @@ def test_submission_policy_and_values_remain_pure() -> None:
         "server.db",
         "server.persistence",
         "server.routes",
-        "server.services.operator_approval",
-        "server.services.broker",
+        "server.services.controlled_execution.operator_approval",
+        "server.services.controlled_execution.broker",
     )
     for path in pure_paths:
         imports = _imports(path)
@@ -310,10 +310,11 @@ def test_submission_family_import_graph_is_acyclic() -> None:
     modules = {path.stem: path for path in SERVICE_PATHS}
     graph = {
         name: {
-            imported.removeprefix("server.services.")
+            imported.removeprefix("server.services.controlled_execution.")
             for imported in _imports(path)
-            if imported.startswith("server.services.")
-            and imported.removeprefix("server.services.") in modules
+            if imported.startswith("server.services.controlled_execution.")
+            and imported.removeprefix("server.services.controlled_execution.")
+            in modules
         }
         for name, path in modules.items()
     }

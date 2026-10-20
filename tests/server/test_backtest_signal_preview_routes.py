@@ -361,7 +361,9 @@ def test_backtest_risk_preview_route_evaluates_without_order_or_audit_writes(
     from core.event_bus import EventBus
     from domain.portfolio import Portfolio
     from server.routes import backtest as backtest_routes
-    from server.services.trading_controls import TradingControlState
+    from server.services.controlled_execution.trading_controls import (
+        TradingControlState,
+    )
 
     controls = TradingControlState()
     controls.set_kill_switch(True, "operator stop")

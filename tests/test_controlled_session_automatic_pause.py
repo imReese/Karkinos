@@ -6,12 +6,12 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from server.db import AppDatabase
-from server.services.controlled_session_automatic_pause import (
+from server.services.controlled_execution.controlled_session_automatic_pause import (
     CONTROLLED_SESSION_PAUSE_REJECTION_EVENT_TYPE,
     ControlledSessionAutomaticPauseRejected,
     ControlledSessionAutomaticPauseService,
 )
-from server.services.controlled_session_runtime_rate_limiter import (
+from server.services.controlled_execution.controlled_session_runtime_rate_limiter import (
     ControlledSessionRateAdmissionRejected,
     ControlledSessionRuntimeRateLimiterService,
 )

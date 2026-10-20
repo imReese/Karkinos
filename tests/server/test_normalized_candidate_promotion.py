@@ -25,7 +25,7 @@ from server.services.ai_shadow.ai_shadow_research_automation import (
 from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
 )
-from server.services.trading_controls import TradingControlState
+from server.services.controlled_execution.trading_controls import TradingControlState
 from tests.ai_shadow_strategy_fixtures import (
     _backtest_source_fingerprint,
     seed_ai_shadow_canonical_sources,

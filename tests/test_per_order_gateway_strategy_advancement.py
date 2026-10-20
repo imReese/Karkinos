@@ -20,7 +20,9 @@ from server.services.ai_shadow.ai_shadow_research_automation import (
     SHADOW_RESEARCH_PROMOTION_CONFIRMATION,
     ShadowResearchStore,
 )
-from server.services.per_order_gateway_evidence import _resolve_decision_action
+from server.services.controlled_execution.per_order_gateway_evidence import (
+    _resolve_decision_action,
+)
 from server.services.strategy_promotion_pipeline import (
     STRATEGY_LIFECYCLE_SAFETY_CONFIRMATION,
     STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION,

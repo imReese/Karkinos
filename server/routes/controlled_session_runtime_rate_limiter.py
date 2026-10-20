@@ -9,7 +9,7 @@ from fastapi import APIRouter, Query
 from server.composition.controlled_execution_services import (
     build_controlled_session_runtime_rate_limiter_service,
 )
-from server.services.controlled_session_runtime_rate_limiter import (
+from server.services.controlled_execution.controlled_session_runtime_rate_limiter import (
     ControlledSessionRuntimeRateLimiterService,
 )
 

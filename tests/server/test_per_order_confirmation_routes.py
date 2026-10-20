@@ -9,7 +9,7 @@ import server.composition.controlled_execution_services as controlled_services
 import server.routes.per_order_confirmation as route_module
 from server.app import create_app
 from server.routes.per_order_confirmation import create_router
-from server.services.per_order_confirmation import (
+from server.services.controlled_execution.per_order_confirmation import (
     PER_ORDER_CONFIRMATION_ACKNOWLEDGEMENT,
     PerOrderConfirmationRejected,
 )

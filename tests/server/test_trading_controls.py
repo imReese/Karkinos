@@ -14,7 +14,7 @@ from server.contracts.automatic_trading import (
 )
 from server.db import AppDatabase
 from server.persistence.runtime_controls import RuntimeControlRepository
-from server.services.trading_controls import (
+from server.services.controlled_execution.trading_controls import (
     AUTOMATIC_TRADING_DISABLE_ACKNOWLEDGEMENT,
     AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
     AutomaticTradingControlRevisionConflict,

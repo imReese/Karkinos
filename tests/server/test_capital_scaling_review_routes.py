@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from server.app import create_app
 from server.routes.capital_scaling_review import create_router
-from server.services.capital_scaling_review_audit import (
+from server.services.controlled_execution.capital_scaling_review_audit import (
     CAPITAL_SCALING_REVIEW_ACKNOWLEDGEMENT,
     CapitalScalingReviewDecisionRejected,
 )

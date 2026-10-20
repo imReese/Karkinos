@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 import server.routes.execution_gateway_verification as route_module
 from server.app import create_app
 from server.routes.execution_gateway_verification import create_router
-from server.services.execution_gateway_verification import (
+from server.services.controlled_execution.execution_gateway_verification import (
     EXECUTION_GATEWAY_VERIFICATION_ACKNOWLEDGEMENT,
     ExecutionGatewayVerificationRejected,
 )

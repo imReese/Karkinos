@@ -23,7 +23,7 @@ from account_truth.broker_connector import (
 )
 from data.market_calendar import build_static_market_calendar_snapshot
 from server.db import AppDatabase
-from server.services.broker_connector_soak import (
+from server.services.controlled_execution.broker_connector_soak import (
     BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
     BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
     BROKER_CONNECTOR_SOAK_EVENT_TYPE,
@@ -628,7 +628,7 @@ def test_sequence_event_and_cursor_state_roll_back_together(
         raise RuntimeError("synthetic state advance failure")
 
     monkeypatch.setattr(
-        "server.services.broker_connector_soak._advance_source_sequence_state",
+        "server.services.controlled_execution.broker_connector_soak._advance_source_sequence_state",
         fail_after_event_insert,
     )
 

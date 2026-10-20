@@ -9,13 +9,13 @@ from server.services.automation_cockpit import (
     AutomationCockpitService,
     validate_automation_cockpit_payload,
 )
-from server.services.current_per_order_dossier import (
+from server.services.controlled_execution.current_per_order_dossier import (
     CURRENT_PER_ORDER_CANDIDATES_SCHEMA_VERSION,
 )
+from server.services.controlled_execution.trading_controls import TradingControlState
 from server.services.market.market_session_automation import (
     MarketSessionAutomationService,
 )
-from server.services.trading_controls import TradingControlState
 
 
 class _ConnectorWouldFailIfQueried:

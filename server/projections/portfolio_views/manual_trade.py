@@ -5,7 +5,7 @@ from __future__ import annotations
 from server.models import (
     TradeCreate,
 )
-from server.services.manual_trade_fees import (
+from server.services.controlled_execution.manual_trade_fees import (
     MANUAL_FEE_INPUT_RULE_ID,
     MANUAL_FEE_INPUT_RULE_VERSION,
     manual_fee_input_payload,

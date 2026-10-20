@@ -25,7 +25,7 @@ from risk.pre_trade import PreTradeContext, PreTradePolicy, PreTradeRiskManager
 from server.contracts.portfolio_cash_flows import CashFlowWrite
 from server.contracts.portfolio_trades import ManualTradeWrite
 from server.db import AppDatabase
-from server.services.trading_controls import TradingControlState
+from server.services.controlled_execution.trading_controls import TradingControlState
 from strategy.base import Strategy
 
 

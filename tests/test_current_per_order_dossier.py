@@ -8,24 +8,24 @@ from datetime import timedelta
 
 import pytest
 
-from server.services.broker_connector_soak import (
+from server.services.controlled_execution.broker_connector_soak import (
     BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
     BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
     BROKER_CONNECTOR_SOAK_EVENT_TYPE,
 )
-from server.services.capital_authorization_audit import (
+from server.services.controlled_execution.capital_authorization_audit import (
     CapitalAuthorizationAuditService,
 )
-from server.services.current_per_order_dossier import (
+from server.services.controlled_execution.current_per_order_dossier import (
     CurrentPerOrderDossierService,
     resolve_persisted_execution_gateway_verification,
 )
-from server.services.execution_gateway_verification import (
+from server.services.controlled_execution.execution_gateway_verification import (
     EXECUTION_GATEWAY_VERIFICATION_ENTITY_TYPE,
     EXECUTION_GATEWAY_VERIFICATION_EVENT_SOURCE,
     EXECUTION_GATEWAY_VERIFICATION_EVENT_TYPE,
 )
-from server.services.per_order_confirmation import (
+from server.services.controlled_execution.per_order_confirmation import (
     PER_ORDER_CONFIRMATION_ACKNOWLEDGEMENT,
     PER_ORDER_CONFIRMATION_EVENT_TYPE,
     PerOrderConfirmationService,

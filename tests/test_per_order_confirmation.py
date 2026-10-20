@@ -42,48 +42,50 @@ from server.contracts.per_order_confirmation import (
     validate_per_order_dossier_payload,
 )
 from server.db import AppDatabase
-from server.services.broker_connector_soak import (
+from server.services.controlled_execution.broker_connector_soak import (
     BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
     BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
     BROKER_CONNECTOR_SOAK_EVENT_TYPE,
     BROKER_CONNECTOR_SOAK_SOURCE_SEQUENCE_SCHEMA_VERSION,
     BrokerConnectorSoakService,
 )
-from server.services.capital_authorization import (
+from server.services.controlled_execution.capital_authorization import (
     CapitalAuthorizationContext,
     CapitalAuthorizationLimits,
     CapitalAuthorizationPolicy,
 )
-from server.services.capital_authorization_audit import (
+from server.services.controlled_execution.capital_authorization_audit import (
     CapitalAuthorizationAuditService,
 )
-from server.services.execution_batch_reconciliation import (
+from server.services.controlled_execution.execution_batch_reconciliation import (
     EXECUTION_BATCH_RECONCILIATION_ACKNOWLEDGEMENT,
     ExecutionBatchReconciliationService,
 )
-from server.services.execution_gateway_verification import (
+from server.services.controlled_execution.execution_gateway_verification import (
     EXECUTION_GATEWAY_VERIFICATION_ACKNOWLEDGEMENT,
     ExecutionGatewayVerificationService,
 )
-from server.services.execution_reconciliation import (
+from server.services.controlled_execution.execution_reconciliation import (
     build_current_plan_paper_actual_comparison,
 )
-from server.services.oms import OmsService
-from server.services.operator_approval import OperatorApprovalService
-from server.services.per_order_confirmation import (
+from server.services.controlled_execution.oms import OmsService
+from server.services.controlled_execution.operator_approval import (
+    OperatorApprovalService,
+)
+from server.services.controlled_execution.per_order_confirmation import (
     PER_ORDER_CONFIRMATION_ACKNOWLEDGEMENT,
     PER_ORDER_CONFIRMATION_EVENT_TYPE,
     PerOrderConfirmationRejected,
     PerOrderConfirmationService,
     build_order_fingerprint,
 )
-from server.services.per_order_gateway_evidence import (
+from server.services.controlled_execution.per_order_gateway_evidence import (
     validate_per_order_gateway_evidence_payload,
 )
+from server.services.controlled_execution.trading_controls import TradingControlState
 from server.services.strategy_promotion_pipeline import (
     resolve_strategy_promotion_binding,
 )
-from server.services.trading_controls import TradingControlState
 from tests.ai_shadow_strategy_fixtures import seed_approved_ai_shadow_strategy
 from tests.order_state_fixtures import insert_historical_oms_order
 from tests.out_of_band_corruption import allow_out_of_band_update

@@ -6,10 +6,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import server.routes.per_order_confirmation as route_module
-import server.services.current_per_order_dossier_factory as factory_module
+import server.services.controlled_execution.current_per_order_dossier_factory as factory_module
 from server.app import create_app
 from server.routes.per_order_confirmation import create_router
-from server.services.per_order_confirmation import (
+from server.services.controlled_execution.per_order_confirmation import (
     PER_ORDER_CONFIRMATION_ACKNOWLEDGEMENT,
     PerOrderConfirmationRejected,
 )

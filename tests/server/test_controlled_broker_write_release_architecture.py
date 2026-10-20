@@ -11,10 +11,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PRODUCTION_FILES = (
     "server/contracts/controlled_broker_write_release.py",
     "server/persistence/controlled_broker_write_releases.py",
-    "server/services/controlled_broker_write_release.py",
-    "server/services/controlled_broker_write_release_dossier.py",
-    "server/services/controlled_broker_write_release_policy.py",
-    "server/services/controlled_broker_write_release_workflow.py",
+    "server/services/controlled_execution/controlled_broker_write_release.py",
+    "server/services/controlled_execution/controlled_broker_write_release_dossier.py",
+    "server/services/controlled_execution/controlled_broker_write_release_policy.py",
+    "server/services/controlled_execution/controlled_broker_write_release_workflow.py",
 )
 APPLICATION_FILES = tuple(
     path for path in PRODUCTION_FILES if "/persistence/" not in path
@@ -71,7 +71,9 @@ def test_write_release_modules_stay_bounded_and_facade_stays_stable() -> None:
                     node.name,
                 )
 
-    facade = _tree("server/services/controlled_broker_write_release.py")
+    facade = _tree(
+        "server/services/controlled_execution/controlled_broker_write_release.py"
+    )
     service = next(
         node
         for node in facade.body

@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 
-from server.services.capital_authorization import (
+from server.services.controlled_execution.capital_authorization import (
     CapitalAuthorizationContext,
     CapitalAuthorizationLimits,
     CapitalAuthorizationPolicy,

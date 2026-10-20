@@ -9,16 +9,16 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from server.services.capital_authorization import (
+from server.services.controlled_execution.capital_authorization import (
     CAPITAL_AUTHORIZATION_SCHEMA_VERSION,
     CapitalAuthorizationContext,
     CapitalAuthorizationLimits,
     CapitalAuthorizationPolicy,
 )
-from server.services.capital_authorization_audit import (
+from server.services.controlled_execution.capital_authorization_audit import (
     CapitalAuthorizationAuditService,
 )
-from server.services.operator_approval import (
+from server.services.controlled_execution.operator_approval import (
     DEFAULT_CHALLENGE_TTL_SECONDS,
     OperatorApprovalRejected,
     OperatorApprovalService,

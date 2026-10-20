@@ -32,7 +32,7 @@ from server.models import (
 from server.projections.ledger_correction_read import (
     correction_read_evidence,
 )
-from server.services.manual_trade_fees import (
+from server.services.controlled_execution.manual_trade_fees import (
     MANUAL_FEE_INPUT_RULE_ID,
     MANUAL_FEE_INPUT_RULE_VERSION,
     manual_fee_input_payload,

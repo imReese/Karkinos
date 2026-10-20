@@ -11,19 +11,19 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from account_truth.broker_connector import LOCAL_JSON_SNAPSHOT_SCHEMA_VERSION
 from server.config import TrustedOperatorIdentityConfig
 from server.db import AppDatabase
-from server.services.broker_connector_soak import (
+from server.services.controlled_execution.broker_connector_soak import (
     BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
     BROKER_CONNECTOR_SOAK_EVENT_SOURCE,
     BROKER_CONNECTOR_SOAK_EVENT_TYPE,
     BROKER_CONNECTOR_SOAK_SOURCE_SEQUENCE_SCHEMA_VERSION,
 )
-from server.services.broker_connector_soak_promotion import (
+from server.services.controlled_execution.broker_connector_soak_promotion import (
     BROKER_SOAK_PROMOTION_ACCEPTANCE_EVENT_TYPE,
     BROKER_SOAK_PROMOTION_ACKNOWLEDGEMENT,
     BrokerConnectorSoakPromotionRejected,
     BrokerConnectorSoakPromotionService,
 )
-from server.services.broker_connector_soak_runbook import (
+from server.services.controlled_execution.broker_connector_soak_runbook import (
     BROKER_CONNECTOR_SOAK_DRILL_ENTITY_TYPE,
     BROKER_CONNECTOR_SOAK_DRILL_EVENT_TYPE,
     BROKER_CONNECTOR_SOAK_DRILL_TYPES,
@@ -32,7 +32,9 @@ from server.services.broker_connector_soak_runbook import (
     BROKER_CONNECTOR_SOAK_RUN_EVENT_TYPE,
     BROKER_CONNECTOR_SOAK_RUNBOOK_EVENT_SOURCE,
 )
-from server.services.operator_approval import OperatorApprovalService
+from server.services.controlled_execution.operator_approval import (
+    OperatorApprovalService,
+)
 
 CONNECTOR_ID = "deterministic-fixture-readonly-promotion"
 ACCOUNT_ALIAS = "deterministic-fixture-promotion-review"

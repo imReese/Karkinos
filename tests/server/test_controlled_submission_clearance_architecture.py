@@ -9,17 +9,17 @@ from pathlib import Path
 import pytest
 
 import server.contracts.controlled_submission_reconciliation_clearance as canonical_contract
-import server.services.controlled_submission_reconciliation_clearance as clearance_module
+import server.services.controlled_execution.controlled_submission_reconciliation_clearance as clearance_module
 from server.persistence.controlled_clearance_uow import (
     ControlledClearanceUnitOfWorkMixin,
 )
-from server.services.controlled_submission_reconciliation_clearance import (
+from server.services.controlled_execution.controlled_submission_reconciliation_clearance import (
     ControlledSubmissionReconciliationClearanceRejected,
     ControlledSubmissionReconciliationClearanceService,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SERVICE_ROOT = PROJECT_ROOT / "server/services"
+SERVICE_ROOT = PROJECT_ROOT / "server/services/controlled_execution"
 PERSISTENCE_ROOT = PROJECT_ROOT / "server/persistence"
 CONTRACT = (
     PROJECT_ROOT / "server/contracts/controlled_submission_reconciliation_clearance.py"
@@ -92,10 +92,10 @@ def _sql_literals(path: Path) -> list[str]:
 
 def test_clearance_facade_preserves_public_contract() -> None:
     assert ControlledSubmissionReconciliationClearanceService.__module__ == (
-        "server.services.controlled_submission_reconciliation_clearance"
+        "server.services.controlled_execution.controlled_submission_reconciliation_clearance"
     )
     assert ControlledSubmissionReconciliationClearanceRejected.__module__ == (
-        "server.services.controlled_submission_reconciliation_clearance"
+        "server.services.controlled_execution.controlled_submission_reconciliation_clearance"
     )
     assert ControlledClearanceUnitOfWorkMixin.__module__ == (
         "server.persistence.controlled_clearance_uow"
@@ -264,7 +264,7 @@ def test_clearance_value_modules_remain_pure() -> None:
         "server.db",
         "server.persistence",
         "server.routes",
-        "server.services.operator_approval",
+        "server.services.controlled_execution.operator_approval",
     )
     for path in pure_paths:
         imports = _imports(path)
@@ -361,7 +361,7 @@ def test_clearance_family_has_no_broker_ledger_or_capital_authority() -> None:
             for dependency in imports
             if dependency == "server.routes"
             or dependency.startswith("server.routes.")
-            or dependency.startswith("server.services.broker")
+            or dependency.startswith("server.services.controlled_execution.broker")
         }, path.name
         assert not (_called_attributes(path) & forbidden_calls), path.name
         for statement in _sql_literals(path):

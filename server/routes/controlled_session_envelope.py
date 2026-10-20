@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from server.composition.controlled_execution_services import (
     build_controlled_session_envelope_service,
 )
-from server.services.controlled_session_envelope import (
+from server.services.controlled_execution.controlled_session_envelope import (
     CONTROLLED_SESSION_ACKNOWLEDGEMENT,
     ControlledSessionAttestationRejected,
     ControlledSessionEnvelopeService,

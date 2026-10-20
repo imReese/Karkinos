@@ -9,7 +9,7 @@ from account_truth.broker_order_lifecycle_collector import (
     preview_broker_order_lifecycle_collector_batch,
 )
 from server.db import AppDatabase
-from server.services.broker_lifecycle_evidence_view import (
+from server.services.controlled_execution.broker_lifecycle_evidence_view import (
     BrokerLifecycleEvidenceViewService,
 )
 

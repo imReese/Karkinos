@@ -17,8 +17,10 @@ from server.contracts.order_state import (
     ManualOrderStateCommand,
     ManualOrderTicketCommand,
 )
-from server.services.manual_order_tickets import ManualOrderTicketService
-from server.services.trading_controls import (
+from server.services.controlled_execution.manual_order_tickets import (
+    ManualOrderTicketService,
+)
+from server.services.controlled_execution.trading_controls import (
     AutomaticTradingControlRevisionConflict,
     TradingControlSnapshot,
     resolve_automatic_trading_evidence,

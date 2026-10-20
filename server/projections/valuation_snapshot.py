@@ -25,9 +25,11 @@ from server.projections.quote_status import (
     quote_valuation_status,
 )
 from server.projections.service import build_portfolio_projection
+from server.services.controlled_execution.position_presence import (
+    is_economically_zero_quantity,
+)
 from server.services.market.calendar import project_market_session
 from server.services.market.hours import get_shanghai_now
-from server.services.position_presence import is_economically_zero_quantity
 from server.valuation_snapshot_contract import validate_valuation_snapshot
 
 VALUATION_POLICY_VERSION = "karkinos.persisted_valuation.v8"

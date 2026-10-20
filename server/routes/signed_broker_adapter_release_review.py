@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from account_truth.broker_adapter_release import (
     BROKER_ADAPTER_RELEASE_REVIEW_ACKNOWLEDGEMENT,
 )
-from server.services.signed_broker_adapter_release_review import (
+from server.services.controlled_execution.signed_broker_adapter_release_review import (
     SignedBrokerAdapterReleaseReviewRejected,
     SignedBrokerAdapterReleaseReviewService,
 )

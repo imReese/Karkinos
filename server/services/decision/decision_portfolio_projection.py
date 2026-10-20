@@ -16,6 +16,9 @@ from server.dependencies import (
 from server.services.account.account_board_permissions import (
     resolve_board_buy_permissions,
 )
+from server.services.controlled_execution.position_presence import (
+    is_economically_zero_quantity,
+)
 from server.services.decision.decision_contracts import (
     TRUSTED_DATA_STATUSES,
     action_trade_date,
@@ -23,7 +26,6 @@ from server.services.decision.decision_contracts import (
     parse_action_timestamp,
 )
 from server.services.market.hours import get_shanghai_now
-from server.services.position_presence import is_economically_zero_quantity
 
 
 def decision_portfolio_context(state: Any) -> dict[str, Any]:

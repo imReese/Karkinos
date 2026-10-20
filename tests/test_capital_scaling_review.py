@@ -7,14 +7,14 @@ from decimal import Decimal
 import pytest
 
 from server.db import AppDatabase
-from server.services.capital_scaling_review import (
+from server.services.controlled_execution.capital_scaling_review import (
     CapitalScalingEvidence,
     CapitalScalingReview,
     CapitalScalingTier,
     CapitalScalingTierLimits,
     evaluate_capital_scaling_review,
 )
-from server.services.capital_scaling_review_audit import (
+from server.services.controlled_execution.capital_scaling_review_audit import (
     CAPITAL_SCALING_EVALUATION_EVENT_TYPE,
     CAPITAL_SCALING_REVIEW_ACKNOWLEDGEMENT,
     CAPITAL_SCALING_REVIEW_DECISION_EVENT_TYPE,

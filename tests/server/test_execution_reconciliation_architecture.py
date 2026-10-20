@@ -14,7 +14,7 @@ from server.contracts.execution_reconciliation import (
 from server.contracts.execution_reconciliation import (
     EXECUTION_RECONCILIATION_SCHEMA_VERSION as CANONICAL_RECONCILIATION_SCHEMA,
 )
-from server.services.execution_reconciliation import (
+from server.services.controlled_execution.execution_reconciliation import (
     CONTROLLED_SUBMISSION_RECONCILIATION_SCHEMA_VERSION,
     EXECUTION_RECONCILIATION_SCHEMA_VERSION,
     ExecutionReconciliationService,
@@ -54,7 +54,9 @@ def _family_dependencies(path: Path) -> set[str]:
     return {
         imported.removeprefix("server.services.")
         for imported in _imports(path)
-        if imported.startswith("server.services.execution_reconciliation")
+        if imported.startswith(
+            "server.services.controlled_execution.execution_reconciliation"
+        )
     }
 
 
@@ -72,10 +74,10 @@ def _called_names(path: Path) -> set[str]:
 
 def test_execution_reconciliation_facade_preserves_public_contract() -> None:
     assert ExecutionReconciliationService.__module__ == (
-        "server.services.execution_reconciliation"
+        "server.services.controlled_execution.execution_reconciliation"
     )
     assert build_current_plan_paper_actual_comparison.__module__ == (
-        "server.services.execution_reconciliation"
+        "server.services.controlled_execution.execution_reconciliation"
     )
     assert EXECUTION_RECONCILIATION_SCHEMA_VERSION is CANONICAL_RECONCILIATION_SCHEMA
     assert (

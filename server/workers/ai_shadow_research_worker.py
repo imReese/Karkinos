@@ -13,7 +13,7 @@ from server.db import AppDatabase
 from server.dependencies import AppState
 from server.persistence.runtime_controls import RuntimeControlRepository
 from server.services.ai_shadow.ai_shadow_research_worker import AiShadowResearchWorker
-from server.services.trading_controls import TradingControlState
+from server.services.controlled_execution.trading_controls import TradingControlState
 from server.workers.presence import run_with_presence
 
 

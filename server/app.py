@@ -29,7 +29,7 @@ from server.release_activation import (
 )
 from server.runtime_paths import resolve_static_dir
 from server.scheduler import TradingScheduler
-from server.services.trading_controls import TradingControlState
+from server.services.controlled_execution.trading_controls import TradingControlState
 from server.ws.hub import ConnectionHub
 
 logger = logging.getLogger(__name__)

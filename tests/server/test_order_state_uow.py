@@ -14,7 +14,7 @@ from server.contracts.order_state import (
     OmsOrderCommand,
 )
 from server.db import AppDatabase
-from server.services.oms import OmsService
+from server.services.controlled_execution.oms import OmsService
 
 pytestmark = pytest.mark.unit
 

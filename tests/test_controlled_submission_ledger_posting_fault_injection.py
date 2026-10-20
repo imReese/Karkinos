@@ -7,7 +7,7 @@ import pytest
 
 from server.db import AppDatabase
 from server.projections.service import build_portfolio_projection_from_db
-from server.services.controlled_submission_ledger_posting import (
+from server.services.controlled_execution.controlled_submission_ledger_posting import (
     CONTROLLED_SUBMISSION_LEDGER_POSTING_ACKNOWLEDGEMENT,
     CONTROLLED_SUBMISSION_LEDGER_POSTING_REJECTION_EVENT_TYPE,
     ControlledSubmissionLedgerPostingRejected,

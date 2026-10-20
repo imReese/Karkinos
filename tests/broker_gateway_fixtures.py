@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from server.services.current_per_order_dossier import (
+from server.services.controlled_execution.current_per_order_dossier import (
     CURRENT_PER_ORDER_CONFIRMATION_RESOLUTION_SCHEMA_VERSION,
     CURRENT_PER_ORDER_DOSSIER_SCHEMA_VERSION,
 )
-from server.services.per_order_gateway_evidence import (
+from server.services.controlled_execution.per_order_gateway_evidence import (
     PER_ORDER_GATEWAY_EVIDENCE_SCHEMA_VERSION,
 )
 

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from server.db import AppDatabase
-from server.services.execution_gateway_verification import (
+from server.services.controlled_execution.execution_gateway_verification import (
     EXECUTION_GATEWAY_VERIFICATION_ACKNOWLEDGEMENT,
     EXECUTION_GATEWAY_VERIFICATION_EVENT_TYPE,
     ExecutionGatewayVerificationRejected,

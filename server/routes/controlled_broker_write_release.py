@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from server.composition.controlled_execution_services import (
     build_controlled_broker_write_release_service,
 )
-from server.services.controlled_broker_write_release import (
+from server.services.controlled_execution.controlled_broker_write_release import (
     CONTROLLED_BROKER_WRITE_RELEASE_ACKNOWLEDGEMENT,
     CONTROLLED_BROKER_WRITE_RELEASE_REVOCATION_ACKNOWLEDGEMENT,
     ControlledBrokerWriteReleaseRejected,

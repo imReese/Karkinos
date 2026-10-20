@@ -14,7 +14,9 @@ from account_truth.broker_adapter_release import (
     BrokerAdapterReleaseReviewRepository,
     preview_broker_adapter_release_manifest,
 )
-from server.services.broker_adapter_readiness import BrokerAdapterReadinessService
+from server.services.controlled_execution.broker_adapter_readiness import (
+    BrokerAdapterReadinessService,
+)
 
 
 def _manifest() -> dict:

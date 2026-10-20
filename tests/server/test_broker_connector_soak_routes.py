@@ -21,8 +21,10 @@ from server.app import create_app
 from server.config import BrokerConnectorConfig
 from server.db import AppDatabase
 from server.routes.broker_connector_soak import create_router
-from server.services.broker_connector_soak import BROKER_CONNECTOR_SOAK_EVENT_TYPE
-from server.services.broker_connector_soak_promotion import (
+from server.services.controlled_execution.broker_connector_soak import (
+    BROKER_CONNECTOR_SOAK_EVENT_TYPE,
+)
+from server.services.controlled_execution.broker_connector_soak_promotion import (
     BROKER_SOAK_PROMOTION_ACKNOWLEDGEMENT,
     BrokerConnectorSoakPromotionRejected,
 )

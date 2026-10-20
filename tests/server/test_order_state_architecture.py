@@ -58,9 +58,9 @@ def test_manual_gateway_is_atomic_and_scheduler_does_not_wire_execution() -> Non
         }
     )
     gateway_source = gateway_path.read_text(encoding="utf-8")
-    adapter_source = (ROOT / "server/services/manual_order_tickets.py").read_text(
-        encoding="utf-8"
-    )
+    adapter_source = (
+        ROOT / "server/services/controlled_execution/manual_order_tickets.py"
+    ).read_text(encoding="utf-8")
     scheduler_source = (ROOT / "server/scheduler_loop.py").read_text(encoding="utf-8")
     composition_source = (ROOT / "server/scheduler.py").read_text(encoding="utf-8")
     assert "server." not in gateway_source
@@ -77,7 +77,7 @@ def test_manual_gateway_is_atomic_and_scheduler_does_not_wire_execution() -> Non
 
 
 def test_oms_service_uses_only_atomic_order_state_commands() -> None:
-    calls = _called_attributes(ROOT / "server/services/oms.py")
+    calls = _called_attributes(ROOT / "server/services/controlled_execution/oms.py")
     assert calls.isdisjoint(
         {
             "upsert_oms_order_sync",

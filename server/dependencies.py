@@ -22,11 +22,13 @@ if TYPE_CHECKING:
     from server.db import AppDatabase
     from server.projections.portfolio_read_snapshot import PortfolioReadSnapshotService
     from server.scheduler import TradingScheduler
-    from server.services.execution_gateway_verification import (
+    from server.services.controlled_execution.execution_gateway_verification import (
         ExecutionGatewayRuntimeProtocol,
     )
+    from server.services.controlled_execution.trading_controls import (
+        TradingControlState,
+    )
     from server.services.research.datasets import ResearchDatasetService
-    from server.services.trading_controls import TradingControlState
     from server.ws.hub import ConnectionHub
 
 

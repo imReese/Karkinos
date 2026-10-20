@@ -8,18 +8,18 @@ from pathlib import Path
 
 import pytest
 
-import server.services.controlled_session_runtime_authority as authority_module
+import server.services.controlled_execution.controlled_session_runtime_authority as authority_module
 from server.contracts.controlled_session_runtime_authority import (
     CONTROLLED_SESSION_RUNTIME_AUTHORITY_SCHEMA_VERSION as CANONICAL_SCHEMA_VERSION,
 )
-from server.services.controlled_session_runtime_authority import (
+from server.services.controlled_execution.controlled_session_runtime_authority import (
     CONTROLLED_SESSION_RUNTIME_AUTHORITY_SCHEMA_VERSION,
     ControlledSessionRuntimeAuthorityRejected,
     ControlledSessionRuntimeAuthorityService,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SERVICE_ROOT = PROJECT_ROOT / "server/services"
+SERVICE_ROOT = PROJECT_ROOT / "server/services/controlled_execution"
 CONTRACT = PROJECT_ROOT / "server/contracts/controlled_session_runtime_authority.py"
 SERVICE_PATHS = {
     SERVICE_ROOT / "controlled_session_runtime_authority.py",
@@ -60,10 +60,10 @@ def _called_attributes(path: Path) -> set[str]:
 
 def test_runtime_authority_facade_preserves_public_contract() -> None:
     assert ControlledSessionRuntimeAuthorityService.__module__ == (
-        "server.services.controlled_session_runtime_authority"
+        "server.services.controlled_execution.controlled_session_runtime_authority"
     )
     assert ControlledSessionRuntimeAuthorityRejected.__module__ == (
-        "server.services.controlled_session_runtime_authority"
+        "server.services.controlled_execution.controlled_session_runtime_authority"
     )
     assert (
         CONTROLLED_SESSION_RUNTIME_AUTHORITY_SCHEMA_VERSION is CANONICAL_SCHEMA_VERSION
@@ -186,7 +186,7 @@ def test_runtime_authority_policy_and_values_remain_pure() -> None:
         "server.db",
         "server.persistence",
         "server.routes",
-        "server.services.operator_approval",
+        "server.services.controlled_execution.operator_approval",
     )
     for path in pure_paths:
         imports = _imports(path)
@@ -243,10 +243,11 @@ def test_runtime_authority_family_import_graph_is_acyclic() -> None:
     modules = {path.stem: path for path in SERVICE_PATHS}
     graph = {
         name: {
-            imported.removeprefix("server.services.")
+            imported.removeprefix("server.services.controlled_execution.")
             for imported in _imports(path)
-            if imported.startswith("server.services.")
-            and imported.removeprefix("server.services.") in modules
+            if imported.startswith("server.services.controlled_execution.")
+            and imported.removeprefix("server.services.controlled_execution.")
+            in modules
         }
         for name, path in modules.items()
     }

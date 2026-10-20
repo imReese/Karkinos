@@ -20,7 +20,7 @@ from data.market_calendar import build_static_market_calendar_snapshot
 from server.app import create_app
 from server.db import AppDatabase
 from server.routes.broker_connector_soak import create_router
-from server.services.broker_connector_soak_runbook import (
+from server.services.controlled_execution.broker_connector_soak_runbook import (
     BROKER_CONNECTOR_SOAK_DRILL_EVENT_TYPE,
     BROKER_CONNECTOR_SOAK_RESTART_CHECKPOINT_EVENT_TYPE,
 )
@@ -201,7 +201,7 @@ def test_runbook_routes_require_two_process_instances_for_karkinos_restart(
     _seed_calendar(db, now)
     client = _client(monkeypatch, db, _connector(now))
     monkeypatch.setattr(
-        "server.services.broker_connector_soak_runbook._PROCESS_INSTANCE_ID",
+        "server.services.controlled_execution.broker_connector_soak_runbook._PROCESS_INSTANCE_ID",
         "route-process-before-restart",
     )
 
@@ -212,7 +212,7 @@ def test_runbook_routes_require_two_process_instances_for_karkinos_restart(
         json={"checkpoint_id": checkpoint_id},
     )
     monkeypatch.setattr(
-        "server.services.broker_connector_soak_runbook._PROCESS_INSTANCE_ID",
+        "server.services.controlled_execution.broker_connector_soak_runbook._PROCESS_INSTANCE_ID",
         "route-process-after-restart",
     )
     completed = client.post(

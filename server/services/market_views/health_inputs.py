@@ -13,6 +13,9 @@ from server.models import (
     MarketCalendarSnapshotResponse,
     MarketHealthQuote,
 )
+from server.services.controlled_execution.position_presence import (
+    is_economically_zero_quantity,
+)
 from server.services.market.asset_metadata import (
     resolve_asset_metadata,
 )
@@ -21,7 +24,6 @@ from server.services.market.indices import (
 )
 from server.services.market.refresh import optional_float as _optional_float
 from server.services.portfolio.ledger import rebuild_portfolio_from_ledger
-from server.services.position_presence import is_economically_zero_quantity
 
 _ASSET_CLASS_MAP = {
     "stock": AssetClass.STOCK,

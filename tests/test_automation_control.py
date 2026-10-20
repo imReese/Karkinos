@@ -5,7 +5,7 @@ from server.services.automation_control import (
     DEFAULT_AUTOMATION_POLICY_ID,
     AutomationControlService,
 )
-from server.services.trading_controls import TradingControlState
+from server.services.controlled_execution.trading_controls import TradingControlState
 
 
 def test_default_policy_keeps_live_broker_submission_disabled(tmp_path) -> None:

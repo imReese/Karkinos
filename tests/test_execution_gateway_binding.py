@@ -1,4 +1,6 @@
-from server.services.execution_gateway_binding import build_execution_gateway_binding
+from server.services.controlled_execution.execution_gateway_binding import (
+    build_execution_gateway_binding,
+)
 
 
 def test_declared_execution_gateway_remains_runtime_unverified() -> None:

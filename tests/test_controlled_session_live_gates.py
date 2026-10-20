@@ -7,22 +7,22 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from server.db import AppDatabase
-from server.services.controlled_session_automatic_pause import (
+from server.services.controlled_execution.controlled_session_automatic_pause import (
     ControlledSessionAutomaticPauseService,
 )
-from server.services.controlled_session_live_gates import (
+from server.services.controlled_execution.controlled_session_live_gates import (
     CONTROLLED_SESSION_LIVE_GATE_REJECTION_EVENT_TYPE,
     ControlledSessionAutomaticPauseOrchestratorService,
     ControlledSessionLiveGateRejected,
     ControlledSessionLiveGateSnapshotService,
 )
-from server.services.controlled_session_runtime_authority import (
+from server.services.controlled_execution.controlled_session_runtime_authority import (
     ControlledSessionRuntimeAuthorityService,
 )
-from server.services.controlled_session_runtime_rate_limiter import (
+from server.services.controlled_execution.controlled_session_runtime_rate_limiter import (
     CONTROLLED_SESSION_RATE_REJECTION_EVENT_TYPE,
 )
-from server.services.trading_controls import (
+from server.services.controlled_execution.trading_controls import (
     AUTOMATIC_TRADING_DISABLE_ACKNOWLEDGEMENT,
     AUTOMATIC_TRADING_ENABLE_ACKNOWLEDGEMENT,
     TradingControlState,

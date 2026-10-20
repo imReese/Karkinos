@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 from core.types import Symbol
 from domain.position import Position
-from server.services.live_context import LiveContextProvider
-from server.services.trading_controls import TradingControlState
+from server.services.controlled_execution.live_context import LiveContextProvider
+from server.services.controlled_execution.trading_controls import TradingControlState
 
 
 def test_live_context_provider_uses_portfolio_and_trading_controls() -> None:

@@ -34,7 +34,7 @@ from server.services.automation_alert_support import safe_int as _int
 from server.services.automation_alert_support import (
     stable_fingerprint as _stable_fingerprint,
 )
-from server.services.current_per_order_review_projection import (
+from server.services.controlled_execution.current_per_order_review_projection import (
     build_current_per_order_review_summary,
 )
 
@@ -295,7 +295,9 @@ class AutomationAlertService:
 
     def _scan_connector_health(self) -> list[dict[str, Any]]:
         health_rows = list(self._connector_health)
-        from server.services.broker_gateway import BrokerGatewayService
+        from server.services.controlled_execution.broker_gateway import (
+            BrokerGatewayService,
+        )
 
         health_rows.extend(
             BrokerGatewayService(

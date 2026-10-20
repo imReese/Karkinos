@@ -10,7 +10,7 @@ import server.composition.controlled_execution_services as controlled_services
 import server.routes.controlled_session_envelope as route_module
 from server.app import create_app
 from server.routes.controlled_session_envelope import create_router
-from server.services.controlled_session_envelope import (
+from server.services.controlled_execution.controlled_session_envelope import (
     CONTROLLED_SESSION_ACKNOWLEDGEMENT,
     ControlledSessionAttestationRejected,
 )

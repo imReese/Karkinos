@@ -38,7 +38,9 @@ from server.services.account.reviewed_fee_schedule import (
     resolve_reviewed_fee_schedule,
     reviewed_cost_model_reference,
 )
-from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
+from server.services.controlled_execution.manual_trade_fees import (
+    resolve_manual_trade_fee_breakdown,
+)
 
 _BROKER_TRADES = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method
 synthetic-buy-001,trade_buy,2026-01-05T09:35:00+08:00,2026-01-06,600000.SH,synthetic stock,stock,CNY,1000,10.00,10000.00,5.00,0.00,-10005.10,89994.90,1000,10.01,synthetic buy,0.10,broker_remaining_cost

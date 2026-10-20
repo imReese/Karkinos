@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from server.composition.controlled_execution_services import (
     build_controlled_session_runtime_authority_service,
 )
-from server.services.controlled_session_runtime_authority import (
+from server.services.controlled_execution.controlled_session_runtime_authority import (
     CONTROLLED_SESSION_ISSUANCE_ACKNOWLEDGEMENT,
     CONTROLLED_SESSION_REPLACEMENT_ACKNOWLEDGEMENT,
     CONTROLLED_SESSION_REVOCATION_ACKNOWLEDGEMENT,

@@ -13,7 +13,7 @@ from server.contracts.controlled_broker_cancellation import (
 from server.persistence.controlled_broker_cancellations import (
     ControlledBrokerCancellationStore as CanonicalCancellationStore,
 )
-from server.services.controlled_broker_cancellation import (
+from server.services.controlled_execution.controlled_broker_cancellation import (
     ControlledBrokerCancellationRejected,
     ControlledBrokerCancellationStore,
 )
@@ -21,7 +21,7 @@ from server.services.controlled_broker_cancellation import (
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = PROJECT_ROOT / "server/contracts/controlled_broker_cancellation.py"
 PROJECTION = PROJECT_ROOT / "server/projections/controlled_broker_cancellation.py"
-SERVICE_ROOT = PROJECT_ROOT / "server/services"
+SERVICE_ROOT = PROJECT_ROOT / "server/services/controlled_execution"
 SERVICE_PATHS = {
     SERVICE_ROOT / "controlled_broker_cancellation.py",
     SERVICE_ROOT / "controlled_broker_cancellation_audit.py",

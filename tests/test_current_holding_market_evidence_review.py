@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from server.models import PortfolioSnapshot, PositionResponse
-from server.services.current_holding_market_evidence_review import (
+from server.services.controlled_execution.current_holding_market_evidence_review import (
     build_current_holding_market_evidence_review,
 )
 

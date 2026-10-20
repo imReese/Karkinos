@@ -12,9 +12,11 @@ from server.services.automation_cockpit import (
     AUTOMATION_COCKPIT_SCHEMA_VERSION,
     validate_automation_cockpit_payload,
 )
-from server.services.execution_reconciliation import ExecutionReconciliationService
-from server.services.oms import OmsService
-from server.services.trading_controls import TradingControlState
+from server.services.controlled_execution.execution_reconciliation import (
+    ExecutionReconciliationService,
+)
+from server.services.controlled_execution.oms import OmsService
+from server.services.controlled_execution.trading_controls import TradingControlState
 
 
 class _ConnectorWouldFailIfQueried:

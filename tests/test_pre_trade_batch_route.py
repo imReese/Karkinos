@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from fastapi.routing import APIRoute
 
 from server.db import AppDatabase
-from server.services.trading_controls import TradingControlState
+from server.services.controlled_execution.trading_controls import TradingControlState
 
 
 def _route(router, path: str, method: str = "POST"):

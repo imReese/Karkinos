@@ -34,8 +34,8 @@ async def run_batch_pre_trade_risk(
 ) -> dict[str, Any]:
     """Run the canonical persisted-evidence batch risk gate for one app state."""
 
+    from server.services.controlled_execution.live_context import LiveContextProvider
     from server.services.decision.pre_trade_batch import run_pre_trade_risk_batch
-    from server.services.live_context import LiveContextProvider
 
     if state.db is None:
         raise HTTPException(status_code=503, detail="database is unavailable")

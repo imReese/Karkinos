@@ -27,7 +27,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from server.services.operator_approval import (
+from server.services.controlled_execution.operator_approval import (
     MAX_CHALLENGE_TTL_SECONDS,
     OPERATOR_APPROVAL_ACTION_ARTIFACT_TYPES,
     OPERATOR_APPROVAL_CHALLENGE_SCHEMA_VERSION,

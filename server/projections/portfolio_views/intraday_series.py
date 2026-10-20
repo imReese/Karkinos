@@ -53,10 +53,10 @@ from server.services.account.daily_performance import (
     mark_position_daily,
     price_at_tick,
 )
-from server.services.market.hours import get_shanghai_now
-from server.services.position_presence import (
+from server.services.controlled_execution.position_presence import (
     is_economically_zero_quantity,
 )
+from server.services.market.hours import get_shanghai_now
 
 logger = logging.getLogger(__name__)
 

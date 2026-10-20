@@ -84,7 +84,7 @@ def create_router() -> APIRouter:
             build_reviewed_fee_schedule_review_status,
         )
         from server.services.automation_cockpit import AutomationCockpitService
-        from server.services.current_per_order_dossier_factory import (
+        from server.services.controlled_execution.current_per_order_dossier_factory import (
             build_current_per_order_dossier_service,
         )
         from server.services.decision.daily_decision_evidence_automation import (
@@ -291,7 +291,7 @@ def create_router() -> APIRouter:
     ) -> dict[str, Any]:
         from server.dependencies import get_app_state
         from server.services.automation_alerts import AutomationAlertService
-        from server.services.current_per_order_dossier_factory import (
+        from server.services.controlled_execution.current_per_order_dossier_factory import (
             build_current_per_order_dossier_service,
         )
 

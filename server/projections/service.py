@@ -30,7 +30,9 @@ from server.projections.portfolio_projection_values import trade_side as _trade_
 from server.projections.portfolio_projection_values import (
     trade_total_fee as _trade_total_fee,
 )
-from server.services.position_presence import is_economically_zero_quantity
+from server.services.controlled_execution.position_presence import (
+    is_economically_zero_quantity,
+)
 
 _CASH_DEPOSIT_TYPES = {"cash_deposit", "deposit"}
 _CASH_WITHDRAW_TYPES = {"cash_withdraw", "cash_withdrawal", "withdraw"}

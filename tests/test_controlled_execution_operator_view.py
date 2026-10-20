@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 
 from server.db import AppDatabase
-from server.services.controlled_execution_operator_view import (
+from server.services.controlled_execution.controlled_execution_operator_view import (
     ControlledExecutionOperatorViewService,
 )
 

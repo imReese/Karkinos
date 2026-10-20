@@ -48,7 +48,9 @@ from server.services.account.reviewed_fee_schedule_policy import (
 from server.services.account.reviewed_fee_schedule_repository import (
     ReviewedFeeScheduleReviewRepository,
 )
-from server.services.manual_trade_fees import resolve_manual_trade_fee_breakdown
+from server.services.controlled_execution.manual_trade_fees import (
+    resolve_manual_trade_fee_breakdown,
+)
 
 
 def compare_schedule_to_events(

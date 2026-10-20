@@ -9,16 +9,18 @@ from pathlib import Path
 import pytest
 
 import server.contracts.per_order_confirmation as canonical_contract
-import server.services.per_order_confirmation as confirmation_module
-from server.services.execution_identity import build_order_fingerprint
-from server.services.per_order_confirmation import (
+import server.services.controlled_execution.per_order_confirmation as confirmation_module
+from server.services.controlled_execution.execution_identity import (
+    build_order_fingerprint,
+)
+from server.services.controlled_execution.per_order_confirmation import (
     PerOrderConfirmationRejected,
     PerOrderConfirmationService,
 )
 from tests.test_server_import_boundaries import _cross_module_private_imports
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SERVICE_ROOT = PROJECT_ROOT / "server/services"
+SERVICE_ROOT = PROJECT_ROOT / "server/services/controlled_execution"
 CONTRACT = PROJECT_ROOT / "server/contracts/per_order_confirmation.py"
 SERVICE_PATHS = {
     SERVICE_ROOT / "per_order_confirmation.py",
@@ -57,10 +59,10 @@ def _called_attributes(path: Path) -> set[str]:
 
 def test_confirmation_facade_preserves_public_contract() -> None:
     assert PerOrderConfirmationService.__module__ == (
-        "server.services.per_order_confirmation"
+        "server.services.controlled_execution.per_order_confirmation"
     )
     assert PerOrderConfirmationRejected.__module__ == (
-        "server.services.per_order_confirmation"
+        "server.services.controlled_execution.per_order_confirmation"
     )
     assert confirmation_module.build_order_fingerprint is build_order_fingerprint
 
@@ -163,10 +165,11 @@ def test_confirmation_family_import_graph_is_acyclic() -> None:
     modules = {path.stem: path for path in SERVICE_PATHS}
     graph = {
         name: {
-            imported.removeprefix("server.services.")
+            imported.removeprefix("server.services.controlled_execution.")
             for imported in _imports(path)
-            if imported.startswith("server.services.")
-            and imported.removeprefix("server.services.") in modules
+            if imported.startswith("server.services.controlled_execution.")
+            and imported.removeprefix("server.services.controlled_execution.")
+            in modules
         }
         for name, path in modules.items()
     }

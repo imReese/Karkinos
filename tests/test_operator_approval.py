@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from server.config import TrustedOperatorIdentityConfig
 from server.db import AppDatabase
-from server.services.operator_approval import (
+from server.services.controlled_execution.operator_approval import (
     OperatorApprovalRejected,
     OperatorApprovalService,
 )

@@ -16,10 +16,10 @@ from server.routes.capital_authorization import (
     OperatorApprovalChallengeRequest,
     create_router,
 )
-from server.services.capital_authorization_audit import (
+from server.services.controlled_execution.capital_authorization_audit import (
     CAPITAL_AUTHORIZATION_EVENT_TYPE,
 )
-from server.services.operator_approval import (
+from server.services.controlled_execution.operator_approval import (
     OPERATOR_APPROVAL_ACTION_ARTIFACT_TYPES,
     OPERATOR_APPROVAL_ACTIONS,
     OPERATOR_APPROVAL_ARTIFACT_TYPES,
