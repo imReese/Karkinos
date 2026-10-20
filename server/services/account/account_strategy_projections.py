@@ -13,7 +13,9 @@ from server.services.account.account_strategy_assignment import (
     ACCOUNT_STRATEGY_ASSIGNMENT_LIMITATION,
 )
 from server.services.account.account_strategy_evidence import linked_strategy_evidence
-from server.services.strategy_contribution import build_strategy_contribution_report
+from server.services.research.strategy_contribution import (
+    build_strategy_contribution_report,
+)
 
 _PNL_PENDING_LIMITATION = (
     "P/L contribution is not calculated until fills are reconciled with position "

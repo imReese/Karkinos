@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 
 from server.db import AppDatabase
-from server.services.automation_alerts import AutomationAlertService
-from server.services.automation_cockpit import (
+from server.services.automation.automation_alerts import AutomationAlertService
+from server.services.automation.automation_cockpit import (
     AUTOMATION_COCKPIT_SCHEMA_VERSION,
     AutomationCockpitService,
     validate_automation_cockpit_payload,

@@ -54,7 +54,7 @@ from server.services.market.market_universe_truth import (
     normalize_a_share_members,
 )
 from server.services.research.dataset_inputs import load_dataset_backtest_inputs
-from server.services.research_final_evaluation import (
+from server.services.research.research_final_evaluation import (
     _simulation_reviewed_assessment,
     _verify_simulation_account_applicability,
     build_simulation_account_replay,
@@ -553,7 +553,9 @@ def test_derived_assessment_rechecks_samples_and_actual_account_risk(reviewed_re
 def test_independent_simulation_and_completed_qualification_never_supply_own_grant(
     reviewed_replay,
 ):
-    from server.services.research_final_evaluation import verify_deployment_validation
+    from server.services.research.research_final_evaluation import (
+        verify_deployment_validation,
+    )
 
     t = reviewed_replay
     t.finish()

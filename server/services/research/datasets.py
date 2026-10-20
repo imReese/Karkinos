@@ -1021,7 +1021,7 @@ def _existing_forward_seed(
             and through == latest_through
         ):
             if forward_sessions:
-                from server.services.research_corporate_action_jobs import (
+                from server.services.research.research_corporate_action_jobs import (
                     ensure_dataset_corporate_actions,
                 )
 
@@ -1620,7 +1620,7 @@ def ensure_forward_seed_for_source(
                 db, config, source=source, now=now, data_store=market_store
             )
         if forward_sessions:
-            from server.services.research_corporate_action_jobs import (
+            from server.services.research.research_corporate_action_jobs import (
                 ensure_dataset_corporate_actions,
             )
 

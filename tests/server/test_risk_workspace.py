@@ -3,7 +3,7 @@
 import pytest
 
 from server.models import AllocationItem, EquityPoint, PortfolioSnapshot
-from server.services.risk_workspace import build_risk_workspace
+from server.services.risk.risk_workspace import build_risk_workspace
 
 
 def _snapshot(*, total_equity=1000.0, weights=()):

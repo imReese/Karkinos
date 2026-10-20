@@ -16,7 +16,7 @@ from server.services.account.account_truth_replay import (
     build_account_truth_replay_evidence,
     verify_account_truth_replay_evidence,
 )
-from server.services.automation_control import AutomationControlService
+from server.services.automation.automation_control import AutomationControlService
 from server.services.decision.daily_decision_background_schedule import (
     build_background_schedule_result,
     build_next_verified_trading_window,
@@ -134,7 +134,9 @@ from server.services.decision.daily_decision_strategy_gate import (
     daily_candidate_strategy_operating_constraints_blockers,
     resolve_strategy_gate_binding,
 )
-from server.services.paper_shadow_run import run_paper_shadow_from_trading_plan
+from server.services.paper_shadow.paper_shadow_run import (
+    run_paper_shadow_from_trading_plan,
+)
 
 logger = logging.getLogger(__name__)
 

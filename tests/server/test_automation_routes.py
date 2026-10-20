@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from server.db import AppDatabase
 from server.routes.automation import create_router
-from server.services.automation_cockpit import (
+from server.services.automation.automation_cockpit import (
     AUTOMATION_COCKPIT_SCHEMA_VERSION,
     validate_automation_cockpit_payload,
 )

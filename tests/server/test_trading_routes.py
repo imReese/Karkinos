@@ -629,7 +629,7 @@ def test_current_manual_ticket_gate_rechecks_market_data_and_kill_switch(
         },
     )
     monkeypatch.setattr(
-        "server.services.strategy_promotion_pipeline."
+        "server.services.research.strategy_promotion_pipeline."
         "resolve_strategy_order_generation_gate",
         lambda db, strategy_id, *, as_of_date=None: (
             {"status": "pass", "strategy_id": strategy_id},
@@ -675,7 +675,7 @@ def test_current_manual_ticket_gate_requires_trading_control_state(monkeypatch) 
         },
     )
     monkeypatch.setattr(
-        "server.services.strategy_promotion_pipeline."
+        "server.services.research.strategy_promotion_pipeline."
         "resolve_strategy_order_generation_gate",
         lambda db, strategy_id, *, as_of_date=None: (
             {"status": "pass", "strategy_id": strategy_id},
@@ -737,7 +737,7 @@ def test_current_manual_ticket_gate_binds_exact_simulated_order_terms(
         },
     )
     monkeypatch.setattr(
-        "server.services.strategy_promotion_pipeline."
+        "server.services.research.strategy_promotion_pipeline."
         "resolve_strategy_order_generation_gate",
         lambda db, strategy_id, *, as_of_date=None: (
             {
@@ -820,7 +820,7 @@ def test_current_manual_ticket_gate_binds_exact_simulated_order_terms(
     assert "proposed_order_price_not_bound_to_current_quote" in str(exc.value)
 
     monkeypatch.setattr(
-        "server.services.strategy_promotion_pipeline."
+        "server.services.research.strategy_promotion_pipeline."
         "resolve_strategy_order_generation_gate",
         lambda db, strategy_id, *, as_of_date=None: (
             {"status": "blocked", "strategy_id": strategy_id},
@@ -1027,7 +1027,7 @@ def test_daily_shadow_route_delegates_to_canonical_decision_plan_and_service(
         fake_build_plan,
     )
     monkeypatch.setattr(
-        "server.services.paper_shadow_run.run_paper_shadow_from_trading_plan",
+        "server.services.paper_shadow.paper_shadow_run.run_paper_shadow_from_trading_plan",
         fake_run,
     )
     endpoint = _endpoint("/api/trading/shadow-runs/daily", method="POST")

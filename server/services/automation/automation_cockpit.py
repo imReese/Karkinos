@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from server.services.automation_alerts import AutomationAlertService
-from server.services.automation_control import AutomationControlService
+from server.services.automation.automation_alerts import AutomationAlertService
+from server.services.automation.automation_control import AutomationControlService
 from server.services.controlled_execution.broker_gateway import BrokerGatewayService
 from server.services.controlled_execution.controlled_execution_operator_view import (
     ControlledExecutionOperatorViewService,
@@ -17,7 +17,9 @@ from server.services.controlled_execution.current_per_order_review_projection im
 from server.services.decision.daily_decision_evidence_automation import (
     unavailable_daily_candidate_financial_preflight,
 )
-from server.services.strategy_promotion_pipeline import StrategyPromotionPipeline
+from server.services.research.strategy_promotion_pipeline import (
+    StrategyPromotionPipeline,
+)
 from server.services.strategy_scan.daily_candidate_runtime_status import (
     DAILY_CANDIDATE_RUNTIME_STATUS_SCHEMA_VERSION,
     unavailable_daily_candidate_runtime_status,

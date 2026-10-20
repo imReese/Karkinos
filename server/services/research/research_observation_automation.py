@@ -35,7 +35,7 @@ from server.release_activation import (
     is_release_activation_guarded,
     wait_for_release_activation,
 )
-from server.services.research_observation_inputs import (
+from server.services.research.research_observation_inputs import (
     latest_closed_session,
     observation_deployment_scope,
     observation_input_binding,
@@ -43,7 +43,7 @@ from server.services.research_observation_inputs import (
     read_research_observation_dataset,
     require_observation_dataset_prefix,
 )
-from server.services.research_observations import (
+from server.services.research.research_observations import (
     ResearchObservationService,
     observation_code_binding,
 )
@@ -60,10 +60,10 @@ async def start_reserved_champion_observation(
     from server.contracts.http.strategy_models import BacktestCostAssumptions
     from server.persistence.strategy_research import StrategyResearchAuditStore
     from server.services.research.datasets import ensure_forward_seed_for_source
-    from server.services.research_observation_inputs import (
+    from server.services.research.research_observation_inputs import (
         load_research_observation_source,
     )
-    from server.services.research_paper_books import ResearchPaperBookService
+    from server.services.research.research_paper_books import ResearchPaperBookService
 
     try:
         simulation = (
@@ -382,7 +382,7 @@ def _project_dataset_preparation(store, identity, generation, enabled):
 
 def _settle_opted_paper(service, observation, policy, stopped):
     """Separate standing permission; target pause retains valuation of holdings."""
-    from server.services.research_paper_books import ResearchPaperBookService
+    from server.services.research.research_paper_books import ResearchPaperBookService
 
     now = _now(service)
     dataset_id = None

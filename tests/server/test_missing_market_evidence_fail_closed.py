@@ -29,8 +29,8 @@ from server.projections.service import (
     build_portfolio_projection,
 )
 from server.services.account.account_state import build_account_state_projection
-from server.services.risk_engine import build_risk_summary
-from server.services.risk_workspace import build_risk_workspace
+from server.services.risk.risk_engine import build_risk_summary
+from server.services.risk.risk_workspace import build_risk_workspace
 
 
 def _open_position() -> LedgerEntry:

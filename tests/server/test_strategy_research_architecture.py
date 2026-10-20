@@ -69,7 +69,7 @@ from server.projections.backtest_result import (
 from server.projections.backtest_result import (
     fill_to_response as canonical_fill_to_response,
 )
-from server.services.backtest_result_projection import (
+from server.services.backtest.backtest_result_projection import (
     build_backtest_report_metrics_json,
     fill_to_response,
 )

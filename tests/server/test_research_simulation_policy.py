@@ -32,7 +32,9 @@ from server.services.market.market_universe_truth import (
     MarketUniversePolicy,
     market_deployment_scope,
 )
-from server.services.research_final_evaluation import reserve_final_research_evaluation
+from server.services.research.research_final_evaluation import (
+    reserve_final_research_evaluation,
+)
 from tests.server.test_research_final_evaluation import (
     FREEZE,
     _seed_trial,

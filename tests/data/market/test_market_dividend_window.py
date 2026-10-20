@@ -96,7 +96,7 @@ def test_proposal_then_implementation_retains_real_first_seen_and_record_entitle
         changed["events"][0]["available_at"]
         == at(START + timedelta(days=3)).isoformat()
     )
-    from server.services.research_paper_books import _merge_distributions
+    from server.services.research.research_paper_books import _merge_distributions
 
     with pytest.raises(ValueError, match="revision_conflict"):
         _merge_distributions([economic, changed], evaluation_start=START)

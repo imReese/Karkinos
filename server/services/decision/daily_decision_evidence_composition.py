@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from data.dataset.reader import daily_bar_dataset_read_scope
 from server.contracts.content_identity import content_fingerprint
 from server.projections.portfolio_read_snapshot import PortfolioReadSnapshotRejected
-from server.services.automation_control import AutomationControlService
+from server.services.automation.automation_control import AutomationControlService
 from server.services.decision.daily_decision_evidence_contracts import (
     QuoteRefresher,
     StatePlanReader,

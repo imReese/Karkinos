@@ -80,7 +80,7 @@ from server.services.ai_shadow.ai_shadow_research_support import (
     shadow_research_market_close_as_of,
 )
 from server.services.market.calendar import latest_verified_closed_trading_date
-from server.services.strategy_promotion_support import (
+from server.services.research.strategy_promotion_support import (
     AI_SHADOW_QUALIFICATION_READINESS_SCHEMA,
     STRATEGY_PROMOTION_SCHEMA_VERSION,
     resolve_ai_shadow_qualification_promotion_evidence,
@@ -161,7 +161,7 @@ class AiShadowResearchQualificationService:
                 source_run_id,
                 final_evaluation_as_of=admission.require_open(),
             )
-            from server.services.research_final_evaluation import (
+            from server.services.research.research_final_evaluation import (
                 evaluate_reserved_champion,
             )
 
@@ -882,7 +882,7 @@ class AiShadowResearchQualificationService:
             from server.contracts.recommendation_publication import (
                 read_publication_grant,
             )
-            from server.services.research_final_evaluation import (
+            from server.services.research.research_final_evaluation import (
                 build_simulation_account_replay,
             )
 

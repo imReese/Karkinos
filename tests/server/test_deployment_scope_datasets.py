@@ -1109,8 +1109,10 @@ def test_dynamic_membership_adds_current_master_and_keeps_only_held_exits(
 
     from data.dataset.model import DatasetRef
     from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
-    from server.services import research_observation_data_preparation as preparation
     from server.services.market.market_universe_truth import market_deployment_scope
+    from server.services.research import (
+        research_observation_data_preparation as preparation,
+    )
     from tests.server.test_verified_interval_dataset import _calendar
 
     objects, result = _composed(tmp_path)

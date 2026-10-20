@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 import server.persistence.paper_shadow_run_uow as paper_shadow_uow
-import server.services.paper_shadow_run as paper_shadow_service
+import server.services.paper_shadow.paper_shadow_run as paper_shadow_service
 from server.contracts.paper_shadow import PaperShadowRunCommand
 from server.db import AppDatabase
 

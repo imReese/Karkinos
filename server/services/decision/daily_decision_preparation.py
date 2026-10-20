@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from data.dataset.reader import daily_bar_dataset_read_scope
-from server.services.automation_control import AutomationControlService
+from server.services.automation.automation_control import AutomationControlService
 from server.services.decision.daily_decision_evidence_contracts import (
     DAILY_CANDIDATE_PREPARATION_CHECK_SCHEMA_VERSION,
 )
@@ -41,7 +41,7 @@ def build_daily_candidate_preparation_check(
     from server.services.account.reviewed_fee_schedule import (
         build_reviewed_fee_schedule_review_status,
     )
-    from server.services.strategy_promotion_pipeline import (
+    from server.services.research.strategy_promotion_pipeline import (
         StrategyPromotionPipeline,
         resolve_strategy_order_generation_gate,
     )

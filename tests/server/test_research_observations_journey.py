@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from server.db import AppDatabase
 from server.routes import research_observations as routes
-from server.services.research_observations import ResearchObservationService
+from server.services.research.research_observations import ResearchObservationService
 from tests.server.test_research_observation_inputs import (
     DAYS,
     NOW,
@@ -171,7 +171,7 @@ def test_same_session_revision_stale_version_and_code_change_fail_closed(
         == "observation_session_already_published"
     )
     monkeypatch.setattr(
-        "server.services.research_observations.observation_code_binding",
+        "server.services.research.research_observations.observation_code_binding",
         lambda: {"changed": True},
     )
     changed = client.post(

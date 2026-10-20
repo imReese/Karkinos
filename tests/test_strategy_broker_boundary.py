@@ -18,7 +18,7 @@ def test_broker_boundary_scanner_covers_current_protected_investment_trees() -> 
         "server/routes/decision.py",
         "server/routes/ai_*.py",
         "server/routes/strategy_*.py",
-        "server/services/strategy_*.py",
+        "server/services/research/strategy_*.py",
         "analytics/research_*.py",
         "analytics/strategy_*.py",
         "server/routes/capital_authorization.py",
@@ -49,7 +49,7 @@ def test_broker_boundary_scanner_detects_each_protected_domain(
         "server/routes/strategy_promotion.py": (
             "def promote(gateway):\n    gateway.submit_order({})\n"
         ),
-        "server/services/strategy_promotion_pipeline.py": (
+        "server/services/research/strategy_promotion_pipeline.py": (
             "from server.services.controlled_execution.controlled_broker_submission import submit\n"
         ),
         "analytics/research_evidence.py": (

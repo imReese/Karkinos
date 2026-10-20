@@ -6,7 +6,7 @@ from server.ai_runtime.contracts import content_fingerprint
 from server.services.ai_shadow.ai_shadow_research_automation import (
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
 )
-from server.services.automation_cockpit import (
+from server.services.automation.automation_cockpit import (
     AUTOMATION_COCKPIT_SCHEMA_VERSION,
 )
 from server.services.strategy_scan.daily_candidate_production_readiness import (

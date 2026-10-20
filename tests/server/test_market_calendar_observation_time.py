@@ -12,7 +12,7 @@ from server.contracts.market_calendar import MarketCalendarVerificationCommand
 from server.db import AppDatabase
 from server.persistence import migrations
 from server.persistence.market_calendar import MarketCalendarRepository
-from server.services.research_observation_inputs import (
+from server.services.research.research_observation_inputs import (
     ResearchObservationInputError,
     latest_closed_session,
 )

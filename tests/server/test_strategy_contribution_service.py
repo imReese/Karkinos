@@ -7,7 +7,9 @@ import pytest
 
 from server.db import AppDatabase
 from server.models import AccountStrategyAssignment
-from server.services.strategy_contribution import build_strategy_contribution_report
+from server.services.research.strategy_contribution import (
+    build_strategy_contribution_report,
+)
 
 
 def _assignment() -> AccountStrategyAssignment:

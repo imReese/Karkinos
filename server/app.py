@@ -172,7 +172,7 @@ async def lifespan(app: FastAPI):
         run_market_universe_automation_loop,
     )
     from server.services.market.refresh import refresh_one_quote
-    from server.services.research_observation_automation import (
+    from server.services.research.research_observation_automation import (
         run_research_observation_automation_loop,
     )
 

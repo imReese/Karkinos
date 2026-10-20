@@ -42,7 +42,7 @@ from server.services.decision.operations_projection import (
 from server.services.decision.operations_today import build_overview_attention_items
 from server.services.market.calendar import project_market_session
 from server.services.market.hours import get_shanghai_now
-from server.services.risk_workspace import build_risk_workspace
+from server.services.risk.risk_workspace import build_risk_workspace
 
 
 async def build_overview_account_state_response(

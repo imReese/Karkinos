@@ -7,25 +7,31 @@ from typing import Any
 from server.services.account.reviewed_fee_schedule import (
     active_review_matches_fee_evidence,
 )
-from server.services.strategy_promotion_support import (
+from server.services.research.strategy_promotion_support import (
     AI_SHADOW_STRATEGY_PREFIX,
     STRATEGY_PROMOTION_SCHEMA_VERSION,
     resolve_human_ai_shadow_strategy_promotion_binding,
 )
-from server.services.strategy_promotion_support import (
+from server.services.research.strategy_promotion_support import (
     ai_shadow_readiness_binding_blockers as _ai_shadow_readiness_binding_blockers,
 )
-from server.services.strategy_promotion_support import int_or_none as _int_or_none
-from server.services.strategy_promotion_support import is_promotable as _is_promotable
-from server.services.strategy_promotion_support import json_list as _json_list
-from server.services.strategy_promotion_support import json_object as _json_object
-from server.services.strategy_promotion_support import (
+from server.services.research.strategy_promotion_support import (
+    int_or_none as _int_or_none,
+)
+from server.services.research.strategy_promotion_support import (
+    is_promotable as _is_promotable,
+)
+from server.services.research.strategy_promotion_support import json_list as _json_list
+from server.services.research.strategy_promotion_support import (
+    json_object as _json_object,
+)
+from server.services.research.strategy_promotion_support import (
     lifecycle_metadata as _lifecycle_metadata,
 )
-from server.services.strategy_promotion_support import (
+from server.services.research.strategy_promotion_support import (
     missing_requirements as _missing_requirements,
 )
-from server.services.strategy_promotion_support import (
+from server.services.research.strategy_promotion_support import (
     strategy_advancement_gate_fingerprint as _strategy_advancement_gate_fingerprint,
 )
 
@@ -61,7 +67,7 @@ class StrategyPromotionPipeline:
         strategy_id = _strategy_id(readiness)
         _require_ai_shadow_readiness_binding(self._db, readiness)
         if strategy_id.startswith(AI_SHADOW_STRATEGY_PREFIX):
-            from server.services.research_final_evaluation import (
+            from server.services.research.research_final_evaluation import (
                 require_new_publication_final_evaluation,
             )
 
@@ -150,7 +156,7 @@ class StrategyPromotionPipeline:
         )
         _require_ai_shadow_readiness_binding(self._db, readiness)
         if strategy_id.startswith(AI_SHADOW_STRATEGY_PREFIX):
-            from server.services.research_final_evaluation import (
+            from server.services.research.research_final_evaluation import (
                 require_new_publication_final_evaluation,
             )
 

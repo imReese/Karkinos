@@ -1143,7 +1143,7 @@ def _portfolio_account_signals(
     prices = {symbol: Decimal(str(row["frozen_close"])) for symbol, row in buys.items()}
     instruments = {symbol: make_research_stock(symbol, symbol) for symbol in buys}
 
-    from server.services.backtest_costs import quote_formula_purchase
+    from server.services.backtest.backtest_costs import quote_formula_purchase
 
     def cost(symbol, price, quantity):
         return quote_formula_purchase(

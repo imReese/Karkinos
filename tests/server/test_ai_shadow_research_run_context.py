@@ -13,7 +13,9 @@ from server.contracts.ai_shadow_research_automation import (
 from server.db import AppDatabase
 from server.persistence.ai_shadow_research import ShadowResearchStore
 from server.projections.daily_strategy_artifacts import build_daily_strategy_selection
-from server.services.strategy_promotion_pipeline import StrategyPromotionPipeline
+from server.services.research.strategy_promotion_pipeline import (
+    StrategyPromotionPipeline,
+)
 from tests.ai_shadow_strategy_fixtures import (
     seed_ai_shadow_canonical_sources,
     seed_approved_ai_shadow_strategy,

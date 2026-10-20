@@ -264,10 +264,10 @@ def test_independent_scan_validation_reopens_data_and_current_grant(scope_consum
 def test_independent_preparation_reopens_data_and_current_grant(
     scope_consumer, monkeypatch
 ):
-    from server.services import strategy_promotion_pipeline as promotion
     from server.services.decision.daily_decision_preparation import (
         build_daily_candidate_preparation_check,
     )
+    from server.services.research import strategy_promotion_pipeline as promotion
 
     fixture = scope_consumer
     monkeypatch.setattr(

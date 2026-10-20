@@ -10,7 +10,7 @@ from typing import Any
 
 from core.types import AssetClass, OrderSide
 from execution.paper_broker import PaperOrderContext
-from server.services.paper_shadow_contracts import (
+from server.services.paper_shadow.paper_shadow_contracts import (
     PAPER_SHADOW_INPUT_SNAPSHOT_SCHEMA_VERSION,
 )
 

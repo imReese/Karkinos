@@ -28,21 +28,21 @@ from server.services.controlled_execution.oms import (
     OMS_SCHEMA_VERSION,
     PAPER_SHADOW_INITIAL_STATUS,
 )
-from server.services.paper_shadow_contracts import (
+from server.services.paper_shadow.paper_shadow_contracts import (
     PAPER_SHADOW_EXECUTION_MODE,
     PAPER_SHADOW_RUN_SCHEMA_VERSION,
     PAPER_SHADOW_SOURCE,
 )
-from server.services.paper_shadow_values import asset_class as _asset_class
-from server.services.paper_shadow_values import decimal_value as _decimal
-from server.services.paper_shadow_values import dedupe_refs as _dedupe_refs
-from server.services.paper_shadow_values import (
+from server.services.paper_shadow.paper_shadow_values import asset_class as _asset_class
+from server.services.paper_shadow.paper_shadow_values import decimal_value as _decimal
+from server.services.paper_shadow.paper_shadow_values import dedupe_refs as _dedupe_refs
+from server.services.paper_shadow.paper_shadow_values import (
     order_intent_snapshot as _order_intent_snapshot,
 )
-from server.services.paper_shadow_values import (
+from server.services.paper_shadow.paper_shadow_values import (
     paper_order_context as _paper_order_context,
 )
-from server.services.paper_shadow_values import side as _side
+from server.services.paper_shadow.paper_shadow_values import side as _side
 
 
 def _paper_order_request(

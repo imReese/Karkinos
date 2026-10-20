@@ -152,7 +152,9 @@ def create_router(dependencies: ExecutionEndpointDependencies) -> APIRouter:
 
         chronology = None
         if request.test_start_date is not None:
-            from server.services.chronological_backtest import run_chronological_sweep
+            from server.services.backtest.chronological_backtest import (
+                run_chronological_sweep,
+            )
 
             candidates = [candidate_request(params) for params in parameter_payloads]
             try:

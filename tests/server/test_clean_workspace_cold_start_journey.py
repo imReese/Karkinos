@@ -48,11 +48,11 @@ from server.services.ai_shadow.ai_shadow_research_qualification_support import (
     QualificationBaselinePreparer,
 )
 from server.services.market.etf_rotation_automation import EtfRotationAutomationService
-from server.services.research_observations import (
+from server.services.research.research_observations import (
     ResearchObservationService,
     observation_code_binding,
 )
-from server.services.research_paper_books import ResearchPaperBookService
+from server.services.research.research_paper_books import ResearchPaperBookService
 from tests.server.test_research_observation_inputs import (
     DAYS,
     NOW,

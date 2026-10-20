@@ -15,7 +15,7 @@ from server.services.decision import (
 )
 from server.services.decision import decision_projection
 from server.services.decision import decision_workflow_projection as workflow_projection
-from server.services.strategy_promotion_pipeline import (
+from server.services.research.strategy_promotion_pipeline import (
     resolve_strategy_order_generation_gate,
 )
 

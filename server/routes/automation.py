@@ -8,7 +8,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from server.services.automation_control import AutomationControlService
+from server.services.automation.automation_control import AutomationControlService
 from server.services.controlled_execution.broker import build_broker_connectors
 
 
@@ -83,7 +83,9 @@ def create_router() -> APIRouter:
         from server.services.account.reviewed_fee_schedule import (
             build_reviewed_fee_schedule_review_status,
         )
-        from server.services.automation_cockpit import AutomationCockpitService
+        from server.services.automation.automation_cockpit import (
+            AutomationCockpitService,
+        )
         from server.services.controlled_execution.current_per_order_dossier_factory import (
             build_current_per_order_dossier_service,
         )
@@ -277,7 +279,7 @@ def create_router() -> APIRouter:
     @r.get("/alerts")
     async def list_alerts(status: str | None = None) -> list[dict[str, Any]]:
         from server.dependencies import get_app_state
-        from server.services.automation_alerts import AutomationAlertService
+        from server.services.automation.automation_alerts import AutomationAlertService
 
         state = get_app_state()
         return AutomationAlertService(
@@ -290,7 +292,7 @@ def create_router() -> APIRouter:
         request: AlertScanRequest | None = None,
     ) -> dict[str, Any]:
         from server.dependencies import get_app_state
-        from server.services.automation_alerts import AutomationAlertService
+        from server.services.automation.automation_alerts import AutomationAlertService
         from server.services.controlled_execution.current_per_order_dossier_factory import (
             build_current_per_order_dossier_service,
         )
@@ -321,7 +323,7 @@ def create_router() -> APIRouter:
         request: AlertAckRequest,
     ) -> dict[str, Any]:
         from server.dependencies import get_app_state
-        from server.services.automation_alerts import AutomationAlertService
+        from server.services.automation.automation_alerts import AutomationAlertService
 
         state = get_app_state()
         try:

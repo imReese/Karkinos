@@ -38,7 +38,9 @@ def test_existing_forty_stock_and_new_daily_jobs_keep_the_exact_scope_guard(
     supplied, monkeypatch
 ):
     from core.types import InstrumentKey, InstrumentType
-    from server.services import research_observation_data_preparation as preparation
+    from server.services.research import (
+        research_observation_data_preparation as preparation,
+    )
 
     _, observations, current, _, _, _, jobs, _ = supplied
     toggle(supplied)

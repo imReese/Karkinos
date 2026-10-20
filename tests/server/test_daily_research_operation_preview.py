@@ -18,12 +18,12 @@ from server.projections.normalized_research_operation_preview import (
 from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
 )
-from server.services.daily_research_operation_preview import (
+from server.services.decision.plan import build_daily_trading_plan
+from server.services.research.daily_research_operation_preview import (
     _next_verified_target_market_date,
     project_daily_research_operation_preview,
     resolve_latest_verified_research_operation_preview,
 )
-from server.services.decision.plan import build_daily_trading_plan
 
 
 def _formula() -> dict:

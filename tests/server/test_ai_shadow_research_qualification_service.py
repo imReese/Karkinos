@@ -211,7 +211,7 @@ def verified_final_evaluation_boundary(monkeypatch):
         return {"reservation": deepcopy(binding)}
 
     monkeypatch.setattr(
-        "server.services.research_final_evaluation.evaluate_reserved_champion",
+        "server.services.research.research_final_evaluation.evaluate_reserved_champion",
         evaluate_reserved_champion,
     )
     return calls
@@ -929,7 +929,9 @@ async def test_qualification_only_admits_frozen_champion_with_valid_final_eviden
     reservation["sealed_book_policy"] = (
         "fresh_equal_notional_history_warmup_final_bar_target.v1"
     )
-    from server.services.research_final_evaluation import sealed_execution_code_binding
+    from server.services.research.research_final_evaluation import (
+        sealed_execution_code_binding,
+    )
 
     reservation["code_binding"] = sealed_execution_code_binding()
     sealed_equity = equity * Decimal("1.03")
@@ -982,7 +984,7 @@ async def test_qualification_only_admits_frozen_champion_with_valid_final_eviden
         return deepcopy(envelope)
 
     monkeypatch.setattr(
-        "server.services.research_final_evaluation.evaluate_reserved_champion",
+        "server.services.research.research_final_evaluation.evaluate_reserved_champion",
         evaluated_champion,
     )
     blockers = []

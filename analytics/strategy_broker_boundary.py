@@ -50,7 +50,7 @@ DEFAULT_PROTECTED_PATHS: tuple[str, ...] = (
     "server/routes/decision.py",
     "server/routes/ai_*.py",
     "server/routes/strategy_*.py",
-    "server/services/strategy_*.py",
+    "server/services/research/strategy_*.py",
     "analytics/research_*.py",
     "analytics/strategy_*.py",
     "server/routes/capital_authorization.py",

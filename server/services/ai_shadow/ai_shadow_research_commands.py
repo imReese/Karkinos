@@ -41,7 +41,7 @@ from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
 from server.services.ai_shadow.ai_shadow_research_qualification_support import (
     latest_qualification_attempt as read_latest_qualification_attempt,
 )
-from server.services.strategy_promotion_support import (
+from server.services.research.strategy_promotion_support import (
     AI_SHADOW_QUALIFICATION_READINESS_SCHEMA,
     STRATEGY_PROMOTION_SCHEMA_VERSION,
     lifecycle_metadata,
@@ -736,7 +736,7 @@ class AiShadowResearchCommandsMixin:
             "live_like_enabled": False,
             "broker_submission_enabled": False,
         }
-        from server.services.strategy_promotion_pipeline import (
+        from server.services.research.strategy_promotion_pipeline import (
             STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION,
             StrategyPromotionPipeline,
         )

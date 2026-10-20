@@ -12,7 +12,9 @@ from core.types import InstrumentKey, InstrumentType
 from data.market.model import DailyBarObservation
 from server.ai_runtime.formula_dsl import FORMULA_AST_CONTRACT
 from server.db import AppDatabase
-from server.services.research_observation_forecasts import build_observation_forecasts
+from server.services.research.research_observation_forecasts import (
+    build_observation_forecasts,
+)
 from strategy.base import Strategy
 
 _START = date(2026, 9, 14)

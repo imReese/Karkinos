@@ -30,7 +30,9 @@ from server.services.account.account_strategy_evidence import (
     linked_strategy_evidence,
     order_source_signal_id,
 )
-from server.services.strategy_contribution import build_strategy_contribution_report
+from server.services.research.strategy_contribution import (
+    build_strategy_contribution_report,
+)
 
 
 class DecisionOutcomeReviewService:

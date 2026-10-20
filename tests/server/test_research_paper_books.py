@@ -18,7 +18,7 @@ from data.dataset.manifest import publish_daily_bar_dataset_manifest
 from data.dataset.reader import read_daily_bar_dataset
 from data.providers import tushare_corporate_actions as ca_provider
 from server.routes import research_paper_books as routes
-from server.services.research_paper_books import ResearchPaperBookService
+from server.services.research.research_paper_books import ResearchPaperBookService
 from tests.server.test_research_observation_inputs import DAYS, STOCK, dataset
 from tests.server.test_research_observations_journey import journey, start  # noqa: F401
 
@@ -289,11 +289,11 @@ def test_missing_ca_no_new_work_and_receipt_survives_code_change(
     assert duplicate.status_code == 422
     assert duplicate.json()["detail"] == "paper_book_no_new_sessions"
     monkeypatch.setattr(
-        "server.services.research_paper_books.paper_book_code_binding",
+        "server.services.research.research_paper_books.paper_book_code_binding",
         lambda: {"changed": True},
     )
     monkeypatch.setattr(
-        "server.services.research_paper_books.observation_code_binding",
+        "server.services.research.research_paper_books.observation_code_binding",
         lambda: {"changed": True},
     )
     assert client.post(path, json=request).json() == book
@@ -550,7 +550,7 @@ def test_http_configuration_and_observation_lifecycle_gates(paper, monkeypatch):
             == 422
         )
     monkeypatch.setattr(
-        "server.services.research_paper_books.observation_code_binding",
+        "server.services.research.research_paper_books.observation_code_binding",
         lambda: {"changed": True},
     )
     assert (
@@ -805,7 +805,7 @@ def test_net_book_health_pauses_acceptance_but_retains_positions_and_replay(
 def test_paper_automation_is_separate_opt_in_and_marks_paused_observation(
     paper, tmp_path
 ):
-    from server.services import research_observation_automation as automation
+    from server.services.research import research_observation_automation as automation
     from tests.server.test_research_observation_automation import register
 
     client, books, current, observation, path = paper
@@ -916,8 +916,8 @@ def test_frozen_etf_rotation_publishes_and_settles_with_etf_fees_without_fake_ca
 def test_paper_scheduling_disable_during_replay_fences_the_commit(
     paper, tmp_path, monkeypatch
 ):
-    from server.services import research_observation_automation as automation
-    from server.services import research_paper_books as paper_service
+    from server.services.research import research_observation_automation as automation
+    from server.services.research import research_paper_books as paper_service
     from tests.server.test_research_observation_automation import register
 
     client, books, current, observation, path = paper

@@ -75,7 +75,7 @@ def test_orchestrate_executes_simulation_and_emits_event(monkeypatch) -> None:
     }
 
     monkeypatch.setattr(
-        "server.services.paper_shadow_run.run_paper_shadow_from_trading_plan",
+        "server.services.paper_shadow.paper_shadow_run.run_paper_shadow_from_trading_plan",
         lambda db, trading_plan, generated_at: canonical_run,
     )
 
@@ -115,7 +115,7 @@ def test_orchestrate_records_automation_run(monkeypatch) -> None:
             return {"automation_id": "auto:1"}
 
     monkeypatch.setattr(
-        "server.services.paper_shadow_run.run_paper_shadow_from_trading_plan",
+        "server.services.paper_shadow.paper_shadow_run.run_paper_shadow_from_trading_plan",
         lambda db, trading_plan, generated_at: canonical_run,
     )
 

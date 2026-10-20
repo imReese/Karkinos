@@ -9,7 +9,7 @@ from server.contracts.http.research_paper_books import (
     SettleResearchPaperBookRequest,
     StartResearchPaperBookRequest,
 )
-from server.services.research_paper_books import ResearchPaperBookService
+from server.services.research.research_paper_books import ResearchPaperBookService
 
 
 def _service():

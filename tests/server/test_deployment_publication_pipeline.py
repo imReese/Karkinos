@@ -54,7 +54,7 @@ from server.services.ai_shadow.ai_shadow_research_qualification_support import (
     formula_binding,
     qualification_backtest_values,
 )
-from server.services.research_final_evaluation import (
+from server.services.research.research_final_evaluation import (
     reserve_final_research_evaluation,
 )
 from tests.server.test_recommendation_publication import _grant
@@ -306,8 +306,10 @@ async def _run_real_forward_book(data, reservation, *, source_id, frozen_at, gra
     from server.contracts.research_observation_automation import (
         reserved_forward_identity,
     )
-    from server.services.research_observations import ResearchObservationService
-    from server.services.research_paper_books import ResearchPaperBookService
+    from server.services.research.research_observations import (
+        ResearchObservationService,
+    )
+    from server.services.research.research_paper_books import ResearchPaperBookService
 
     current = [frozen_at]
     db = data["db"]
@@ -560,7 +562,9 @@ async def test_verified_final_qualification_policy_publication_and_revocation(
         frozen_at=frozen_at,
         grant=grant,
     )
-    from server.services.research_final_evaluation import evaluate_reserved_champion
+    from server.services.research.research_final_evaluation import (
+        evaluate_reserved_champion,
+    )
 
     source = SimpleNamespace(
         source_candidate=champion,
@@ -592,8 +596,10 @@ async def test_verified_final_qualification_policy_publication_and_revocation(
     from server.services.decision.recommendation_publication import (
         RecommendationPublicationService,
     )
-    from server.services.research_final_evaluation import verify_deployment_validation
-    from server.services.strategy_promotion_pipeline import (
+    from server.services.research.research_final_evaluation import (
+        verify_deployment_validation,
+    )
+    from server.services.research.strategy_promotion_pipeline import (
         resolve_strategy_order_generation_gate,
     )
 

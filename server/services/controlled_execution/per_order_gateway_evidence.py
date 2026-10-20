@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from server.services.account.reviewed_fee_schedule import (
     active_review_matches_fee_evidence,
 )
-from server.services.strategy_promotion_pipeline import (
+from server.services.research.strategy_promotion_pipeline import (
     resolve_strategy_promotion_binding,
 )
 

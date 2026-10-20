@@ -202,7 +202,7 @@ def _reserved_execution_costs(db, binding, universe):
 
     if binding.get("simulation_policy"):
         from server.contracts.http.strategy_models import BacktestCostAssumptions
-        from server.services.backtest_costs import resolve_backtest_costs
+        from server.services.backtest.backtest_costs import resolve_backtest_costs
 
         costs, evidence = resolve_backtest_costs(
             BacktestCostAssumptions.model_validate(binding["simulation_cost_inputs"])
@@ -726,7 +726,7 @@ async def _evaluate_claimed_champion(
             from server.services.research.datasets import (
                 resolve_deployment_evaluation_dataset,
             )
-            from server.services.research_paper_books import (
+            from server.services.research.research_paper_books import (
                 verify_reserved_forward_book,
             )
 
@@ -745,7 +745,7 @@ async def _evaluate_claimed_champion(
             if resolved_dataset.get("status") != "ready":
                 raise StrategyResearchRejected("deployment_evaluation_dataset_pending")
             evaluation_snapshot = resolved_dataset["dataset_snapshot"]
-            from server.services.research_paper_books import (
+            from server.services.research.research_paper_books import (
                 verify_reserved_forward_book,
             )
 
@@ -1053,7 +1053,9 @@ def verify_persisted_final_evaluation(
         from datetime import timezone
 
         from server.db import AppDatabase
-        from server.services.research_paper_books import verify_reserved_forward_book
+        from server.services.research.research_paper_books import (
+            verify_reserved_forward_book,
+        )
 
         bound_db = AppDatabase(research_store._path)
         forward = verify_reserved_forward_book(
@@ -1082,7 +1084,9 @@ def require_new_publication_final_evaluation(
 ) -> None:
     """New AI publications require final evidence; existing scopes stay unchanged."""
     from server.persistence.strategy_research import StrategyResearchAuditStore
-    from server.services.strategy_promotion_support import strategy_dataset_store_root
+    from server.services.research.strategy_promotion_support import (
+        strategy_dataset_store_root,
+    )
 
     path = getattr(db, "_path", None)
     root = strategy_dataset_store_root(db)
@@ -1706,7 +1710,9 @@ def verify_deployment_validation(
     from analytics.deployment_validation import compare_session_curves
     from server.contracts.recommendation_publication import read_publication_grant
     from server.persistence.strategy_research import StrategyResearchAuditStore
-    from server.services.strategy_promotion_support import strategy_dataset_store_root
+    from server.services.research.strategy_promotion_support import (
+        strategy_dataset_store_root,
+    )
 
     store = StrategyResearchAuditStore(db._path)
     result = store.research_backtest_result(result_id)

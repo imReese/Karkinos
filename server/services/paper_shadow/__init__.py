@@ -1,0 +1,1 @@
+"""Paper Shadow domain package."""

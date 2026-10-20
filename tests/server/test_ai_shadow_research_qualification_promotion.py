@@ -14,7 +14,7 @@ from server.http.ai_shadow_research_qualification import create_router
 from server.services.ai_shadow.ai_shadow_research_commands import (
     AiShadowResearchCommandsMixin,
 )
-from server.services.strategy_promotion_support import (
+from server.services.research.strategy_promotion_support import (
     AI_SHADOW_QUALIFICATION_READINESS_SCHEMA,
     ai_shadow_qualification_readiness_binding_blockers,
 )
@@ -70,12 +70,12 @@ def test_qualification_readiness_requires_exact_reopened_binding(
 ) -> None:
     evidence = _evidence()
     monkeypatch.setattr(
-        "server.services.strategy_promotion_support."
+        "server.services.research.strategy_promotion_support."
         "_resolve_ai_shadow_qualification_promotion_evidence",
         lambda db, qualification_candidate_id: (evidence, []),
     )
     monkeypatch.setattr(
-        "server.services.strategy_promotion_support."
+        "server.services.research.strategy_promotion_support."
         "is_valid_passed_strategy_advancement_gate",
         lambda gate: True,
     )

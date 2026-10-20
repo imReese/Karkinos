@@ -35,7 +35,7 @@ from server.db import AppDatabase
 from server.persistence.backtest_results import insert_backtest_result
 from server.persistence.jobs import SQLiteJobStore
 from server.persistence.strategy_research import StrategyResearchAuditStore
-from server.services.research_final_evaluation import (
+from server.services.research.research_final_evaluation import (
     evaluate_reserved_champion,
     require_new_publication_final_evaluation,
     reserve_final_research_evaluation,
@@ -612,7 +612,7 @@ async def test_same_runtime_contract_cannot_hide_changed_frozen_execution_code(
     binding = deepcopy(reservation["evidence"]["reservation"]["code_binding"])
     binding["files"]["backtest/engine.py"] = "0" * 64
     monkeypatch.setattr(
-        "server.services.research_final_evaluation.sealed_execution_code_binding",
+        "server.services.research.research_final_evaluation.sealed_execution_code_binding",
         lambda: binding,
     )
     with pytest.raises(
@@ -909,13 +909,13 @@ async def test_real_failed_final_evidence_cannot_pass_gate(harness, failure):
 
 
 def test_direct_publication_cannot_bypass_final_guard(harness, monkeypatch):
-    from server.services.strategy_promotion_pipeline import (
+    from server.services.research.strategy_promotion_pipeline import (
         STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION,
         StrategyPromotionPipeline,
     )
 
     monkeypatch.setattr(
-        "server.services.strategy_promotion_pipeline._require_ai_shadow_readiness_binding",
+        "server.services.research.strategy_promotion_pipeline._require_ai_shadow_readiness_binding",
         lambda *a: None,
     )
     with pytest.raises(
@@ -1202,7 +1202,9 @@ def test_next_opening_uses_verified_calendar_across_weekend_and_holiday(tmp_path
     from datetime import date
     from zoneinfo import ZoneInfo
 
-    from server.services.research_final_evaluation import _next_verified_session_opens
+    from server.services.research.research_final_evaluation import (
+        _next_verified_session_opens,
+    )
     from tests.server.test_verified_interval_dataset import _db
 
     days = (date(2026, 9, 18), date(2026, 9, 22), date(2026, 9, 23))
@@ -1220,7 +1222,7 @@ def test_replacement_reserve_quotes_real_fees_and_slippage_instead_of_fixed_perc
     from datetime import date
 
     from execution.commission import MultiAssetCommission
-    from server.services.research_final_evaluation import (
+    from server.services.research.research_final_evaluation import (
         _replacement_transition_reserve,
     )
 

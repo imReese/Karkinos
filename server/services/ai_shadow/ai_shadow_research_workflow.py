@@ -107,7 +107,7 @@ class AiShadowResearchWorkflowMixin:
             pending = self._open_deployment_reservation(grant)
             if pending:
                 from data.storage.objects import ContentAddressedObjectStore
-                from server.services.research_observation_automation import (
+                from server.services.research.research_observation_automation import (
                     start_reserved_champion_observation,
                 )
 
@@ -160,7 +160,9 @@ class AiShadowResearchWorkflowMixin:
 
     async def _evaluate_independent_simulation(self, reserved):
         """Final inference uses the frozen research source, never account readiness."""
-        from server.services.research_final_evaluation import evaluate_reserved_champion
+        from server.services.research.research_final_evaluation import (
+            evaluate_reserved_champion,
+        )
 
         store, source, adapter = self._independent_simulation_inputs(reserved)
         return await evaluate_reserved_champion(
@@ -180,7 +182,7 @@ class AiShadowResearchWorkflowMixin:
         if grant and scope:
             from data.storage.objects import ContentAddressedObjectStore
             from server.services.research.datasets import ensure_forward_seed_for_source
-            from server.services.research_observation_inputs import (
+            from server.services.research.research_observation_inputs import (
                 load_research_observation_source,
             )
 
@@ -619,7 +621,7 @@ class AiShadowResearchWorkflowMixin:
                 created_at=self._utc_now(),
             )
             if selection.has_sealed_holdout:
-                from server.services.research_final_evaluation import (
+                from server.services.research.research_final_evaluation import (
                     reserve_final_research_evaluation,
                 )
 
@@ -645,7 +647,7 @@ class AiShadowResearchWorkflowMixin:
                     .get("simulation_policy")
                 ):
                     from data.storage.objects import ContentAddressedObjectStore
-                    from server.services.research_observation_automation import (
+                    from server.services.research.research_observation_automation import (
                         start_reserved_champion_observation,
                     )
 

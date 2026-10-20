@@ -10,7 +10,7 @@ import pytest
 from data.dataset.catalog import DatasetCatalog
 from data.storage.objects import ObjectIntegrityError
 from server.db import AppDatabase
-from server.services.research_paper_books import ResearchPaperBookService
+from server.services.research.research_paper_books import ResearchPaperBookService
 from tests.server.test_research_observations_journey import journey  # noqa: F401
 from tests.server.test_research_paper_books import paper, prepare_trade  # noqa: F401
 from tools.recovery_bundle import create_recovery_bundle, restore_recovery_bundle

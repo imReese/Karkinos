@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from server.services.paper_shadow_review import (
+from server.services.paper_shadow.paper_shadow_review import (
     fills_by_order,
     review_evidence,
     review_ref_suffix,
     terminal_order_review_evidence,
 )
-from server.services.paper_shadow_values import (
+from server.services.paper_shadow.paper_shadow_values import (
     dict_value,
     order_intent_ref,
 )

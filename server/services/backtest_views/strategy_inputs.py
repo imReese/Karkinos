@@ -19,7 +19,9 @@ from server.models import (
     BacktestMetrics,
     BacktestRequest,
 )
-from server.services.backtest_result_projection import json_object as _json_object
+from server.services.backtest.backtest_result_projection import (
+    json_object as _json_object,
+)
 
 
 def backtest_metrics_from_payload(payload: dict[str, Any]) -> BacktestMetrics:

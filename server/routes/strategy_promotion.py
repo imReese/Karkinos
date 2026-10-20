@@ -7,7 +7,9 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from server.services.strategy_promotion_pipeline import StrategyPromotionPipeline
+from server.services.research.strategy_promotion_pipeline import (
+    StrategyPromotionPipeline,
+)
 
 
 class StrategyPromotionRequest(BaseModel):

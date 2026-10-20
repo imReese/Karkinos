@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from server.db import AppDatabase
-from server.services.automation_control import (
+from server.services.automation.automation_control import (
     DEFAULT_AUTOMATION_POLICY_ID,
     AutomationControlService,
 )

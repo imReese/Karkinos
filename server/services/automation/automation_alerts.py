@@ -4,34 +4,40 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from server.services.automation_alert_support import (
+from server.services.automation.automation_alert_support import (
     ACCOUNT_TRUTH_ALERT_STATUSES as _ACCOUNT_TRUTH_ALERT_STATUSES,
 )
-from server.services.automation_alert_support import AUTOMATION_ALERT_SCHEMA_VERSION
-from server.services.automation_alert_support import (
+from server.services.automation.automation_alert_support import (
+    AUTOMATION_ALERT_SCHEMA_VERSION,
+)
+from server.services.automation.automation_alert_support import (
     FAILED_AUTOMATION_RUN_STATUSES as _FAILED_AUTOMATION_RUN_STATUSES,
 )
-from server.services.automation_alert_support import (
+from server.services.automation.automation_alert_support import (
     PAPER_SHADOW_DIVERGENCE_STATUSES as _PAPER_SHADOW_DIVERGENCE_STATUSES,
 )
-from server.services.automation_alert_support import (
+from server.services.automation.automation_alert_support import (
     RUNTIME_CONNECTOR_DEGRADED_STATUSES as _RUNTIME_CONNECTOR_DEGRADED_STATUSES,
 )
-from server.services.automation_alert_support import (
+from server.services.automation.automation_alert_support import (
     STALE_MARKET_DATA_STATUSES as _STALE_MARKET_DATA_STATUSES,
 )
-from server.services.automation_alert_support import (
+from server.services.automation.automation_alert_support import (
     automation_run_suggested_action as _automation_run_suggested_action,
 )
-from server.services.automation_alert_support import (
+from server.services.automation.automation_alert_support import (
     current_review_alert_boundary as _current_review_alert_boundary,
 )
-from server.services.automation_alert_support import dedupe as _dedupe
-from server.services.automation_alert_support import json_list as _json_list
-from server.services.automation_alert_support import json_object as _json_object
-from server.services.automation_alert_support import object_dict as _object_dict
-from server.services.automation_alert_support import safe_int as _int
-from server.services.automation_alert_support import (
+from server.services.automation.automation_alert_support import dedupe as _dedupe
+from server.services.automation.automation_alert_support import json_list as _json_list
+from server.services.automation.automation_alert_support import (
+    json_object as _json_object,
+)
+from server.services.automation.automation_alert_support import (
+    object_dict as _object_dict,
+)
+from server.services.automation.automation_alert_support import safe_int as _int
+from server.services.automation.automation_alert_support import (
     stable_fingerprint as _stable_fingerprint,
 )
 from server.services.controlled_execution.current_per_order_review_projection import (

@@ -7,7 +7,9 @@ import sqlite3
 
 from server.db import AppDatabase
 from server.services.decision.daily_operations import build_daily_operations_summary
-from server.services.paper_shadow_run import run_paper_shadow_from_trading_plan
+from server.services.paper_shadow.paper_shadow_run import (
+    run_paper_shadow_from_trading_plan,
+)
 
 
 def test_paper_shadow_run_creates_simulated_order_and_fill_without_ledger_mutation(

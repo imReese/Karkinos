@@ -8,10 +8,6 @@ from typing import Any
 from server.services.controlled_execution.manual_trade_fees import (
     resolve_manual_trade_fee_breakdown,
 )
-from server.services.daily_research_operation_preview import (
-    project_daily_research_operation_preview,
-    unavailable_daily_research_operation_preview,
-)
 from server.services.decision.daily_trading_plan_constraints import (
     constraint_checks as _constraint_checks,
 )
@@ -54,6 +50,10 @@ from server.services.decision.daily_trading_plan_support import int_value as _in
 from server.services.decision.daily_trading_plan_support import mapping as _dict
 from server.services.decision.daily_trading_plan_support import side as _side
 from server.services.decision.daily_trading_plan_support import status as _status
+from server.services.research.daily_research_operation_preview import (
+    project_daily_research_operation_preview,
+    unavailable_daily_research_operation_preview,
+)
 
 _READY_MANUAL_CONFIRMATION_STATUS = "ready_for_manual_confirmation"
 _PAPER_SHADOW_REVIEW_STATUS = "paper_shadow_review_required"

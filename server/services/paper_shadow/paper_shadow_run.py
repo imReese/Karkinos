@@ -8,34 +8,44 @@ from server.contracts.paper_shadow import (
     PaperShadowRunCommand,
     PaperShadowRunPersistence,
 )
-from server.services.paper_shadow_contracts import (
+from server.services.paper_shadow.paper_shadow_contracts import (
     PAPER_SHADOW_RUN_SCHEMA_VERSION,
 )
-from server.services.paper_shadow_execution import (
+from server.services.paper_shadow.paper_shadow_execution import (
     matching_latest_run as _matching_latest_run,
 )
-from server.services.paper_shadow_review import (
+from server.services.paper_shadow.paper_shadow_review import (
     divergence_summary as _divergence_summary,
 )
-from server.services.paper_shadow_review import run_evidence_refs as _run_evidence_refs
-from server.services.paper_shadow_review import run_status as _run_status
-from server.services.paper_shadow_review_queue import (
+from server.services.paper_shadow.paper_shadow_review import (
+    run_evidence_refs as _run_evidence_refs,
+)
+from server.services.paper_shadow.paper_shadow_review import run_status as _run_status
+from server.services.paper_shadow.paper_shadow_review_queue import (
     build_paper_shadow_review_queue as _build_review_queue,
 )
-from server.services.paper_shadow_simulation import simulate_paper_shadow_orders
-from server.services.paper_shadow_values import dict_value as _dict
-from server.services.paper_shadow_values import input_fingerprint as _input_fingerprint
-from server.services.paper_shadow_values import input_refs as _input_refs
-from server.services.paper_shadow_values import input_snapshot as _input_snapshot
-from server.services.paper_shadow_values import (
+from server.services.paper_shadow.paper_shadow_simulation import (
+    simulate_paper_shadow_orders,
+)
+from server.services.paper_shadow.paper_shadow_values import dict_value as _dict
+from server.services.paper_shadow.paper_shadow_values import (
+    input_fingerprint as _input_fingerprint,
+)
+from server.services.paper_shadow.paper_shadow_values import input_refs as _input_refs
+from server.services.paper_shadow.paper_shadow_values import (
+    input_snapshot as _input_snapshot,
+)
+from server.services.paper_shadow.paper_shadow_values import (
     normalized_outcome_overrides as _normalized_outcome_overrides,
 )
-from server.services.paper_shadow_values import order_intents as _order_intents
-from server.services.paper_shadow_values import plan_date as _plan_date
-from server.services.paper_shadow_values import (
+from server.services.paper_shadow.paper_shadow_values import (
+    order_intents as _order_intents,
+)
+from server.services.paper_shadow.paper_shadow_values import plan_date as _plan_date
+from server.services.paper_shadow.paper_shadow_values import (
     stable_order_intent_input as _stable_order_intent_input,
 )
-from server.services.paper_shadow_values import timestamp as _timestamp
+from server.services.paper_shadow.paper_shadow_values import timestamp as _timestamp
 
 
 def run_paper_shadow_from_trading_plan(

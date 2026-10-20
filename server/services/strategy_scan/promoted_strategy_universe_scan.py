@@ -22,7 +22,7 @@ from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
 )
 from server.services.market.market_universe_automation import verified_trading_dates
 from server.services.market.market_universe_truth import MarketUniversePolicy
-from server.services.strategy_promotion_pipeline import (
+from server.services.research.strategy_promotion_pipeline import (
     AI_SHADOW_STRATEGY_PREFIX,
     resolve_strategy_order_generation_gate,
 )

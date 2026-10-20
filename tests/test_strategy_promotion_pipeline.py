@@ -7,7 +7,7 @@ from analytics.strategy_advancement_gate import (
     StrategyAdvancementGate,
 )
 from server.db import AppDatabase
-from server.services.strategy_promotion_pipeline import (
+from server.services.research.strategy_promotion_pipeline import (
     STRATEGY_LIFECYCLE_SAFETY_CONFIRMATION,
     STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION,
     StrategyPromotionPipeline,
@@ -296,11 +296,11 @@ def test_human_paper_shadow_promotion_preserves_other_active_strategy(
 ) -> None:
     service = _service(tmp_path)
     monkeypatch.setattr(
-        "server.services.strategy_promotion_pipeline._require_ai_shadow_readiness_binding",
+        "server.services.research.strategy_promotion_pipeline._require_ai_shadow_readiness_binding",
         lambda db, readiness: None,
     )
     monkeypatch.setattr(
-        "server.services.research_final_evaluation.require_new_publication_final_evaluation",
+        "server.services.research.research_final_evaluation.require_new_publication_final_evaluation",
         lambda db, result_id, expected_candidate_id: None,
     )
     strat_1_id = "ai_formula_shadow:candidate_1"

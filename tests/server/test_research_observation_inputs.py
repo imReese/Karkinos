@@ -39,7 +39,7 @@ from server.ai_runtime.formula_dsl import (
 from server.services.market.verified_daily_market_data import (
     verified_daily_resolver_policy_id,
 )
-from server.services.research_observation_inputs import (
+from server.services.research.research_observation_inputs import (
     ResearchObservationInputError,
     latest_closed_session,
     load_research_observation_source,

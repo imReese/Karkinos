@@ -10,7 +10,7 @@ from server.services.ai_shadow.ai_shadow_research_automation import (
     SHADOW_RESEARCH_POLICY_CONFIRMATION,
     SHADOW_RESEARCH_TOKEN_BUDGET_MODE_UNBOUNDED,
 )
-from server.services.automation_cockpit import (
+from server.services.automation.automation_cockpit import (
     AUTOMATION_COCKPIT_SCHEMA_PREFIX,
     AUTOMATION_COCKPIT_SCHEMA_VERSION,
 )

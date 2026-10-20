@@ -27,7 +27,6 @@ from data.providers.tencent import AKSHARE_TENCENT_DAILY_BAR_DESCRIPTOR
 from data.source_policy import FREE_CN_RESEARCH_V1
 from server.persistence.automation_runs import AutomationRunRepository
 from server.persistence.jobs import SQLiteJobStore
-from server.services import research_observation_data_preparation as preparation
 from server.services.market.calendar import (
     resolve_verified_closed_trading_dates_in_range,
 )
@@ -36,14 +35,17 @@ from server.services.market.verified_daily_market_data import (
     VerifiedDailyMarketJobRequest,
 )
 from server.services.market.verified_daily_market_jobs import VERIFIED_DAILY_MARKET_JOB
+from server.services.research import (
+    research_observation_data_preparation as preparation,
+)
 from server.services.research.datasets import (
     ResearchDatasetService,
     publish_verified_interval_dataset,
 )
-from server.services.research_observation_automation import (
+from server.services.research.research_observation_automation import (
     run_research_observation_automation_once,
 )
-from server.services.research_paper_books import ResearchPaperBookService
+from server.services.research.research_paper_books import ResearchPaperBookService
 from server.workers.data_worker import (
     _require_current_verified_daily_market_job,
     execute_verified_daily_market_job,

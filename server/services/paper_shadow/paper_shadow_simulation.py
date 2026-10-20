@@ -8,16 +8,16 @@ from typing import Any
 
 from execution.paper_broker import PaperBroker
 from server.contracts.paper_shadow import PaperShadowFillFact, PaperShadowOrderFact
-from server.services.paper_shadow_contracts import PAPER_SHADOW_SOURCE
-from server.services.paper_shadow_execution import (
+from server.services.paper_shadow.paper_shadow_contracts import PAPER_SHADOW_SOURCE
+from server.services.paper_shadow.paper_shadow_execution import (
     build_shadow_failed_order,
     build_shadow_fill,
     build_shadow_order,
     paper_order_request,
     simulate_outcome,
 )
-from server.services.paper_shadow_review import divergence_status
-from server.services.paper_shadow_values import (
+from server.services.paper_shadow.paper_shadow_review import divergence_status
+from server.services.paper_shadow.paper_shadow_values import (
     order_intent_ref,
     order_intent_snapshot,
     outcome_for_intent,

@@ -83,7 +83,7 @@ from server.services.controlled_execution.per_order_gateway_evidence import (
     validate_per_order_gateway_evidence_payload,
 )
 from server.services.controlled_execution.trading_controls import TradingControlState
-from server.services.strategy_promotion_pipeline import (
+from server.services.research.strategy_promotion_pipeline import (
     resolve_strategy_promotion_binding,
 )
 from tests.ai_shadow_strategy_fixtures import seed_approved_ai_shadow_strategy

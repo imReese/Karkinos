@@ -20,7 +20,6 @@ from data.store import DataStore
 from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
 from server.persistence.automation_runs import AutomationRunRepository
 from server.persistence.jobs import SQLiteJobStore
-from server.services import research_corporate_action_jobs as supply
 from server.services.market.market_universe_truth import (
     MarketUniversePolicy,
     market_deployment_scope,
@@ -30,8 +29,11 @@ from server.services.market.verified_daily_market_data import (
     VerifiedDailyMarketJobRequest,
 )
 from server.services.market.verified_daily_market_jobs import VERIFIED_DAILY_MARKET_JOB
+from server.services.research import research_corporate_action_jobs as supply
 from server.services.research.datasets import ensure_forward_seed_for_source
-from server.services.research_observation_data_preparation import _publish_append
+from server.services.research.research_observation_data_preparation import (
+    _publish_append,
+)
 from server.workers import data_worker
 from tests.server.test_dataset_corporate_actions import _response
 from tests.server.test_deployment_scope_datasets import SECOND, _composed
@@ -450,7 +452,7 @@ def test_provider_window_revocation_and_budget_fence_without_more_sdk_calls(
 def test_real_observation_opt_in_supplies_window_and_revocation_blocks_future_jobs(
     journey, tmp_path, monkeypatch
 ):
-    from server.services.research_observation_automation import (
+    from server.services.research.research_observation_automation import (
         configure_observation_automation,
     )
 
@@ -585,7 +587,9 @@ def test_slow_append_replay_allows_revoke_before_catalog_admission(
     import threading
     from concurrent.futures import ThreadPoolExecutor
 
-    from server.services import research_observation_data_preparation as preparation
+    from server.services.research import (
+        research_observation_data_preparation as preparation,
+    )
     from tests.server.test_research_observation_data_preparation import (
         execute,
         prepare,

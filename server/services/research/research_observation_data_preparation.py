@@ -63,8 +63,10 @@ from server.services.research.datasets import (
     publish_verified_interval_dataset,
     verified_dataset_dates,
 )
-from server.services.research_observation_inputs import observation_input_binding
-from server.services.research_observations import (
+from server.services.research.research_observation_inputs import (
+    observation_input_binding,
+)
+from server.services.research.research_observations import (
     ResearchObservationService,
     observation_code_binding,
 )
@@ -632,7 +634,7 @@ def _prepare(service, config, store, observation, now, grant, stopped, data_stor
         else {"dataset_id": ref.dataset_id}
     )
     if _deployment_scope(observation) is not None:
-        from server.services.research_corporate_action_jobs import (
+        from server.services.research.research_corporate_action_jobs import (
             ensure_dataset_corporate_actions,
         )
 

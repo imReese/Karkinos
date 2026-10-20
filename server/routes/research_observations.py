@@ -13,11 +13,11 @@ from server.contracts.http.research_observations import (
     PauseResearchObservationRequest,
     StartResearchObservationRequest,
 )
-from server.services.research_observation_automation import (
+from server.services.research.research_observation_automation import (
     configure_observation_automation,
     project_observation_automation,
 )
-from server.services.research_observations import ResearchObservationService
+from server.services.research.research_observations import ResearchObservationService
 
 
 def _service() -> ResearchObservationService:

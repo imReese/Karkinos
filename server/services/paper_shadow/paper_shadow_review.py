@@ -6,29 +6,41 @@ from decimal import Decimal
 from typing import Any
 
 from execution.paper_broker import PaperBrokerResult
-from server.services.paper_shadow_values import (
+from server.services.paper_shadow.paper_shadow_values import (
     account_truth_snapshot as _account_truth_snapshot,
 )
-from server.services.paper_shadow_values import (
+from server.services.paper_shadow.paper_shadow_values import (
     broker_account_truth_state as _broker_account_truth_state,
 )
-from server.services.paper_shadow_values import (
+from server.services.paper_shadow.paper_shadow_values import (
     current_account_facts as _current_account_facts,
 )
-from server.services.paper_shadow_values import decimal_or_zero as _decimal_or_zero
-from server.services.paper_shadow_values import dedupe_refs as _dedupe_refs
-from server.services.paper_shadow_values import dict_value as _dict
-from server.services.paper_shadow_values import (
+from server.services.paper_shadow.paper_shadow_values import (
+    decimal_or_zero as _decimal_or_zero,
+)
+from server.services.paper_shadow.paper_shadow_values import dedupe_refs as _dedupe_refs
+from server.services.paper_shadow.paper_shadow_values import dict_value as _dict
+from server.services.paper_shadow.paper_shadow_values import (
     fill_count_by_order as _fill_count_by_order,
 )
-from server.services.paper_shadow_values import float_or_none as _float_or_none
-from server.services.paper_shadow_values import order_intent_ref as _order_intent_ref
-from server.services.paper_shadow_values import (
+from server.services.paper_shadow.paper_shadow_values import (
+    float_or_none as _float_or_none,
+)
+from server.services.paper_shadow.paper_shadow_values import (
+    order_intent_ref as _order_intent_ref,
+)
+from server.services.paper_shadow.paper_shadow_values import (
     order_intent_snapshot as _order_intent_snapshot,
 )
-from server.services.paper_shadow_values import refs_with_prefix as _refs_with_prefix
-from server.services.paper_shadow_values import string_or_none as _string_or_none
-from server.services.paper_shadow_values import value_counts as _value_counts
+from server.services.paper_shadow.paper_shadow_values import (
+    refs_with_prefix as _refs_with_prefix,
+)
+from server.services.paper_shadow.paper_shadow_values import (
+    string_or_none as _string_or_none,
+)
+from server.services.paper_shadow.paper_shadow_values import (
+    value_counts as _value_counts,
+)
 
 
 def _run_status(

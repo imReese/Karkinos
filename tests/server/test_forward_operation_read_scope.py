@@ -10,15 +10,15 @@ import pytest
 
 from data.dataset.catalog import DatasetCatalog
 from data.dataset.reader import read_daily_bar_dataset
-from server.services.research_observation_automation import (
+from server.services.research.research_observation_automation import (
     configure_observation_automation,
     run_research_observation_automation_once,
 )
-from server.services.research_observation_inputs import (
+from server.services.research.research_observation_inputs import (
     read_research_observation_dataset,
     require_observation_dataset_prefix,
 )
-from server.services.research_paper_books import ResearchPaperBookService
+from server.services.research.research_paper_books import ResearchPaperBookService
 from tests.server.test_research_observation_automation import extend_calendar
 from tests.server.test_research_observation_inputs import DAYS
 from tests.server.test_research_observations_journey import journey  # noqa: F401
@@ -69,7 +69,7 @@ def forward_book(journey, tmp_path):
 def test_settle_reuses_one_verified_seed_and_next_operation_is_cold(
     forward_book, monkeypatch
 ):
-    import server.services.research_observation_inputs as inputs
+    import server.services.research.research_observation_inputs as inputs
 
     observations, paper, identity, seed, next_input = forward_book
     for index in (5, 6):

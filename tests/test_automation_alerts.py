@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from server.db import AppDatabase
-from server.services.automation_alerts import AutomationAlertService
+from server.services.automation.automation_alerts import AutomationAlertService
 from server.services.controlled_execution.broker_gateway import BrokerGatewayService
 from server.services.controlled_execution.current_per_order_dossier import (
     CURRENT_PER_ORDER_CANDIDATES_SCHEMA_VERSION,

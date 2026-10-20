@@ -28,11 +28,11 @@ from server.services.market.market_universe_truth import (
     market_deployment_scope,
     normalize_a_share_members,
 )
-from server.services.research_observation_automation import (
+from server.services.research.research_observation_automation import (
     configure_observation_automation,
     start_reserved_champion_observation,
 )
-from server.services.research_paper_books import ResearchPaperBookService
+from server.services.research.research_paper_books import ResearchPaperBookService
 from tests.server.test_recommendation_publication import _grant
 from tests.server.test_research_observation_inputs import DAYS, STOCK, formula_source
 from tests.server.test_research_observations_journey import journey  # noqa: F401
@@ -212,7 +212,7 @@ def test_reserved_start_waits_then_resumes_exact_cash_fees_and_keeps_owner_pause
         lambda *_a, **_kw: queued.pop(0),
     )
     monkeypatch.setattr(
-        "server.services.backtest_costs.resolve_frozen_deployment_fee_schedule",
+        "server.services.backtest.backtest_costs.resolve_frozen_deployment_fee_schedule",
         lambda *_a: SimpleNamespace(
             commission_calc=StockACommission(),
             cost_model_reference=fees["cost_model_reference"],
@@ -234,7 +234,9 @@ def test_reserved_start_waits_then_resumes_exact_cash_fees_and_keeps_owner_pause
     assert pending["status"] == "waiting"
     assert observations.repository.list() == []
     if not exercise_forward:
-        from server.services.research_observations import ResearchObservationService
+        from server.services.research.research_observations import (
+            ResearchObservationService,
+        )
 
         original_publication = ResearchObservationService._publication
         failed = []
@@ -341,7 +343,9 @@ def test_reserved_start_waits_then_resumes_exact_cash_fees_and_keeps_owner_pause
     assert len(observations.repository.list()) == 1
     assert policies.get_observation_automation_policy(identity)["enabled"] is False
     assert observations.db.list_strategy_promotion_states_sync() == []
-    from server.services.research_paper_books import verify_reserved_forward_book
+    from server.services.research.research_paper_books import (
+        verify_reserved_forward_book,
+    )
 
     observed = observations.repository.get(identity)
     observations.repository.pause(
@@ -388,7 +392,9 @@ def exercise_and_compare_forward(
     )
     from server.contracts.strategy_research import StrategyResearchSelection
     from server.services.research.dataset_inputs import load_dataset_backtest_inputs
-    from server.services.research_paper_books import verify_reserved_forward_book
+    from server.services.research.research_paper_books import (
+        verify_reserved_forward_book,
+    )
     from tests.server.test_research_observation_inputs import calendar
     from tests.server.test_verified_interval_dataset import _verified_day
 

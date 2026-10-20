@@ -8,7 +8,7 @@ import pytest
 
 from analytics.forward_observation_health import evaluate_forward_observation_health
 from server.routes import research_observations as routes
-from server.services.research_observations import ResearchObservationService
+from server.services.research.research_observations import ResearchObservationService
 from tests.server.test_research_observation_inputs import DAYS, calendar, dataset
 from tests.server.test_research_observations_journey import journey  # noqa: F401
 
@@ -173,7 +173,7 @@ def test_changed_code_records_unavailable_without_evaluating_performance(
     started, _ = request_start(client, result_id, policy())
     path = f"/api/research-observations/{started['id']}"
     monkeypatch.setattr(
-        "server.services.research_observations.observation_code_binding",
+        "server.services.research.research_observations.observation_code_binding",
         lambda: {"changed": True},
     )
     receipt, _ = advance(client, path, 0, today.dataset_id)

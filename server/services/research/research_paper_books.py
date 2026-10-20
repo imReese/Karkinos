@@ -48,10 +48,10 @@ from server.contracts.content_identity import content_fingerprint
 from server.contracts.http.strategy_models import BacktestCostAssumptions
 from server.contracts.research_observation_automation import reserved_forward_identity
 from server.persistence.research_paper_books import ResearchPaperBooksRepository
-from server.services.backtest_costs import (
+from server.services.backtest.backtest_costs import (
     resolve_paper_book_costs as resolve_paper_book_costs,
 )
-from server.services.research_observation_inputs import (
+from server.services.research.research_observation_inputs import (
     latest_closed_session,
     observation_deployment_scope,
     observation_input_binding,
@@ -59,7 +59,7 @@ from server.services.research_observation_inputs import (
     read_research_observation_dataset,
     require_observation_dataset_prefix,
 )
-from server.services.research_observations import (
+from server.services.research.research_observations import (
     ResearchObservationService,
     observation_code_binding,
 )

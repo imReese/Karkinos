@@ -46,10 +46,10 @@ from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
     build_daily_strategy_promotion_binding,
 )
-from server.services.strategy_promotion_qualification_source import (
+from server.services.research.strategy_promotion_qualification_source import (
     build_normalized_source_daily_strategy_artifact_binding as _build_normalized_source_daily_strategy_artifact_binding,
 )
-from server.services.strategy_promotion_qualification_source import (
+from server.services.research.strategy_promotion_qualification_source import (
     load_qualification_sources,
 )
 

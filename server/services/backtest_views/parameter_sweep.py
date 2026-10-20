@@ -13,7 +13,9 @@ from server.models import (
     BacktestRequest,
     BacktestSweepRequest,
 )
-from server.services.backtest_result_projection import json_object as _json_object
+from server.services.backtest.backtest_result_projection import (
+    json_object as _json_object,
+)
 
 _SWEEP_RANK_DIRECTIONS = {
     "total_return": "desc",

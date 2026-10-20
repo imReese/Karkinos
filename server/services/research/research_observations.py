@@ -41,12 +41,12 @@ from domain.research_targets import (
 from risk.target_limits import TARGET_LIMITS_POLICY_ID, evaluate_target_limits
 from server.contracts.content_identity import content_fingerprint
 from server.persistence.research_observations import ResearchObservationsRepository
-from server.services.backtest_costs import resolve_paper_book_costs
-from server.services.research_observation_forecasts import (
+from server.services.backtest.backtest_costs import resolve_paper_book_costs
+from server.services.research.research_observation_forecasts import (
     FORECAST_POLICY_ID,
     build_observation_forecasts,
 )
-from server.services.research_observation_inputs import (
+from server.services.research.research_observation_inputs import (
     bind_observation_forward_input,
     latest_closed_session,
     load_research_observation_source,

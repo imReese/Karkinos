@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from server.services.decision import decision_application
-from server.services.strategy_promotion_pipeline import (
+from server.services.research.strategy_promotion_pipeline import (
     resolve_strategy_order_generation_gate as canonical_order_generation_gate,
 )
 

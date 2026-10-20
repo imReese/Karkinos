@@ -69,12 +69,12 @@ from server.services.market.verified_daily_market_jobs import (
     enqueue_latest_daily_market_collection_jobs,
     supported_watchlist_instruments,
 )
-from server.services.research_corporate_action_jobs import (
+from server.services.research.research_corporate_action_jobs import (
     CORPORATE_ACTION_DAY_JOB,
     CorporateActionDayService,
     require_corporate_action_job_permission,
 )
-from server.services.research_observation_data_preparation import (
+from server.services.research.research_observation_data_preparation import (
     guard_observation_data_preparation,
     observation_daily_job_grant,
     require_observation_preparation_job,

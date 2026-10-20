@@ -18,7 +18,7 @@ from server.services.decision.daily_decision_evidence_contracts import (
 from server.services.market.calendar import (
     validate_verified_market_calendar,
 )
-from server.services.strategy_promotion_pipeline import (
+from server.services.research.strategy_promotion_pipeline import (
     resolve_strategy_order_generation_gate,
 )
 from server.services.strategy_scan.daily_candidate_execution_closure import (

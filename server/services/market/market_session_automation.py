@@ -7,9 +7,11 @@ import json
 from datetime import datetime
 from typing import Any
 
-from server.services.automation_control import AutomationControlService
+from server.services.automation.automation_control import AutomationControlService
 from server.services.market.hours import get_shanghai_now, is_cn_trading_session
-from server.services.paper_shadow_run import run_paper_shadow_from_trading_plan
+from server.services.paper_shadow.paper_shadow_run import (
+    run_paper_shadow_from_trading_plan,
+)
 
 MARKET_SESSION_AUTOMATION_SCHEMA_VERSION = "karkinos.market_session_automation.v1"
 MARKET_SESSION_LIMITATION = (

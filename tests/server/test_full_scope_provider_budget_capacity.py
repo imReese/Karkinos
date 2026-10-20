@@ -23,7 +23,9 @@ from server.services.market.verified_daily_market_jobs import (
     VERIFIED_DAILY_MARKET_JOB,
     enqueue_verified_daily_market_jobs_for_range,
 )
-from server.services.research_corporate_action_jobs import CORPORATE_ACTION_DAY_JOB
+from server.services.research.research_corporate_action_jobs import (
+    CORPORATE_ACTION_DAY_JOB,
+)
 from tests.server.test_verified_daily_market_jobs import _calendar, _store
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")

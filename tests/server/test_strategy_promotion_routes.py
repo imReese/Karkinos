@@ -12,7 +12,7 @@ from analytics.strategy_advancement_gate import (
 )
 from server.db import AppDatabase
 from server.routes.strategy_promotion import create_router
-from server.services.strategy_promotion_pipeline import (
+from server.services.research.strategy_promotion_pipeline import (
     STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION,
 )
 

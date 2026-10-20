@@ -24,8 +24,8 @@ from server.contracts.research_observation_automation import (
     observation_automation_policy_id,
 )
 from server.release_activation import wait_for_release_activation
-from server.services import research_observation_automation as automation
-from server.services.research_observations import ResearchObservationService
+from server.services.research import research_observation_automation as automation
+from server.services.research.research_observations import ResearchObservationService
 from tests.server.test_research_observation_inputs import DAYS, NOW, calendar, dataset
 from tests.server.test_research_observations_health import policy, request_start
 from tests.server.test_research_observations_journey import journey, start  # noqa: F401

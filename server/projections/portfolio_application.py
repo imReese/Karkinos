@@ -82,7 +82,7 @@ from server.services.controlled_execution.position_presence import (
 )
 from server.services.market.asset_metadata import resolve_asset_metadata
 from server.services.market.hours import get_shanghai_now
-from server.services.risk_engine import build_risk_summary
+from server.services.risk.risk_engine import build_risk_summary
 
 
 async def build_portfolio_snapshot(

@@ -388,7 +388,7 @@ def test_revoked_grant_excludes_only_policy_source_and_projects_validated_source
         now=NOW,
     )
     monkeypatch.setattr(
-        "server.services.strategy_promotion_support.resolve_human_ai_shadow_strategy_promotion_binding",
+        "server.services.research.strategy_promotion_support.resolve_human_ai_shadow_strategy_promotion_binding",
         lambda db, strategy_id: ({"status": "pass", "decision_source": "human"}, []),
     )
     status = RecommendationPublicationService(db, store).status(include_preview=False)
@@ -875,7 +875,7 @@ def test_readiness_requires_verified_scope_capital_and_grant_bound_final_budget(
             },
         }
     validation["evidence_fingerprint"] = content_fingerprint(validation)
-    import server.services.research_final_evaluation as final
+    import server.services.research.research_final_evaluation as final
 
     monkeypatch.setattr(
         final,
@@ -898,7 +898,7 @@ def test_readiness_requires_verified_scope_capital_and_grant_bound_final_budget(
         "dataset_replay": {},
     }
     monkeypatch.setattr(
-        "server.services.strategy_promotion_support.resolve_ai_shadow_qualification_promotion_evidence",
+        "server.services.research.strategy_promotion_support.resolve_ai_shadow_qualification_promotion_evidence",
         lambda *args, **kwargs: (evidence, []),
     )
     service = RecommendationPublicationService(

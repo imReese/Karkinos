@@ -49,7 +49,7 @@ from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
     build_daily_strategy_promotion_binding,
 )
-from server.services.strategy_promotion_pipeline import (
+from server.services.research.strategy_promotion_pipeline import (
     STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION,
     StrategyPromotionPipeline,
 )
@@ -444,7 +444,7 @@ def _seed_approved_final_evaluation(
     )
     from server.contracts.strategy_research import StrategyResearchSelection
     from server.persistence.backtest_results import insert_backtest_result
-    from server.services.research_final_evaluation import (
+    from server.services.research.research_final_evaluation import (
         FINAL_EVALUATION_SCHEMA,
         sealed_execution_code_binding,
     )

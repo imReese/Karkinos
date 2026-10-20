@@ -51,7 +51,9 @@ def _object(value: Any) -> dict[str, Any]:
 
 
 def _verified_deployment(db: Any, result_id: int, grant_id: str) -> dict[str, Any]:
-    from server.services.research_final_evaluation import verify_deployment_validation
+    from server.services.research.research_final_evaluation import (
+        verify_deployment_validation,
+    )
 
     value = verify_deployment_validation(
         db, result_id=result_id, expected_grant_id=grant_id
@@ -161,7 +163,7 @@ class RecommendationPublicationService:
                 continue
             blocker = publication_source_blocker(self.db, row)
             if blocker is None:
-                from server.services.strategy_promotion_support import (
+                from server.services.research.strategy_promotion_support import (
                     resolve_human_ai_shadow_strategy_promotion_binding,
                 )
 
@@ -518,7 +520,7 @@ class RecommendationPublicationService:
         from server.services.account.valuation_snapshot import (
             build_current_valuation_snapshot,
         )
-        from server.services.strategy_promotion_support import (
+        from server.services.research.strategy_promotion_support import (
             resolve_ai_shadow_qualification_promotion_evidence,
         )
 

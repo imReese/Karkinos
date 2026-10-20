@@ -10,7 +10,7 @@ from uuid import uuid4
 
 import pytest
 
-from server.services.research_paper_books import ResearchPaperBookService
+from server.services.research.research_paper_books import ResearchPaperBookService
 from tests.server.test_research_observation_inputs import (
     DAYS,
     NOW,

@@ -5,7 +5,9 @@ import json
 
 from server import daily_candidate_production_readiness_cli as readiness_cli
 from server.ai_runtime.contracts import content_fingerprint
-from server.services.automation_cockpit import AUTOMATION_COCKPIT_SCHEMA_VERSION
+from server.services.automation.automation_cockpit import (
+    AUTOMATION_COCKPIT_SCHEMA_VERSION,
+)
 
 main = readiness_cli.main
 

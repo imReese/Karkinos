@@ -208,10 +208,10 @@ def _build_daily_trading_plan_for_state(
     decision_payload: dict[str, Any],
     portfolio_context: dict[str, Any],
 ) -> dict[str, Any]:
-    from server.services.daily_research_operation_preview import (
+    from server.services.decision.plan import build_daily_trading_plan
+    from server.services.research.daily_research_operation_preview import (
         resolve_latest_verified_research_operation_preview,
     )
-    from server.services.decision.plan import build_daily_trading_plan
     from server.services.research.instruments import (
         build_research_operation_instruments,
     )
@@ -287,7 +287,9 @@ def _current_account_action_evidence(
     additional_blockers.extend(qualification_blockers)
     if promoted_scan.get("verified") is True:
         try:
-            from server.services.automation_control import AutomationControlService
+            from server.services.automation.automation_control import (
+                AutomationControlService,
+            )
             from server.services.strategy_scan.promoted_strategy_universe_scan import (
                 PromotedStrategyUniverseScanService,
             )
@@ -348,7 +350,7 @@ def _current_shadow_qualification_evidence(
             active_promotions = promotion_reader() or []
         except (OSError, RuntimeError, TypeError, ValueError):
             active_promotions = []
-        from server.services.strategy_promotion_pipeline import (
+        from server.services.research.strategy_promotion_pipeline import (
             AI_SHADOW_STRATEGY_PREFIX,
         )
 
