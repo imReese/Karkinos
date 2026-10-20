@@ -106,7 +106,7 @@ export function OverviewResolvedWorkspace({
         className="min-w-0 border-b border-[var(--app-divider)] pb-6"
         data-testid="overview-performance-card"
       >
-        <div className="grid min-w-0 items-stretch gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+        <div className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
           <div className="flex h-full min-w-0 flex-col">
             <div
               role="tablist"

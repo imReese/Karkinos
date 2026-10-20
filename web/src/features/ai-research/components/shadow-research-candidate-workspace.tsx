@@ -19,6 +19,7 @@ import { usePublicationPolicy } from '../publication-policy-api';
 
 export function ShadowResearchCandidateWorkspace({
   approvals,
+  approvalError,
   candidates,
   copy,
   loading,
@@ -38,6 +39,7 @@ export function ShadowResearchCandidateWorkspace({
   verifiedWinnerCandidateIds,
 }: {
   approvals: Record<string, boolean>;
+  approvalError?: string | null;
   candidates: ShadowResearchCandidate[];
   copy: (typeof SHADOW_RESEARCH_COPY)[keyof typeof SHADOW_RESEARCH_COPY];
   loading: boolean;
@@ -152,6 +154,7 @@ export function ShadowResearchCandidateWorkspace({
   const renderSelectedCandidate = (candidate: ShadowResearchCandidate) => (
     <CandidateCard
       approvals={approvals}
+      approvalError={approvalError}
       candidate={candidate}
       copy={copy}
       isDailyWinner={verifiedWinnerCandidateIds.has(candidate.candidate_id)}

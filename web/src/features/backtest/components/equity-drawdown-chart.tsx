@@ -313,7 +313,7 @@ export function EquityDrawdownChart({
                 axisLine={false}
                 minTickGap={30}
                 stroke="var(--app-chart-label)"
-                fontSize={12}
+                fontSize={11}
               />
               <YAxis
                 domain={['auto', 'auto']}
@@ -323,7 +323,7 @@ export function EquityDrawdownChart({
                 axisLine={false}
                 width={72}
                 stroke="var(--app-chart-label)"
-                fontSize={12}
+                fontSize={11}
               />
               <Tooltip content={<EquityTooltip markers={fillMarkers} />} />
               {visibleMarkers.map((marker, index) => (
@@ -455,7 +455,7 @@ export function EquityDrawdownChart({
                 axisLine={false}
                 minTickGap={30}
                 stroke="var(--app-chart-label)"
-                fontSize={12}
+                fontSize={11}
               />
               <YAxis
                 tickFormatter={(value: number) => formatPercent(value)}
@@ -463,7 +463,7 @@ export function EquityDrawdownChart({
                 axisLine={false}
                 width={56}
                 stroke="var(--app-chart-label)"
-                fontSize={12}
+                fontSize={11}
               />
               <Tooltip content={<EquityTooltip />} />
               <Area

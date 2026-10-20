@@ -21,6 +21,7 @@ export function CandidateCard({
   copy,
   notes,
   approvals,
+  approvalError,
   onNoteChange,
   onApprovalChange,
   onApprove,
@@ -40,6 +41,7 @@ export function CandidateCard({
   copy: ShadowResearchCopy;
   notes: Record<string, string>;
   approvals: Record<string, boolean>;
+  approvalError?: string | null;
   onNoteChange: (value: string) => void;
   onApprovalChange: (value: boolean) => void;
   onApprove: () => void;
@@ -241,6 +243,7 @@ export function CandidateCard({
       {eligible || revocable ? (
         <CandidateDecisionForms
           approvals={approvals}
+          approvalError={approvalError}
           candidate={candidate}
           copy={copy}
           eligible={eligible}
@@ -290,6 +293,7 @@ export function CandidateCard({
 
 function CandidateDecisionForms({
   approvals,
+  approvalError,
   candidate,
   copy,
   eligible,
@@ -308,6 +312,7 @@ function CandidateDecisionForms({
   zh,
 }: {
   approvals: Record<string, boolean>;
+  approvalError?: string | null;
   candidate: ShadowResearchCandidate;
   copy: ShadowResearchCopy;
   eligible: boolean;
@@ -383,6 +388,24 @@ function CandidateDecisionForms({
                     : copy.approve}
               </button>
             </div>
+            {approvalError ? (
+              <div
+                role="alert"
+                className="rounded-[var(--app-radius-control)] border border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] p-3 text-xs text-[var(--app-danger-text)] animate-in fade-in"
+              >
+                <div className="font-semibold">
+                  {zh
+                    ? '审核被拦截 / 无法进入前向模拟：'
+                    : 'Approval rejected: '}
+                </div>
+                <div className="mt-1 leading-relaxed">
+                  {formatApprovalError(approvalError, zh)}
+                </div>
+                <div className="mt-1.5 font-mono app-type-micro opacity-75">
+                  {approvalError}
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -697,4 +720,29 @@ export function CritiqueEvolutionTimeline({
       </div>
     </div>
   );
+}
+
+function formatApprovalError(error: string, zh: boolean): string {
+  if (!zh) return error;
+  if (
+    error.includes('daily_strategy_operating_constraints_candidate_mismatch')
+  ) {
+    return '候选策略未包含在当日备份快照中（存证不匹配），系统拒绝未经验证的策略晋级';
+  }
+  if (error.includes('candidate_account_qualification_required')) {
+    return '候选策略尚未通过账户级资格认证';
+  }
+  if (error.includes('daily_strategy_operating_constraints_incomplete')) {
+    return '候选策略操作约束与风控假设不完整';
+  }
+  if (error.includes('canonical_paper_shadow_stage_conflict')) {
+    return '策略前向模拟阶段冲突';
+  }
+  if (error.includes('candidate_is_not_verified_daily_winner')) {
+    return '候选策略不是经核准的当日优胜策略';
+  }
+  if (error.includes('automated_decision_cannot_create_human_approval')) {
+    return '自动化身份不能签署人工复核批准';
+  }
+  return error;
 }

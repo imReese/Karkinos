@@ -12,6 +12,24 @@ function financialValue(
   return value == null ? unavailableLabel : formatCurrency(value);
 }
 
+function renderHeroFinancialValue(
+  value: number | null | undefined,
+  unavailableLabel: string,
+) {
+  const formatted = financialValue(value, unavailableLabel);
+  if (formatted.startsWith('¥')) {
+    return (
+      <>
+        <span className="mr-0.5 inline-block select-none text-[length:var(--app-font-size-page-title-mobile)] font-normal text-[var(--app-text-secondary)]">
+          ¥
+        </span>
+        {formatted.slice(1)}
+      </>
+    );
+  }
+  return formatted;
+}
+
 function supportMetricTone(value: number | null | undefined) {
   if (value == null || value === 0) return 'neutral' as const;
   return value > 0 ? ('pnl-positive' as const) : ('pnl-negative' as const);
@@ -98,7 +116,7 @@ export function OverviewSummary({ summary }: { summary: AccountOverview }) {
                 data-testid="overview-total-value"
                 className="app-type-overview-hero whitespace-nowrap tabular-nums text-[var(--app-text)] font-bold tracking-tight"
               >
-                {financialValue(
+                {renderHeroFinancialValue(
                   showIndicativeTotal
                     ? summary.indicative_total_equity
                     : summary.total_equity,

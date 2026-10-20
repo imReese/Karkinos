@@ -554,14 +554,25 @@ export function ShadowResearchPanel() {
         {/* Primary Research & Lineage Review (Full Width) */}
         <ShadowResearchCandidateWorkspace
           approvals={approvals}
+          approvalError={
+            approve.isError
+              ? (approve.error as Error)?.message || copy.failure
+              : null
+          }
           candidates={status?.candidates ?? []}
           copy={copy}
           loading={query.isLoading}
           latestRunId={status?.runs[0]?.run_id ?? null}
           notes={notes}
-          onApprovalChange={setApprovals}
+          onApprovalChange={(update) => {
+            approve.reset();
+            setApprovals(update);
+          }}
           onApprove={approveCandidate}
-          onNoteChange={setNotes}
+          onNoteChange={(update) => {
+            approve.reset();
+            setNotes(update);
+          }}
           onPause={pauseCandidate}
           onPauseConfirmationChange={setPauseConfirmations}
           onPauseNoteChange={setPauseNotes}

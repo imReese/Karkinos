@@ -97,8 +97,8 @@ export function TimeAxisTick({
       y={y}
       dy={14}
       textAnchor="middle"
-      fill="var(--app-subtext-0)"
-      fontSize={10}
+      fill="var(--app-chart-label)"
+      fontSize={11}
     >
       {formatAxisTimestamp(payload?.value ?? '', range)}
     </text>

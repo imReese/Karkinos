@@ -823,6 +823,83 @@ test('shows old/new OOS evidence and records only an explicit paper-shadow appro
   });
 });
 
+test('displays clear error on candidate card when paper-shadow approval fails', async () => {
+  window.matchMedia = vi.fn().mockReturnValue({
+    matches: false,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
+  const fetchMock = vi.fn(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/ai/strategy-research/shadow-automation')) {
+        return jsonResponse(status);
+      }
+      if (url.endsWith('/api/strategy-promotion/states')) {
+        return jsonResponse([]);
+      }
+      if (url.includes('/paper-shadow-approvals') && init?.method === 'POST') {
+        return jsonResponse(
+          { detail: 'daily_strategy_operating_constraints_candidate_mismatch' },
+          422,
+        );
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    },
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <ShadowResearchPanel />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  expect(
+    await screen.findByRole('heading', {
+      name: 'Research candidates',
+    }),
+  ).toBeTruthy();
+  expect(await screen.findByText('Current baseline')).toBeTruthy();
+
+  const approveButton = screen.getByRole('button', {
+    name: 'Approve for paper/shadow only',
+  }) as HTMLButtonElement;
+  expect(approveButton.disabled).toBe(true);
+
+  fireEvent.change(screen.getByLabelText('Human review note'), {
+    target: { value: 'Reviewed cost, drawdown, OOS, and critique.' },
+  });
+  fireEvent.click(
+    screen.getByText(
+      'I reviewed the baseline comparison, costs, rolling OOS, risks and critique. Approve this candidate for paper/shadow research only.',
+    ),
+  );
+  expect(approveButton.disabled).toBe(false);
+  fireEvent.click(approveButton);
+
+  await vi.waitFor(() => {
+    const approvalCall = fetchMock.mock.calls.find(([input]) =>
+      String(input).includes('/paper-shadow-approvals'),
+    );
+    expect(approvalCall).toBeTruthy();
+  });
+  await vi.waitFor(() => {
+    expect(queryClient.isMutating()).toBe(0);
+  });
+
+  const alert = screen.getByRole('alert');
+  expect(alert).toBeTruthy();
+  expect(alert.textContent).toContain(
+    'daily_strategy_operating_constraints_candidate_mismatch',
+  );
+});
+
 test('preserves the research cutoff and requires paired final holdout dates when saving authorization', async () => {
   window.matchMedia = vi.fn().mockReturnValue({
     matches: false,

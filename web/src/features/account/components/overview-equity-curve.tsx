@@ -222,8 +222,8 @@ export function OverviewEquityCurve({
         className={
           (usablePoints.length >= 2
             ? compact
-              ? 'h-[180px] sm:h-[260px] shrink-0'
-              : 'h-[260px] sm:h-[300px] xl:h-[300px] shrink-0'
+              ? 'h-[220px] sm:h-[300px] xl:h-[380px] shrink-0'
+              : 'h-[260px] sm:h-[320px] xl:h-[380px] shrink-0'
             : 'h-[72px] sm:h-[84px]') + ' min-w-0 overflow-hidden'
         }
       >
@@ -285,7 +285,7 @@ export function OverviewEquityCurve({
                   tickLine={false}
                   tickFormatter={(value: number) => axisNumber.format(value)}
                   domain={resolveYAxisDomain(chartPoints, visibleSeries)}
-                  tick={{ fontSize: 11, fill: 'var(--app-text-tertiary)' }}
+                  tick={{ fontSize: 11, fill: 'var(--app-chart-label)' }}
                 />
                 <Tooltip
                   formatter={(value, name) => {

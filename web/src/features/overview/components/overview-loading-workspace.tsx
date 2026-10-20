@@ -32,13 +32,13 @@ export function OverviewLoadingWorkspace({ copy }: { copy: AppCopy }) {
         </section>
 
         <section className="min-w-0 border-b border-[var(--app-divider)] pb-6">
-          <div className="grid min-w-0 items-stretch gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+          <div className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
             <div className="min-w-0">
               <div className="flex gap-4 border-b border-[var(--app-divider)] pb-3">
                 <span className="overview-loading-block h-4 w-20" />
                 <span className="overview-loading-block h-4 w-20" />
               </div>
-              <div className="flex h-56 min-w-0 flex-col justify-between py-5 sm:h-72">
+              <div className="flex h-56 min-w-0 flex-col justify-between py-5 sm:h-72 xl:h-96">
                 <span className="overview-loading-block h-3 w-28" />
                 <span className="overview-loading-block h-2 w-full opacity-60" />
                 <span className="overview-loading-block h-2 w-full opacity-60" />

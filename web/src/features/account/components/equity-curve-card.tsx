@@ -289,7 +289,7 @@ export function EquityCurveCard({
                 height={46}
                 tickMargin={14}
                 minTickGap={range === '1d' ? 18 : 24}
-                stroke="var(--app-subtext-0)"
+                stroke="var(--app-chart-label)"
               />
               <YAxis
                 width={60}
@@ -298,8 +298,8 @@ export function EquityCurveCard({
                 tickMargin={12}
                 tickFormatter={formatAxisValue}
                 domain={yAxisDomain}
-                tick={{ fontSize: 12 }}
-                stroke="var(--app-muted)"
+                tick={{ fontSize: 11, fill: 'var(--app-chart-label)' }}
+                stroke="var(--app-chart-label)"
               />
               <Tooltip
                 content={
