@@ -208,7 +208,7 @@ def _stub_scheduler_dependencies(
     warmup_strategy=None,
     now: datetime | None = None,
 ):
-    from server import scheduler_post_close as scheduler_post_close_module
+    from server.scheduler import post_close as scheduler_post_close_module
 
     monkeypatch.setattr(
         scheduler_module,
@@ -1949,7 +1949,7 @@ def test_scheduler_retries_fund_confirmation_until_all_targets_persisted(
     tmp_path,
 ):
     from server import scheduler as scheduler_module
-    from server import scheduler_post_close as scheduler_post_close_module
+    from server.scheduler import post_close as scheduler_post_close_module
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()

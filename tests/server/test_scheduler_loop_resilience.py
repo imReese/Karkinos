@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from core.event_bus import EventBus
 from core.types import AssetClass, Symbol
-from server.scheduler_loop import SchedulerLoopDependencies, run_scheduler_loop
+from server.scheduler.loop import SchedulerLoopDependencies, run_scheduler_loop
 
 
 @dataclass

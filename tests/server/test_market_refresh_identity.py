@@ -10,7 +10,7 @@ from core.types import AssetClass, Symbol
 from data.providers.tushare import TushareSource
 from domain.instrument import make_etf
 from server.db import AppDatabase
-from server.scheduler_loop import runtime_quotes_from_persisted
+from server.scheduler.quote_restore import runtime_quotes_from_persisted
 from server.services.market import identity as market_identity
 from server.services.market import providers as market_refresh_provider
 from server.services.market import refresh as market_refresh

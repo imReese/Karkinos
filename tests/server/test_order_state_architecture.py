@@ -61,8 +61,10 @@ def test_manual_gateway_is_atomic_and_scheduler_does_not_wire_execution() -> Non
     adapter_source = (
         ROOT / "server/services/controlled_execution/manual_order_tickets.py"
     ).read_text(encoding="utf-8")
-    scheduler_source = (ROOT / "server/scheduler_loop.py").read_text(encoding="utf-8")
-    composition_source = (ROOT / "server/scheduler.py").read_text(encoding="utf-8")
+    scheduler_source = (ROOT / "server/scheduler/loop.py").read_text(encoding="utf-8")
+    composition_source = (ROOT / "server/scheduler/service.py").read_text(
+        encoding="utf-8"
+    )
     assert "server." not in gateway_source
     assert "ManualOrderTicketPort" in gateway_source
     assert "ManualOrderTicketService" in adapter_source

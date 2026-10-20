@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import threading
 from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Callable
@@ -21,15 +22,15 @@ from server.release_activation import (
     is_release_activation_guarded,
     is_scheduler_release_activation_guarded,
 )
-from server.scheduler_lifecycle import SchedulerLifecycleMixin
-from server.scheduler_loop import (
+from server.scheduler.lifecycle import SchedulerLifecycleMixin
+from server.scheduler.loop import (
     SchedulerLoopDependencies,
     run_scheduler_loop,
 )
-from server.scheduler_post_close import SchedulerPostCloseMixin
-from server.scheduler_quote_runs import SchedulerQuoteRunMixin
-from server.scheduler_signals import handle_scheduler_signal
-from server.scheduler_values import optional_float
+from server.scheduler.post_close import SchedulerPostCloseMixin
+from server.scheduler.quote_runs import SchedulerQuoteRunMixin
+from server.scheduler.signals import handle_scheduler_signal
+from server.scheduler.values import optional_float
 from server.services.controlled_execution.trading_controls import TradingControlState
 from server.services.market.hours import is_cn_trading_session
 from server.services.market.indices import default_market_index_assets
@@ -50,7 +51,13 @@ _SCHEDULER_STOP_TIMEOUT_SECONDS = 10.0
 
 
 def scheduler_now() -> datetime:
-    return datetime.now()
+    scheduler_pkg = sys.modules.get("server.scheduler")
+    dt_cls = (
+        getattr(scheduler_pkg, "datetime", datetime)
+        if scheduler_pkg is not None
+        else datetime
+    )
+    return dt_cls.now()
 
 
 class TradingScheduler(
@@ -88,7 +95,7 @@ class TradingScheduler(
         self._thread: threading.Thread | None = None
         self._lifecycle_lock = threading.Lock()
         self._stopping = False
-        self._scheduler_clock = scheduler_now
+        self._scheduler_clock = self._resolve_scheduler_clock
         self._activation_guarded = activation_guarded
         self._scheduler_activation_guarded = scheduler_activation_guarded
         self._completed_iterations = 0
@@ -111,8 +118,23 @@ class TradingScheduler(
         self._lock = threading.Lock()
 
     @staticmethod
+    def _resolve_scheduler_clock() -> datetime:
+        scheduler_pkg = sys.modules.get("server.scheduler")
+        clock_fn = (
+            getattr(scheduler_pkg, "scheduler_now", scheduler_now)
+            if scheduler_pkg is not None
+            else scheduler_now
+        )
+        return clock_fn()
+
+    @staticmethod
     def scheduler_stop_timeout_seconds() -> float:
-        return _SCHEDULER_STOP_TIMEOUT_SECONDS
+        scheduler_pkg = sys.modules.get("server.scheduler")
+        return getattr(
+            scheduler_pkg,
+            "_SCHEDULER_STOP_TIMEOUT_SECONDS",
+            _SCHEDULER_STOP_TIMEOUT_SECONDS,
+        )
 
     @property
     def is_market_open(self) -> bool:
@@ -496,14 +518,40 @@ class TradingScheduler(
 
     def _run_loop(self) -> None:
         """Run the background loop with late-bound composition dependencies."""
+        scheduler_pkg = sys.modules.get("server.scheduler")
+        live_feed_factory = (
+            getattr(scheduler_pkg, "LiveDataFeed", LiveDataFeed)
+            if scheduler_pkg is not None
+            else LiveDataFeed
+        )
+        runtime_context_factory = (
+            getattr(scheduler_pkg, "create_runtime_context", create_runtime_context)
+            if scheduler_pkg is not None
+            else create_runtime_context
+        )
+        strategy_factory = (
+            getattr(scheduler_pkg, "build_strategy", build_strategy)
+            if scheduler_pkg is not None
+            else build_strategy
+        )
+        portfolio_rebuilder = (
+            getattr(
+                scheduler_pkg,
+                "rebuild_portfolio_from_ledger",
+                rebuild_portfolio_from_ledger,
+            )
+            if scheduler_pkg is not None
+            else rebuild_portfolio_from_ledger
+        )
+
         run_scheduler_loop(
             self,
             SchedulerLoopDependencies(
                 event_bus_factory=EventBus,
-                runtime_context_factory=create_runtime_context,
-                live_data_feed_factory=LiveDataFeed,
-                portfolio_rebuilder=rebuild_portfolio_from_ledger,
-                strategy_factory=build_strategy,
+                runtime_context_factory=runtime_context_factory,
+                live_data_feed_factory=live_feed_factory,
+                portfolio_rebuilder=portfolio_rebuilder,
+                strategy_factory=strategy_factory,
                 now=self._scheduler_clock,
                 afternoon_close=_AFTERNOON_CLOSE,
                 config=self._config,
@@ -568,3 +616,9 @@ class TradingScheduler(
             database=self._db,
             notifier=self._notifier,
         )
+
+
+__all__ = [
+    "TradingScheduler",
+    "scheduler_now",
+]

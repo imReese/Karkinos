@@ -4,8 +4,8 @@ import ast
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SCHEDULER_LOOP = PROJECT_ROOT / "server" / "scheduler_loop.py"
-SCHEDULER_SIGNALS = PROJECT_ROOT / "server" / "scheduler_signals.py"
+SCHEDULER_LOOP = PROJECT_ROOT / "server" / "scheduler" / "loop.py"
+SCHEDULER_SIGNALS = PROJECT_ROOT / "server" / "scheduler" / "signals.py"
 MARKET_REFRESH = PROJECT_ROOT / "server" / "services" / "market" / "refresh.py"
 PORTFOLIO_QUOTES = PROJECT_ROOT / "server" / "projections" / "portfolio_quotes.py"
 

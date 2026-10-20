@@ -5,7 +5,7 @@ from __future__ import annotations
 from core.events import SignalEvent
 from core.types import AssetClass, Symbol
 from notification.notifier import format_signal_message
-from server.scheduler_contracts import SchedulerNotifier, SchedulerSignalDatabase
+from server.scheduler.contracts import SchedulerNotifier, SchedulerSignalDatabase
 from server.services.decision.recommendation_flow import build_recommendation_cycle
 
 
@@ -81,3 +81,8 @@ def handle_scheduler_signal(
         timestamp=str(event.timestamp),
     )
     notifier.send(title=f"Karkinos 信号: {event.symbol}", message=message)
+
+
+__all__ = [
+    "handle_scheduler_signal",
+]

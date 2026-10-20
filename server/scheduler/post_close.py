@@ -11,7 +11,7 @@ from typing import Any
 from core.types import AssetClass, InstrumentType
 from data.source_policy import MarketDataUseCase
 from data.source_routing import preferred_legacy_provider
-from server.scheduler_loop import runtime_quotes_from_persisted
+from server.scheduler.quote_restore import runtime_quotes_from_persisted
 from server.services.market.calendar import (
     resolve_latest_verified_closed_trading_date,
 )
@@ -487,4 +487,8 @@ class SchedulerPostCloseMixin:
         return True
 
 
-__all__ = ["SchedulerPostCloseMixin"]
+__all__ = [
+    "SchedulerPostCloseMixin",
+    "is_confirmed_fund_nav_quote",
+    "refresh_fund_nav_quotes",
+]

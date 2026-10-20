@@ -107,3 +107,8 @@ class SchedulerLifecycleMixin:
             with self._lifecycle_lock:
                 if self._thread is threading.current_thread():
                     self._thread = None
+
+
+__all__ = [
+    "SchedulerLifecycleMixin",
+]
