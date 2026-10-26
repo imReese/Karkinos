@@ -15,7 +15,7 @@ def edge_request_options(settings: ProviderConnectivitySettings) -> JsonObject:
     ):
         return {
             "thinking": {"type": "enabled"},
-            "reasoning_effort": "high",
+            "reasoning_effort": "max",
         }
     return {"temperature": 0}
 

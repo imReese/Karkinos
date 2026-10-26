@@ -1,27 +1,612 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
+from decimal import Decimal
 from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 
+from analytics.backtest_drawdown_evidence import build_backtest_drawdown_evidence
+from analytics.backtest_fee_tax_evidence import build_backtest_fee_tax_evidence
+from analytics.dataset_snapshot import (
+    backtest_dataset_snapshot_content_id,
+    build_backtest_dataset_snapshot,
+    dataset_simulation_admission,
+)
+from analytics.oos_validation import build_rolling_out_of_sample_validation
+from analytics.research_evidence import (
+    AfterCostAnalyzer,
+    AnalyzerResult,
+    DataQualityAnalyzer,
+    OosAnalyzer,
+    build_research_evidence_bundle,
+)
+from backtest.metrics import (
+    build_after_cost_evidence,
+    calculate_backtest_metrics,
+    summarize_fill_costs,
+)
+from backtest.result import BacktestResult
+from core.events import FillEvent
+from core.types import AssetClass, BarFrequency, InstrumentType, OrderSide, Symbol
+from data.handler import DataHandler
 from server.ai_runtime.capture import (
     CAPTURE_CONFIRMATION,
     CaptureEvidenceType,
     CaptureSelectionError,
     HumanContextCaptureRequest,
 )
-from server.ai_runtime.evidence import EvidenceIdentityMismatch
+from server.ai_runtime.evidence import CanonicalEvidenceRecord, EvidenceIdentityMismatch
+from server.ai_runtime.external_memory_analysis_output import redact_sensitive_content
+from server.ai_runtime.formula_dsl import FormulaBinding
 from server.ai_runtime.karkinos_source import (
     CaptureProjectionReaders,
     PersistedKarkinosCaptureSource,
+    _research_evidence_projection,
 )
 from server.composition.ai_application_services import build_capture_projection_readers
+from server.contracts.strategy_research import StrategyResearchSelection
+from server.services.market.market_universe_truth import (
+    MarketUniversePolicy,
+    market_deployment_scope,
+)
 
 NOW = "2026-07-13T12:30:00+00:00"
 VALUATION_ID = "valuation-source-001"
 LEDGER_CUTOFF_ID = 91
 LEDGER_FINGERPRINT = "ledger-source-fingerprint-001"
+
+
+def _refresh_native_report(row, *, analyzers=None):
+    metrics = row["metrics_json"]
+    snapshot = metrics["dataset_snapshot"]
+    snapshot.pop("snapshot_id", None)
+    snapshot["snapshot_id"] = backtest_dataset_snapshot_content_id(snapshot)
+    metrics["source_selection"]["dataset_snapshot_id"] = snapshot["snapshot_id"]
+    metrics["formula_binding"]["dataset_snapshot_id"] = snapshot["snapshot_id"]
+    metrics["formula_fingerprint"] = FormulaBinding(
+        **metrics["formula_binding"]
+    ).fingerprint
+    row["config_json"]["params"]["formula_fingerprint"] = metrics["formula_fingerprint"]
+    metrics["research_evidence_bundle"] = build_research_evidence_bundle(
+        metrics_json=metrics,
+        cost_summary_json=row["cost_summary_json"],
+        evidence_json=metrics["evidence_bundle"],
+        strategy_metadata=metrics["strategy_metadata"],
+        analyzers=analyzers,
+    )
+
+
+def _set_native_report_result(row, equity_values):
+    timestamps = pd.bdate_range("2026-01-05", periods=6).to_pydatetime()
+    fills = [
+        FillEvent(
+            timestamp=timestamps[index],
+            fill_id=f"fixture-fill-{index}",
+            order_id=f"fixture-order-{index}",
+            symbol=Symbol("600001"),
+            side=OrderSide.BUY,
+            fill_price=Decimal("10"),
+            fill_quantity=Decimal("50"),
+            commission=Decimal("50"),
+            slippage=Decimal("100"),
+            fee_rule_id="fixture-default-estimate",
+            fee_rule_version="karkinos.backtest.multi_asset_commission.default.v1",
+            fee_breakdown={
+                "commission": "50",
+                "stamp_tax": "0",
+                "transfer_fee": "0",
+                "other_fees": "0",
+                "total_fee": "50",
+            },
+        )
+        for index in (2, 4)
+    ]
+    result = BacktestResult(
+        equity_curve=list(
+            zip(timestamps, (Decimal(value) for value in equity_values), strict=True)
+        ),
+        positions={},
+        initial_cash=Decimal("1000000"),
+        final_equity=Decimal(equity_values[-1]),
+        fills=fills,
+    )
+    costs = summarize_fill_costs(fills)
+    performance = calculate_backtest_metrics(
+        result.equity_curve,
+        initial_cash=result.initial_cash,
+        final_equity=result.final_equity,
+        cost_summary=costs,
+    ).to_json_dict()
+    row.update(performance)
+    row["equity_curve_json"] = [
+        {"timestamp": timestamp.isoformat(), "equity": float(value)}
+        for timestamp, value in result.equity_curve
+    ]
+    row["cost_summary_json"] = costs.to_json_dict()
+    row["metrics_json"].update(
+        performance,
+        evidence_bundle=build_after_cost_evidence(
+            initial_cash=result.initial_cash,
+            final_equity=result.final_equity,
+            cost_summary=costs,
+        ).to_json_dict(),
+        drawdown_evidence=build_backtest_drawdown_evidence(
+            equity_curve=result.equity_curve, initial_cash=result.initial_cash
+        ),
+        fee_component_evidence=build_backtest_fee_tax_evidence(
+            fills=fills,
+            cost_model_reference="karkinos.backtest.multi_asset_commission.default.v1",
+        ),
+        oos_validation=build_rolling_out_of_sample_validation(
+            strategy_id="fixture_strategy",
+            benchmark_role="current_persisted_baseline",
+            result=result,
+            min_train_points=2,
+            test_window_points=2,
+            step_points=1,
+            benchmark_return=Decimal("0"),
+        ).to_json_dict(),
+    )
+
+
+@pytest.fixture
+def native_exploratory_report():
+    # Native selection order and snapshot-builder order deliberately differ.
+    symbols = ("600002", "600001")
+    frame = pd.DataFrame(
+        {
+            "timestamp": pd.bdate_range("2026-01-05", periods=6),
+            "open": [10, 11, 12, 13, 14, 15],
+            "high": [10, 11, 12, 13, 14, 15],
+            "low": [10, 11, 12, 13, 14, 15],
+            "close": [10, 11, 12, 13, 14, 15],
+            "volume": [100000] * 6,
+        }
+    )
+    snapshot = build_backtest_dataset_snapshot(
+        start_date="2026-01-05",
+        end_date="2026-01-12",
+        configured_source="fixture",
+        source_names=["fixture"],
+        store=None,
+        data_handlers={
+            Symbol(symbol): DataHandler(
+                frame.copy(),
+                Symbol(symbol),
+                BarFrequency.DAILY,
+                AssetClass.STOCK,
+                InstrumentType.STOCK,
+            )
+            for symbol in symbols
+        },
+        research_dataset_binding={
+            "dataset_id": "sha256:" + "a" * 64,
+            "cutoff": NOW,
+            "price_basis": "unadjusted",
+            "cross_source_verified": True,
+            "point_in_time_verified": False,
+            "limitations": [
+                "Historical PIT is unverified.",
+                "Unadjusted research bars.",
+            ],
+        },
+    )
+    selection = StrategyResearchSelection(
+        saved_backtest_result_id=183,
+        universe=symbols,
+        asset_classes=("stock", "stock"),
+        dataset_snapshot_id=snapshot["snapshot_id"],
+        start_date="2026-01-05",
+        end_date="2026-01-12",
+        frequency="1d",
+        initial_cash=1_000_000,
+        deployment_scope=market_deployment_scope(
+            MarketUniversePolicy(minimum_master_member_count=2, minimum_history_rows=2)
+        ),
+        portfolio_policy_id=market_deployment_scope(MarketUniversePolicy())[
+            "portfolio_policy_id"
+        ],
+    )
+    field = {"op": "field", "name": "close"}
+    binding = FormulaBinding(
+        formula_ast={
+            "schema_version": "karkinos.ai.formula_ast.v1",
+            "entry": {
+                "op": "gt",
+                "left": field,
+                "right": {"op": "lag", "period": 1, "input": field},
+            },
+            "exit": {
+                "op": "lt",
+                "left": field,
+                "right": {"op": "lag", "period": 1, "input": field},
+            },
+            "position_size": {"op": "equal_weight"},
+        },
+        universe=selection.universe,
+        dataset_snapshot_id=selection.dataset_snapshot_id,
+        start_date=selection.start_date,
+        end_date=selection.end_date,
+        frequency="1d",
+        cost_model_reference=selection.cost_model_reference,
+        anti_lookahead_assumptions=("Trade only after observed bars.",),
+        parameter_values={},
+        parameter_ranges={},
+        initial_cash=selection.initial_cash,
+    )
+    row = {
+        "id": 201,
+        "created_at": NOW,
+        "config_json": {
+            "start_date": selection.start_date,
+            "end_date": selection.end_date,
+            "initial_cash": selection.initial_cash,
+            "params": {
+                "formula_fingerprint": binding.fingerprint,
+                "portfolio_policy_id": selection.portfolio_policy_id,
+                "deployment_scope": deepcopy(selection.deployment_scope),
+            },
+            "assets": [
+                {"symbol": symbol, "asset_class": "stock"} for symbol in symbols
+            ],
+        },
+        "metrics_json": {
+            "dataset_snapshot": snapshot,
+            "source_selection": selection.to_dict(),
+            "formula_binding": binding.to_dict(),
+            "formula_fingerprint": binding.fingerprint,
+            "strategy_metadata": {"strategy_id": "fixture_strategy"},
+        },
+    }
+    _set_native_report_result(row, [1000000, 1020000, 800000, 950000, 1050000, 1100000])
+    _refresh_native_report(row)
+    return row
+
+
+async def _project_native_report(row):
+    return await _research_evidence_projection(
+        SimpleNamespace(get_backtest_result=lambda result_id: deepcopy(row)),
+        tool_name="research_evidence.read",
+        result_id=201,
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_serialized_native_report_retains_analysis_admission(
+    native_exploratory_report,
+):
+    row = native_exploratory_report
+    for field in ("metrics_json", "config_json", "cost_summary_json"):
+        row[field] = json.dumps(row[field])
+    projection = await _project_native_report(row)
+    assert projection.status == "complete"
+    assert projection.payload["research_evidence_bundle"]["gate_status"] == "blocked"
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+async def test_complete_native_report_is_readable_with_formal_admission_blocked(
+    native_exploratory_report, monkeypatch
+):
+    row = native_exploratory_report
+    for name in (
+        "load_immutable_dataset_inputs",
+        "verify_backtest_dataset_snapshot_replay",
+    ):
+        monkeypatch.setattr(
+            "analytics.dataset_snapshot." + name,
+            lambda *a, **k: pytest.fail("Capture must not reread CAS"),
+        )
+    before = deepcopy(row)
+    projection = await _project_native_report(row)
+    assert projection.status == "complete"
+    assert projection.payload["analysis_ready"] is True
+    assert projection.payload["analysis_blocking_reasons"] == []
+    assert row == before
+    assert (
+        row["metrics_json"]["source_selection"]["saved_backtest_result_id"] != row["id"]
+    )
+    assert [item["symbol"] for item in projection.payload["test_window"]["assets"]] == [
+        "600002",
+        "600001",
+    ]
+    assert [
+        item["symbol"]
+        for item in row["metrics_json"]["dataset_snapshot"]["symbol_universe"]
+    ] == ["600001", "600002"]
+    bundle = projection.payload["research_evidence_bundle"]
+    assert bundle["gate_status"] == bundle["promotion_gate"]["status"] == "blocked"
+    assert (
+        next(
+            item for item in bundle["analyzers"] if item["name"] == "research_admission"
+        )["status"]
+        == "blocked"
+    )
+    admission = projection.payload["dataset_simulation_admission"]
+    assert admission["purpose"] == "research_selection_and_simulation"
+    assert admission["historical_pit_verified"] is False
+    assert admission["account_publication_admitted"] is False
+    assert projection.payload["authority_effect"] == "research_only"
+    record = CanonicalEvidenceRecord.capture(
+        tool_name="research_evidence.read",
+        valuation_snapshot_id="research-only:fixture",
+        ledger_cutoff_id=0,
+        ledger_fingerprint="research-only:fixture",
+        status=projection.status,
+        as_of=NOW,
+        source_schema_version=projection.source_schema_version,
+        payload=projection.payload,
+        captured_at=NOW,
+    )
+    assert record.authoritative is True
+    exported, _ = redact_sensitive_content(record.payload, path="payload")
+    assert exported == projection.payload
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "drift",
+    [
+        "performance_missing",
+        "performance_nan",
+        "performance_infinite",
+        "performance_negative_notional",
+        "after_cost_missing",
+        "after_cost_partial",
+        "metrics_json",
+        "config_json",
+        "cost_json",
+        "bundle_hash",
+        "snapshot_hash",
+        "window",
+        "asset_class",
+        "asset_order",
+        "typed_namespace",
+        "snapshot_frequency",
+        "snapshot_asset_class",
+        "request_typed_namespace",
+        "coordinated_typed_namespace",
+        "row_id",
+        "row_id_bool",
+        "source_selection",
+        "formula_hash",
+        "formula_order",
+        "no_native_scope",
+        "request_formula_hash",
+        "request_scope",
+        "duplicate_snapshot_identity",
+        "snapshot_row_count",
+        "cost_nonfinite",
+        "fractional_fill_count",
+    ],
+)
+async def test_exploratory_label_does_not_admit_incomplete_or_drifted_report(
+    native_exploratory_report, drift
+):
+    row = native_exploratory_report
+    metrics = row["metrics_json"]
+    if drift == "performance_missing":
+        row.pop("final_equity")
+    elif drift == "performance_nan":
+        row["final_equity"] = float("nan")
+    elif drift == "performance_infinite":
+        row["max_drawdown"] = float("inf")
+    elif drift == "performance_negative_notional":
+        row["initial_cash"] = -1
+    elif drift == "after_cost_missing":
+        metrics.pop("evidence_bundle")
+    elif drift == "after_cost_partial":
+        metrics["evidence_bundle"].pop("net_pnl")
+    elif drift == "metrics_json":
+        row["metrics_json"] = "{invalid"
+    elif drift == "config_json":
+        row["config_json"] = "[]"
+    elif drift == "cost_json":
+        row["cost_summary_json"] = "null"
+    elif drift == "bundle_hash":
+        metrics["research_evidence_bundle"]["limitations"].append("unbound drift")
+    elif drift == "snapshot_hash":
+        metrics["dataset_snapshot"]["snapshot_id"] = "sha256:" + "b" * 64
+    elif drift == "window":
+        row["config_json"]["end_date"] = "2026-01-08"
+    elif drift == "asset_class":
+        row["config_json"]["assets"][0]["asset_class"] = "etf"
+    elif drift == "asset_order":
+        row["config_json"]["assets"].reverse()
+    elif drift == "typed_namespace":
+        metrics["dataset_snapshot"]["symbol_universe"][0]["instrument_type"] = "etf"
+        _refresh_native_report(row)
+    elif drift == "snapshot_frequency":
+        metrics["dataset_snapshot"]["symbol_universe"][0]["frequency"] = "1h"
+        _refresh_native_report(row)
+    elif drift == "snapshot_asset_class":
+        metrics["dataset_snapshot"]["symbol_universe"][0]["asset_class"] = "etf"
+        _refresh_native_report(row)
+    elif drift == "request_typed_namespace":
+        row["config_json"]["assets"][0]["instrument_type"] = "etf"
+    elif drift == "coordinated_typed_namespace":
+        item = metrics["dataset_snapshot"]["symbol_universe"][0]
+        item["instrument_type"] = "etf"
+        next(
+            asset
+            for asset in row["config_json"]["assets"]
+            if asset["symbol"] == item["symbol"]
+        )["instrument_type"] = "etf"
+        _refresh_native_report(row)
+    elif drift == "row_id":
+        row["id"] = 202
+    elif drift == "row_id_bool":
+        row["id"] = True
+    elif drift == "source_selection":
+        metrics["source_selection"]["universe"].reverse()
+    elif drift == "formula_hash":
+        metrics["formula_fingerprint"] = "sha256:" + "c" * 64
+    elif drift == "formula_order":
+        metrics["formula_binding"]["universe"].reverse()
+        metrics["formula_fingerprint"] = FormulaBinding(
+            **metrics["formula_binding"]
+        ).fingerprint
+    elif drift == "no_native_scope":
+        metrics.pop("source_selection")
+    elif drift == "request_formula_hash":
+        row["config_json"]["params"]["formula_fingerprint"] = "sha256:" + "d" * 64
+    elif drift == "request_scope":
+        row["config_json"]["params"]["deployment_scope"]["universe_policy"][
+            "allocation_slots"
+        ] = 2
+    elif drift == "duplicate_snapshot_identity":
+        rows = metrics["dataset_snapshot"]["symbol_universe"]
+        rows[1]["symbol"] = rows[0]["symbol"]
+        _refresh_native_report(row)
+    elif drift == "snapshot_row_count":
+        metrics["dataset_snapshot"]["row_count"] += 1
+        _refresh_native_report(row)
+    elif drift == "cost_nonfinite":
+        row["cost_summary_json"]["total_slippage"] = float("inf")
+    elif drift == "fractional_fill_count":
+        metrics["evidence_bundle"]["fill_count"] = 0.5
+    if isinstance(row["metrics_json"], dict) and drift != "snapshot_hash":
+        assert (
+            dataset_simulation_admission(metrics["dataset_snapshot"])["status"]
+            == "admitted"
+        )
+    projection = await _project_native_report(row)
+    assert projection.status != "complete"
+    assert projection.payload["analysis_ready"] is False
+    assert "dataset_simulation_admission" not in projection.payload
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_exploratory_report_preserves_losses_and_degraded_oos(
+    native_exploratory_report,
+):
+    row = native_exploratory_report
+    _set_native_report_result(row, [1000000, 980000, 960000, 940000, 920000, 900000])
+    _refresh_native_report(row)
+    projection = await _project_native_report(row)
+    assert projection.status == "complete"
+    assert projection.payload["performance_summary"]["total_return"] == -0.1
+    assert (
+        next(
+            item
+            for item in projection.payload["research_evidence_bundle"]["analyzers"]
+            if item["name"] == "oos"
+        )["status"]
+        == "degraded"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "drift",
+    [
+        "final_equity",
+        "total_return",
+        "missing_rolling_oos",
+        "rolling_oos_conflict",
+        "drawdown_missing",
+        "drawdown_equity_conflict",
+        "fee_components_missing",
+        "fee_summary_conflict",
+        "gross_pnl_conflict",
+        "turnover_conflict",
+    ],
+)
+async def test_native_analysis_requires_reproducible_infrastructure_and_after_cost(
+    native_exploratory_report, drift
+):
+    from analytics.normalized_research_gate import baseline_research_evidence_blockers
+    from analytics.strategy_advancement_evidence import (
+        after_cost_evidence_complete,
+        payload_fingerprint,
+    )
+    from analytics.strategy_advancement_gate import strategy_advancement_backtest_view
+
+    row = native_exploratory_report
+    view = strategy_advancement_backtest_view(row)
+    assert baseline_research_evidence_blockers(view) == []
+    assert after_cost_evidence_complete(view) is True
+    assert (await _project_native_report(row)).status == "complete"
+    metrics = row["metrics_json"]
+    if drift == "final_equity":
+        row["final_equity"] = 9999999
+    elif drift == "total_return":
+        row["total_return"] = 0.99
+    elif drift == "missing_rolling_oos":
+        metrics.pop("oos_validation")
+    elif drift == "rolling_oos_conflict":
+        oos = metrics["oos_validation"]
+        oos["folds"][0]["out_of_sample"]["net_return"] += 0.01
+        oos["evidence_fingerprint"] = payload_fingerprint(
+            {key: value for key, value in oos.items() if key != "evidence_fingerprint"}
+        )
+    elif drift == "drawdown_missing":
+        metrics.pop("drawdown_evidence")
+    elif drift == "drawdown_equity_conflict":
+        row["equity_curve_json"][-1]["equity"] += 1
+    elif drift == "fee_components_missing":
+        metrics.pop("fee_component_evidence")
+    elif drift == "fee_summary_conflict":
+        row["cost_summary_json"]["total_commission"] += 1
+    elif drift == "gross_pnl_conflict":
+        metrics["evidence_bundle"]["gross_pnl_before_costs"] += 1
+    elif drift == "turnover_conflict":
+        metrics["evidence_bundle"]["gross_turnover"] += 1
+    _refresh_native_report(row)
+    assert metrics["research_evidence_bundle"]["gate_status"] == "blocked"
+    assert (
+        dataset_simulation_admission(metrics["dataset_snapshot"])["status"]
+        == "admitted"
+    )
+    projection = await _project_native_report(row)
+    assert projection.status == "blocked"
+    assert projection.payload["analysis_ready"] is False
+    assert "dataset_simulation_admission" not in projection.payload
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["unknown_blocked", "malformed_oos"])
+async def test_other_blockers_cannot_be_hidden_as_formal_admission(
+    native_exploratory_report, failure
+):
+    row = native_exploratory_report
+    if failure == "unknown_blocked":
+
+        class UnknownAnalyzer:
+            name = "unknown_check"
+
+            def analyze(self, context):
+                return AnalyzerResult(
+                    name=self.name, status="blocked", summary="Unknown blocker."
+                )
+
+        _refresh_native_report(
+            row,
+            analyzers=[
+                DataQualityAnalyzer(),
+                AfterCostAnalyzer(),
+                OosAnalyzer(),
+                UnknownAnalyzer(),
+            ],
+        )
+    else:
+        row["metrics_json"]["chronological_validation"] = {
+            "schema_version": "malformed"
+        }
+        _refresh_native_report(row)
+    projection = await _project_native_report(row)
+    assert projection.status == "blocked"
+    assert projection.payload["analysis_ready"] is False
 
 
 class FixtureModel:

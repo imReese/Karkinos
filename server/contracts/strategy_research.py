@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -13,9 +14,6 @@ from core.types import BarFrequency
 from server.ai_runtime.contracts import JsonObject, content_fingerprint
 from server.ai_runtime.formula_dsl import (
     is_operator_approved_cost_model_reference,
-)
-from server.ai_runtime.formula_parameter_sweep import (
-    FORMULA_PARAMETER_SWEEP_MAX_VARIANTS,
 )
 from server.contracts.normalized_strategy_research import (
     CANONICAL_COST_MODEL_REFERENCE,
@@ -31,7 +29,7 @@ STRATEGY_RESEARCH_API_CONTRACT = "karkinos.ai.strategy_research_api.v1"
 STRATEGY_RESEARCH_ITERATION_CONTEXT_CONTRACT = (
     "karkinos.ai.strategy_iteration_context.v1"
 )
-STRATEGY_RESEARCH_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v18"
+STRATEGY_RESEARCH_PROMPT_VERSION = "karkinos.ai.strategy_research_prompt.v20"
 LOCAL_HYPOTHESIS_ADMISSION_VERSION = "karkinos.ai.local_hypothesis_admission.v1"
 SANITIZED_ACCOUNT_EVIDENCE_CONTRACT = "karkinos.ai.sanitized_account_risk_evidence.v1"
 
@@ -294,6 +292,23 @@ class StrategyResearchSelection:
             if self.has_account_binding
             else "not_applicable_strategy_only_research"
         )
+        if self.deployment_scope is not None:
+            from server.ai_runtime.strategy_research_privacy import (
+                external_research_scope,
+                external_research_universe,
+            )
+
+            payload["universe"] = external_research_universe(
+                self.universe,
+                deployment_scope_fingerprint=self.deployment_scope[
+                    "deployment_scope_fingerprint"
+                ],
+            )
+            payload["asset_classes"] = {
+                kind: self.asset_classes.count(kind)
+                for kind in sorted(set(self.asset_classes))
+            }
+            payload["deployment_scope"] = external_research_scope(self.deployment_scope)
         return payload
 
     @property
@@ -311,6 +326,8 @@ class HypothesisGenerationRequest:
     confirmation: str
     iteration_context: JsonObject | None = None
     research_task_id: str | None = None
+    research_history: JsonObject | None = None
+    prior_diagnostic_exposures: tuple[JsonObject, ...] = ()
 
     def __post_init__(self) -> None:
         for name in (
@@ -326,6 +343,11 @@ class HypothesisGenerationRequest:
         if self.confirmation != HYPOTHESIS_EXPORT_CONFIRMATION:
             raise PermissionError("hypothesis export requires exact human confirmation")
         validate_iteration_context(self.iteration_context)
+        validate_research_history(self.research_history)
+        if len(self.prior_diagnostic_exposures) > STRATEGY_RESEARCH_MAX_CANDIDATES:
+            raise StrategyResearchRejected("prior_diagnostic_exposure_budget_exceeded")
+        for exposure in self.prior_diagnostic_exposures:
+            validate_prior_diagnostic_exposure(exposure)
 
     @property
     def fingerprint(self) -> str:
@@ -339,7 +361,59 @@ class HypothesisGenerationRequest:
         }
         if self.research_task_id is not None:
             payload["research_task_id"] = self.research_task_id
+        if self.research_history:
+            payload["research_history"] = self.research_history
+        if self.prior_diagnostic_exposures:
+            payload["prior_diagnostic_exposures"] = list(
+                self.prior_diagnostic_exposures
+            )
         return content_fingerprint(payload)
+
+
+def validate_research_history(value: JsonObject | None) -> None:
+    """Bound optional operator context; it is never canonical financial evidence."""
+    if value is None:
+        return
+    if not isinstance(value, dict):
+        raise StrategyResearchRejected("research_history_invalid")
+
+    def require_json(item: Any) -> None:
+        if isinstance(item, dict):
+            if any(type(key) is not str for key in item):
+                raise ValueError
+            for child in item.values():
+                require_json(child)
+        elif isinstance(item, list):
+            for child in item:
+                require_json(child)
+        elif item is not None and type(item) not in (str, bool, int, float):
+            raise ValueError
+
+    try:
+        require_json(value)
+        serialized = json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise StrategyResearchRejected("research_history_invalid") from exc
+    if len(serialized.encode("utf-8")) > STRATEGY_RESEARCH_MAX_INPUT_BYTES:
+        raise StrategyResearchRejected("strategy_research_input_too_large")
+    try:
+        reject_private_iteration_keys(value)
+    except StrategyResearchRejected as exc:
+        raise StrategyResearchRejected(
+            "research_history_private_field_forbidden"
+        ) from exc
+    from server.ai_runtime.strategy_research_privacy import (
+        research_pack_privacy_violations,
+    )
+
+    if research_pack_privacy_violations(value):
+        raise StrategyResearchRejected("research_history_private_field_forbidden")
 
 
 def validate_prior_diagnostic_exposure(value: Any) -> None:
@@ -372,9 +446,7 @@ def validate_prior_diagnostic_exposure(value: Any) -> None:
         or value["frequency"] != BarFrequency.DAILY.value
         or not is_operator_approved_cost_model_reference(value["cost_model_reference"])
         or type(value["observed_trial_count"]) is not int
-        or not 1
-        <= value["observed_trial_count"]
-        <= FORMULA_PARAMETER_SWEEP_MAX_VARIANTS
+        or value["observed_trial_count"] < 1
     ):
         raise StrategyResearchRejected("prior_diagnostic_exposure_invalid")
     try:

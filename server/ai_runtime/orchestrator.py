@@ -34,6 +34,7 @@ class ToolExecutor(Protocol):
         self,
         arguments: JsonObject,
         context: EvidenceBoundContextSnapshot,
+        /,
     ) -> JsonObject: ...
 
 

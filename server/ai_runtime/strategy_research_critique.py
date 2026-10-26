@@ -36,6 +36,7 @@ from server.composition.strategy_research import (
     strategy_research_workflow_definition,
 )
 from server.contracts.strategy_research import CritiqueRequest, StrategyResearchRejected
+from server.persistence.backtest_results import backtest_evidence_blocker
 
 
 class StrategyResearchCritiqueMixin:
@@ -43,6 +44,8 @@ class StrategyResearchCritiqueMixin:
         settings = self._require_settings()
         session = self._research_store.get_session(request.session_id)
         self._validate_session_integrity(session)
+        selection = selection_from_session(session)
+        await self._validate_saved_selection(selection)
         draft_row = self._research_store.get_draft(request.session_id, request.draft_id)
         backtest = self._research_store.get_backtest(request.backtest_run_id)
         if (
@@ -62,6 +65,8 @@ class StrategyResearchCritiqueMixin:
         )
         if not isinstance(saved, dict):
             raise StrategyResearchRejected("canonical_backtest_result_missing")
+        if blocker := backtest_evidence_blocker(saved):
+            raise StrategyResearchRejected(blocker)
         metrics = strategy_research_json_object(saved.get("metrics_json"))
         evidence = metrics.get("research_evidence_bundle")
         if not isinstance(evidence, dict):
@@ -79,6 +84,10 @@ class StrategyResearchCritiqueMixin:
         if content_fingerprint(evidence) != backtest["evidence_fingerprint"]:
             raise StrategyResearchRejected("canonical_backtest_artifact_drift")
 
+        def require_current() -> None:
+            self._require_execution_current()
+            self._resolve_simulation_entry_board_policy(selection, saved_backtest=saved)
+
         provider_id, model_id = strategy_research_runtime_ids(settings, "critique")
         critique, reused = self._research_store.create_or_get_critique(
             request,
@@ -93,12 +102,13 @@ class StrategyResearchCritiqueMixin:
             "blocked",
             "running",
         }:
+            if selection.simulation_validation_binding is not None:
+                critique = self._research_store.get_critique(critique["critique_id"])
             return critique_response(critique, reused=True)
         self._require_provider_send_window()
 
         context = self._ai_store.get_context(session["context_snapshot_id"])
         evidence_reference_id = str(session["evidence_reference_id"])
-        selection = selection_from_session(session)
         reviewed_fee_schedule_resolution = await asyncio.to_thread(
             self._resolve_reviewed_fee_schedule,
             selection,
@@ -169,6 +179,15 @@ class StrategyResearchCritiqueMixin:
         register_strategy_research_runtime(
             registry, settings, provider_id, model_id, "critique"
         )
+
+        def observe_transport(event_type: str, payload: JsonObject) -> None:
+            self._ai_store.append_event(
+                workflow.workflow_id,
+                event_type=event_type,
+                payload={**payload, "provider_id": provider_id, "model_id": model_id},
+                created_at=self._now(),
+            )
+
         provider = StrategyResearchModelProvider(
             provider_id=provider_id,
             settings=settings,
@@ -218,7 +237,20 @@ class StrategyResearchCritiqueMixin:
             monotonic=self._monotonic,
             timeout_seconds=self._model_timeout_seconds,
             send_admission=self._provider_send_admission,
+            execution_guard=require_current,
+            transport_event=observe_transport,
         )
+        claimed = False
+
+        def require_claim_current() -> None:
+            # Audit setup and idempotent reads retain the original worker fence.
+            # Only our successful claim may reject/finish a new SIM action.
+            self._require_execution_current()
+            if claimed:
+                self._resolve_simulation_entry_board_policy(
+                    selection, saved_backtest=saved
+                )
+
         orchestrator = build_strategy_research_orchestrator(
             ai_store=self._ai_store,
             registry=registry,
@@ -226,24 +258,29 @@ class StrategyResearchCritiqueMixin:
             evidence_repository=self._evidence_repository,
             selection=selection,
             now=self._now,
-            execution_guard=self._execution_guard,
+            execution_guard=(
+                require_claim_current
+                if selection.simulation_validation_binding is not None
+                else self._execution_guard
+            ),
         )
-        workflow = orchestrator.create_workflow(
-            definition=strategy_research_workflow_definition(model_id, "critique"),
-            context=context,
-            idempotency_key=f"strategy-critique:{request.idempotency_key}",
-        )
-        claimed = self._research_store.claim_critique(
-            critique["critique_id"],
-            workflow_id=workflow.workflow_id,
-            claimed_at=self._now(),
-        )
-        if not claimed:
-            return critique_response(
-                self._research_store.get_critique(critique["critique_id"]),
-                reused=True,
-            )
         try:
+            workflow = orchestrator.create_workflow(
+                definition=strategy_research_workflow_definition(model_id, "critique"),
+                context=context,
+                idempotency_key=f"strategy-critique:{request.idempotency_key}",
+            )
+            claimed = self._research_store.claim_critique(
+                critique["critique_id"],
+                workflow_id=workflow.workflow_id,
+                claimed_at=self._now(),
+            )
+            if not claimed:
+                return critique_response(
+                    self._research_store.get_critique(critique["critique_id"]),
+                    reused=True,
+                )
+            require_current()
             if workflow.status not in TERMINAL_WORKFLOW_STATUSES:
                 workflow = await asyncio.to_thread(
                     orchestrator.run,
@@ -252,6 +289,20 @@ class StrategyResearchCritiqueMixin:
                 )
             else:
                 workflow = self._ai_store.get_workflow(workflow.workflow_id)
+            require_current()
+            artifact_payload = None
+            if workflow.status == WorkflowStatus.COMPLETED:
+                artifact_payload = report_artifact(
+                    self._ai_store, workflow.workflow_id
+                ).content
+            require_current()
+            self._research_store.finish_critique(
+                critique["critique_id"],
+                status=workflow.status.value,
+                artifact=artifact_payload,
+                failure_code=workflow.failure_code,
+                updated_at=self._now(),
+            )
         except ProviderCallDeferred as exc:
             self._require_execution_current()
             self._research_store.finish_critique(
@@ -262,20 +313,20 @@ class StrategyResearchCritiqueMixin:
                 updated_at=self._now(),
             )
             raise
-        self._require_execution_current()
-        artifact_payload = None
-        if workflow.status == WorkflowStatus.COMPLETED:
-            artifact_payload = report_artifact(
-                self._ai_store, workflow.workflow_id
-            ).content
-        self._require_execution_current()
-        self._research_store.finish_critique(
-            critique["critique_id"],
-            status=workflow.status.value,
-            artifact=artifact_payload,
-            failure_code=workflow.failure_code,
-            updated_at=self._now(),
-        )
+        except StrategyResearchRejected as exc:
+            if selection.simulation_validation_binding is None or not claimed:
+                raise
+            # Revocation blocks new research, not the truthful failure record.
+            # Preserve the original worker fence before writing that record.
+            self._require_execution_current()
+            self._research_store.finish_critique(
+                critique["critique_id"],
+                status="blocked",
+                artifact=None,
+                failure_code=str(exc),
+                updated_at=self._now(),
+            )
+            raise
         return critique_response(
             self._research_store.get_critique(critique["critique_id"]),
             reused=reused,

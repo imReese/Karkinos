@@ -226,7 +226,7 @@ def external_edge_request_options(
     ):
         return {
             "thinking": {"type": "enabled"},
-            "reasoning_effort": "high",
+            "reasoning_effort": "max",
         }
     return {"temperature": 0}
 

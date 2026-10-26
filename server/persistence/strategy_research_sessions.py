@@ -45,6 +45,13 @@ class StrategyResearchSessionRepositoryMixin:
                 request.prior_diagnostic_exposures
             )
             prompt_version = LOCAL_HYPOTHESIS_ADMISSION_VERSION
+        else:
+            if request.research_history:
+                request_payload["research_history"] = request.research_history
+            if request.prior_diagnostic_exposures:
+                request_payload["prior_diagnostic_exposures"] = list(
+                    request.prior_diagnostic_exposures
+                )
         request_json = canonical_json(request_payload)
         with self._connect(immediate=True) as conn:
             existing = conn.execute(

@@ -870,21 +870,20 @@ async def test_local_admission_without_provider_preserves_truthful_source_and_re
 @pytest.mark.trading_safety
 @pytest.mark.asyncio
 async def test_local_admission_snapshots_nested_caller_input_before_await(tmp_path):
+    from server.services.market.market_universe_truth import (
+        MarketUniversePolicy,
+        market_deployment_scope,
+    )
+
     service, selection, transport, db_path = _service(tmp_path, bind_account=False)
     service._settings = None
     family_selection = selection
-    scope_core = {
-        "universe_policy": {"policy_id": "sanitized-full-market-fixture"},
-        "portfolio_policy_id": FORMULA_PORTFOLIO_POLICY_ID,
-    }
     selection = replace(
         selection,
         portfolio_policy_id=FORMULA_PORTFOLIO_POLICY_ID,
-        deployment_scope={
-            **scope_core,
-            "scope_kind": "full_declared_market",
-            "deployment_scope_fingerprint": "sha256:" + content_fingerprint(scope_core),
-        },
+        deployment_scope=market_deployment_scope(
+            MarketUniversePolicy(minimum_master_member_count=2, minimum_history_rows=2)
+        ),
     )
     exposure = {
         "artifact_fingerprint": "sha256:" + "d" * 64,
@@ -926,7 +925,7 @@ async def test_local_admission_snapshots_nested_caller_input_before_await(tmp_pa
     exposure["observed_trial_count"] = 1
     exposure["observed_at"] = "2027-01-01T00:00:00+00:00"
     exposure["provenance"]["disposition"] = "accepted"
-    selection.deployment_scope["universe_policy"]["policy_id"] = "mutated-during-await"
+    selection.deployment_scope["universe_policy"]["minimum_history_rows"] = 200
     resume.set()
     result = await asyncio.wait_for(pending, timeout=5)
 
@@ -944,8 +943,10 @@ async def test_local_admission_snapshots_nested_caller_input_before_await(tmp_pa
     stored = json.loads(row["request_json"])
     assert stored["source_provenance"] == original_provenance
     assert (
-        stored["selection"]["deployment_scope"]["universe_policy"]["policy_id"]
-        == "sanitized-full-market-fixture"
+        stored["selection"]["deployment_scope"]["universe_policy"][
+            "minimum_history_rows"
+        ]
+        == 2
     )
     saved_exposure = stored["prior_diagnostic_exposures"][0]
     assert saved_exposure["observed_trial_count"] == 9
@@ -1014,7 +1015,7 @@ async def test_local_admission_reuses_fail_closed_citation_and_formula_validatio
 async def test_local_prior_diagnostic_disclosure_only_increases_trial_family_without_scores(
     tmp_path,
 ):
-    service, selection, _, db_path = _service(tmp_path, bind_account=False)
+    service, selection, transport, db_path = _service(tmp_path, bind_account=False)
     service._settings = None
     # The normal FixtureDb keeps its results in memory; the family reader opens
     # this same canonical table in production. A sentinel proves no score import.
@@ -1040,7 +1041,7 @@ async def test_local_prior_diagnostic_disclosure_only_increases_trial_family_wit
         "end_date": "2025-01-08",
         "frequency": "1d",
         "cost_model_reference": selection.cost_model_reference,
-        "observed_trial_count": 9,
+        "observed_trial_count": 92,
         "provenance": {
             "generator": "sanitized_conversation",
             "model_id": "declared-fixture-model",
@@ -1048,17 +1049,46 @@ async def test_local_prior_diagnostic_disclosure_only_increases_trial_family_wit
             "external_provider_api_called": False,
         },
     }
-    await service.admit_local_hypotheses(
+    exposures = (
+        exposure,
+        {
+            **exposure,
+            "artifact_fingerprint": "sha256:" + "f" * 64,
+            "universe": ["600000", "600002"],
+            "observed_trial_count": 42,
+        },
+        {
+            **exposure,
+            "artifact_fingerprint": "sha256:" + "a" * 64,
+            "universe": ["600000", "600001", "600002"],
+            "observed_trial_count": 5,
+        },
+    )
+    disclosed = await service.admit_local_hypotheses(
         replace(
             request,
             idempotency_key="local-with-prior-exposure",
-            prior_diagnostic_exposures=(exposure,),
+            prior_diagnostic_exposures=exposures,
         )
     )
+    stored = json.loads(
+        service._research_store.get_session(disclosed["session_id"])["request_json"]
+    )
+    assert stored["prior_diagnostic_exposures"] == list(exposures)
+    total_prior_trials = 92 + 42 + 5
     family = service._research_store.research_trial_family(selection)
-    assert family["nominal_trial_count"] == 9
-    assert family["sources"][0]["source_kind"] == "declared_prior_diagnostic_exposure"
-    assert family["sources"][0]["canonical_performance_admitted"] is False
+    assert family["nominal_trial_count"] == total_prior_trials
+    assert family["trials_assumed_independent"] is False
+    assert sorted(item["observed_trial_count"] for item in family["sources"]) == [
+        5,
+        42,
+        92,
+    ]
+    assert all(
+        item["source_kind"] == "declared_prior_diagnostic_exposure"
+        and item["canonical_performance_admitted"] is False
+        for item in family["sources"]
+    )
     await service.admit_local_hypotheses(
         replace(
             request,
@@ -1067,6 +1097,18 @@ async def test_local_prior_diagnostic_disclosure_only_increases_trial_family_wit
         )
     )
     assert service._research_store.research_trial_family(selection) == family
+    await service.admit_local_hypotheses(
+        replace(
+            request,
+            idempotency_key="larger-prior-exposure",
+            prior_diagnostic_exposures=({**exposure, "observed_trial_count": 93},),
+        )
+    )
+    larger_family = service._research_store.research_trial_family(selection)
+    total_prior_trials += 1
+    assert larger_family["nominal_trial_count"] == total_prior_trials
+    assert set(family["trial_fingerprints"]) < set(larger_family["trial_fingerprints"])
+    assert len(larger_family["sources"]) == 3
     extended = replace(
         selection,
         universe=("600000", "600002"),
@@ -1075,7 +1117,7 @@ async def test_local_prior_diagnostic_disclosure_only_increases_trial_family_wit
     )
     assert (
         service._research_store.research_trial_family(extended)["nominal_trial_count"]
-        == 9
+        == total_prior_trials
     )
     scope_core = {
         "universe_policy": {"policy_id": "sanitized-full-market-fixture"},
@@ -1092,7 +1134,7 @@ async def test_local_prior_diagnostic_disclosure_only_increases_trial_family_wit
     )
     assert (
         service._research_store.research_trial_family(full_scope)["nominal_trial_count"]
-        == 9
+        == total_prior_trials
     )
     with pytest.raises(
         StrategyResearchRejected, match="sealed_window_exposed_to_research"
@@ -1110,6 +1152,17 @@ async def test_local_prior_diagnostic_disclosure_only_increases_trial_family_wit
         assert conn.execute("SELECT * FROM backtest_results").fetchall() == [
             (17, '{"sentinel":"unchanged"}')
         ]
+    assert transport.calls == []
+    for invalid_count in (0, -1, True, False, 1.0, 92.0):
+        with pytest.raises(
+            StrategyResearchRejected, match="prior_diagnostic_exposure_invalid"
+        ):
+            replace(
+                request,
+                prior_diagnostic_exposures=(
+                    {**exposure, "observed_trial_count": invalid_count},
+                ),
+            )
     with pytest.raises(
         StrategyResearchRejected, match="prior_diagnostic_exposure_invalid"
     ):
@@ -1136,7 +1189,7 @@ async def test_local_prior_diagnostic_disclosure_only_increases_trial_family_wit
         )
     assert (
         service._research_store.research_trial_family(selection)["nominal_trial_count"]
-        > 9
+        > total_prior_trials
     )
 
 
@@ -1869,6 +1922,14 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
             "external.strategy_hypothesis_researcher.v16",
             "karkinos.ai.strategy_research_prompt.v17",
         ),
+        (
+            "external.strategy_hypothesis_researcher.v17",
+            "karkinos.ai.strategy_research_prompt.v18",
+        ),
+        (
+            "external.strategy_hypothesis_researcher.v18",
+            "karkinos.ai.strategy_research_prompt.v19",
+        ),
     ):
         registry.register_role(
             AgentRole(
@@ -1924,14 +1985,16 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert "external.strategy_hypothesis_researcher.v10" in role_ids
     assert "external.strategy_hypothesis_researcher.v16" in role_ids
     assert "external.strategy_hypothesis_researcher.v17" in role_ids
+    assert "external.strategy_hypothesis_researcher.v18" in role_ids
+    assert "external.strategy_hypothesis_researcher.v19" in role_ids
     current_role = next(
         item
         for item in service._ai_store.list_roles()
-        if item.role_id == "external.strategy_hypothesis_researcher.v17"
+        if item.role_id == "external.strategy_hypothesis_researcher.v19"
     )
     assert "account_state_projection.read" in current_role.allowed_tools
     assert (
-        current_role.instructions_version == "karkinos.ai.strategy_research_prompt.v18"
+        current_role.instructions_version == "karkinos.ai.strategy_research_prompt.v20"
     )
 
     backtest = await service.run_formula_backtest(
@@ -2029,9 +2092,9 @@ async def test_fake_provider_completes_hypothesis_backtest_critique_without_auth
     assert len(transport.calls) == 2
     assert all(call["payload"].get("tools") is None for call in transport.calls)
     assert all(
-        call["payload"]["thinking"] == {"type": "disabled"} for call in transport.calls
+        call["payload"]["thinking"] == {"type": "enabled"} for call in transport.calls
     )
-    assert all("reasoning_effort" not in call["payload"] for call in transport.calls)
+    assert all(call["payload"]["reasoning_effort"] == "max" for call in transport.calls)
     hypothesis_payload = transport.calls[0]["payload"]
     hypothesis_system_prompt = hypothesis_payload["messages"][0]["content"]
     hypothesis_input = json.loads(hypothesis_payload["messages"][1]["content"])

@@ -308,6 +308,16 @@ class StrategyResearchGenerationMixin:
     async def generate_hypotheses(
         self, request: HypothesisGenerationRequest
     ) -> JsonObject:
+        request = deepcopy(request)
+        request = replace(request, selection=replace(request.selection))
+        selection = request.selection
+        if request.prior_diagnostic_exposures:
+            current = datetime.fromisoformat(self._now())
+            if any(
+                datetime.fromisoformat(item["observed_at"]) > current
+                for item in request.prior_diagnostic_exposures
+            ):
+                raise StrategyResearchRejected("prior_diagnostic_source_time_in_future")
         self._require_accepted_research_task(request)
         settings = self._require_settings()
         await self._validate_saved_selection(request.selection)
@@ -392,6 +402,25 @@ class StrategyResearchGenerationMixin:
         register_strategy_research_runtime(
             registry, settings, provider_id, model_id, "hypothesis"
         )
+        claimed = False
+
+        def require_current() -> None:
+            self._require_execution_current()
+            self._resolve_simulation_entry_board_policy(selection)
+
+        def require_claim_current() -> None:
+            self._require_execution_current()
+            if claimed:
+                self._resolve_simulation_entry_board_policy(selection)
+
+        def observe_transport(event_type: str, payload: JsonObject) -> None:
+            self._ai_store.append_event(
+                workflow.workflow_id,
+                event_type=event_type,
+                payload={**payload, "provider_id": provider_id, "model_id": model_id},
+                created_at=self._now(),
+            )
+
         provider = StrategyResearchModelProvider(
             provider_id=provider_id,
             settings=settings,
@@ -408,6 +437,9 @@ class StrategyResearchGenerationMixin:
             monotonic=self._monotonic,
             timeout_seconds=self._model_timeout_seconds,
             send_admission=self._provider_send_admission,
+            research_history=request.research_history,
+            execution_guard=require_current,
+            transport_event=observe_transport,
         )
         orchestrator = build_strategy_research_orchestrator(
             ai_store=self._ai_store,
@@ -416,7 +448,11 @@ class StrategyResearchGenerationMixin:
             evidence_repository=self._evidence_repository,
             selection=request.selection,
             now=self._now,
-            execution_guard=self._execution_guard,
+            execution_guard=(
+                require_claim_current
+                if selection.simulation_validation_binding is not None
+                else self._execution_guard
+            ),
         )
         workflow = orchestrator.create_workflow(
             definition=strategy_research_workflow_definition(model_id, "hypothesis"),
@@ -438,6 +474,7 @@ class StrategyResearchGenerationMixin:
         if not claimed:
             return self.get_session(session["session_id"], reused=True)
         try:
+            require_current()
             if workflow.status not in TERMINAL_WORKFLOW_STATUSES:
                 workflow = await asyncio.to_thread(
                     orchestrator.run,
@@ -446,6 +483,34 @@ class StrategyResearchGenerationMixin:
                 )
             else:
                 workflow = self._ai_store.get_workflow(workflow.workflow_id)
+            require_current()
+            status = workflow.status.value
+            if workflow.status == WorkflowStatus.COMPLETED:
+                artifact = report_artifact(self._ai_store, workflow.workflow_id)
+                drafts = bind_and_validate_drafts(
+                    artifact.content,
+                    session_id=session["session_id"],
+                    workflow_id=workflow.workflow_id,
+                    context_snapshot_id=capture.context.snapshot_id,
+                    context_fingerprint=capture.context.fingerprint,
+                    evidence_reference_id=evidence.reference_id,
+                    selection=request.selection,
+                    research_question=request.research_question,
+                    iteration_context=request.iteration_context,
+                    provider_id=provider_id,
+                    model_id=model_id,
+                )
+                require_current()
+                self._research_store.save_drafts(
+                    session["session_id"], drafts, created_at=self._now()
+                )
+            require_current()
+            self._research_store.finish_session(
+                session["session_id"],
+                status=status,
+                failure_code=workflow.failure_code,
+                updated_at=self._now(),
+            )
         except ProviderCallDeferred as exc:
             self._require_execution_current()
             self._research_store.finish_session(
@@ -455,32 +520,16 @@ class StrategyResearchGenerationMixin:
                 updated_at=self._now(),
             )
             raise
-        self._require_execution_current()
-        status = workflow.status.value
-        if workflow.status == WorkflowStatus.COMPLETED:
-            artifact = report_artifact(self._ai_store, workflow.workflow_id)
-            drafts = bind_and_validate_drafts(
-                artifact.content,
-                session_id=session["session_id"],
-                workflow_id=workflow.workflow_id,
-                context_snapshot_id=capture.context.snapshot_id,
-                context_fingerprint=capture.context.fingerprint,
-                evidence_reference_id=evidence.reference_id,
-                selection=request.selection,
-                research_question=request.research_question,
-                iteration_context=request.iteration_context,
-                provider_id=provider_id,
-                model_id=model_id,
-            )
+        except StrategyResearchRejected as exc:
+            if selection.simulation_validation_binding is None or not claimed:
+                raise
+            # Revocation cannot authorize drafts, but must not erase our failure.
             self._require_execution_current()
-            self._research_store.save_drafts(
-                session["session_id"], drafts, created_at=self._now()
+            self._research_store.finish_session(
+                session["session_id"],
+                status="blocked",
+                failure_code=str(exc),
+                updated_at=self._now(),
             )
-        self._require_execution_current()
-        self._research_store.finish_session(
-            session["session_id"],
-            status=status,
-            failure_code=workflow.failure_code,
-            updated_at=self._now(),
-        )
+            raise
         return self.get_session(session["session_id"], reused=reused)

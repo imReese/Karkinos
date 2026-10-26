@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import inspect
 import json
+import math
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 from server.persistence.backtest_results import backtest_evidence_blocker
@@ -25,6 +27,236 @@ from .capture import (
 from .contracts import content_fingerprint
 from .evidence import EvidenceIdentityMismatch
 from .strategy_research_privacy import build_normalized_research_pack
+
+
+def _finite_report_number(value: Any) -> float:
+    if value is None or isinstance(value, bool):
+        raise ValueError("saved report number is missing")
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("saved report number is not finite")
+    return number
+
+
+def saved_native_research_analysis_admission(
+    *,
+    result_id: int,
+    row: dict[str, Any],
+    metrics: dict[str, Any],
+    config: dict[str, Any],
+    cost_summary: dict[str, Any],
+    bundle: dict[str, Any],
+    performance: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Admit complete saved research facts, without attesting current CAS bytes.
+
+    Native execution and critique still reopen the Dataset and replay its exact
+    snapshot. Formal admission remains the saved bundle's separate decision.
+    """
+    from analytics.dataset_snapshot import dataset_simulation_admission
+    from analytics.normalized_research_gate import baseline_research_evidence_blockers
+    from analytics.research_evidence import (
+        build_research_evidence_bundle,
+        has_valid_research_evidence_bundle_identity,
+    )
+    from analytics.strategy_advancement_evidence import after_cost_evidence_complete
+    from analytics.strategy_advancement_gate import strategy_advancement_backtest_view
+    from core.types import InstrumentKey
+    from server.ai_runtime.contracts import canonical_json
+    from server.ai_runtime.formula_dsl import FORMULA_BINDING_CONTRACT, FormulaBinding
+    from server.ai_runtime.strategy_research_support import selection_from_session
+
+    try:
+        if backtest_evidence_blocker(row):
+            return None
+        if (
+            type(result_id) is not int
+            or result_id <= 0
+            or type(row.get("id")) is not int
+            or row["id"] != result_id
+            or not has_valid_research_evidence_bundle_identity(bundle)
+        ):
+            return None
+        source = metrics["source_selection"]
+        selection = selection_from_session(
+            {"request_json": canonical_json({"selection": source})}
+        )
+        if (
+            not selection.portfolio_policy_id
+            or selection.has_account_binding
+            or set(selection.asset_classes) != {"stock"}
+            or selection.to_dict() != source
+        ):
+            return None
+        date.fromisoformat(selection.start_date)
+        date.fromisoformat(selection.end_date)
+        binding_payload = metrics["formula_binding"]
+        binding = FormulaBinding(**binding_payload)
+        if (
+            binding.schema_version != FORMULA_BINDING_CONTRACT
+            or binding.to_dict() != binding_payload
+            or metrics.get("formula_fingerprint") != binding.fingerprint
+            or tuple(binding.universe) != selection.universe
+            or any(
+                getattr(binding, key) != getattr(selection, key)
+                for key in (
+                    "dataset_snapshot_id",
+                    "start_date",
+                    "end_date",
+                    "frequency",
+                    "initial_cash",
+                    "cost_model_reference",
+                )
+            )
+        ):
+            return None
+        params = config["params"]
+        if (
+            params.get("formula_fingerprint") != binding.fingerprint
+            or params.get("portfolio_policy_id") != selection.portfolio_policy_id
+            or params.get("deployment_scope") != selection.deployment_scope
+        ):
+            return None
+        snapshot = metrics["dataset_snapshot"]
+        admission = dataset_simulation_admission(snapshot)
+        if (
+            admission["status"] != "admitted"
+            or snapshot["snapshot_id"] != selection.dataset_snapshot_id
+            or bundle.get("dataset_snapshot_id") != selection.dataset_snapshot_id
+            or snapshot["date_range"]
+            != {"start": selection.start_date, "end": selection.end_date}
+            or any(
+                config.get(key) != getattr(selection, key)
+                for key in ("start_date", "end_date", "initial_cash")
+            )
+        ):
+            return None
+        assets = config["assets"]
+        if (
+            tuple(asset["symbol"] for asset in assets) != selection.universe
+            or tuple(asset["asset_class"] for asset in assets)
+            != selection.asset_classes
+        ):
+            return None
+        configured_keys = [
+            InstrumentKey.from_values(asset["symbol"], asset["asset_class"])
+            for asset in assets
+        ]
+        if any(
+            asset.get("instrument_type") is not None
+            and InstrumentKey.from_values(asset["symbol"], asset["instrument_type"])
+            != key
+            for asset, key in zip(assets, configured_keys, strict=True)
+        ):
+            return None
+        rows = snapshot["symbol_universe"]
+        snapshot_keys = [
+            InstrumentKey.from_values(item["symbol"], item["instrument_type"])
+            for item in rows
+        ]
+        configured_asset_classes = dict(
+            zip(configured_keys, selection.asset_classes, strict=True)
+        )
+        # The snapshot builder sorts by symbol; the frozen selection/config keep
+        # their own exact order. Compare typed membership without rewriting either.
+        if (
+            len(set(configured_keys)) != len(configured_keys)
+            or len(set(snapshot_keys)) != len(snapshot_keys)
+            or set(configured_keys) != set(snapshot_keys)
+            or any(
+                item.get("frequency") != selection.frequency
+                or item.get("asset_class") != configured_asset_classes.get(key)
+                for item, key in zip(rows, snapshot_keys, strict=True)
+            )
+            or any(
+                type(item["row_count"]) is not int or item["row_count"] <= 0
+                for item in rows
+            )
+            or sum(item["row_count"] for item in rows) != snapshot["row_count"]
+        ):
+            return None
+        numbers = {
+            key: _finite_report_number(performance.get(key))
+            for key in (
+                "initial_cash",
+                "final_equity",
+                "total_return",
+                "max_drawdown",
+                "duration_days",
+            )
+        }
+        if (
+            numbers["initial_cash"] != selection.initial_cash
+            or numbers["initial_cash"] <= 0
+            or numbers["final_equity"] < 0
+            or numbers["total_return"] < -1
+            or not 0 <= numbers["max_drawdown"] <= 1
+            or numbers["duration_days"] <= 0
+            or not numbers["duration_days"].is_integer()
+        ):
+            return None
+        after_cost = metrics["evidence_bundle"]
+        for key in (
+            "net_pnl",
+            "gross_pnl_before_costs",
+            "net_return",
+            "gross_return_before_costs",
+        ):
+            _finite_report_number(after_cost[key])
+        for values, keys in (
+            (
+                after_cost,
+                ("total_cost", "cost_to_initial_cash", "gross_turnover", "fill_count"),
+            ),
+            (
+                cost_summary,
+                (
+                    "total_commission",
+                    "total_slippage",
+                    "gross_turnover",
+                    "total_trades",
+                ),
+            ),
+        ):
+            if any(_finite_report_number(values[key]) < 0 for key in keys):
+                return None
+        if any(
+            not _finite_report_number(values[key]).is_integer()
+            for values, key in (
+                (after_cost, "fill_count"),
+                (cost_summary, "total_trades"),
+            )
+        ):
+            return None
+        view = strategy_advancement_backtest_view(
+            {**row, "metrics": metrics, "cost_summary": cost_summary}
+        )
+        if baseline_research_evidence_blockers(
+            view
+        ) or not after_cost_evidence_complete(view):
+            return None
+        rebuilt = build_research_evidence_bundle(
+            metrics_json=metrics,
+            cost_summary_json=cost_summary,
+            evidence_json=after_cost,
+            strategy_metadata=metrics["strategy_metadata"],
+            fills=metrics.get("fills"),
+        )
+        analyzers = rebuilt["analyzers"]
+        if (
+            rebuilt != bundle
+            or [item["name"] for item in analyzers if item["status"] == "blocked"]
+            != ["research_admission"]
+            or any(
+                item["status"] not in {"pass", "degraded", "blocked"}
+                for item in analyzers
+            )
+            or rebuilt["promotion_gate"]["status"] != "blocked"
+        ):
+            return None
+        return admission
+    except (KeyError, TypeError, ValueError, OverflowError, AttributeError):
+        return None
 
 
 @dataclass(frozen=True)
@@ -452,6 +684,25 @@ async def _research_evidence_projection(
         )
     if not after_cost_payload:
         analysis_blocking_reasons.append("after_cost_evidence_missing")
+    analysis_admission = None
+    if (
+        metrics_valid
+        and config_valid
+        and cost_summary_valid
+        and analysis_blocking_reasons == ["research_evidence_gate_not_pass:blocked"]
+    ):
+        analysis_admission = saved_native_research_analysis_admission(
+            result_id=result_id,
+            row=row,
+            metrics=metrics,
+            config=config,
+            cost_summary=cost_summary,
+            bundle=bundle_payload,
+            performance=performance,
+        )
+        if analysis_admission is not None:
+            status = "complete"
+            analysis_blocking_reasons = []
     normalized_pack = build_normalized_research_pack(
         simulation_notional=bool(metrics.get("simulation_validation_binding")),
         performance=performance,
@@ -492,6 +743,8 @@ async def _research_evidence_projection(
         "broker_facts_included": False,
         "authority_effect": "research_only",
     }
+    if analysis_admission is not None:
+        payload["dataset_simulation_admission"] = analysis_admission
     return CapturedProjection(
         tool_name=tool_name,
         status=status,

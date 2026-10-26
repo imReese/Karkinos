@@ -30,6 +30,7 @@ class StrategyResearchBacktestWorkflowMixin:
             raise StrategyResearchRejected("hypothesis_draft_not_validated")
         draft = draft_row["contract"]
         selection = selection_from_session(session)
+        entry_board_policy = self._resolve_simulation_entry_board_policy(selection)
         expected_dataset_snapshot = await self._validate_saved_selection(selection)
         reviewed_fee_schedule_resolution = await asyncio.to_thread(
             self._resolve_reviewed_fee_schedule,
@@ -40,6 +41,8 @@ class StrategyResearchBacktestWorkflowMixin:
             selection=selection,
             reviewed_fee_schedule_resolution=reviewed_fee_schedule_resolution,
         )
+        if self._resolve_simulation_entry_board_policy(selection) != entry_board_policy:
+            raise StrategyResearchRejected("simulation_authorization_changed")
         backtest, reused = self._research_store.create_or_get_backtest(
             request,
             formula_fingerprint=str(draft["formula_fingerprint"]),
@@ -62,6 +65,11 @@ class StrategyResearchBacktestWorkflowMixin:
                 account_capital_evidence=(
                     research_capital_evidence if selection.has_account_binding else None
                 ),
+                **(
+                    {"entry_board_policy": entry_board_policy}
+                    if entry_board_policy is not None
+                    else {}
+                ),
             )
         except (asyncio.CancelledError, Exception) as exc:
             self._research_store.finish_backtest(
@@ -82,6 +90,11 @@ class StrategyResearchBacktestWorkflowMixin:
             result_id = None
             evidence_fingerprint = None
             try:
+                if (
+                    self._resolve_simulation_entry_board_policy(selection)
+                    != entry_board_policy
+                ):
+                    raise StrategyResearchRejected("simulation_authorization_changed")
                 result_id = await self._db.save_backtest_result(
                     config_json=bt_request.model_dump_json(),
                     initial_cash=bt_result["initial_cash"],
@@ -104,6 +117,11 @@ class StrategyResearchBacktestWorkflowMixin:
                 evidence_fingerprint = content_fingerprint(
                     bt_result["metrics_json"]["research_evidence_bundle"]
                 )
+                if (
+                    self._resolve_simulation_entry_board_policy(selection)
+                    != entry_board_policy
+                ):
+                    raise StrategyResearchRejected("simulation_authorization_changed")
                 self._research_store.finish_backtest(
                     backtest["backtest_run_id"],
                     status="completed",

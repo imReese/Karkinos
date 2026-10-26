@@ -330,7 +330,7 @@ async def test_deepseek_edge_explicitly_preserves_thinking_without_provider_tool
     for call in transport.calls:
         payload = call["payload"]
         assert payload["thinking"] == {"type": "enabled"}
-        assert payload["reasoning_effort"] == "high"
+        assert payload["reasoning_effort"] == "max"
         assert "temperature" not in payload
         assert "tools" not in payload
         assert payload["response_format"] == {"type": "json_object"}

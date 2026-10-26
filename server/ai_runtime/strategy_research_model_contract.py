@@ -51,13 +51,47 @@ def bind_and_validate_drafts(
     for ordinal, candidate in enumerate(candidates, start=1):
         if not isinstance(candidate, dict):
             raise ExternalResearchInvalidResponseError("hypothesis_draft_invalid")
+        external_selection = selection.to_external_dict()
+        external_universe = external_selection["universe"]
+        policy_conflict = False
+        if (
+            isinstance(external_universe, Mapping)
+            and candidate.get("selected_universe") == external_universe
+        ):
+            # Restore only this session's frozen membership before deriving any
+            # persisted draft or formula identity. An extra/tampered list never
+            # matches the exact compact echo and still fails the check below.
+            candidate = {**candidate, "selected_universe": list(selection.universe)}
+        if isinstance(external_universe, Mapping):
+            constraints = candidate.get("portfolio_constraints")
+            if isinstance(constraints, Mapping) and any(
+                key in constraints
+                for key in (
+                    "scope_kind",
+                    "deployment_scope_fingerprint",
+                    "portfolio_policy_id",
+                    "universe_policy",
+                )
+            ):
+                if constraints in (
+                    selection.deployment_scope,
+                    external_selection.get("deployment_scope"),
+                ):
+                    candidate = {
+                        **candidate,
+                        "portfolio_constraints": selection.deployment_scope,
+                    }
+                else:
+                    policy_conflict = True
         draft_id = (
             "ai-strategy-draft-"
             + content_fingerprint(
                 {"session_id": session_id, "ordinal": ordinal, "candidate": candidate}
             )[:24]
         )
-        errors: list[str] = []
+        errors: list[str] = (
+            ["provider_changed_deployment_scope"] if policy_conflict else []
+        )
         required_text = (
             "economic_hypothesis",
             "entry_conditions",
@@ -94,6 +128,7 @@ def bind_and_validate_drafts(
                     "operator_frozen_selection.",
                     "approved_formula_catalog.",
                     "iteration_context.",
+                    "research_history.",
                 )
             )
             for item in citations
@@ -450,6 +485,7 @@ def hypothesis_output_contract(
     *,
     iterative: bool = False,
     citation_catalog: Mapping[str, str],
+    compact_universe: bool = False,
 ) -> JsonObject:
     return {
         "format": "one JSON object with exact top-level key drafts",
@@ -503,11 +539,14 @@ def hypothesis_output_contract(
             "test_window",
             "frequency",
             "cost_model_reference",
+            *(["portfolio_constraints"] if compact_universe else []),
         ],
         "field_types": {
             "economic_hypothesis": "non-empty string",
             "selected_universe": (
-                "array[string], exact operator_frozen_selection.universe"
+                "object, exact operator_frozen_selection.universe; do not add a symbol list"
+                if compact_universe
+                else "array[string], exact operator_frozen_selection.universe"
             ),
             "dataset_snapshot_id": (
                 "string, exact operator_frozen_selection.dataset_snapshot_id"
@@ -522,7 +561,14 @@ def hypothesis_output_contract(
             "entry_conditions": "non-empty string",
             "exit_conditions": "non-empty string",
             "position_sizing_hypothesis": "non-empty string",
-            "portfolio_constraints": "object",
+            "portfolio_constraints": (
+                "object, exact operator_frozen_selection.deployment_scope; copy the "
+                "complete object including its fingerprint and universe_policy, "
+                "without flattening, wrapping, adding or removing fields; put "
+                "explanations in position_sizing_hypothesis or risk_impact"
+                if compact_universe
+                else "object"
+            ),
             "cost_model_reference": (
                 "string, exact operator_frozen_selection.cost_model_reference"
             ),
@@ -696,10 +742,14 @@ def strategy_research_system_prompt(mode: Literal["hypothesis", "critique"]) -> 
             "A signal observes only completed bars and is applied on the next "
             "available persisted bar. "
             "Quantitative Strategy Discipline: "
-            "1. Active Trade Generation: Formulate entry conditions that generate "
-            "active trading opportunities across the window (aim for 10+ trades). "
-            "Mutually contradictory or overly restrictive conditions producing 0 fills "
-            "or zero turnover fail advancement gates immediately. "
+            "1. Meaningful Investment Activity: Formulate entry conditions for "
+            "real, nonzero investment activity within the operator-frozen risk and "
+            "turnover constraints, including the bound comparator's limits. "
+            "Do not impose an arbitrary trade-count target or fill every allocation "
+            "slot; allocation slots are a maximum, not a required holding count. "
+            "Zero fills or zero turnover fail advancement gates immediately. "
+            "Do not manufacture low turnover through ticker/date rules, changing "
+            "capital or sizing, or a rule designed to avoid a window-end sale. "
             "2. Robust Entry Logic: Avoid naive single-day pullback formulas like "
             "buying unconditionally on return_1d < 0 without confirmation. "
             "Incorporate trend, momentum, or volume confirmation to avoid catching "

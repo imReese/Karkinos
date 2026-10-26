@@ -169,7 +169,7 @@ async def test_promoted_memory_analysis_uses_current_tools_and_preserves_thinkin
     for index, call in enumerate(transport.calls):
         request_payload = call["payload"]
         assert request_payload["thinking"] == {"type": "enabled"}
-        assert request_payload["reasoning_effort"] == "high"
+        assert request_payload["reasoning_effort"] == "max"
         assert "temperature" not in request_payload
         assert "tools" not in request_payload
         assert request_payload["max_tokens"] == 16_384

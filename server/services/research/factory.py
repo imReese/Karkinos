@@ -16,13 +16,16 @@ from server.ai_runtime.provider_call_window import (
 )
 from server.ai_runtime.provider_connectivity import (
     ConnectivityConfigurationError,
-    ProviderConnectivitySettings,
     load_provider_connectivity_settings,
 )
 from server.ai_runtime.store import AiAuditStore
 from server.ai_runtime.strategy_research import (
     StrategyResearchAuditStore,
     StrategyResearchService,
+)
+from server.ai_runtime.strategy_research_codex import (
+    CodexResearchSettings,
+    StrategyResearchSettings,
 )
 from server.bootstrap import resolve_data_dir
 from server.db import AppDatabase
@@ -39,8 +42,13 @@ def build_strategy_research_write_service(
     external: bool,
     capture_service: HumanResearchContextCaptureService,
     provider_execution_fence: ProviderExecutionFence | None = None,
+    provider_settings: StrategyResearchSettings | None = None,
 ) -> StrategyResearchService:
     """Build the mutation-capable AI audit boundary from explicit dependencies."""
+    if provider_settings is not None and not external:
+        raise ConnectivityConfigurationError(
+            "external provider override requires external research"
+        )
     if state.db is None:
         raise ConnectivityConfigurationError("database is not initialized")
     db_path = database_path(state.db)
@@ -51,7 +59,7 @@ def build_strategy_research_write_service(
     ai_store.init()
     research_store.init()
     settings = (
-        load_provider_connectivity_settings(state.require_config())
+        provider_settings or load_provider_connectivity_settings(state.require_config())
         if external
         else None
     )
@@ -97,9 +105,11 @@ def build_strategy_research_write_service(
 
 
 def strategy_research_model_timeout_seconds(
-    settings: ProviderConnectivitySettings | None,
+    settings: StrategyResearchSettings | None,
 ) -> float:
     """Allow the configured DeepSeek research call up to ten minutes."""
+    if isinstance(settings, CodexResearchSettings):
+        return settings.timeout_seconds
     if settings is not None and is_deepseek_provider_endpoint(
         settings.provider_id,
         settings.endpoint_origin,

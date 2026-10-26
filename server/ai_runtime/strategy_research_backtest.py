@@ -314,7 +314,6 @@ class RestrictedFormulaBacktestAdapter:
             else root / "research"
         )
 
-    @daily_bar_dataset_read_scope(join_existing=True)
     def run(
         self,
         *,
@@ -367,17 +366,18 @@ class RestrictedFormulaBacktestAdapter:
         if draft.get("formula_fingerprint") != binding.fingerprint:
             raise StrategyResearchRejected("formula_binding_drift")
 
-        handlers, instruments, snapshot = _load_bound_inputs(
-            self._data_store,
-            selection,
-            expected_dataset_snapshot=expected_dataset_snapshot,
-            research_root=self._research_root,
-        )
-        session_memberships = session_nontrading_instruments = distributions = None
-        if selection.portfolio_policy_id and snapshot.get("immutable_dataset_id"):
-            session_memberships, session_nontrading_instruments, distributions = (
-                _bound_formula_portfolio_inputs(self._research_root, snapshot)
+        with daily_bar_dataset_read_scope(join_existing=True):
+            handlers, instruments, snapshot = _load_bound_inputs(
+                self._data_store,
+                selection,
+                expected_dataset_snapshot=expected_dataset_snapshot,
+                research_root=self._research_root,
             )
+            session_memberships = session_nontrading_instruments = distributions = None
+            if selection.portfolio_policy_id and snapshot.get("immutable_dataset_id"):
+                session_memberships, session_nontrading_instruments, distributions = (
+                    _bound_formula_portfolio_inputs(self._research_root, snapshot)
+                )
         commission_calc, fee_schedule_evidence = validated_fee_schedule_resolution(
             selection,
             reviewed_fee_schedule_resolution,
@@ -942,16 +942,17 @@ def _bound_formula_portfolio_inputs(
         objects, DatasetRef(objects.resolve_ref(snapshot["immutable_dataset_id"]))
     )
     memberships = {
-        item.partition_date: [key.symbol for key in item.instruments]
+        item.partition_date: tuple(key.symbol for key in item.instruments)
         for item in restored.snapshot.session_memberships
     }
+    fallback_symbols = tuple(key.symbol for key in restored.snapshot.instruments)
 
     def session_memberships(day: date) -> list[str]:
         if not memberships:
-            return [key.symbol for key in restored.snapshot.instruments]
+            return list(fallback_symbols)
         if day not in memberships:
             raise ValueError("dataset_session_membership_missing")
-        return memberships[day]
+        return list(memberships[day])
 
     nontrading = dataset_session_nontrading_instruments(objects, restored.snapshot)
     distributions = (

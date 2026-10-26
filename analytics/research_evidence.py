@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Protocol
+from typing import Any, Mapping, Protocol
 
 from analytics.dataset_snapshot import dataset_research_use
 
@@ -437,6 +437,15 @@ def _bundle_id(bundle: dict[str, Any]) -> str:
     stable = {**bundle, "bundle_id": ""}
     frozen = json.dumps(stable, sort_keys=True, ensure_ascii=False, default=str)
     return "sha256:" + hashlib.sha256(frozen.encode("utf-8")).hexdigest()
+
+
+def has_valid_research_evidence_bundle_identity(bundle: Mapping[str, Any]) -> bool:
+    """Check a saved bundle using the same identity owner as its producer."""
+    return bundle.get(
+        "schema_version"
+    ) == "karkinos.research_evidence.v1" and bundle.get("bundle_id") == _bundle_id(
+        dict(bundle)
+    )
 
 
 def _trade_statistics(context: ResearchEvidenceContext) -> dict[str, Any]:

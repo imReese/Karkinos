@@ -93,6 +93,7 @@ def compact_hypothesis_citation_catalog(
             "iteration_context.context_fingerprint",
             "iteration_context",
         ),
+        ("research_history.content_fingerprint",),
     )
     selected_paths: list[str] = []
     for alternatives in path_groups:

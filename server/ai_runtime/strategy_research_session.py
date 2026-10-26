@@ -3,22 +3,25 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from copy import deepcopy
+from typing import TYPE_CHECKING, Any
 
 from analytics.research_account_capital_evidence import (
     build_research_account_capital_evidence,
 )
-from server.ai_runtime.contracts import JsonObject
-from server.ai_runtime.formula_dsl import CANONICAL_COST_MODEL_REFERENCE
-from server.ai_runtime.provider_connectivity_contracts import (
-    ProviderConnectivitySettings,
+from server.ai_runtime.contracts import (
+    JsonObject,
+    content_fingerprint,
 )
+from server.ai_runtime.formula_dsl import CANONICAL_COST_MODEL_REFERENCE, FormulaBinding
 from server.ai_runtime.strategy_research_backtest import (
     validated_fee_schedule_resolution,
 )
+from server.ai_runtime.strategy_research_codex import StrategyResearchSettings
 from server.ai_runtime.strategy_research_support import (
     build_research_evaluation_bundle,
     build_research_run_projection,
+    report_artifact,
     selection_from_session,
     strategy_research_json_object,
     strategy_research_request_json,
@@ -35,8 +38,89 @@ from server.persistence.strategy_research_errors import (
     StrategyResearchOperationalError,
 )
 
+if TYPE_CHECKING:
+    from server.ai_runtime.evidence import CanonicalEvidenceRepository
+    from server.ai_runtime.store import AiAuditStore
+    from server.persistence.strategy_research import StrategyResearchAuditStore
+
 
 class StrategyResearchSessionMixin:
+    _research_store: StrategyResearchAuditStore
+    _ai_store: AiAuditStore
+    _evidence_repository: CanonicalEvidenceRepository
+
+    def _resolve_simulation_entry_board_policy(
+        self,
+        selection: StrategyResearchSelection,
+        *,
+        saved_backtest: Mapping[str, Any] | None = None,
+    ) -> JsonObject | None:
+        """Authorize a new SIM action against its frozen grant generation."""
+        binding = selection.simulation_validation_binding
+        if binding is None:
+            return None
+        from server.contracts.recommendation_publication import publication_number
+        from server.contracts.research_observation_automation import (
+            read_simulation_validation_policy,
+        )
+        from server.services.market.market_universe_truth import (
+            MarketUniversePolicy,
+            market_deployment_scope,
+        )
+
+        try:
+            policy = read_simulation_validation_policy(self._db, now=self._now())
+            scope = policy["deployment_scope"]
+            canonical_scope = market_deployment_scope(
+                MarketUniversePolicy.from_dict(scope["universe_policy"])
+            )
+            cash = publication_number(policy["initial_cash"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise StrategyResearchRejected("simulation_policy_not_current") from exc
+        if any(binding[key] != policy[key] for key in ("grant_id", "generation")):
+            raise StrategyResearchRejected("simulation_authorization_changed")
+        if (
+            publication_number(binding["initial_cash"]) != cash
+            or publication_number(selection.initial_cash) != cash
+            or selection.has_account_binding
+            or scope != canonical_scope
+            or selection.deployment_scope != scope
+            or selection.portfolio_policy_id != scope["portfolio_policy_id"]
+            or selection.cost_model_reference != policy["cost_model_reference"]
+        ):
+            raise StrategyResearchRejected("simulation_selection_policy_drift")
+        entry_policy = policy["entry_board_policy"]
+        if saved_backtest is not None:
+            metrics = strategy_research_json_object(saved_backtest.get("metrics_json"))
+            config = strategy_research_json_object(saved_backtest.get("config_json"))
+            params = strategy_research_json_object(config.get("params"))
+            try:
+                cash_matches = (
+                    publication_number(saved_backtest.get("initial_cash")) == cash
+                    and publication_number(config.get("initial_cash")) == cash
+                )
+            except ValueError:
+                cash_matches = False
+            if (
+                not cash_matches
+                or metrics.get("source_selection") != selection.to_dict()
+                or metrics.get("simulation_validation_binding") != binding
+                or metrics.get("entry_board_policy") != entry_policy
+                or params.get("entry_board_policy") != entry_policy
+                or metrics.get("deployment_scope") != scope
+                or params.get("deployment_scope") != scope
+                or metrics.get("portfolio_policy_id") != selection.portfolio_policy_id
+                or params.get("portfolio_policy_id") != selection.portfolio_policy_id
+                or strategy_research_json_object(metrics.get("cost_assumptions")).get(
+                    "commission_model_reference"
+                )
+                != selection.cost_model_reference
+            ):
+                raise StrategyResearchRejected(
+                    "simulation_backtest_policy_binding_drift"
+                )
+        return deepcopy(entry_policy)
+
     def get_session(self, session_id: str, *, reused: bool = False) -> JsonObject:
         session = self._research_store.get_session_if_initialized(session_id)
         if session is None:
@@ -226,7 +310,7 @@ class StrategyResearchSessionMixin:
             account_truth_as_of=selection.account_truth_freshness_datetime,
         )
 
-    def _require_settings(self) -> ProviderConnectivitySettings:
+    def _require_settings(self) -> StrategyResearchSettings:
         if self._settings is None:
             raise StrategyResearchRejected("external_provider_not_configured")
         return self._settings

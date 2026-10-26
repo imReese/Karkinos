@@ -30,9 +30,9 @@ from server.ai_runtime.permissions import (
     default_tool_permission_registry,
 )
 from server.ai_runtime.provider import ProviderAdapter
-from server.ai_runtime.provider_connectivity import ProviderConnectivitySettings
 from server.ai_runtime.registry import AiRuntimeRegistry
 from server.ai_runtime.store import AiAuditStore
+from server.ai_runtime.strategy_research_codex import StrategyResearchSettings
 from server.ai_runtime.strategy_research_values import (
     ACCOUNT_STATE_TOOL,
     CATALOG_TOOL,
@@ -107,7 +107,7 @@ def build_strategy_research_orchestrator(
 
 
 def strategy_research_runtime_ids(
-    settings: ProviderConnectivitySettings, mode: str
+    settings: StrategyResearchSettings, mode: str
 ) -> tuple[str, str]:
     provider_id = f"karkinos.strategy_research.{mode}.{settings.provider_id}.v1"
     return provider_id, f"{provider_id}:{settings.model_name}"
@@ -115,7 +115,7 @@ def strategy_research_runtime_ids(
 
 def register_strategy_research_runtime(
     registry: AiRuntimeRegistry,
-    settings: ProviderConnectivitySettings,
+    settings: StrategyResearchSettings,
     provider_id: str,
     model_id: str,
     mode: Literal["hypothesis", "critique"],

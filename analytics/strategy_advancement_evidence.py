@@ -615,6 +615,7 @@ json_list = _json_list
 number = _number
 integer = _integer
 fee_component_evidence_complete = _fee_component_evidence_complete
+after_cost_evidence_complete = _after_cost_evidence_complete
 fee_component_gate_evidence = _fee_component_gate_evidence
 fee_schedule_bindings_match = _fee_schedule_bindings_match
 valid_fingerprint = _valid_fingerprint

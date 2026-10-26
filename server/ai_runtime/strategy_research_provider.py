@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Literal
 
 from server.ai_runtime.contracts import (
@@ -44,6 +44,11 @@ from server.ai_runtime.strategy_research_citations import (
     compact_hypothesis_citation_catalog,
     resolve_hypothesis_citations,
 )
+from server.ai_runtime.strategy_research_codex import (
+    CodexResearchSettings,
+    StrategyResearchSettings,
+    complete_codex_research,
+)
 from server.ai_runtime.strategy_research_model_contract import (
     critique_output_contract,
     hypothesis_output_contract,
@@ -52,6 +57,7 @@ from server.ai_runtime.strategy_research_model_contract import (
     strategy_research_system_prompt,
 )
 from server.ai_runtime.strategy_research_privacy import (
+    compact_full_scope_model_input,
     research_pack_privacy_violations,
 )
 from server.ai_runtime.strategy_research_support import (
@@ -82,7 +88,7 @@ class StrategyResearchModelProvider(ProviderAdapter):
         self,
         *,
         provider_id: str,
-        settings: ProviderConnectivitySettings,
+        settings: StrategyResearchSettings,
         mode: Literal["hypothesis", "critique"],
         evidence_reference_id: str,
         selection: JsonObject,
@@ -94,6 +100,9 @@ class StrategyResearchModelProvider(ProviderAdapter):
         timeout_seconds: float,
         account_evidence_reference_id: str | None = None,
         send_admission: ProviderSendAdmission | None = None,
+        research_history: JsonObject | None = None,
+        execution_guard: Callable[[], None] | None = None,
+        transport_event: Callable[[str, JsonObject], None] | None = None,
     ) -> None:
         self._provider_id = provider_id
         self._settings = settings
@@ -108,6 +117,9 @@ class StrategyResearchModelProvider(ProviderAdapter):
         self._monotonic = monotonic
         self._timeout_seconds = timeout_seconds
         self._send_admission = send_admission
+        self._research_history = dict(research_history or {})
+        self._execution_guard = execution_guard
+        self._transport_event = transport_event
 
     @property
     def provider_id(self) -> str:
@@ -208,25 +220,6 @@ class StrategyResearchModelProvider(ProviderAdapter):
         catalog: JsonObject,
         selection: JsonObject,
     ) -> ProviderResponse:
-        citation_sources = {
-            "saved_backtest_evidence": evidence.get("payload"),
-            "approved_formula_catalog": catalog,
-            "operator_frozen_selection": selection,
-            "iteration_context": self._iteration_context,
-        }
-        if account_evidence is not None:
-            citation_sources["saved_account_evidence"] = account_evidence
-        hypothesis_citation_catalog = None
-        critique_citation_catalog = None
-        if self._mode == "hypothesis":
-            hypothesis_citation_catalog = compact_hypothesis_citation_catalog(
-                citation_sources=citation_sources,
-            )
-        else:
-            citation_sources["critique_input"] = self._critique_input
-            critique_citation_catalog = build_critique_citation_catalog(
-                self._critique_input
-            )
         input_payload = {
             "mode": self._mode,
             "research_question": self._research_question,
@@ -248,19 +241,52 @@ class StrategyResearchModelProvider(ProviderAdapter):
                 "trade_plan_allowed": False,
                 "authority_effect": "none",
             },
-            "output_contract": (
-                hypothesis_output_contract(
-                    iterative=bool(self._iteration_context),
-                    citation_catalog=hypothesis_citation_catalog or {},
-                )
-                if self._mode == "hypothesis"
-                else critique_output_contract(
-                    citation_catalog=critique_citation_catalog or {}
-                )
-            ),
         }
+        if self._mode == "hypothesis" and self._research_history:
+            input_payload["research_history"] = {
+                "non_authoritative": True,
+                "operator_supplied": True,
+                "source": "operator_supplied_research_history",
+                "content_fingerprint": "sha256:"
+                + content_fingerprint(self._research_history),
+                "content": self._research_history,
+            }
         if account_evidence is not None:
             input_payload["saved_account_evidence"] = account_evidence
+        input_payload = compact_full_scope_model_input(input_payload)
+        critique_input = input_payload.get("critique_input") or {}
+        citation_sources = {
+            "saved_backtest_evidence": input_payload["saved_backtest_evidence"],
+            "approved_formula_catalog": input_payload["approved_formula_catalog"],
+            "operator_frozen_selection": input_payload["operator_frozen_selection"],
+            "iteration_context": input_payload.get("iteration_context") or {},
+        }
+        if "research_history" in input_payload:
+            citation_sources["research_history"] = input_payload["research_history"]
+        if account_evidence is not None:
+            citation_sources["saved_account_evidence"] = input_payload[
+                "saved_account_evidence"
+            ]
+        hypothesis_citation_catalog = None
+        critique_citation_catalog = None
+        if self._mode == "hypothesis":
+            hypothesis_citation_catalog = compact_hypothesis_citation_catalog(
+                citation_sources=citation_sources,
+            )
+        else:
+            citation_sources["critique_input"] = critique_input
+            critique_citation_catalog = build_critique_citation_catalog(critique_input)
+        input_payload["output_contract"] = (
+            hypothesis_output_contract(
+                iterative=bool(self._iteration_context),
+                citation_catalog=hypothesis_citation_catalog or {},
+                compact_universe=isinstance(selection.get("universe"), Mapping),
+            )
+            if self._mode == "hypothesis"
+            else critique_output_contract(
+                citation_catalog=critique_citation_catalog or {}
+            )
+        )
         privacy_violations = research_pack_privacy_violations(input_payload)
         if privacy_violations:
             raise ExternalResearchInvalidResponseError(
@@ -269,64 +295,151 @@ class StrategyResearchModelProvider(ProviderAdapter):
         serialized = canonical_json(input_payload)
         if len(serialized.encode("utf-8")) > STRATEGY_RESEARCH_MAX_INPUT_BYTES:
             raise StrategyResearchRejected("strategy_research_input_too_large")
-        payload: JsonObject = {
-            "model": self._settings.model_name,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": strategy_research_system_prompt(self._mode),
-                },
-                {"role": "user", "content": serialized},
-            ],
-            "response_format": {"type": "json_object"},
-            "max_tokens": STRATEGY_RESEARCH_MAX_OUTPUT_TOKENS,
-            "stream": False,
-        }
-        payload.update(strategy_research_request_options(self._settings))
+        if isinstance(self._settings, CodexResearchSettings):
+            payload: JsonObject = {
+                "model": self._settings.model_name,
+                "system_prompt": strategy_research_system_prompt(self._mode),
+                "input_json": serialized,
+                "transport_kind": self._settings.adapter_kind,
+            }
+        else:
+            payload = {
+                "model": self._settings.model_name,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": strategy_research_system_prompt(self._mode),
+                    },
+                    {"role": "user", "content": serialized},
+                ],
+                "response_format": {"type": "json_object"},
+                "max_tokens": STRATEGY_RESEARCH_MAX_OUTPUT_TOKENS,
+                "stream": False,
+            }
+            payload.update(strategy_research_request_options(self._settings))
         started = self._monotonic()
+        request_fingerprint = content_fingerprint(
+            {
+                "url": self._settings.endpoint_url,
+                "payload": payload,
+                "timeout_seconds": self._timeout_seconds,
+            }
+            if isinstance(self._settings, ProviderConnectivitySettings)
+            else {"payload": payload, "timeout_seconds": self._timeout_seconds}
+        )
+
+        def complete() -> tuple[str, JsonObject]:
+            if self._execution_guard is not None:
+                self._execution_guard()
+            self._emit_transport_event(
+                "provider.transport_attempted",
+                {
+                    "request_fingerprint": request_fingerprint,
+                    "provider_contact_attempted": isinstance(
+                        self._settings, ProviderConnectivitySettings
+                    ),
+                    "transport_kind": self._settings.adapter_kind,
+                },
+            )
+            http_response = None
+            rpc_result = None
+            try:
+                if isinstance(self._settings, CodexResearchSettings):
+                    rpc_result = complete_codex_research(
+                        settings=self._settings,
+                        system_prompt=str(payload["system_prompt"]),
+                        input_json=serialized,
+                        timeout_seconds=self._timeout_seconds,
+                        before_model_send=self._execution_guard,
+                    )
+                else:
+                    http_response = self._post_json(payload)
+            except Exception as exc:
+                metadata = getattr(exc, "transport_metadata", {})
+                safe_metadata = (
+                    {
+                        key: value
+                        for key, value in metadata.items()
+                        if key
+                        in {
+                            "phase",
+                            "turn_start_attempted",
+                            "model_invocation_attempted",
+                            "provider_contact_attempted",
+                            "usage",
+                            "tool_event_count",
+                            "tool_call_count",
+                            "unsupported_item_count",
+                            "rejected_item_type",
+                            "transport_kind",
+                            "internal_network_retry_count",
+                            "upstream_network_retry_count",
+                            "response_model",
+                            "server_thread_model",
+                            "reasoning_effort_requested",
+                            "requested_model",
+                        }
+                    }
+                    if isinstance(self._settings, CodexResearchSettings)
+                    and isinstance(metadata, dict)
+                    else {}
+                )
+                self._emit_transport_event(
+                    "provider.transport_outcome",
+                    {
+                        "request_fingerprint": request_fingerprint,
+                        "response_returned": False,
+                        "exception_class": type(exc).__name__,
+                        "transport_kind": self._settings.adapter_kind,
+                        **safe_metadata,
+                    },
+                )
+                raise
+            if http_response is not None:
+                outcome: JsonObject = {
+                    "http_status": http_response.status_code,
+                    "response_fingerprint": content_fingerprint(http_response.payload),
+                    "transport_kind": "openai_compatible_https",
+                }
+            else:
+                assert rpc_result is not None
+                rpc_content, rpc_provenance = rpc_result
+                outcome = {
+                    "response_fingerprint": content_fingerprint(rpc_content),
+                    **rpc_provenance,
+                }
+            self._emit_transport_event(
+                "provider.transport_outcome",
+                {
+                    "request_fingerprint": request_fingerprint,
+                    "response_returned": True,
+                    **outcome,
+                },
+            )
+            # Retain the truthful outcome before revocation rejects admission.
+            if self._execution_guard is not None:
+                self._execution_guard()
+            if http_response is not None:
+                return self._decode_https(http_response, payload)
+            assert rpc_result is not None
+            return rpc_result
+
         try:
             if self._send_admission is not None:
                 send_token = self._send_admission.begin_send(
                     timeout_seconds=self._timeout_seconds
                 )
                 try:
-                    response = self._post_json(payload)
+                    content, completion_provenance = complete()
                 finally:
                     self._send_admission.finish_send(send_token)
             else:
-                response = self._post_json(payload)
+                content, completion_provenance = complete()
         except ProviderProbeError as exc:
             if exc.code == "provider_timeout":
                 raise ExternalResearchTimeoutError("provider_timeout") from exc
             raise ExternalResearchNetworkError("provider_network_error") from exc
         latency_ms = max(0, round((self._monotonic() - started) * 1000))
-        if response.status_code in {401, 403}:
-            raise ExternalResearchAuthenticationError("provider_authentication_failed")
-        if response.status_code == 429:
-            raise ExternalResearchRateLimitedError("provider_rate_limited")
-        if response.status_code < 200 or response.status_code >= 300:
-            raise ExternalResearchHttpError("provider_http_error")
-        body = response.payload
-        if not isinstance(body, dict):
-            raise ExternalResearchInvalidResponseError("provider_invalid_json")
-        choices = body.get("choices")
-        if (
-            not isinstance(choices, list)
-            or not choices
-            or not isinstance(choices[0], dict)
-        ):
-            raise ExternalResearchInvalidResponseError("provider_choices_missing")
-        choice = choices[0]
-        if choice.get("finish_reason") == "length":
-            raise ExternalResearchInvalidResponseError("provider_output_truncated")
-        message = choice.get("message")
-        if not isinstance(message, dict):
-            raise ExternalResearchInvalidResponseError("provider_message_missing")
-        reasoning = message.get("reasoning_content")
-        reasoning_chars = len(reasoning) if isinstance(reasoning, str) else 0
-        content = message_text(message.get("content"))
-        if not content:
-            raise ExternalResearchInvalidResponseError("provider_content_missing")
         decoded = decode_model_json(content)
         if self._mode == "hypothesis":
             normalized = normalize_hypothesis_payload(
@@ -342,7 +455,7 @@ class StrategyResearchModelProvider(ProviderAdapter):
             normalized = normalize_critique_payload(
                 decoded,
                 self._evidence_reference_id,
-                self._critique_input,
+                critique_input,
                 citation_catalog=critique_citation_catalog or {},
             )
         citation_groups = (
@@ -364,17 +477,11 @@ class StrategyResearchModelProvider(ProviderAdapter):
             "provider_id": self._provider_id,
             "configured_provider_source": self._settings.provider_id,
             "model_id": self._settings.model_id,
-            "response_model": str(body.get("model") or self._settings.model_name),
+            **completion_provenance,
             "prompt_version": STRATEGY_RESEARCH_PROMPT_VERSION,
             "request_payload_fingerprint": content_fingerprint(payload),
             "response_content_fingerprint": content_fingerprint(normalized),
             "latency_ms": latency_ms,
-            "usage": safe_provider_usage(body.get("usage")),
-            "finish_reason": choice.get("finish_reason"),
-            "reasoning_mode_requested": payload.get("thinking") == {"type": "enabled"},
-            "reasoning_effort_requested": payload.get("reasoning_effort"),
-            "reasoning_content_present": reasoning_chars > 0,
-            "reasoning_content_char_count": reasoning_chars,
             "reasoning_content_persisted": False,
             "raw_response_persisted": False,
             "account_evidence_exported": account_evidence is not None,
@@ -408,7 +515,55 @@ class StrategyResearchModelProvider(ProviderAdapter):
             message="Strategy research artifact completed without authority.",
         )
 
+    def _emit_transport_event(self, event_type: str, payload: JsonObject) -> None:
+        if self._transport_event is not None:
+            self._transport_event(event_type, payload)
+
+    def _decode_https(
+        self, response: HttpJsonResponse, payload: JsonObject
+    ) -> tuple[str, JsonObject]:
+        if response.status_code in {401, 403}:
+            raise ExternalResearchAuthenticationError("provider_authentication_failed")
+        if response.status_code == 429:
+            raise ExternalResearchRateLimitedError("provider_rate_limited")
+        if response.status_code < 200 or response.status_code >= 300:
+            raise ExternalResearchHttpError("provider_http_error")
+        body = response.payload
+        if not isinstance(body, dict):
+            raise ExternalResearchInvalidResponseError("provider_invalid_json")
+        choices = body.get("choices")
+        if (
+            not isinstance(choices, list)
+            or not choices
+            or not isinstance(choices[0], dict)
+        ):
+            raise ExternalResearchInvalidResponseError("provider_choices_missing")
+        choice = choices[0]
+        if choice.get("finish_reason") == "length":
+            raise ExternalResearchInvalidResponseError("provider_output_truncated")
+        message = choice.get("message")
+        if not isinstance(message, dict):
+            raise ExternalResearchInvalidResponseError("provider_message_missing")
+        reasoning = message.get("reasoning_content")
+        reasoning_chars = len(reasoning) if isinstance(reasoning, str) else 0
+        content = message_text(message.get("content"))
+        if not content:
+            raise ExternalResearchInvalidResponseError("provider_content_missing")
+        return content, {
+            "response_model": str(body.get("model") or self._settings.model_name),
+            "usage": safe_provider_usage(body.get("usage")),
+            "finish_reason": choice.get("finish_reason"),
+            "reasoning_mode_requested": payload.get("thinking") == {"type": "enabled"},
+            "reasoning_effort_requested": payload.get("reasoning_effort"),
+            "reasoning_content_present": reasoning_chars > 0,
+            "reasoning_content_char_count": reasoning_chars,
+            "transport_kind": "openai_compatible_https",
+            "http_status": response.status_code,
+            "transport_response_fingerprint": content_fingerprint(body),
+        }
+
     def _post_json(self, payload: JsonObject) -> HttpJsonResponse:
+        assert isinstance(self._settings, ProviderConnectivitySettings)
         return self._transport.post_json(
             url=self._settings.endpoint_url,
             headers={

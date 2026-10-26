@@ -848,7 +848,15 @@ def formula_history_rows(formula_ast: Mapping[str, Any]) -> int:
             return expression_rows(expression.get("input")) + int(
                 expression.get("period") or 0
             )
-        if op in {"rolling_mean", "rolling_std", "zscore", "ema", "rsi"}:
+        if op in {
+            "rolling_mean",
+            "rolling_std",
+            "rolling_max",
+            "rolling_min",
+            "zscore",
+            "ema",
+            "rsi",
+        }:
             return expression_rows(expression.get("input")) + max(
                 int(expression.get("window") or 1) - 1,
                 0,

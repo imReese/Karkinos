@@ -412,7 +412,7 @@ def test_deepseek_edge_explicitly_preserves_thinking_without_provider_tools():
 
     assert options == {
         "thinking": {"type": "enabled"},
-        "reasoning_effort": "high",
+        "reasoning_effort": "max",
     }
     assert "temperature" not in options
     assert "tools" not in options

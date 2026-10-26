@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from server.ai_runtime.contracts import JsonObject
+from server.ai_runtime.external_research_errors import (
+    ExternalResearchInvalidResponseError,
+)
+from server.contracts.content_identity import content_fingerprint
 from server.contracts.normalized_strategy_research import (
     NORMALIZED_RESEARCH_NOTIONAL,
     NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID,
@@ -60,6 +65,158 @@ _STRATEGY_PARAMETER_KEYS = (
     "volatility_window",
     "window",
 )
+
+
+def external_research_universe(
+    symbols: Sequence[str], *, deployment_scope_fingerprint: str
+) -> JsonObject:
+    """Describe every ordered member without exporting or truncating the list."""
+    return {
+        "symbol_count": len(symbols),
+        "universe_fingerprint": content_fingerprint(list(symbols)),
+        "deployment_scope_fingerprint": deployment_scope_fingerprint,
+    }
+
+
+def external_research_scope(scope: Mapping[str, Any]) -> JsonObject:
+    """Expose public policy fields; keep absolute trading-rule sizes local."""
+    from server.services.market.market_universe_truth import (
+        MarketUniversePolicy,
+        market_deployment_scope,
+    )
+
+    violations = research_pack_privacy_violations(scope)
+    if any(path != "universe_policy.lot_size" for path in violations):
+        raise ExternalResearchInvalidResponseError("research_scope_privacy_violation")
+    try:
+        policy = scope["universe_policy"]
+        if not isinstance(policy, Mapping):
+            raise TypeError
+        canonical = market_deployment_scope(
+            MarketUniversePolicy.from_dict(policy),
+            portfolio_policy_id=scope["portfolio_policy_id"],
+        )
+        if scope != canonical:
+            raise ValueError
+    except (KeyError, TypeError, ValueError, ArithmeticError):
+        raise ExternalResearchInvalidResponseError(
+            "full_scope_policy_binding_mismatch"
+        ) from None
+    return {
+        **{
+            key: deepcopy(scope[key])
+            for key in (
+                "scope_kind",
+                "deployment_scope_fingerprint",
+                "portfolio_policy_id",
+            )
+            if key in scope
+        },
+        "universe_policy": {
+            key: deepcopy(policy[key])
+            for key in (
+                "schema_version",
+                "policy_id",
+                "asset_scope",
+                "supported_exchanges",
+                "minimum_master_member_count",
+                "minimum_history_rows",
+                "allocation_slots",
+                "fee_buffer_rate",
+                "target_weight",
+                "selection_order",
+                "scope_kind",
+                "trading_rules_id",
+                "session_eligibility",
+                "minimum_history_basis",
+                "model_controls_position_size",
+                "authorizes_strategy_promotion",
+                "authorizes_order_creation",
+                "changes_capital_authority",
+            )
+            if key in policy
+        },
+    }
+
+
+def compact_full_scope_model_input(value: JsonObject) -> JsonObject:
+    """Project repeated full-market identities only at the model boundary."""
+    selection = value.get("operator_frozen_selection") or {}
+    scope = selection.get("deployment_scope") or {}
+    if scope.get("scope_kind") != "full_declared_market":
+        return value
+    result = deepcopy(value)
+    expected = selection.get("universe")
+    if not isinstance(expected, Mapping):
+        raise ExternalResearchInvalidResponseError(
+            "full_scope_universe_binding_missing"
+        )
+
+    def bound_universe(symbols: Any) -> JsonObject:
+        if (
+            not isinstance(symbols, list)
+            or any(not isinstance(symbol, str) for symbol in symbols)
+            or external_research_universe(
+                symbols,
+                deployment_scope_fingerprint=scope["deployment_scope_fingerprint"],
+            )
+            != expected
+        ):
+            raise ExternalResearchInvalidResponseError(
+                "full_scope_universe_binding_mismatch"
+            )
+        return dict(expected)
+
+    evidence = result.get("saved_backtest_evidence") or {}
+    window = evidence.get("test_window") or {}
+    if "assets" in window:
+        assets = window["assets"]
+        if not isinstance(assets, list) or any(
+            not isinstance(asset, Mapping) or set(asset) != {"symbol", "asset_class"}
+            for asset in assets
+        ):
+            raise ExternalResearchInvalidResponseError(
+                "full_scope_asset_projection_invalid"
+            )
+        identity = bound_universe([asset["symbol"] for asset in assets])
+        classes = [asset["asset_class"] for asset in assets]
+        if any(not isinstance(kind, str) for kind in classes):
+            raise ExternalResearchInvalidResponseError(
+                "full_scope_asset_projection_invalid"
+            )
+        counts = {kind: classes.count(kind) for kind in sorted(set(classes))}
+        if counts != selection.get("asset_classes"):
+            raise ExternalResearchInvalidResponseError(
+                "full_scope_asset_binding_mismatch"
+            )
+        window["assets"] = {**identity, "asset_class_counts": counts}
+    critique = result.get("critique_input") or {}
+    draft = critique.get("hypothesis_draft") or {}
+    if "selected_universe" in draft:
+        draft["selected_universe"] = bound_universe(draft["selected_universe"])
+        if (
+            "universe_fingerprint" in draft
+            and draft["universe_fingerprint"] != expected["universe_fingerprint"]
+        ):
+            raise ExternalResearchInvalidResponseError(
+                "full_scope_universe_binding_mismatch"
+            )
+    constraints = draft.get("portfolio_constraints") or {}
+    if constraints.get("scope_kind") == "full_declared_market":
+        public_scope = (
+            dict(scope)
+            if constraints == scope
+            else external_research_scope(constraints)
+        )
+        if public_scope != scope:
+            raise ExternalResearchInvalidResponseError(
+                "full_scope_policy_binding_mismatch"
+            )
+        draft["portfolio_constraints"] = public_scope
+    iteration = result.get("iteration_context") or {}
+    if "universe" in iteration:
+        iteration["universe"] = bound_universe(iteration["universe"])
+    return result
 
 
 def build_normalized_research_pack(

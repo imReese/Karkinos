@@ -1,9 +1,8 @@
-"""Reasoning-mode ROI guard for strategy research.
+"""Strategy research reasoning policy and legacy cost diagnostics.
 
-Formula DSL proposal and critique do not benefit from a model reasoning chain:
-the reasoning content is billed but never persisted or consumed downstream.
-This module makes that cost decision explicit and provides deterministic,
-provider-free evidence for the reasoning policy of the research path.
+New research requests use the provider's maximum reasoning effort. The evidence
+builder below retains the historical no-reasoning cost diagnostic contract; it
+is not a current financial-admission gate and has no production callers.
 """
 
 from __future__ import annotations
@@ -18,9 +17,9 @@ REASONING_ROI_SCHEMA_VERSION = "karkinos.reasoning_roi.v1"
 
 
 def strategy_research_reasoning_policy() -> JsonObject:
-    """Canonical reasoning policy for formula research: reasoning disabled."""
+    """Request maximum reasoning for new formula hypotheses and critiques."""
 
-    return {"thinking": {"type": "disabled"}}
+    return {"thinking": {"type": "enabled"}, "reasoning_effort": "max"}
 
 
 def build_reasoning_roi_evidence(

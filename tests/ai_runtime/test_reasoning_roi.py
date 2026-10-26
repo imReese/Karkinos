@@ -23,13 +23,17 @@ def _settings() -> ProviderConnectivitySettings:
     )
 
 
-def test_strategy_research_reasoning_policy_disables_reasoning():
-    assert strategy_research_reasoning_policy() == {"thinking": {"type": "disabled"}}
+def test_strategy_research_reasoning_policy_requests_maximum_reasoning():
+    assert strategy_research_reasoning_policy() == {
+        "thinking": {"type": "enabled"},
+        "reasoning_effort": "max",
+    }
 
 
-def test_strategy_research_request_options_disable_reasoning_for_deepseek():
+def test_strategy_research_request_options_use_maximum_reasoning_for_deepseek():
     assert strategy_research_request_options(_settings()) == {
-        "thinking": {"type": "disabled"}
+        "thinking": {"type": "enabled"},
+        "reasoning_effort": "max",
     }
 
 
