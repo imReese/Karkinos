@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import sqlite3
 from collections.abc import Mapping
-from contextlib import closing
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -31,9 +29,6 @@ from server.contracts.ai_shadow_research_automation import (
 from server.contracts.ai_shadow_research_qualification import (
     public_promotion_decision_projection,
 )
-from server.persistence.backtest_results import backtest_invalidation_for_result
-from server.persistence.connection import connect_sqlite
-from server.persistence.database_identity import optional_database_path
 from server.projections.ai_shadow_research import (
     project_shadow_research_candidate_status,
 )
@@ -55,7 +50,6 @@ from server.services.research.strategy_promotion_support import (
 
 if TYPE_CHECKING:
     from server.db import AppDatabase
-    from server.persistence.ai_shadow_research import ShadowResearchStore
     from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
         DailyStrategyArtifactStore,
     )
@@ -296,7 +290,7 @@ def _qualification_status(
 
 
 def _current_candidate_statuses(
-    db: Any, candidates: list[dict[str, Any]]
+    store: Any, candidates: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     """Revoke current claims without editing the stored comparison snapshots."""
     projected = [project_shadow_research_candidate_status(row) for row in candidates]
@@ -310,16 +304,9 @@ def _current_candidate_statuses(
         result_id: {"status": "unavailable", "result_id": result_id}
         for result_id in result_ids
     }
-    path = optional_database_path(db)
-    if path is not None:
-        try:
-            with closing(connect_sqlite(path, readonly=True)) as conn:
-                invalidations = {
-                    result_id: backtest_invalidation_for_result(conn, result_id)
-                    for result_id in result_ids
-                }
-        except (OSError, sqlite3.Error):
-            pass
+    reader = getattr(store, "get_backtest_evidence_invalidations", None)
+    if callable(reader):
+        invalidations = reader(sorted(result_ids))
     for row in projected:
         facts = {
             key: invalidations[result_id]
@@ -364,7 +351,6 @@ def _current_candidate_statuses(
 
 
 def _current_daily_selections(
-    db: Any,
     store: Any,
     selections: list[dict[str, Any]],
     candidates: list[dict[str, Any]],
@@ -389,7 +375,7 @@ def _current_daily_selections(
                 continue
             try:
                 source = store.get_candidate(str(candidate_id))
-                current = _current_candidate_statuses(db, [source])[0]
+                current = _current_candidate_statuses(store, [source])[0]
                 if current.get("run_id") != identity[0] or current.get(
                     "evidence_invalidation"
                 ):
@@ -417,7 +403,6 @@ def _current_daily_selections(
 
 class AiShadowResearchCommandsMixin:
     _db: AppDatabase
-    _store: ShadowResearchStore
     _daily_artifacts: DailyStrategyArtifactStore
 
     def publication_service(self):
@@ -573,7 +558,6 @@ class AiShadowResearchCommandsMixin:
     def qualification_status(self) -> dict[str, Any]:
         """Read current qualification evidence without publication eligibility."""
         daily_selections = _current_daily_selections(
-            self._db,
             self._store,
             self._daily_artifacts.list_selections(limit=20),
             [],
@@ -591,10 +575,9 @@ class AiShadowResearchCommandsMixin:
         policy = self.get_policy()
         runs = self._store.list_runs(limit=20)
         candidates = _current_candidate_statuses(
-            self._db, self._store.list_candidates(limit=50)
+            self._store, self._store.list_candidates(limit=50)
         )
         daily_selections = _current_daily_selections(
-            self._db,
             self._store,
             self._daily_artifacts.list_selections(limit=20),
             candidates,

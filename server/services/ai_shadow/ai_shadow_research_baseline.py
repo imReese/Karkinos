@@ -45,8 +45,8 @@ from server.contracts.ai_shadow_research_automation import (
     ShadowResearchRejected,
     shadow_research_json_object,
 )
+from server.contracts.strategy_research import backtest_evidence_blocker
 from server.models import BacktestRequest
-from server.persistence.backtest_results import backtest_evidence_blocker
 from server.services.account.reviewed_fee_schedule import ReviewedFeeScheduleRejected
 from server.services.ai_shadow.ai_shadow_research_support import (
     shadow_research_asset_class,

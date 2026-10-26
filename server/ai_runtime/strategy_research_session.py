@@ -32,8 +32,8 @@ from server.contracts.strategy_research import (
     STRATEGY_RESEARCH_API_CONTRACT,
     StrategyResearchRejected,
     StrategyResearchSelection,
+    backtest_evidence_blocker,
 )
-from server.persistence.backtest_results import backtest_evidence_blocker
 from server.persistence.strategy_research_errors import (
     StrategyResearchDatabaseError,
     StrategyResearchOperationalError,

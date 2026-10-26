@@ -31,8 +31,8 @@ from server.contracts.strategy_research import (
     STRATEGY_RESEARCH_API_CONTRACT,
     StrategyResearchRejected,
     StrategyResearchSelection,
+    backtest_evidence_blocker,
 )
-from server.persistence.backtest_results import backtest_evidence_blocker
 
 
 def build_research_run_projection(

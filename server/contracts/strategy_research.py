@@ -34,6 +34,15 @@ LOCAL_HYPOTHESIS_ADMISSION_VERSION = "karkinos.ai.local_hypothesis_admission.v1"
 SANITIZED_ACCOUNT_EVIDENCE_CONTRACT = "karkinos.ai.sanitized_account_risk_evidence.v1"
 
 
+def backtest_evidence_blocker(row: Mapping[str, Any]) -> str | None:
+    """Interpret saved evidence validity without owning its persistence."""
+    fact = row.get("evidence_invalidation")
+    if fact is None:
+        return None
+    status = fact.get("status") if isinstance(fact, Mapping) else "unavailable"
+    return "backtest_evidence_" + str(status or "unavailable")
+
+
 def validate_simulation_notional_binding(value: Any) -> dict[str, Any]:
     from uuid import UUID
 

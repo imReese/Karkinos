@@ -25,7 +25,7 @@ from data.storage.objects import ContentAddressedObjectStore
 from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
 from server.ai_runtime.contracts import content_fingerprint
 from server.ai_runtime.formula_dsl import FORMULA_BINDING_CONTRACT, FormulaBinding
-from server.persistence.backtest_results import backtest_evidence_blocker
+from server.contracts.strategy_research import backtest_evidence_blocker
 from server.services.market.calendar import validate_verified_market_calendar
 from server.services.research.datasets import require_supported_snapshot
 from strategy.schema import STRATEGY_PARAMETER_SCHEMAS, validate_strategy_params

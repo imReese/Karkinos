@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-from server.persistence.backtest_results import backtest_evidence_blocker
+from server.contracts.strategy_research import backtest_evidence_blocker
 
 from .capture import (
     CAPTURE_TOOL_BY_TYPE,

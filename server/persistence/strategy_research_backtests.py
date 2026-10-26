@@ -9,12 +9,10 @@ from server.ai_runtime.store import IdempotencyConflict
 from server.contracts.strategy_research import (
     FormulaBacktestRequest,
     StrategyResearchRejected,
+    backtest_evidence_blocker,
     validate_prior_diagnostic_exposure,
 )
-from server.persistence.backtest_results import (
-    backtest_evidence_blocker,
-    with_backtest_invalidation,
-)
+from server.persistence.backtest_results import with_backtest_invalidation
 
 
 class StrategyResearchBacktestRepositoryMixin:

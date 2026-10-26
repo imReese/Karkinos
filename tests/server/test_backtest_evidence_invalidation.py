@@ -6,11 +6,11 @@ import sqlite3
 
 import pytest
 
+from server.contracts.strategy_research import backtest_evidence_blocker
 from server.persistence import migrations
 from server.persistence.backtest_results import (
     V25_BACKTEST_INVALIDATIONS,
     BacktestResultsRepository,
-    backtest_evidence_blocker,
     backtest_row_fingerprint,
     insert_backtest_result,
 )

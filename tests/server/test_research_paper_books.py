@@ -689,7 +689,10 @@ def test_schema_24_upgrade_preserves_existing_database(tmp_path, monkeypatch):
         )
         assert conn.execute(
             "SELECT MAX(version) FROM schema_migrations"
-        ).fetchone() == (24,)
+        ).fetchone() == (25,)
+        assert conn.execute(
+            "SELECT COUNT(*) FROM backtest_result_invalidations"
+        ).fetchone() == (0,)
         for name in (
             "research_paper_books",
             "research_paper_steps",

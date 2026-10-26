@@ -731,8 +731,11 @@ def test_backtest_results_repository_preserves_columns_order_and_json(tmp_path) 
         "equity_curve_json",
         "metrics_json",
         "cost_summary_json",
+        "evidence_invalidation",
     }
+    assert summaries[0]["evidence_invalidation"] is None
     assert detail is not None
+    assert detail["evidence_invalidation"] is None
     assert detail["config_json"] == '{"strategy":"first"}'
     assert detail["sortino"] == 1.7
     assert detail["win_rate"] == 0.56

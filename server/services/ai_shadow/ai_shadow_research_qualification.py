@@ -39,8 +39,10 @@ from server.contracts.daily_strategy_artifacts import DRAFT_BACKUP_FIELDS
 from server.contracts.normalized_strategy_research import (
     SIMULATION_RESEARCH_NOTIONAL_POLICY_ID,
 )
-from server.contracts.strategy_research import StrategyResearchSelection
-from server.persistence.backtest_results import backtest_evidence_blocker
+from server.contracts.strategy_research import (
+    StrategyResearchSelection,
+    backtest_evidence_blocker,
+)
 from server.services.account.account_qualification_admission import (
     QualificationAdmission,
     QualificationAdmissionDeferred,

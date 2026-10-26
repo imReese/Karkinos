@@ -269,17 +269,19 @@ def complete_codex_research(
     }
     state: dict[str, Any] = {"client": None, "thread_id": None, "turn_id": None}
     expired = threading.Event()
+    deadline_stopped = threading.Event()
 
     def deadline() -> None:
+        if deadline_stopped.wait(timeout_seconds):
+            return
         expired.set()
         if state["client"] is not None:
             _interrupt_and_close(state["client"], state["thread_id"], state["turn_id"])
 
-    timer = threading.Timer(timeout_seconds, deadline)
-    timer.daemon = True
+    deadline_thread = threading.Thread(target=deadline, daemon=True)
     try:
         client_type, config_type, config_response_type = _sdk()
-        timer.start()
+        deadline_thread.start()
         with tempfile.TemporaryDirectory(prefix="karkinos-codex-research-") as cwd:
             # Only names are inspected; the values of parent environment secrets
             # are never read/copied by this adapter. Codex manages its own login.
@@ -527,7 +529,7 @@ def complete_codex_research(
         setattr(error, "transport_metadata", dict(metadata))
         raise error from None
     finally:
-        timer.cancel()
+        deadline_stopped.set()
         if state["client"] is not None:
             if metadata["phase"] != "completed":
                 _interrupt_and_close(

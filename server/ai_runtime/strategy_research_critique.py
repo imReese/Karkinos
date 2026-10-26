@@ -35,8 +35,11 @@ from server.composition.strategy_research import (
     strategy_research_runtime_ids,
     strategy_research_workflow_definition,
 )
-from server.contracts.strategy_research import CritiqueRequest, StrategyResearchRejected
-from server.persistence.backtest_results import backtest_evidence_blocker
+from server.contracts.strategy_research import (
+    CritiqueRequest,
+    StrategyResearchRejected,
+    backtest_evidence_blocker,
+)
 
 
 class StrategyResearchCritiqueMixin:

@@ -345,6 +345,23 @@ class FakeShadowStore:
     def get_candidate(self, candidate_id: str) -> dict[str, Any]:
         return deepcopy(self.sources[candidate_id])
 
+    def get_qualification_backtest_source(self, result_id: int) -> dict[str, Any]:
+        from server.contracts.strategy_research import backtest_evidence_blocker
+
+        if result_id <= 0:
+            raise ValueError("qualification_backtest_result_identity_missing")
+        if result_id not in self.db.rows:
+            raise LookupError(f"qualification backtest result not found: {result_id}")
+        row = deepcopy(self.db.rows[result_id])
+        if blocker := backtest_evidence_blocker(row):
+            raise ShadowResearchQualificationRejected(blocker)
+        return {
+            **row,
+            "equity_curve": json.loads(row["equity_curve_json"]),
+            "metrics": json.loads(row["metrics_json"]),
+            "cost_summary": json.loads(row["cost_summary_json"]),
+        }
+
     def save_baseline(self, **values: Any) -> int:
         fingerprint = values["baseline_fingerprint"]
         if fingerprint not in self.baseline_by_fingerprint:
@@ -664,6 +681,10 @@ def _harness(
         "quotes": [],
     }
     db = FakeDatabase(valuation)
+    for result_id in range(10, 16):
+        db.rows[result_id] = _result_row(
+            result_id, _backtest_result(cash=selection.initial_cash, score=0)
+        )
     store = FakeShadowStore(db)
     research = FakeResearchStore()
     verified_candidates = []
@@ -808,6 +829,24 @@ def _harness(
         advancement_gate_builder=_gate_builder,
     )
     return service, store, capture, baseline, adapter, fee_calls
+
+
+@pytest.mark.trading_safety
+@pytest.mark.parametrize("result_id", [10, 15])
+@pytest.mark.parametrize(
+    "status", ["invalidated", "fingerprint_mismatch", "unavailable"]
+)
+def test_original_source_withdrawal_blocks_before_account_capture(result_id, status):
+    service, _, capture, baseline, adapter, _ = _harness()
+    service._db.rows[result_id]["evidence_invalidation"] = {"status": status}
+
+    with pytest.raises(
+        ShadowResearchQualificationRejected, match="backtest_evidence_" + status
+    ):
+        service._freeze_batch("source-run")
+
+    assert capture.calls == baseline.calls == 0
+    assert adapter.calls == []
 
 
 @pytest.mark.asyncio

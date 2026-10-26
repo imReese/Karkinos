@@ -33,8 +33,10 @@ from server.contracts.ai_shadow_research_automation import (
 )
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.jobs import JobLease
-from server.contracts.strategy_research import StrategyResearchRejected
-from server.persistence.backtest_results import backtest_evidence_blocker
+from server.contracts.strategy_research import (
+    StrategyResearchRejected,
+    backtest_evidence_blocker,
+)
 from server.persistence.jobs import SQLiteJobStore
 
 FINAL_EVALUATION_SCHEMA = "karkinos.research_final_evaluation.v1"

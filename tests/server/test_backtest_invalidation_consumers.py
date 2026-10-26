@@ -184,13 +184,13 @@ def test_status_removes_current_financial_claims_without_rewriting_snapshot(save
         },
     }
     original = deepcopy(candidate)
-    db = SimpleNamespace(path=path)
-    valid = _current_candidate_statuses(db, [candidate])[0]
+    store = ShadowResearchStore(path)
+    valid = _current_candidate_statuses(store, [candidate])[0]
     assert valid["evidence_invalidation"] is None
     assert valid["comparison"]["promotion_gate"]["status"] == "pass"
     invalidate(repo, result_id, backtest_row_fingerprint(raw_row(path, result_id)))
     before = path.read_bytes()
-    current = _current_candidate_statuses(db, [candidate])[0]
+    current = _current_candidate_statuses(store, [candidate])[0]
     assert current["status"] == "failed_closed"
     assert current["promotion_status"] == "blocked_by_evidence"
     assert (
@@ -225,8 +225,12 @@ def test_selection_rechecks_exact_source_beyond_the_candidate_status_page(
     }
     original = deepcopy(selection)
     current = _current_daily_selections(
-        SimpleNamespace(path=path),
-        SimpleNamespace(get_candidate=lambda _: candidate),
+        SimpleNamespace(
+            get_candidate=lambda _: candidate,
+            get_backtest_evidence_invalidations=ShadowResearchStore(
+                path
+            ).get_backtest_evidence_invalidations,
+        ),
         [selection],
         [],
     )[0]

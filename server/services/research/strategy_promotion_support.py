@@ -36,7 +36,7 @@ from server.contracts.ai_shadow_research_qualification import (
 from server.contracts.daily_strategy_artifacts import (
     DAILY_STRATEGY_PROMOTION_BINDING_SCHEMA,
 )
-from server.persistence.backtest_results import backtest_evidence_blocker
+from server.contracts.strategy_research import backtest_evidence_blocker
 from server.projections.valuation_snapshot import ledger_identity_from_rows
 from server.services.account.reviewed_fee_schedule import (
     active_review_matches_fee_evidence,

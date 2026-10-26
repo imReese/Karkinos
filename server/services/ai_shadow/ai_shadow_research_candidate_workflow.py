@@ -40,7 +40,7 @@ from server.contracts.ai_shadow_research_automation import (
     ShadowResearchRejected,
     build_shadow_research_iteration_lineage,
 )
-from server.persistence.backtest_results import backtest_evidence_blocker
+from server.contracts.strategy_research import backtest_evidence_blocker
 from server.projections.normalized_research_operation_preview import (
     project_normalized_research_operation_preview,
 )

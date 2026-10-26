@@ -121,6 +121,8 @@ class AiShadowResearchAutomationService(
 ):
     """Run one complete after-close research cycle under a persisted policy."""
 
+    _store: ShadowResearchStore
+
     def __init__(
         self,
         *,

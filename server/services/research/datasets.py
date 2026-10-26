@@ -1404,6 +1404,114 @@ def revise_pending_forward_seed_origin(
     )
 
 
+def _forward_seed_market_membership(
+    objects, market_store, *, origin, planning_prefix, source, scope, through, now
+):
+    """Bind original and current membership without narrowing the warmup market."""
+    from data.dataset.manifest import bind_stock_master_observation
+    from server.services.market.market_universe_truth import (
+        MarketUniversePolicy,
+        market_master_buy_instruments,
+        require_complete_market_universe_snapshot,
+    )
+
+    original = tuple(
+        sorted(
+            (
+                InstrumentKey.from_values(row["symbol"], row["instrument_type"])
+                for row in (
+                    origin["warmup_instruments"] if origin else source["instruments"]
+                )
+            ),
+            key=lambda key: (key.instrument_type.value, key.symbol),
+        )
+    )
+    raw_master = (
+        {
+            **json.loads(
+                objects.read_bytes(objects.resolve_ref(origin["master_observation_id"]))
+            ),
+            "snapshot_id": origin["master_observation_id"],
+        }
+        if origin
+        else market_store.get_market_universe_snapshot(
+            trade_date=through.isoformat(), as_of=now
+        )
+    )
+    master = require_complete_market_universe_snapshot(
+        raw_master,
+        policy=MarketUniversePolicy.from_dict(scope["universe_policy"]),
+        expected_trade_date=through.isoformat(),
+        available_as_of=now,
+    )
+    identity = bind_stock_master_observation(objects, master)
+    current = market_master_buy_instruments(
+        master, MarketUniversePolicy.from_dict(scope["universe_policy"])
+    )
+    warmup_universe = tuple(
+        sorted(
+            set(original)
+            | set(current)
+            | (
+                set(planning_prefix.instruments)
+                if planning_prefix is not None
+                else set()
+            ),
+            key=lambda key: (key.instrument_type.value, key.symbol),
+        )
+    )
+    return master, identity, current, warmup_universe
+
+
+def _read_forward_seed_supply_prefix(
+    objects, snapshot, dataset_id, *, verification_policy, through, current, identity
+):
+    """Reopen exact supply evidence and retain its current-membership checks."""
+    from data.market.schema import DAILY_BAR_SCHEMA_VERSION
+
+    try:
+        require_supported_snapshot(snapshot)
+        if (
+            snapshot.resolver_policy_id
+            != verified_daily_resolver_policy_id(verification_policy)
+            or snapshot.market_schema_version != DAILY_BAR_SCHEMA_VERSION
+        ):
+            raise ResearchDatasetError("forward_seed_source_prefix_policy_unsupported")
+    except ResearchDatasetError:
+        raise ResearchDatasetError(
+            "forward_seed_source_prefix_policy_unsupported"
+        ) from None
+    try:
+        if not isinstance(dataset_id, str):
+            raise ValueError
+        restored = read_daily_bar_dataset(
+            objects, DatasetRef(objects.resolve_ref(dataset_id))
+        )
+        if restored.snapshot != snapshot:
+            raise ValueError
+    except (
+        DatasetReaderError,
+        DatasetManifestError,
+        ObjectIntegrityError,
+        ObjectNotFoundError,
+        OSError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        raise ResearchDatasetError("forward_seed_source_prefix_unreadable") from exc
+    if snapshot.end_date == through:
+        membership = snapshot.session_memberships[-1]
+        if (
+            membership.instruments != current
+            or identity not in membership.source_observation_ids
+            or membership.decision_at is None
+        ):
+            raise ResearchDatasetError(
+                "forward_seed_source_prefix_current_membership_unverified"
+            )
+    return restored
+
+
 def ensure_forward_seed_for_source(
     db: Any,
     config: Any,
@@ -1417,7 +1525,6 @@ def ensure_forward_seed_for_source(
     Calls only queue existing provider-budgeted jobs. Repeated calls reuse their
     immutable results, so automatic observation startup can resume after waiting.
     """
-    from data.dataset.manifest import bind_stock_master_observation
     from data.source_policy import verification_source_policy_for_config
     from data.store import DataStore
     from server.bootstrap import resolve_data_dir
@@ -1429,8 +1536,6 @@ def ensure_forward_seed_for_source(
     from server.services.market.market_universe_truth import (
         MarketUniversePolicy,
         market_deployment_scope,
-        market_master_buy_instruments,
-        require_complete_market_universe_snapshot,
     )
 
     selection = source.get("source_selection") or source.get("selection") or {}
@@ -1554,55 +1659,16 @@ def ensure_forward_seed_for_source(
                     "job_ids": [],
                     "last_blocker": {"code": str(exc)},
                 }
-        original = tuple(
-            sorted(
-                (
-                    InstrumentKey.from_values(row["symbol"], row["instrument_type"])
-                    for row in (
-                        origin["warmup_instruments"]
-                        if origin and prefix is None
-                        else source["instruments"]
-                    )
-                ),
-                key=lambda key: (key.instrument_type.value, key.symbol),
-            )
-        )
         market_store = data_store or DataStore(resolve_data_dir())
-        raw_master = (
-            {
-                **json.loads(
-                    objects.read_bytes(
-                        objects.resolve_ref(origin["master_observation_id"])
-                    )
-                ),
-                "snapshot_id": origin["master_observation_id"],
-            }
-            if origin and prefix is None
-            else market_store.get_market_universe_snapshot(
-                trade_date=through.isoformat(), as_of=now
-            )
-        )
-        master = require_complete_market_universe_snapshot(
-            raw_master,
-            policy=MarketUniversePolicy.from_dict(scope["universe_policy"]),
-            expected_trade_date=through.isoformat(),
-            available_as_of=now,
-        )
-        identity = bind_stock_master_observation(objects, master)
-        current = market_master_buy_instruments(
-            master, MarketUniversePolicy.from_dict(scope["universe_policy"])
-        )
-        warmup_universe = tuple(
-            sorted(
-                set(original)
-                | set(current)
-                | (
-                    set(planning_prefix.instruments)
-                    if planning_prefix is not None
-                    else set()
-                ),
-                key=lambda key: (key.instrument_type.value, key.symbol),
-            )
+        master, identity, current, warmup_universe = _forward_seed_market_membership(
+            objects,
+            market_store,
+            origin=origin if prefix is None else None,
+            planning_prefix=planning_prefix,
+            source=source,
+            scope=scope,
+            through=through,
+            now=now,
         )
         if len(warmup_universe) > 10_000:
             return {
@@ -1707,63 +1773,22 @@ def ensure_forward_seed_for_source(
             origin_run["source_ref"] if prefix is not None else None
         )
         if prefix is None and planning_prefix is not None:
-            from data.market.schema import DAILY_BAR_SCHEMA_VERSION
-
             try:
-                require_supported_snapshot(planning_prefix)
-                if (
-                    planning_prefix.resolver_policy_id
-                    != verified_daily_resolver_policy_id(verification_policy)
-                    or planning_prefix.market_schema_version != DAILY_BAR_SCHEMA_VERSION
-                ):
-                    raise ResearchDatasetError(
-                        "forward_seed_source_prefix_policy_unsupported"
-                    )
-            except ResearchDatasetError:
-                return {
-                    "status": "blocked",
-                    "job_ids": [],
-                    "last_blocker": {
-                        "code": "forward_seed_source_prefix_policy_unsupported"
-                    },
-                }
-            try:
-                if not isinstance(planning_prefix_dataset_id, str):
-                    raise ValueError
-                restored = read_daily_bar_dataset(
+                restored = _read_forward_seed_supply_prefix(
                     objects,
-                    DatasetRef(objects.resolve_ref(planning_prefix_dataset_id)),
+                    planning_prefix,
+                    planning_prefix_dataset_id,
+                    verification_policy=verification_policy,
+                    through=through,
+                    current=current,
+                    identity=identity,
                 )
-                if restored.snapshot != planning_prefix:
-                    raise ValueError
-            except (
-                DatasetReaderError,
-                DatasetManifestError,
-                ObjectIntegrityError,
-                ObjectNotFoundError,
-                OSError,
-                TypeError,
-                ValueError,
-            ):
+            except ResearchDatasetError as exc:
                 return {
                     "status": "blocked",
                     "job_ids": [],
-                    "last_blocker": {"code": "forward_seed_source_prefix_unreadable"},
+                    "last_blocker": {"code": str(exc)},
                 }
-            if planning_prefix.end_date == through:
-                membership = planning_prefix.session_memberships[-1]
-                if (
-                    membership.instruments != current
-                    or identity not in membership.source_observation_ids
-                    or membership.decision_at is None
-                ):
-                    return {
-                        "status": "blocked",
-                        "job_ids": [],
-                        "last_blocker": {
-                            "code": "forward_seed_source_prefix_current_membership_unverified"
-                        },
-                    }
             supply_prefix = restored.snapshot
             supply_prefix_dataset_id = restored.ref.dataset_id
         jobs = _forward_seed_jobs(

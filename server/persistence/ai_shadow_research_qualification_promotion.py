@@ -17,8 +17,9 @@ from server.contracts.ai_shadow_research_qualification import (
     qualification_run_record,
 )
 from server.contracts.content_identity import canonical_json, content_fingerprint
+from server.contracts.strategy_research import backtest_evidence_blocker
 from server.persistence.backtest_results import (
-    backtest_evidence_blocker,
+    backtest_invalidation_for_result,
     with_backtest_invalidation,
 )
 
@@ -244,6 +245,23 @@ class ShadowResearchQualificationPromotionRepositoryMixin:
                 (strategy_id,),
             ).fetchone()
             return {"strategy_promotion": dict(saved), "reused": False}
+
+    def get_backtest_evidence_invalidations(
+        self, result_ids: Sequence[int]
+    ) -> dict[int, dict[str, Any] | None]:
+        """Read current validity through the existing read-only unit of work."""
+        unavailable = {
+            result_id: {"status": "unavailable", "result_id": result_id}
+            for result_id in result_ids
+        }
+        try:
+            with self._connect_readonly() as conn:
+                return {
+                    result_id: backtest_invalidation_for_result(conn, result_id)
+                    for result_id in result_ids
+                }
+        except (OSError, sqlite3.Error):
+            return unavailable
 
     def get_qualification_backtest_source(self, result_id: int) -> dict[str, Any]:
         if result_id <= 0:

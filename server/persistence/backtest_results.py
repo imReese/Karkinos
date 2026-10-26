@@ -98,14 +98,6 @@ def with_backtest_invalidation(
     }
 
 
-def backtest_evidence_blocker(row: Mapping[str, Any]) -> str | None:
-    fact = row.get("evidence_invalidation")
-    if fact is None:
-        return None
-    status = fact.get("status") if isinstance(fact, Mapping) else "unavailable"
-    return "backtest_evidence_" + str(status or "unavailable")
-
-
 class BacktestResultsRepository:
     """Own backtest result persistence without running backtests."""
 

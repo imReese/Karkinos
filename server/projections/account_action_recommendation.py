@@ -39,70 +39,16 @@ _SCAN_INPUT_KEYS = (
 )
 
 
-def build_research_simulation_action_preview(
+def _research_simulation_preview_core(
+    source: Mapping[str, Any],
+    summary: Mapping[str, Any],
     *,
-    research_source: Mapping[str, Any] | None,
-    decision_payload: Mapping[str, Any],
-    account_fact_blockers: Sequence[str] | None = None,
-    positions: Mapping[str, Any] | None = None,
-    position_values: Mapping[str, Decimal] | None = None,
-    target_board_buy_permissions: Mapping[str, Any] | None = None,
-    market_session: Mapping[str, Any] | None = None,
-    market_snapshot: Mapping[str, Any] | None = None,
-    verified_dataset_read: DailyBarDatasetReadResult | None = None,
-    receipts: Sequence[Mapping[str, Any]] = (),
-    trading_dates: Sequence[str] = (),
-    history_start: str | None = None,
-    target_market_date: str | None = None,
-    display_name_resolver: Callable[[str, str | None], str] | None = None,
+    as_of: str | None,
+    target_market_date: str | None,
 ) -> dict[str, Any]:
-    """Model one explicit research source against an existing account snapshot.
-
-    Prices come only from a strict, verification-bound Dataset read; real daily
-    receipts separately supply the existing full-market truth's coverage lane.
-    Account blockers must be the account-truth lane of
-    ``build_daily_candidate_base_gate`` plus current valuation/position bindings,
-    never promotion, forward qualification, or the aggregate strict-action gate.
-    No blocker supplied here is discarded. Prices are verified daily closes,
-    not current quotes; an unfilled hypothetical exit never finances an entry.
-    """
-    from data.dataset.reader import DailyBarDatasetReadResult
-    from data.research_market_data import _verified_supplement_frames
-    from domain.instrument import make_research_stock
-    from domain.research_targets import allocate_formula_targets
-    from server.ai_runtime.strategy_research_support import selection_from_session
-    from server.contracts.content_identity import canonical_json
-    from server.contracts.http.strategy_models import BacktestCostAssumptions
-    from server.services.backtest.backtest_costs import (
-        quote_formula_purchase,
-        resolve_backtest_costs,
-    )
-    from server.services.decision.daily_trading_plan_constraints import position_float
-    from server.services.market.market_universe_truth import (
-        MarketUniversePolicy,
-        build_full_market_universe_truth,
-        market_deployment_scope,
-    )
-    from server.services.strategy_scan.universe.evaluation import (
-        board_buy_blocker,
-        evaluate_strategy_signals,
-        formula_history_rows,
-    )
-
-    source = dict(research_source or {})
-    source_core = {
-        key: value for key, value in source.items() if key != "source_fingerprint"
-    }
-    summary = _mapping(decision_payload.get("summary"))
+    """Bind source and account identity while keeping all authority default-off."""
     portfolio = _mapping(summary.get("portfolio"))
-    session = _mapping(market_session)
-    as_of = str(session.get("latest_completed_trade_date") or "") or None
-    expected_target = (
-        session.get("market_date")
-        if session.get("status") in {"pre_open", "open", "midday_break"}
-        else session.get("next_trading_date")
-    )
-    core: dict[str, Any] = {
+    return {
         "status": "blocked",
         "blockers": [],
         "actions": [],
@@ -149,6 +95,74 @@ def build_research_simulation_action_preview(
         "changes_capital_authority": False,
         "authority_effect": "none",
     }
+
+
+def build_research_simulation_action_preview(
+    *,
+    research_source: Mapping[str, Any] | None,
+    decision_payload: Mapping[str, Any],
+    account_fact_blockers: Sequence[str] | None = None,
+    positions: Mapping[str, Any] | None = None,
+    position_values: Mapping[str, Decimal] | None = None,
+    target_board_buy_permissions: Mapping[str, Any] | None = None,
+    market_session: Mapping[str, Any] | None = None,
+    market_snapshot: Mapping[str, Any] | None = None,
+    verified_dataset_read: DailyBarDatasetReadResult | None = None,
+    receipts: Sequence[Mapping[str, Any]] = (),
+    trading_dates: Sequence[str] = (),
+    history_start: str | None = None,
+    target_market_date: str | None = None,
+    display_name_resolver: Callable[[str, str | None], str] | None = None,
+) -> dict[str, Any]:
+    """Model one explicit research source against an existing account snapshot.
+
+    Prices come only from a strict, verification-bound Dataset read; real daily
+    receipts separately supply the existing full-market truth's coverage lane.
+    Account blockers must be the account-truth lane of
+    ``build_daily_candidate_base_gate`` plus current valuation/position bindings,
+    never promotion, forward qualification, or the aggregate strict-action gate.
+    No blocker supplied here is discarded. Prices are verified daily closes,
+    not current quotes; an unfilled hypothetical exit never finances an entry.
+    """
+    from data.dataset.reader import DailyBarDatasetReadResult
+    from data.research_market_data import verified_daily_market_frames
+    from domain.instrument import make_research_stock
+    from domain.research_targets import allocate_formula_targets
+    from server.ai_runtime.strategy_research_support import selection_from_session
+    from server.contracts.content_identity import canonical_json
+    from server.contracts.http.strategy_models import BacktestCostAssumptions
+    from server.services.backtest.backtest_costs import (
+        quote_formula_purchase,
+        resolve_backtest_costs,
+    )
+    from server.services.decision.daily_trading_plan_constraints import position_float
+    from server.services.market.market_universe_truth import (
+        MarketUniversePolicy,
+        build_full_market_universe_truth,
+        market_deployment_scope,
+    )
+    from server.services.strategy_scan.universe.evaluation import (
+        board_buy_blocker,
+        evaluate_strategy_signals,
+        formula_history_rows,
+    )
+
+    source = dict(research_source or {})
+    source_core = {
+        key: value for key, value in source.items() if key != "source_fingerprint"
+    }
+    summary = _mapping(decision_payload.get("summary"))
+    portfolio = _mapping(summary.get("portfolio"))
+    session = _mapping(market_session)
+    as_of = str(session.get("latest_completed_trade_date") or "") or None
+    expected_target = (
+        session.get("market_date")
+        if session.get("status") in {"pre_open", "open", "midday_break"}
+        else session.get("next_trading_date")
+    )
+    core = _research_simulation_preview_core(
+        source, summary, as_of=as_of, target_market_date=target_market_date
+    )
     blockers = list(account_fact_blockers or ())
     if account_fact_blockers is None:
         blockers.append("research_account_facts_not_checked")
@@ -211,7 +225,7 @@ def build_research_simulation_action_preview(
         if market_deployment_scope(policy) != scope:
             raise ValueError("research_simulation_scope_mismatch")
         assert verified_dataset_read is not None
-        frames = _verified_supplement_frames(
+        frames = verified_daily_market_frames(
             verified_dataset_read,
             [key.symbol for key in verified_dataset_read.snapshot.instruments],
             str(history_start),
@@ -724,10 +738,8 @@ def _account_strategy_historical_comparison(
     path: Any, saved_id: int | None, formula_ast: Mapping[str, Any]
 ) -> dict[str, Any] | None:
     """Project a persisted, source-bound research pair; never promote its winner."""
-    from server.persistence.backtest_results import (
-        BacktestResultsRepository,
-        backtest_evidence_blocker,
-    )
+    from server.contracts.strategy_research import backtest_evidence_blocker
+    from server.persistence.backtest_results import BacktestResultsRepository
 
     if saved_id is None or not formula_ast:
         return None

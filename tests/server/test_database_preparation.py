@@ -150,7 +150,7 @@ def test_known_mutated_v14_preserves_provenance_and_upgrades_forward(
 
     after = _ledger(path)
     assert after[: len(before)] == before
-    assert [(row[0], row[1]) for row in after[-10:]] == [
+    assert [(row[0], row[1]) for row in after[len(before) :]] == [
         (15, "reindex_published_fund_nav_marks"),
         (16, "add_exact_financial_decimal_storage"),
         (17, "enforce_financial_fact_invariants"),
@@ -161,6 +161,7 @@ def test_known_mutated_v14_preserves_provenance_and_upgrades_forward(
         (22, "persist_independent_research_observations"),
         (23, "preserve_market_calendar_capture_time"),
         (24, "persist_independent_research_paper_books"),
+        (25, "append_backtest_evidence_invalidations"),
     ]
     assert after[-1][2] == migrations._MIGRATIONS[-1].checksum
     assert migration_lifecycle.inspect_database(path).state == "current"

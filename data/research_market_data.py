@@ -112,7 +112,7 @@ def complete_research_market_binding(
                 ],
             }
             supplements.append(supplement)
-            for symbol, supplement_frame in _verified_supplement_frames(
+            for symbol, supplement_frame in verified_daily_market_frames(
                 verified, selected, start_date, end_date, selected_keys=selected_keys
             ).items():
                 if symbol in frames:
@@ -147,9 +147,10 @@ def complete_research_market_binding(
     return completed, frames
 
 
-def _verified_supplement_frames(
+def verified_daily_market_frames(
     result, symbols, start_date, end_date, *, selected_keys=None
 ):
+    """Project already verified Dataset bars without fetching or changing evidence."""
     selected = set(symbols)
     records = [
         {
@@ -500,7 +501,7 @@ def load_research_market_frames(
                         else "verified_multi_source"
                     )
                 )
-            for symbol, frame in _verified_supplement_frames(
+            for symbol, frame in verified_daily_market_frames(
                 result,
                 members & wanted,
                 start_date,

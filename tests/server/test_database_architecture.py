@@ -199,4 +199,5 @@ def test_unit_of_work_boundaries_remain_explicit() -> None:
         if '"BEGIN IMMEDIATE"' in path.read_text(encoding="utf-8")
     }
 
+    expected["backtest_results.py"] = 1  # Fingerprint check and invalidation append.
     assert actual == expected
