@@ -152,7 +152,7 @@ export const overviewCopyZh = {
     strategyDecisionUnavailable: '策略候选信号暂不可用',
     strategyCandidateEmptyDetail:
       '当前没有买入、卖出、持有或再平衡信号进入队列。',
-    strategyRecommendationTitle: '交易操作建议',
+    strategyRecommendationTitle: '账户级推荐',
     strategyRecommendationMarketClosed: '今日休市，不生成交易操作推荐',
     strategyRecommendationClosedResearch:
       '休市期间可继续研究和验证策略，进展请查看研究记录。',
@@ -220,6 +220,14 @@ export const overviewCopyZh = {
       manual_confirmation: '人工确认',
     },
     decisionReasonLabels: {
+      full_market_evidence_incomplete: '最新全市场核验尚未完成',
+      full_market_universe_snapshot_missing: '缺少最新全市场标的范围',
+      full_market_daily_receipt_replay_failed: '全市场行情证据尚未通过重放核验',
+      full_market_daily_symbol_coverage_unverified:
+        '全市场历史行情覆盖尚未核验完整',
+      prepared_strategy_scan_blocked: '已发布账户策略的扫描条件尚未满足',
+      promoted_strategy_scan_outside_reviewed_decision_window:
+        '尚未进入已核准的账户推荐生成时段',
       promoted_strategy_not_configured:
         '当前没有已晋级到 Paper Shadow 的证据策略',
       promoted_strategy_scan_missing: '已晋级策略缺少今日扫描',
@@ -235,6 +243,7 @@ export const overviewCopyZh = {
       account_truth_too_old_for_decision: '账户事实过旧，不能用于今日决策',
       valuation_snapshot_not_complete: '账户估值快照不完整',
       market_data_not_trusted: '行情证据未达到可信标准',
+      market_quote_not_bound_to_plan_date: '报价尚未刷新到当前计划日',
       market_quote_too_old_for_decision: '行情过旧，不能用于今日决策',
       account_qualification_not_evaluated: '账户资格尚未评估',
       market_data_not_fully_live: '行情未完全刷新到当前交易日',
@@ -254,8 +263,8 @@ export const overviewCopyZh = {
     accountRecommendationNoAction: '无操作',
     accountRecommendationNoActionDetail:
       '已完成当日晋级策略扫描，未产生账户操作信号。',
-    accountRecommendationBlocked: '交易操作建议暂不可用',
-    accountRecommendationUnavailable: '交易操作建议暂不可用',
+    accountRecommendationBlocked: '账户级推荐暂不可用',
+    accountRecommendationUnavailable: '账户级推荐暂不可用',
     accountRecommendationReason: (reasons: string) =>
       `当前原因：${reasons || '尚未形成可核验的账户建议'}。`,
     researchOperationCandidate:

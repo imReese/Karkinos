@@ -1,9 +1,14 @@
 import type { DailyTradingPlanBlockerSummary } from '../../shared/contracts/daily-operations';
-import type { AccountActionRecommendation } from './account-action-recommendation-contract';
+import type {
+  AccountActionRecommendation,
+  HistoricalResearchComparison,
+} from './account-action-recommendation-contract';
 import type { DailyResearchOperationPreview } from './research-operation-preview-contract';
+import type { ResearchSimulationPreview } from './research-simulation-preview-contract';
 
 export type { DailyTradingPlanBlockerSummary } from '../../shared/contracts/daily-operations';
 export type { DailyResearchOperationPreview } from './research-operation-preview-contract';
+export type { ResearchSimulationPreview } from './research-simulation-preview-contract';
 export type {
   DecisionQualityCapture,
   DecisionQualityCaptureResult,
@@ -355,6 +360,8 @@ export type DailyTradingPlanResponse = {
   research_operation_preview?: DailyResearchOperationPreview;
   research_operation_instruments?: ResearchOperationInstruments;
   account_action_recommendation?: AccountActionRecommendation;
+  historical_research_comparison?: HistoricalResearchComparison | null;
+  research_simulation_preview?: ResearchSimulationPreview | null;
   limitations: string[];
 };
 

@@ -38,7 +38,7 @@ export function useOverviewPageController() {
     'SSE',
     accountReady && analysisView === 'calendar',
   );
-  const tradingPlan = useDailyTradingPlanQuery(accountReady && !marketClosed);
+  const tradingPlan = useDailyTradingPlanQuery(accountReady);
   const todayDecision = useTodayDecisionQuery(accountReady && !marketClosed);
   return {
     copy,

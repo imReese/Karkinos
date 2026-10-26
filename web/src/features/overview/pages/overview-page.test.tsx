@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { researchSimulationFixture } from '../../../../e2e/research-simulation-fixture';
 import { PreferencesProvider } from '../../../app/providers/preferences-provider';
 import type {
   AccountStateResponse,
@@ -143,6 +144,55 @@ function tradingPlanFixture(): DailyTradingPlanResponse {
       evidence_fingerprint: 'c'.repeat(64),
     },
     limitations: [],
+  };
+}
+
+function historicalResearchFixture(): NonNullable<
+  DailyTradingPlanResponse['historical_research_comparison']
+> {
+  return {
+    status: 'recorded_pair',
+    source_result_id: 801,
+    anchor_result_id: 803,
+    dataset_id: `sha256:${'d'.repeat(64)}`,
+    start_date: '2020-01-02',
+    end_date: '2026-10-16',
+    instrument_count: 2,
+    bar_row_count: 3000,
+    corporate_action_mode: 'price_only',
+    point_in_time_verified: false,
+    baseline: {
+      result_id: 802,
+      total_return: 0.2,
+      annual_return: 0.03,
+      sharpe: 0.7,
+      max_drawdown: 0.25,
+    },
+    candidate: {
+      result_id: 803,
+      total_return: 0.1,
+      annual_return: 0.015,
+      sharpe: 0.5,
+      max_drawdown: 0.3,
+    },
+    independent_final_evaluation: false,
+    authority_effect: 'none',
+    forward: {
+      baseline: {
+        source_backtest_result_id: 802,
+        status: 'recorded',
+        observation_count: 2,
+        qualification_assessed: false,
+      },
+      candidate: {
+        source_backtest_result_id: 803,
+        status: 'not_started',
+        observation_count: 0,
+        qualification_assessed: false,
+      },
+    },
+    read_only: true,
+    authorizes_execution: false,
   };
 }
 
@@ -335,7 +385,7 @@ test('shows the canonical daily strategy recommendation separately from operatio
   const recommendation = await screen.findByTestId(
     'overview-strategy-recommendation',
   );
-  expect(within(recommendation).getByText('交易操作建议')).toBeVisible();
+  expect(within(recommendation).getByText('账户级推荐')).toBeVisible();
   expect(await within(recommendation).findByText('无操作')).toBeVisible();
   expect(
     within(recommendation).getByRole('link', { name: '查看全部' }),
@@ -365,7 +415,7 @@ test('keeps account value and performance curve with strategy recommendation ahe
 });
 
 test.each(['zh', 'en'] as const)(
-  'shows a verified market closure without requesting trading recommendations (%s)',
+  'reads the read-only plan during closure while suppressing formal trading recommendations (%s)',
   async (locale) => {
     const state = accountFixture();
     state.overview.market_session.status = 'non_trading_day';
@@ -396,15 +446,43 @@ test.each(['zh', 'en'] as const)(
     expect(
       within(recommendation).queryByTestId('overview-recommendation-evidence'),
     ).not.toBeInTheDocument();
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
     expect(fetch.mock.calls.map(([url]) => String(url)).sort()).toEqual(
       [
         '/api/portfolio/state',
         '/api/portfolio/equity-curve/series?range=all',
+        '/api/decision/trading-plan',
       ].sort(),
     );
   },
 );
+
+test('shows actual account evidence blockers without inventing a missing strategy or a recommendation', async () => {
+  const state = accountFixture();
+  const plan = tradingPlanFixture();
+  plan.account_action_recommendation!.status = 'unavailable';
+  plan.account_action_recommendation!.reason_codes = [
+    'full_market_daily_symbol_coverage_unverified',
+    'market_quote_too_old_for_decision',
+    'future_account_evidence_code',
+  ];
+  installFetch(state, false, plan);
+  renderPage('zh');
+  const reason = await screen.findByTestId(
+    'overview-account-recommendation-blockers',
+  );
+  expect(reason).toHaveTextContent('全市场历史行情覆盖尚未核验完整');
+  expect(reason).toHaveAttribute(
+    'title',
+    expect.stringContaining('future_account_evidence_code'),
+  );
+  const recommendation = screen.getByTestId('overview-strategy-recommendation');
+  expect(recommendation).toHaveTextContent('报价距本次决策超过 5 分钟');
+  expect(recommendation).not.toHaveTextContent('尚未配置');
+  expect(
+    within(recommendation).queryByTestId('overview-recommendation-item'),
+  ).not.toBeInTheDocument();
+});
 
 test('does not surface cached trading actions or stale quote warnings during a verified closure', async () => {
   const state = accountFixture();
@@ -464,7 +542,7 @@ test.each(['non_trading_day', 'unknown', 'after_close'] as const)(
     await waitFor(() =>
       expect(recommendation).toHaveTextContent('报价距本次决策超过 5 分钟'),
     );
-    expect(recommendation).toHaveTextContent('交易操作建议暂不可用');
+    expect(recommendation).toHaveTextContent('账户级推荐暂不可用');
     expect(recommendation).not.toHaveTextContent('今日休市');
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
   },
@@ -476,7 +554,7 @@ test('resumes reading recommendations when the verified session changes to a tra
   const fetch = installFetch(state);
   const { client } = renderPage('zh');
   await screen.findByTestId('overview-recommendation-market-closed');
-  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
 
   state.overview.market_session.status = 'pre_open';
   await act(async () => {
@@ -525,7 +603,7 @@ test('separates failed daily generation from a stale quote for current manual re
   expect(recommendation).toHaveTextContent(
     '当前人工复核：报价距本次决策超过 5 分钟，不能据此准备手工订单。',
   );
-  expect(recommendation).toHaveTextContent('交易操作建议暂不可用');
+  expect(recommendation).toHaveTextContent('账户级推荐暂不可用');
 });
 
 test('does not show a prior day generation result as the current report', async () => {
@@ -597,9 +675,9 @@ test('explains why today has no actionable recommendation when evidence gates bl
     'overview-strategy-recommendation',
   );
   await waitFor(() =>
-    expect(recommendation).toHaveTextContent('交易操作建议暂不可用'),
+    expect(recommendation).toHaveTextContent('账户级推荐暂不可用'),
   );
-  expect(recommendation).toHaveTextContent('交易操作建议暂不可用');
+  expect(recommendation).toHaveTextContent('账户级推荐暂不可用');
   expect(
     within(recommendation).queryByTestId('overview-decision-actions'),
   ).not.toBeInTheDocument();
@@ -725,7 +803,7 @@ test('labels missing strategy promotion as configuration readiness rather than a
       '尚未配置可用于账户建议的晋级策略',
     ),
   );
-  expect(recommendation).not.toHaveTextContent('交易操作建议暂不可用');
+  expect(recommendation).not.toHaveTextContent('账户级推荐暂不可用');
 });
 
 test('labels scan with promoted_daily_candidate_strategy_missing as configuration readiness without green indicator', async () => {
@@ -761,7 +839,7 @@ test('labels scan with promoted_daily_candidate_strategy_missing as configuratio
       '尚未配置可用于账户建议的晋级策略',
     ),
   );
-  expect(recommendation).not.toHaveTextContent('交易操作建议暂不可用');
+  expect(recommendation).not.toHaveTextContent('账户级推荐暂不可用');
   expect(
     recommendation.querySelector('.bg-\\[var\\(--app-success-indicator\\)\\]'),
   ).toBeNull();
@@ -790,7 +868,7 @@ test('shows a manual-review strategy action without implying automatic execution
     'overview-strategy-recommendation',
   );
   await waitFor(() => expect(recommendation).toHaveTextContent('待人工复核'));
-  expect(recommendation).toHaveTextContent('交易操作建议');
+  expect(recommendation).toHaveTextContent('账户级推荐');
   expect(recommendation).toHaveTextContent('2026/09/14');
   expect(recommendation).toHaveTextContent('买入');
   expect(recommendation).toHaveTextContent('合成基金');
@@ -807,7 +885,7 @@ test('shows a manual-review strategy action without implying automatic execution
   ).toHaveAttribute('href', '/decision');
 });
 
-test('displays detailed buy recommendation with buy price, amounts, fees, and position effect', async () => {
+test.each([false, true])('buy evidence pair (%s)', async (hasPair) => {
   const plan = tradingPlanFixture();
   plan.manual_ready_count = 1;
   plan.order_intent_count = 1;
@@ -854,6 +932,8 @@ test('displays detailed buy recommendation with buy price, amounts, fees, and po
       action_id: 101,
       symbol: '600519',
       display_name: '贵州茅台',
+      strategy_id: 'ai_formula_shadow:synthetic-published',
+      frozen_market_date: '2026-09-11',
       asset_class: 'stock',
       side: 'buy',
       target_weight: 0.15,
@@ -865,6 +945,63 @@ test('displays detailed buy recommendation with buy price, amounts, fees, and po
       submission_status: 'manual_confirmation_required',
     },
   ];
+
+  plan.account_action_recommendation!.strategy_context = {
+    'ai_formula_shadow:synthetic-published': {
+      strategy_id: 'ai_formula_shadow:synthetic-published',
+      strategy_stage: 'paper_shadow',
+      strategy_artifact_fingerprint: 'e'.repeat(64),
+      saved_backtest_id: 701,
+      entry_conditions: '收盘价超过已冻结的入场均线',
+      exit_conditions: '收盘价跌破已冻结的退出均线',
+      condition_basis: 'frozen_strategy_text',
+      economic_hypothesis: '合成策略假设：趋势延续',
+      risk_impact: '合成风险：震荡行情可能反复止损',
+      failure_conditions: ['费用可能超过策略优势'],
+      forward: {
+        status: 'not_started',
+        observation_count: 0,
+        lifecycles: [],
+        publication_count: 0,
+        outcome_count: 0,
+        qualification_assessed: false,
+      },
+      historical_comparison: null,
+      read_only: true,
+      authorizes_execution: false,
+    },
+  };
+
+  if (hasPair) {
+    plan.account_action_recommendation!.strategy_context[
+      'ai_formula_shadow:synthetic-published'
+    ].historical_comparison = {
+      status: 'recorded_pair',
+      dataset_id: `sha256:${'a'.repeat(64)}`,
+      start_date: '2020-01-02',
+      end_date: '2026-10-16',
+      instrument_count: 40,
+      bar_row_count: 34547,
+      corporate_action_mode: 'price_only',
+      point_in_time_verified: false,
+      baseline: {
+        result_id: 702,
+        total_return: 0.2,
+        annual_return: 0.03,
+        sharpe: 0.7,
+        max_drawdown: 0.25,
+      },
+      candidate: {
+        result_id: 703,
+        total_return: 0.1,
+        annual_return: 0.015,
+        sharpe: 0.5,
+        max_drawdown: 0.3,
+      },
+      independent_final_evaluation: false,
+      authority_effect: 'none',
+    };
+  }
 
   installFetch(accountFixture(), false, plan);
   renderPage('zh');
@@ -892,6 +1029,194 @@ test('displays detailed buy recommendation with buy price, amounts, fees, and po
   expect(recommendation).toHaveTextContent('新建立仓');
   expect(recommendation).toHaveTextContent('风控通过');
   expect(recommendation).toHaveTextContent('现金充足');
+  expect(recommendation).toHaveTextContent('账户级建议 · 待人工确认');
+  expect(recommendation).toHaveTextContent('收盘价超过已冻结的入场均线');
+  expect(recommendation).not.toHaveTextContent('收盘价跌破已冻结的退出均线');
+  expect(recommendation).toHaveTextContent('合成策略假设：趋势延续');
+  expect(recommendation).toHaveTextContent('震荡行情可能反复止损');
+  expect(recommendation).toHaveTextContent('前向观测（独立）：尚未开始');
+  expect(
+    within(recommendation).getByRole('link', { name: '查看真实回测 #701' }),
+  ).toHaveAttribute('href', '/backtest?id=701');
+  if (hasPair) {
+    const comparison = within(recommendation).getByTestId(
+      'overview-account-historical-comparison',
+    );
+    expect(comparison).toHaveTextContent('历史回测对比（研究）');
+    expect(comparison).toHaveTextContent('2020');
+    expect(comparison).toHaveTextContent('2026');
+    expect(comparison).toHaveTextContent('40 只标的');
+    expect(comparison).toHaveTextContent('34,547 条行情');
+    expect(comparison).toHaveTextContent('20.0%');
+    expect(comparison).toHaveTextContent('10.0%');
+    expect(comparison).toHaveTextContent('仅价格收益，未计现金分红');
+    expect(comparison).toHaveTextContent('数据未通过历史时点核验');
+    expect(comparison).toHaveTextContent('不改变策略准入');
+    expect(
+      within(comparison).getByRole('link', { name: 'Gen7 #702' }),
+    ).toHaveAttribute('href', '/backtest?id=702');
+    expect(
+      within(comparison).getByRole('link', { name: '候选策略 #703' }),
+    ).toHaveAttribute('href', '/backtest?id=703');
+  } else {
+    expect(
+      within(recommendation).queryByTestId(
+        'overview-account-historical-comparison',
+      ),
+    ).not.toBeInTheDocument();
+  }
+});
+
+test.each(['zh', 'en'] as const)(
+  'shows saved historical research and separate forward states without account recommendations (%s)',
+  async (locale) => {
+    const plan = tradingPlanFixture();
+    plan.account_action_recommendation!.status = 'unavailable';
+    plan.account_action_recommendation!.reason_codes = [
+      'promoted_daily_candidate_strategy_missing',
+    ];
+    plan.historical_research_comparison = historicalResearchFixture();
+    installFetch(accountFixture(), false, plan);
+    renderPage(locale);
+
+    const history = await screen.findByTestId(
+      'overview-historical-research-comparison',
+    );
+    const recommendation = screen.getByTestId(
+      'overview-strategy-recommendation',
+    );
+    expect(
+      within(recommendation).queryByTestId('overview-recommendation-item'),
+    ).not.toBeInTheDocument();
+    await userEvent.click(
+      within(history).getByText(
+        locale === 'zh'
+          ? '历史研究对比 · Gen7 与候选策略'
+          : 'Historical research · Gen7 and candidate',
+      ),
+    );
+    const table = within(history).getByRole('table');
+    expect(table).toBeVisible();
+    expect(
+      within(table).getByRole('link', { name: 'Gen7 #802' }),
+    ).toHaveAttribute('href', '/backtest?id=802');
+    expect(
+      within(table).getByRole('link', {
+        name: locale === 'zh' ? '候选策略 #803' : 'Candidate #803',
+      }),
+    ).toHaveAttribute('href', '/backtest?id=803');
+    expect(table).toHaveTextContent('20.0%');
+    expect(table).toHaveTextContent('10.0%');
+    expect(table).not.toHaveTextContent('#801');
+    expect(
+      within(history).getByRole('link', {
+        name: locale === 'zh' ? '公式来源 #801' : 'Formula source #801',
+      }),
+    ).toHaveAttribute('href', '/backtest?id=801');
+    const forward = within(history).getByTestId(
+      'overview-historical-forward-state',
+    );
+    expect(forward).toHaveTextContent(
+      locale === 'zh'
+        ? 'Gen7 #802：已有 2 项记录，资格需另行核验'
+        : 'Gen7 #802：2 recorded; qualification needs separate verification',
+    );
+    expect(forward).toHaveTextContent(
+      locale === 'zh'
+        ? '候选策略 #803：尚未开始'
+        : 'Candidate #803：Not started',
+    );
+    expect(history).toHaveTextContent(
+      locale === 'zh'
+        ? '数据未通过历史时点核验'
+        : 'Historical point-in-time data not verified',
+    );
+    expect(within(history).queryByRole('button')).not.toBeInTheDocument();
+    expect(plan.account_action_recommendation!.actions).toEqual([]);
+    expect(plan.order_intents).toEqual([]);
+  },
+);
+
+test.each([undefined, null])(
+  'omits independent history when the API has no verified pair (%s)',
+  async (comparison) => {
+    const plan = tradingPlanFixture();
+    plan.historical_research_comparison = comparison;
+    installFetch(accountFixture(), false, plan);
+    renderPage('zh');
+    await screen.findByText('无操作');
+    expect(
+      screen.queryByTestId('overview-historical-research-comparison'),
+    ).not.toBeInTheDocument();
+  },
+);
+
+test('keeps cached historical research inspectable during closure while hiding cached account actions', async () => {
+  const state = accountFixture();
+  state.overview.market_session.status = 'non_trading_day';
+  const fetch = installFetch(state);
+  const { client } = renderPage('zh');
+  await screen.findByTestId('overview-recommendation-market-closed');
+  const plan = tradingPlanFixture();
+  plan.historical_research_comparison = historicalResearchFixture();
+  plan.account_action_recommendation!.status = 'manual_review_required';
+  plan.account_action_recommendation!.actions = [
+    {
+      action_id: 'cached-action',
+      symbol: 'cached-symbol',
+      side: 'buy',
+    },
+  ];
+  await act(async () => {
+    client.setQueryData(['decision', 'trading-plan'], plan);
+  });
+  const history = await screen.findByTestId(
+    'overview-historical-research-comparison',
+  );
+  await userEvent.click(
+    within(history).getByText('历史研究对比 · Gen7 与候选策略'),
+  );
+  expect(within(history).getByRole('table')).toBeVisible();
+  const recommendation = screen.getByTestId('overview-strategy-recommendation');
+  expect(recommendation).toHaveTextContent('今日休市');
+  expect(recommendation).not.toHaveTextContent('cached-symbol');
+  expect(
+    within(recommendation).queryByTestId('overview-recommendation-item'),
+  ).not.toBeInTheDocument();
+  expect(fetch).toHaveBeenCalledTimes(3);
+});
+
+test('keeps explicit research what-if visible during closure without publishing formal actions', async () => {
+  const state = accountFixture();
+  state.overview.market_session.status = 'non_trading_day';
+  const plan = tradingPlanFixture();
+  plan.research_simulation_preview = researchSimulationFixture();
+  plan.account_action_recommendation!.status = 'manual_review_required';
+  plan.account_action_recommendation!.actions = [
+    {
+      action_id: 'formal-only',
+      symbol: 'formal-only',
+      display_name: '不可展示的正式动作',
+      side: 'buy',
+    },
+  ];
+  const fetch = installFetch(state, false, plan);
+  renderPage('zh');
+  const preview = await screen.findByTestId(
+    'overview-research-simulation-preview',
+  );
+  expect(preview).toHaveTextContent('合成制造');
+  expect(preview).toHaveTextContent('假设买入');
+  expect(
+    screen.getByTestId('overview-recommendation-market-closed'),
+  ).toBeVisible();
+  expect(screen.queryByText('不可展示的正式动作')).not.toBeInTheDocument();
+  expect(fetch.mock.calls.map(([url]) => String(url))).toContain(
+    '/api/decision/trading-plan',
+  );
+  expect(fetch.mock.calls.map(([url]) => String(url))).not.toContain(
+    '/api/decision/today',
+  );
 });
 
 test('displays detailed sell recommendation with sell price and net cash inflow', async () => {
@@ -991,7 +1316,7 @@ test('never surfaces blocked recommendation actions as buy or sell operations', 
     'overview-strategy-recommendation',
   );
   await waitFor(() =>
-    expect(recommendation).toHaveTextContent('交易操作建议暂不可用'),
+    expect(recommendation).toHaveTextContent('账户级推荐暂不可用'),
   );
   expect(
     within(recommendation).queryByTestId('overview-decision-actions'),

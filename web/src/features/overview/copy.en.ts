@@ -174,7 +174,7 @@ export const overviewCopyEn = {
     strategyDecisionUnavailable: 'Strategy candidate signals are unavailable',
     strategyCandidateEmptyDetail:
       'No buy, sell, hold, or rebalance signals have entered the queue.',
-    strategyRecommendationTitle: 'Trading recommendations',
+    strategyRecommendationTitle: 'Account recommendations',
     strategyRecommendationMarketClosed:
       'Market closed; no trading recommendations today',
     strategyRecommendationClosedResearch:
@@ -247,6 +247,18 @@ export const overviewCopyEn = {
       manual_confirmation: 'Manual confirmation',
     },
     decisionReasonLabels: {
+      full_market_evidence_incomplete:
+        'Latest full-market verification is incomplete',
+      full_market_universe_snapshot_missing:
+        'Latest full-market universe is missing',
+      full_market_daily_receipt_replay_failed:
+        'Full-market price evidence has not passed replay verification',
+      full_market_daily_symbol_coverage_unverified:
+        'Full-market historical price coverage is not fully verified',
+      prepared_strategy_scan_blocked:
+        'The published account strategy is not ready to scan',
+      promoted_strategy_scan_outside_reviewed_decision_window:
+        'The reviewed account-recommendation window has not started',
       promoted_strategy_not_configured:
         'No evidence-bound strategy is promoted to Paper Shadow',
       promoted_strategy_scan_missing:
@@ -268,6 +280,8 @@ export const overviewCopyEn = {
       valuation_snapshot_not_complete:
         'Portfolio valuation snapshot is incomplete',
       market_data_not_trusted: 'Market evidence is not trusted',
+      market_quote_not_bound_to_plan_date:
+        'Market quotes have not been refreshed for the current plan date',
       market_quote_too_old_for_decision:
         "Market quotes are too old for today's decision",
       account_qualification_not_evaluated:
@@ -294,8 +308,8 @@ export const overviewCopyEn = {
     accountRecommendationNoAction: 'No action',
     accountRecommendationNoActionDetail:
       'The daily promoted-strategy scan completed without an account action signal.',
-    accountRecommendationBlocked: 'Trading recommendations unavailable',
-    accountRecommendationUnavailable: 'Trading recommendations unavailable',
+    accountRecommendationBlocked: 'Account recommendations unavailable',
+    accountRecommendationUnavailable: 'Account recommendations unavailable',
     accountRecommendationReason: (reasons: string) =>
       `Current reason: ${reasons || 'no verifiable account recommendation is available'}.`,
     researchOperationCandidate:

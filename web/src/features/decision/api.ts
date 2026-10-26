@@ -22,6 +22,7 @@ export type {
   DecisionResponse,
   DecisionSummary,
   DecisionWorkflowTask,
+  ResearchSimulationPreview,
   SignalJournalEntry,
   SignalResponse,
   StrategyAttributionGateEvidence,

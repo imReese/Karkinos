@@ -26,6 +26,74 @@ export type AccountRecommendationAction = {
   estimated_total_fee?: number | null;
   submission_status?: string | null;
   reason?: string | null;
+  strategy_id?: string | null;
+  frozen_market_date?: string | null;
+};
+
+export type AccountRecommendationStrategyContext = {
+  strategy_id: string;
+  strategy_stage?: string | null;
+  strategy_artifact_fingerprint: string;
+  saved_backtest_id: number | null;
+  entry_conditions: string | null;
+  exit_conditions: string | null;
+  condition_basis: 'frozen_strategy_text' | 'formula_ast_summary';
+  economic_hypothesis: string | null;
+  risk_impact: string | null;
+  failure_conditions: string[];
+  forward: {
+    status: 'not_started' | 'recorded' | 'unavailable';
+    observation_count?: number;
+    lifecycles?: string[];
+    publication_count?: number;
+    outcome_count?: number;
+    qualification_assessed: false;
+  };
+  historical_comparison: {
+    status: 'recorded_pair';
+    dataset_id: string;
+    start_date: string;
+    end_date: string;
+    instrument_count: number;
+    bar_row_count: number;
+    corporate_action_mode: string | null;
+    point_in_time_verified: boolean | null;
+    baseline: {
+      result_id: number;
+      total_return: number | null;
+      annual_return: number | null;
+      sharpe: number | null;
+      max_drawdown: number | null;
+    };
+    candidate: {
+      result_id: number;
+      total_return: number | null;
+      annual_return: number | null;
+      sharpe: number | null;
+      max_drawdown: number | null;
+    };
+    independent_final_evaluation: false;
+    authority_effect: 'none';
+  } | null;
+  read_only: true;
+  authorizes_execution: false;
+};
+
+export type HistoricalResearchComparison = NonNullable<
+  AccountRecommendationStrategyContext['historical_comparison']
+> & {
+  source_result_id: number;
+  anchor_result_id: number;
+  forward: {
+    baseline: AccountRecommendationStrategyContext['forward'] & {
+      source_backtest_result_id: number;
+    };
+    candidate: AccountRecommendationStrategyContext['forward'] & {
+      source_backtest_result_id: number;
+    };
+  };
+  read_only: true;
+  authorizes_execution: false;
 };
 
 export type AccountActionRecommendation = {
@@ -40,6 +108,7 @@ export type AccountActionRecommendation = {
   reason_codes: string[];
   source_action_task_ids: string[];
   actions: AccountRecommendationAction[];
+  strategy_context?: Record<string, AccountRecommendationStrategyContext>;
   presentation?: {
     level:
       | 'manual_review'

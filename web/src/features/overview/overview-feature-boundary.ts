@@ -27,6 +27,7 @@ export {
 export type {
   DailyTradingPlanResponse,
   DecisionResponse,
+  ResearchSimulationPreview,
 } from '../decision/api';
 export {
   operationsSubsystemLabel,
