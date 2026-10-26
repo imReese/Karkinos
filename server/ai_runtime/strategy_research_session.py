@@ -27,6 +27,7 @@ from server.ai_runtime.strategy_research_support import (
     strategy_research_request_json,
 )
 from server.ai_runtime.strategy_research_values import ACCOUNT_STATE_TOOL
+from server.config_types import ResearchSimulationSourceConfig
 from server.contracts.strategy_research import (
     STRATEGY_RESEARCH_API_CONTRACT,
     StrategyResearchRejected,
@@ -120,6 +121,248 @@ class StrategyResearchSessionMixin:
                     "simulation_backtest_policy_binding_drift"
                 )
         return deepcopy(entry_policy)
+
+    def resolve_research_simulation_source(
+        self, source: ResearchSimulationSourceConfig | None
+    ) -> JsonObject:
+        """Reopen one explicit research lineage without selecting or approving it.
+
+        This checks saved facts and audit bindings only. It does not replay CAS
+        bars, admit publication, run a critique, or create a human review.
+        """
+        result: JsonObject = {
+            "status": "unavailable",
+            "blockers": ["research_simulation_source_not_configured"],
+            "read_only": True,
+            "research_only": True,
+            "requires_human_review": True,
+            "executable": False,
+            "authorizes_order_creation": False,
+            "authorizes_account_publication": False,
+            "authorizes_execution": False,
+            "authority_effect": "none",
+        }
+        if source is None:
+            return result
+        from server.ai_runtime.karkinos_source import (
+            saved_native_research_analysis_admission,
+        )
+        from server.ai_runtime.strategy_research_privacy import (
+            build_normalized_research_pack,
+            build_normalized_robustness_evidence,
+        )
+
+        try:
+            session = self._research_store.get_session(source.session_id)
+            if (
+                session["status"] != "completed"
+                or session["session_id"] != source.session_id
+            ):
+                raise StrategyResearchRejected("research_simulation_session_incomplete")
+            self._validate_session_integrity(session)
+            selection = selection_from_session(session)
+            if selection.fingerprint != session["selection_fingerprint"]:
+                raise StrategyResearchRejected("research_simulation_selection_drift")
+            draft_row = self._research_store.get_draft(
+                source.session_id, source.draft_id
+            )
+            draft = draft_row["contract"]
+            if (
+                draft_row["validation_status"] != "valid"
+                or draft_row["session_id"] != source.session_id
+                or draft_row["draft_id"] != source.draft_id
+                or draft.get("session_id") != source.session_id
+                or draft.get("draft_id") != source.draft_id
+                or draft_row["artifact_fingerprint"] != content_fingerprint(draft)
+                or any(
+                    draft.get(key) != session[key]
+                    for key in (
+                        "workflow_id",
+                        "context_snapshot_id",
+                        "context_fingerprint",
+                        "evidence_reference_id",
+                    )
+                )
+            ):
+                raise StrategyResearchRejected("research_simulation_draft_drift")
+            backtest = self._research_store.get_backtest(source.backtest_run_id)
+            if (
+                backtest["status"] != "completed"
+                or backtest["backtest_run_id"] != source.backtest_run_id
+                or backtest["session_id"] != source.session_id
+                or backtest["draft_id"] != source.draft_id
+                or backtest["canonical_backtest_result_id"]
+                != source.canonical_backtest_result_id
+            ):
+                raise StrategyResearchRejected("research_simulation_backtest_drift")
+            saved = self._research_store.research_backtest_result(
+                source.canonical_backtest_result_id
+            )
+            metrics = strategy_research_json_object(saved.get("metrics_json"))
+            config = strategy_research_json_object(saved.get("config_json"))
+            cost = strategy_research_json_object(saved.get("cost_summary_json"))
+            binding = FormulaBinding(**metrics["formula_binding"])
+            if (
+                metrics["source_selection"] != selection.to_dict()
+                or metrics["formula_binding"] != binding.to_dict()
+                or draft.get("formula_fingerprint") != binding.fingerprint
+                or draft_row["formula_fingerprint"] != binding.fingerprint
+                or backtest["formula_fingerprint"] != binding.fingerprint
+                or backtest["dataset_snapshot_id"] != selection.dataset_snapshot_id
+                or backtest["cost_model_reference"] != selection.cost_model_reference
+                or any(
+                    draft.get(key) != value
+                    for key, value in {
+                        "selected_universe": list(selection.universe),
+                        "dataset_snapshot_id": selection.dataset_snapshot_id,
+                        "test_window": {
+                            "start_date": selection.start_date,
+                            "end_date": selection.end_date,
+                        },
+                        "frequency": selection.frequency,
+                        "cost_model_reference": selection.cost_model_reference,
+                        "formula_ast": binding.formula_ast,
+                        "anti_lookahead_assumptions": list(
+                            binding.anti_lookahead_assumptions
+                        ),
+                        "parameter_values": binding.parameter_values,
+                        "parameter_ranges": binding.parameter_ranges,
+                    }.items()
+                )
+            ):
+                raise StrategyResearchRejected(
+                    "research_simulation_formula_binding_drift"
+                )
+            evidence = metrics["research_evidence_bundle"]
+            performance = {
+                key: saved.get(key) if saved.get(key) is not None else metrics.get(key)
+                for key in (
+                    "initial_cash",
+                    "final_equity",
+                    "total_return",
+                    "sharpe",
+                    "sortino",
+                    "max_drawdown",
+                    "win_rate",
+                    "duration_days",
+                )
+            }
+            admission = saved_native_research_analysis_admission(
+                result_id=source.canonical_backtest_result_id,
+                row=saved,
+                metrics=metrics,
+                config=config,
+                cost_summary=cost,
+                bundle=evidence,
+                performance=performance,
+            )
+            if (
+                admission is None
+                or content_fingerprint(evidence) != backtest["evidence_fingerprint"]
+            ):
+                raise StrategyResearchRejected(
+                    "research_simulation_saved_facts_incomplete"
+                )
+            critique = self._research_store.get_critique(source.critique_id)
+            artifact = critique.get("artifact")
+            if (
+                critique["status"] != "completed"
+                or critique["critique_id"] != source.critique_id
+                or critique["session_id"] != source.session_id
+                or critique["draft_id"] != source.draft_id
+                or critique["backtest_run_id"] != source.backtest_run_id
+                or not isinstance(artifact, dict)
+                or critique["artifact_fingerprint"] != content_fingerprint(artifact)
+            ):
+                raise StrategyResearchRejected("research_simulation_critique_drift")
+            pack = build_normalized_research_pack(
+                simulation_notional=selection.simulation_validation_binding is not None,
+                performance=saved,
+                after_cost_evidence=metrics["evidence_bundle"],
+                cost_summary=cost,
+                research_evidence_bundle=evidence,
+                oos_validation=metrics["oos_validation"],
+            )
+            expected_echo = {
+                "canonical_backtest_result_id": source.canonical_backtest_result_id,
+                "formula_fingerprint": binding.fingerprint,
+                "dataset_snapshot_id": selection.dataset_snapshot_id,
+                "cost_model_reference": selection.cost_model_reference,
+                "notional_policy_id": pack["notional_policy_id"],
+                **pack["performance_summary"],
+                **pack["cost_summary"],
+                "oos_validation_fingerprint": content_fingerprint(
+                    metrics["oos_validation"]
+                ),
+                "research_evidence_fingerprint": content_fingerprint(evidence),
+                "robustness_evidence_fingerprint": content_fingerprint(
+                    build_normalized_robustness_evidence(metrics)
+                ),
+            }
+            critique_workflow = self._ai_store.get_workflow(critique["workflow_id"])
+            if (
+                artifact.get("canonical_binding_echo") != expected_echo
+                or critique["workflow_id"] == session["workflow_id"]
+                or critique_workflow.status != "completed"
+                or critique_workflow.partial_result
+                or critique_workflow.workflow_id != critique["workflow_id"]
+                or critique_workflow.context_snapshot_id
+                != session["context_snapshot_id"]
+                or critique_workflow.context_fingerprint
+                != session["context_fingerprint"]
+                or artifact.get("evidence_reference_ids")
+                != [session["evidence_reference_id"]]
+                or not self._ai_store.verify_replay(critique["workflow_id"]).valid
+                or report_artifact(self._ai_store, critique["workflow_id"]).content
+                != artifact
+                or any(
+                    not self._research_store.verify_events(entity_id)[0]
+                    for entity_id in (source.backtest_run_id, source.critique_id)
+                )
+            ):
+                raise StrategyResearchRejected(
+                    "research_simulation_critique_binding_drift"
+                )
+            core = {
+                **result,
+                "status": "ready",
+                "blockers": [],
+                "session_id": source.session_id,
+                "draft_id": source.draft_id,
+                "backtest_run_id": source.backtest_run_id,
+                "critique_id": source.critique_id,
+                "canonical_backtest_result_id": source.canonical_backtest_result_id,
+                "selection": selection.to_dict(),
+                "dataset_snapshot": metrics["dataset_snapshot"],
+                "formula_fingerprint": binding.fingerprint,
+                "formula_ast": binding.formula_ast,
+                "draft": draft,
+                "critique": artifact,
+                "research_evidence_bundle": evidence,
+                "dataset_simulation_admission": admission,
+                "cost_assumptions": config.get("cost_assumptions"),
+                "historical_validation_status": "not_assessed",
+                "current_CAS_replayed": False,
+            }
+            return {
+                **core,
+                "source_fingerprint": "sha256:" + content_fingerprint(core),
+            }
+        except (
+            KeyError,
+            LookupError,
+            OSError,
+            TypeError,
+            ValueError,
+            StrategyResearchDatabaseError,
+        ) as exc:
+            result["status"] = "blocked"
+            result["blockers"] = [
+                str(exc)
+                if isinstance(exc, StrategyResearchRejected)
+                else "research_simulation_source_unreadable_or_invalid"
+            ]
+            return result
 
     def get_session(self, session_id: str, *, reused: bool = False) -> JsonObject:
         session = self._research_store.get_session_if_initialized(session_id)

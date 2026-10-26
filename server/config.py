@@ -19,6 +19,7 @@ from server.config_types import (
     CiticHistoryXlsDirectoryConfig,
     ControlledBridgePolicyConfig,
     DataSourceProviderConfig,
+    ResearchSimulationSourceConfig,
     TrustedOperatorIdentityConfig,
 )
 
@@ -94,6 +95,7 @@ class ServerConfig(BacktestConfig):
     trusted_operator_identities: list[TrustedOperatorIdentityConfig] = field(
         default_factory=list
     )
+    research_simulation_source: ResearchSimulationSourceConfig | None = None
 
 
 __all__ = [
@@ -106,6 +108,7 @@ __all__ = [
     "CiticHistoryXlsDirectoryConfig",
     "ControlledBridgePolicyConfig",
     "DataSourceProviderConfig",
+    "ResearchSimulationSourceConfig",
     "ServerConfig",
     "TrustedOperatorIdentityConfig",
 ]

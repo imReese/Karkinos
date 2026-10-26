@@ -2080,3 +2080,322 @@ def verified_dataset_dates(
     if not dates:
         raise ResearchDatasetError("dataset_no_trading_sessions")
     return tuple(sorted(dates))
+
+
+def resolve_research_simulation_market_inputs(
+    state: Any,
+    research_source: dict[str, Any],
+    market_session: dict[str, Any],
+) -> dict[str, Any]:
+    """Read a bounded current window for one explicitly selected research source.
+
+    Only an immutable derived manifest is written. Original partitions and warmup
+    memberships retain their provenance, while a new fixed-basket suffix remains
+    exploratory with no invented membership observation or decision time. Catalog
+    metadata can reject incomplete coverage; only the ordinary strict Reader can
+    supply prices. Receipts supply the separate existing coverage lane, never
+    price or dual-source authority. No provider or account state is consulted.
+    """
+    from collections.abc import Mapping
+
+    from analytics.dataset_snapshot import backtest_dataset_snapshot_content_id
+    from data.research_market_data import resolve_daily_bar_receipts
+    from server.ai_runtime.contracts import canonical_json, content_fingerprint
+    from server.ai_runtime.strategy_research_support import selection_from_session
+    from server.services.market.calendar import (
+        resolve_latest_verified_closed_trading_date,
+    )
+    from server.services.market.market_universe_truth import (
+        MarketUniversePolicy,
+        market_deployment_scope,
+        require_complete_market_universe_snapshot,
+    )
+    from server.services.strategy_scan.universe.evaluation import formula_history_rows
+
+    kwargs: dict[str, Any] = {"verified_dataset_read": None}
+
+    def blocked(code: str) -> dict[str, Any]:
+        return {"kwargs": kwargs, "blockers": [code]}
+
+    if research_source.get("status") != "ready":
+        return blocked("research_simulation_source_not_ready")
+    try:
+        source_core = {
+            key: value
+            for key, value in research_source.items()
+            if key != "source_fingerprint"
+        }
+        if research_source.get("source_fingerprint") != (
+            "sha256:" + content_fingerprint(source_core)
+        ):
+            return blocked("research_simulation_source_fingerprint_mismatch")
+        selection = selection_from_session(
+            {
+                "request_json": canonical_json(
+                    {"selection": research_source["selection"]}
+                )
+            }
+        )
+        saved = research_source["dataset_snapshot"]
+        if (
+            not isinstance(saved, Mapping)
+            or saved.get("snapshot_id") != selection.dataset_snapshot_id
+            or saved.get("snapshot_id")
+            != backtest_dataset_snapshot_content_id(
+                {key: value for key, value in saved.items() if key != "snapshot_id"}
+            )
+            or not saved.get("immutable_dataset_id")
+        ):
+            return blocked("research_simulation_immutable_dataset_binding_missing")
+        scope = selection.deployment_scope or {}
+        policy = MarketUniversePolicy.from_dict(scope["universe_policy"])
+        if market_deployment_scope(policy) != scope or set(selection.asset_classes) != {
+            "stock"
+        }:
+            return blocked("research_simulation_scope_mismatch")
+        formula = research_source["formula_ast"]
+
+        def operators(value: Any) -> set[str]:
+            if not isinstance(value, Mapping):
+                return set()
+            return {str(value.get("op") or "")} | set().union(
+                *(operators(child) for child in value.values())
+            )
+
+        if operators(formula) & {"ema", "rsi", "atr"}:
+            return blocked("research_formula_recursive_warmup_unavailable")
+        if operators(formula) & {"rank", "roc"}:
+            return blocked("research_formula_bounded_warmup_unsupported")
+        rows = max(policy.minimum_history_rows, formula_history_rows(formula))
+        if rows > 252:
+            return blocked("research_formula_warmup_window_too_large")
+        db = state.db
+        now = datetime.now(timezone.utc)
+        closed = resolve_latest_verified_closed_trading_date(db, now)
+        as_of = market_session.get("latest_completed_trade_date")
+        target = (
+            market_session.get("market_date")
+            if market_session.get("status") in {"pre_open", "open", "midday_break"}
+            else market_session.get("next_trading_date")
+        )
+        if (
+            closed is None
+            or closed.trade_date != as_of
+            or market_session.get("calendar_verified") is not True
+            or not market_session.get("calendar_evidence_refs")
+            or not target
+            or target <= as_of
+        ):
+            return blocked("research_latest_verified_calendar_unavailable")
+        through = date.fromisoformat(as_of)
+        dates = verified_dataset_dates(
+            db, through - timedelta(days=rows * 2 + 30), through
+        )
+        if len(dates) < rows or dates[-1] != through:
+            return blocked("research_verified_warmup_sessions_incomplete")
+        dates = dates[-rows:]
+        kwargs.update(
+            trading_dates=[day.isoformat() for day in dates],
+            history_start=dates[0].isoformat(),
+            target_market_date=target,
+        )
+        instruments = tuple(
+            sorted(
+                (
+                    InstrumentKey(symbol, InstrumentType.STOCK)
+                    for symbol in selection.universe
+                ),
+                key=lambda key: (key.instrument_type.value, key.symbol),
+            )
+        )
+        expected = set(instruments)
+        root = db.path.resolve().parent / "research"
+        objects = ContentAddressedObjectStore(root / "objects")
+        catalog = DatasetCatalog(root)
+        source_end = date.fromisoformat(selection.end_date)
+        suffix_dates = tuple(day for day in dates if day > source_end)
+        suffix: dict[date, dict[InstrumentKey, tuple[Any, datetime]]] = {
+            day: {} for day in suffix_dates
+        }
+        if suffix_dates:
+            if not catalog.path.exists():
+                return blocked("research_latest_cross_source_catalog_unavailable")
+            for entry in catalog.list_daily_bar_datasets(
+                end_date=through, cutoff_lte=now
+            ):
+                if entry.end_date < suffix_dates[0] or entry.start_date > through:
+                    continue
+                snapshot = read_daily_bar_dataset_manifest(objects, entry.ref)
+                if (
+                    not snapshot.verification_bound
+                    or not is_verified_daily_resolver_policy(
+                        snapshot.resolver_policy_id
+                    )
+                    or not set(snapshot.instruments) <= expected
+                ):
+                    continue
+                memberships_by_day = {
+                    item.partition_date: item for item in snapshot.session_memberships
+                }
+                if snapshot.session_memberships and not (
+                    snapshot.universe_policy_id
+                    == "karkinos.dataset.verified_range_projection.v1"
+                    and all(
+                        item.instruments == snapshot.instruments
+                        and not item.maintenance_instruments
+                        and not item.source_observation_ids
+                        and item.decision_at is None
+                        for item in snapshot.session_memberships
+                    )
+                    and len(snapshot.partitions) == len(snapshot.session_memberships)
+                    and all(
+                        part.instruments == snapshot.instruments
+                        for part in snapshot.partitions
+                    )
+                ):
+                    # Never erase observed or changing membership to make a
+                    # different source's current fixed research basket complete.
+                    continue
+                for part in snapshot.partitions:
+                    if part.partition_date not in suffix:
+                        continue
+                    selected = replace(
+                        part, instruments=part.instruments or snapshot.instruments
+                    )
+                    by_instrument = suffix[part.partition_date]
+                    for key in selected.instruments:
+                        prior = by_instrument.get(key)
+                        if prior is not None and prior[0] != selected:
+                            return blocked(
+                                "research_latest_cross_source_lineage_conflict"
+                            )
+                        by_instrument[key] = (
+                            selected,
+                            memberships_by_day[part.partition_date].available_at
+                            if memberships_by_day
+                            else snapshot.cutoff,
+                        )
+            if any(set(parts) != expected for parts in suffix.values()):
+                return blocked("research_latest_cross_source_dataset_incomplete")
+        # Avoid opening the large historical manifest until the complete current
+        # suffix exists. This is manifest selection, never a full-history bar read.
+        original = read_daily_bar_dataset_manifest(
+            objects, DatasetRef(objects.resolve_ref(saved["immutable_dataset_id"]))
+        )
+        if (
+            not original.verification_bound
+            or original.instruments != instruments
+            or original.cutoff > now
+            or original.start_date > dates[0]
+            or original.end_date != source_end
+        ):
+            return blocked("research_simulation_immutable_dataset_scope_mismatch")
+        parts = [part for part in original.partitions if part.partition_date in dates]
+        memberships = [
+            item
+            for item in original.session_memberships
+            if item.partition_date in dates
+        ]
+        cutoff = original.cutoff
+        for day, by_instrument in suffix.items():
+            day_parts = {part for part, _ in by_instrument.values()}
+            available = max(instant for _, instant in by_instrument.values())
+            cutoff = max(cutoff, available)
+            parts.extend(day_parts)
+            memberships.append(DailyBarDatasetMembership(day, instruments, available))
+        if not original.session_memberships and suffix:
+            memberships = [
+                DailyBarDatasetMembership(day, instruments, original.cutoff)
+                for day in dates
+                if day <= source_end
+            ] + memberships
+            parts = [
+                replace(part, instruments=part.instruments or instruments)
+                for part in parts
+            ]
+        if {part.partition_date for part in parts} != set(dates):
+            return blocked("research_cross_source_warmup_coverage_incomplete")
+        derived = replace(
+            original,
+            start_date=dates[0],
+            end_date=through,
+            cutoff=cutoff,
+            partitions=tuple(parts),
+            session_memberships=tuple(memberships),
+            universe_policy_id=(
+                original.universe_policy_id or scope["deployment_scope_fingerprint"]
+                if memberships
+                else None
+            ),
+        )
+        ref = publish_daily_bar_dataset_manifest(objects, derived)
+        kwargs["verified_dataset_read"] = read_daily_bar_dataset(objects, ref)
+        counts = dict.fromkeys(instruments, 0)
+        for bar in kwargs["verified_dataset_read"].bars:
+            counts[bar.instrument] += 1
+        short = {key for key, count in counts.items() if count < rows}
+        if short:
+            # N calendar sessions need not supply N observed bars after a halt.
+            # Only a newly listed instrument whose entire possible history is
+            # shorter may retain the existing policy's history-too-short lane.
+            # These source headers already passed the strict membership reader.
+            listing_dates: dict[str, date] = {}
+            for identity in {
+                identity
+                for item in derived.session_memberships
+                for identity in item.source_observation_ids
+            }:
+                source = json.loads(objects.read_bytes(objects.resolve_ref(identity)))
+                if source.get("schema_version") not in {
+                    "karkinos.market_universe_snapshot.v2",
+                    "karkinos.market_universe_snapshot.v3",
+                }:
+                    continue
+                for member in source.get("member_metadata") or ():
+                    symbol = str(member.get("symbol") or "")
+                    if not member.get("list_date"):
+                        continue
+                    listed = date.fromisoformat(str(member["list_date"]))
+                    if symbol in listing_dates and listing_dates[symbol] != listed:
+                        return blocked("research_original_listing_date_conflict")
+                    listing_dates[symbol] = listed
+            if any(
+                not dates[0] <= listing_dates.get(key.symbol, date.min) <= through
+                for key in short
+            ):
+                return blocked("research_formula_effective_bar_warmup_incomplete")
+        market_store = getattr(
+            state, "ai_shadow_research_qualification_data_store", None
+        )
+        if market_store is None:
+            return blocked("research_market_store_unavailable")
+        kwargs["market_snapshot"] = require_complete_market_universe_snapshot(
+            market_store.get_market_universe_snapshot(trade_date=as_of, as_of=now),
+            policy=policy,
+            expected_trade_date=as_of,
+            available_as_of=now,
+        )
+        kwargs["receipts"] = resolve_daily_bar_receipts(
+            data_store=market_store,
+            start_date=dates[0].isoformat(),
+            end_date=as_of,
+            config=getattr(state, "config", None),
+            snapshot=kwargs["market_snapshot"],
+        )
+        if set(kwargs["trading_dates"]) - {
+            str(receipt.get("trade_date") or "") for receipt in kwargs["receipts"]
+        }:
+            return blocked("research_market_daily_receipt_window_incomplete")
+        return {"kwargs": kwargs, "blockers": []}
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        OSError,
+        ResearchDatasetError,
+        DatasetReaderError,
+        DatasetManifestError,
+        DatasetCatalogError,
+        ObjectStoreError,
+    ):
+        return blocked("research_simulation_market_inputs_unreadable_or_invalid")

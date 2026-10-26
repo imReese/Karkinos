@@ -82,6 +82,44 @@ class AccountBoardPermissionsConfig:
 
 
 @dataclass(frozen=True)
+class ResearchSimulationSourceConfig:
+    """Exact saved research references without approval or capital authority."""
+
+    session_id: str
+    draft_id: str
+    backtest_run_id: str
+    critique_id: str
+    canonical_backtest_result_id: int
+
+    def __post_init__(self) -> None:
+        prefix = "research_simulation_source"
+        for field_name in (
+            "session_id",
+            "draft_id",
+            "backtest_run_id",
+            "critique_id",
+        ):
+            value = getattr(self, field_name)
+            if (
+                not isinstance(value, str)
+                or not value
+                or any(character.isspace() for character in value)
+            ):
+                raise ValueError(
+                    f"{prefix}.{field_name} must be a non-empty string "
+                    "without whitespace"
+                )
+        if (
+            isinstance(self.canonical_backtest_result_id, bool)
+            or not isinstance(self.canonical_backtest_result_id, int)
+            or self.canonical_backtest_result_id <= 0
+        ):
+            raise ValueError(
+                f"{prefix}.canonical_backtest_result_id must be a positive integer"
+            )
+
+
+@dataclass(frozen=True)
 class AIProviderConfig:
     """Provider-neutral external-model settings without runtime authority."""
 

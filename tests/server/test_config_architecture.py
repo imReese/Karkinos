@@ -27,6 +27,7 @@ LEAF_TYPE_NAMES = {
     "CiticHistoryXlsDirectoryConfig",
     "ControlledBridgePolicyConfig",
     "DataSourceProviderConfig",
+    "ResearchSimulationSourceConfig",
     "TrustedOperatorIdentityConfig",
 }
 

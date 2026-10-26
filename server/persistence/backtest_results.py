@@ -223,6 +223,78 @@ class BacktestResultsRepository:
             ).fetchone()
             return with_backtest_invalidation(conn, dict(row)) if row else None
 
+    def read_recent_historical_comparison_anchors(
+        self, *, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """Discover explicit persisted comparison anchors without selecting a winner."""
+        from server.persistence.connection import connect_sqlite
+
+        if type(limit) is not int or limit <= 0:
+            return []
+        with closing(connect_sqlite(self._database_path, readonly=True)) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """SELECT id, json_extract(metrics_json,
+                          '$.formula_binding.formula_ast') AS formula_ast_json
+                   FROM backtest_results
+                   WHERE CASE WHEN json_valid(metrics_json) THEN
+                     json_extract(metrics_json, '$.historical_comparison.role')
+                       = 'candidate2'
+                     AND json_type(metrics_json,
+                       '$.historical_comparison.historical_formula_source_result_id')
+                       = 'integer'
+                     AND json_extract(metrics_json,
+                       '$.historical_comparison.historical_formula_source_result_id') > 0
+                     AND json_type(metrics_json,
+                       '$.historical_comparison.actual_comparison_baseline_result_id')
+                       = 'integer'
+                     AND json_extract(metrics_json,
+                       '$.historical_comparison.actual_comparison_baseline_result_id') > 0
+                   ELSE 0 END
+                   ORDER BY id DESC LIMIT ?""",
+                (min(limit, 20),),
+            ).fetchall()
+            return [with_backtest_invalidation(conn, dict(row)) for row in rows]
+
+    def read_historical_comparison_rows(
+        self, source_result_id: int
+    ) -> list[dict[str, Any]]:
+        """Read an exact source or comparison anchor and its source family."""
+        from server.persistence.connection import connect_sqlite
+
+        if type(source_result_id) is not int or source_result_id <= 0:
+            return []
+        with closing(connect_sqlite(self._database_path, readonly=True)) as conn:
+            conn.row_factory = sqlite3.Row
+            anchor = conn.execute(
+                """SELECT CASE WHEN json_valid(metrics_json) THEN
+                       CASE WHEN json_type(metrics_json,
+                         '$.historical_comparison.historical_formula_source_result_id')
+                         = 'integer' AND json_extract(metrics_json,
+                         '$.historical_comparison.historical_formula_source_result_id') > 0
+                       THEN json_extract(metrics_json,
+                         '$.historical_comparison.historical_formula_source_result_id')
+                       END END AS source_id
+                   FROM backtest_results WHERE id = ?""",
+                (source_result_id,),
+            ).fetchone()
+            if anchor is None:
+                return []
+            family_id = anchor["source_id"]
+            if type(family_id) is not int or family_id <= 0:
+                family_id = source_result_id
+            rows = conn.execute(
+                """SELECT id, config_json, metrics_json, total_return,
+                          sharpe, max_drawdown FROM backtest_results
+                   WHERE id IN (?, ?) OR CASE WHEN json_valid(metrics_json) THEN
+                     json_extract(metrics_json,
+                       '$.historical_comparison.historical_formula_source_result_id')
+                   END = ?
+                   ORDER BY id DESC""",
+                (source_result_id, family_id, family_id),
+            ).fetchall()
+            return [with_backtest_invalidation(conn, dict(row)) for row in rows]
+
 
 def insert_backtest_result(
     conn: sqlite3.Connection,

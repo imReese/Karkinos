@@ -231,6 +231,8 @@ def _build_daily_trading_plan_for_state(
     )
     from server.projections.account_action_recommendation import (
         build_account_action_recommendation,
+        resolve_account_strategy_context,
+        resolve_historical_research_comparison,
         resolve_latest_verified_promoted_strategy_scan,
     )
     from server.services.market.asset_metadata import resolve_asset_metadata
@@ -251,15 +253,121 @@ def _build_daily_trading_plan_for_state(
         promoted_scan=promoted_scan,
         current_evidence_blockers=current_blockers,
         current_evidence_fingerprint=current_fingerprint,
+        strategy_context=resolve_account_strategy_context(
+            getattr(state, "db", None), promoted_scan
+        ),
         display_name_resolver=lambda symbol, asset_class: (
             resolve_asset_metadata(state, symbol, asset_class=asset_class).display_name
         ),
+    )
+    plan["historical_research_comparison"] = resolve_historical_research_comparison(
+        getattr(state, "db", None)
+    )
+    plan["research_simulation_preview"] = _research_simulation_preview_for_state(
+        state,
+        decision_payload=decision_payload,
+        trading_plan=plan,
+        portfolio_context=portfolio_context,
     )
     plan["research_operation_instruments"] = build_research_operation_instruments(
         getattr(state, "db", None),
         plan.get("research_operation_preview"),
     )
     return plan
+
+
+def _research_simulation_preview_for_state(
+    state: Any,
+    *,
+    decision_payload: dict[str, Any],
+    trading_plan: dict[str, Any],
+    portfolio_context: dict[str, Any],
+) -> dict[str, Any]:
+    """Bind a read-only research projection to this request's account facts."""
+    from decimal import Decimal
+
+    from server.composition.ai_application_services import (
+        build_strategy_research_read_service,
+    )
+    from server.projections.account_action_recommendation import (
+        build_research_simulation_action_preview,
+    )
+    from server.services.account.account_board_permissions import (
+        resolve_board_buy_permissions,
+    )
+    from server.services.decision.daily_decision_policy_gates import (
+        build_daily_candidate_base_gate,
+    )
+    from server.services.decision.decision_portfolio_projection import (
+        position_market_value,
+    )
+    from server.services.market.asset_metadata import resolve_asset_metadata
+    from server.services.market.calendar import project_market_session
+
+    pointer = getattr(
+        getattr(state, "config", None), "research_simulation_source", None
+    )
+    source = (
+        build_strategy_research_read_service(state).resolve_research_simulation_source(
+            pointer
+        )
+        if pointer is not None
+        else {
+            "status": "unavailable",
+            "blockers": ["research_simulation_source_not_configured"],
+        }
+    )
+    gate = build_daily_candidate_base_gate(
+        decision_payload=decision_payload,
+        trading_plan=trading_plan,
+        plan_date=str(decision_payload.get("decision_date") or ""),
+    )
+    blockers = list(gate["gate_blockers"]["account_truth"])
+    summary = decision_payload.get("summary") or {}
+    portfolio = summary.get("portfolio") or {}
+    snapshot = portfolio_context.get("valuation_snapshot") or {}
+    if (
+        portfolio_context.get("authority") != "persisted_valuation_snapshot"
+        or snapshot.get("status") != "complete"
+        or snapshot.get("snapshot_id") != portfolio.get("valuation_snapshot_id")
+        or snapshot.get("ledger_cutoff_id") != portfolio.get("ledger_cutoff_id")
+    ):
+        blockers.append("research_current_valuation_binding_mismatch")
+    positions = _trading_plan_positions(state, portfolio_context=portfolio_context)
+    values = {}
+    for symbol in portfolio.get("symbols") or []:
+        if symbol in positions:
+            value = position_market_value(positions[symbol])
+            if value is not None:
+                values[symbol] = Decimal(str(value))
+    session = project_market_session(getattr(state, "db", None))
+    market_inputs: dict[str, Any] = {}
+    if source.get("status") == "ready":
+        from server.services.research.datasets import (
+            resolve_research_simulation_market_inputs,
+        )
+
+        resolved = resolve_research_simulation_market_inputs(state, source, session)
+        market_inputs = resolved["kwargs"]
+        blockers.extend(resolved["blockers"])
+    target = market_inputs.get("target_market_date")
+    return build_research_simulation_action_preview(
+        research_source=source,
+        decision_payload=decision_payload,
+        account_fact_blockers=list(dict.fromkeys(blockers)),
+        positions=positions,
+        position_values=values,
+        target_board_buy_permissions=resolve_board_buy_permissions(
+            getattr(state, "config", None), target
+        )
+        if target
+        else None,
+        market_session=session,
+        display_name_resolver=lambda symbol, asset_class: (
+            resolve_asset_metadata(state, symbol, asset_class=asset_class).display_name
+        ),
+        **market_inputs,
+    )
 
 
 @daily_bar_dataset_read_scope(join_existing=True)

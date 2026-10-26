@@ -27,9 +27,19 @@ from server.config_types import (
     CiticHistoryXlsDirectoryConfig,
     ControlledBridgePolicyConfig,
     DataSourceProviderConfig,
+    ResearchSimulationSourceConfig,
     TrustedOperatorIdentityConfig,
 )
 
+_RESEARCH_SIMULATION_SOURCE_ALLOWED_FIELDS = frozenset(
+    {
+        "session_id",
+        "draft_id",
+        "backtest_run_id",
+        "critique_id",
+        "canonical_backtest_result_id",
+    }
+)
 _BROKER_CONNECTOR_ALLOWED_FIELDS = frozenset(
     {
         "connector_id",
@@ -309,6 +319,10 @@ def load_config(config_type: type[Any], path: str | Path) -> Any:
         )
     if "ai" in data:
         data["ai"] = _parse_ai_provider_config(data["ai"])
+    if "research_simulation_source" in data:
+        data["research_simulation_source"] = _parse_research_simulation_source_config(
+            data["research_simulation_source"]
+        )
     if "broker_statement_collector" in data:
         data["broker_statement_collector"] = _parse_broker_statement_collector_config(
             data["broker_statement_collector"]
@@ -422,6 +436,27 @@ def _parse_ai_provider_config(value: object) -> AIProviderConfig:
         timeout_seconds=timeout_seconds,
         api_key_env=value.get("api_key_env") or "KARKINOS_AI_API_KEY",
     )
+
+
+def _parse_research_simulation_source_config(
+    value: object,
+) -> ResearchSimulationSourceConfig | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("research_simulation_source must be an object or null")
+    unknown = sorted(set(value) - _RESEARCH_SIMULATION_SOURCE_ALLOWED_FIELDS)
+    if unknown:
+        raise ValueError(
+            "research_simulation_source contains unsupported fields: "
+            + ", ".join(unknown)
+        )
+    missing = sorted(_RESEARCH_SIMULATION_SOURCE_ALLOWED_FIELDS - set(value))
+    if missing:
+        raise ValueError(
+            "research_simulation_source requires fields: " + ", ".join(missing)
+        )
+    return ResearchSimulationSourceConfig(**value)
 
 
 def _parse_broker_statement_collector_config(
