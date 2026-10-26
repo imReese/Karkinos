@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Event, Thread, current_thread
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from server.ai_runtime.evidence import CanonicalEvidenceRepository
@@ -51,6 +52,18 @@ def drip_endpoint(monkeypatch):
     for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
         monkeypatch.delenv(key, raising=False)
         monkeypatch.delenv(key.lower(), raising=False)
+    # Prepare the normal TLS context outside the short streaming deadline.
+    # Loading the trust store synchronously must not decide whether this local
+    # HTTP fixture reaches its deliberately slow response body.
+    prepared_transport = httpx.AsyncHTTPTransport()
+    client_type = httpx.AsyncClient
+
+    def client_with_prepared_transport(**kwargs):
+        if kwargs.get("transport") is None:
+            kwargs["transport"] = prepared_transport
+        return client_type(**kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", client_with_prepared_transport)
     state = SimpleNamespace(request_count=0, response=None, observe=None)
     stopped = Event()
 
