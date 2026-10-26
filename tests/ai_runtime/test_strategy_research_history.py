@@ -6,6 +6,7 @@ import json
 import sqlite3
 from dataclasses import replace
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,6 +18,9 @@ from server.ai_runtime.strategy_research_citations import (
     resolve_hypothesis_citations,
 )
 from server.ai_runtime.strategy_research_model_contract import bind_and_validate_drafts
+from server.composition.ai_application_services import (
+    build_strategy_research_read_service,
+)
 from server.contracts.strategy_research import (
     CANONICAL_COST_MODEL_REFERENCE,
     HYPOTHESIS_EXPORT_CONFIRMATION,
@@ -321,3 +325,123 @@ def test_history_has_a_real_hash_citation_without_an_iteration_or_relaxed_formul
     assert "provider_changed_dataset_snapshot" in bind(bound)["validation"]["errors"]
     bound["drafts"][0]["citations"] = ["unbound_history.false_claim"]
     assert "citation_outside_bound_input" in bind(bound)["validation"]["errors"]
+
+
+@pytest.mark.asyncio
+async def test_formal_generation_binds_history_and_reuses_one_api_call(tmp_path):
+    from tests.ai_runtime.test_strategy_research_workflow import _service
+
+    service, selection, http, _ = _service(tmp_path, bind_account=False)
+    history = {"related_trials": 262, "previous_result": "rejected"}
+    request = _request(
+        idempotency_key="formal-api-history",
+        selection=selection,
+        research_history=history,
+    )
+    result = await service.generate_hypotheses(request)
+    assert result["status"] == "completed"
+    draft = result["drafts"][0]
+    assert "research_history.content_fingerprint" in draft["citations"]
+    assert draft["provider_provenance"]["transport_kind"] == "openai_compatible_https"
+    assert draft["executable"] is False
+    assert len(http.calls) == 1
+    pack = json.loads(http.calls[0]["payload"]["messages"][1]["content"])
+    assert pack["research_history"] == {
+        "non_authoritative": True,
+        "operator_supplied": True,
+        "source": "operator_supplied_research_history",
+        "content_fingerprint": "sha256:" + content_fingerprint(history),
+        "content": history,
+    }
+    again = await service.generate_hypotheses(request)
+    assert again["reused"] is True
+    assert len(http.calls) == 1
+    saved = service._research_store.get_session(result["session_id"])
+    assert json.loads(saved["request_json"])["research_history"] == history
+
+
+@pytest.mark.asyncio
+async def test_formal_malformed_response_is_terminal_without_retry(tmp_path):
+    from tests.ai_runtime.test_strategy_research_workflow import (
+        _model_response,
+        _service,
+    )
+
+    service, selection, http, _ = _service(tmp_path, bind_account=False)
+    http._responses = [_model_response({"drafts": []}, model="fixture-invalid")]
+    request = _request(idempotency_key="formal-api-invalid", selection=selection)
+    result = await service.generate_hypotheses(request)
+    assert result["status"] == "failed"
+    assert result["drafts"] == []
+    again = await service.generate_hypotheses(request)
+    assert again["reused"] is True
+    assert again["failure_code"] == result["failure_code"]
+    assert len(http.calls) == 1
+
+
+@pytest.mark.parametrize("status", ["completed", "failed"])
+def test_retired_sdk_provenance_and_failures_remain_readable_without_provider(
+    tmp_path, status
+):
+    store = _store(tmp_path)
+    timestamp = "2025-01-09T02:00:00+00:00"
+    session, _ = store.create_or_get_session(_request(), created_at=timestamp)
+    session_id = session["session_id"]
+    provider_id = "karkinos.strategy_research.hypothesis.codex.v1"
+    model_id = provider_id + ":gpt-6.1-sol"
+    provenance = {
+        "transport_kind": "codex_app_server_rpc",
+        "sdk_package_version": "0.163.0",
+        "response_model": None,
+        "usage": {"input_tokens": 100, "output_tokens": 20},
+    }
+    assert store.claim_session_run(
+        session_id,
+        binding={
+            "context_snapshot_id": None,
+            "context_fingerprint": None,
+            "evidence_reference_id": None,
+            "workflow_id": None,
+        },
+        provider_id=provider_id,
+        model_id=model_id,
+        claimed_at=timestamp,
+    )
+    # Minimal legacy fixture deliberately lacks a replay binding: reads must not
+    # invent one or upgrade its authority when the originating adapter retires.
+    drafts = (
+        [
+            {
+                "draft_id": "synthetic-historical-draft",
+                "provider_provenance": provenance,
+                "validation": {"status": "invalid", "errors": ["fixture_unbound"]},
+                "executable": False,
+            }
+        ]
+        if status == "completed"
+        else []
+    )
+    store.save_drafts(session_id, drafts, created_at=timestamp)
+    store.append_event(
+        session_id, "provider.transport_outcome", provenance, created_at=timestamp
+    )
+    failure_code = "provider_invalid_response" if status == "failed" else None
+    store.finish_session(
+        session_id, status=status, failure_code=failure_code, updated_at=timestamp
+    )
+    before = store._path.read_bytes()
+    reader = build_strategy_research_read_service(
+        SimpleNamespace(db=SimpleNamespace(path=store._path))
+    )
+    assert reader._settings is None
+    replay = reader.get_session(session_id)
+    assert replay["provider_id"] == provider_id
+    assert replay["model_id"] == model_id
+    assert replay["drafts"] == drafts
+    assert replay["status"] == status
+    assert replay["failure_code"] == failure_code
+    assert replay["binding_validity"] == "not_established"
+    assert replay["non_executable"] is True
+    assert replay["authority_effect"] == "none"
+    assert store.verify_events(session_id) == (True, [])
+    assert store._path.read_bytes() == before

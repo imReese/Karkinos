@@ -86,7 +86,6 @@ from server.ai_runtime.strategy_research import (
     StrategyResearchAuditStore,
     StrategyResearchService,
 )
-from server.ai_runtime.strategy_research_codex import StrategyResearchSettings
 from server.ai_runtime.task_analysis import (
     HumanResearchTaskFixtureAnalysisService,
     ResearchTaskAnalysisRejected,
@@ -597,14 +596,12 @@ def build_strategy_research_write_service(
     *,
     external: bool,
     provider_execution_fence: ProviderExecutionFence | None = None,
-    provider_settings: StrategyResearchSettings | None = None,
 ) -> StrategyResearchService:
     return _build_strategy_research_write_service(
         state,
         external=external,
         capture_service=build_human_context_capture_service(state),
         provider_execution_fence=provider_execution_fence,
-        provider_settings=provider_settings,
     )
 
 

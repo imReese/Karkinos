@@ -47,7 +47,6 @@ from server.ai_runtime.strategy_research_citations import (
     compact_hypothesis_citation_catalog,
     resolve_hypothesis_citations,
 )
-from server.ai_runtime.strategy_research_codex import StrategyResearchSettings
 from server.ai_runtime.strategy_research_critique import StrategyResearchCritiqueMixin
 from server.ai_runtime.strategy_research_generation import (
     StrategyResearchGenerationMixin,
@@ -140,7 +139,7 @@ class StrategyResearchService(
         *,
         db: Any,
         db_path: Path,
-        settings: StrategyResearchSettings | None,
+        settings: ProviderConnectivitySettings | None,
         capture_service: HumanResearchContextCaptureService,
         evidence_repository: CanonicalEvidenceRepository,
         ai_store: AiAuditStore,

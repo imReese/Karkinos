@@ -44,11 +44,6 @@ from server.ai_runtime.strategy_research_citations import (
     compact_hypothesis_citation_catalog,
     resolve_hypothesis_citations,
 )
-from server.ai_runtime.strategy_research_codex import (
-    CodexResearchSettings,
-    StrategyResearchSettings,
-    complete_codex_research,
-)
 from server.ai_runtime.strategy_research_model_contract import (
     critique_output_contract,
     hypothesis_output_contract,
@@ -88,7 +83,7 @@ class StrategyResearchModelProvider(ProviderAdapter):
         self,
         *,
         provider_id: str,
-        settings: StrategyResearchSettings,
+        settings: ProviderConnectivitySettings,
         mode: Literal["hypothesis", "critique"],
         evidence_reference_id: str,
         selection: JsonObject,
@@ -295,28 +290,20 @@ class StrategyResearchModelProvider(ProviderAdapter):
         serialized = canonical_json(input_payload)
         if len(serialized.encode("utf-8")) > STRATEGY_RESEARCH_MAX_INPUT_BYTES:
             raise StrategyResearchRejected("strategy_research_input_too_large")
-        if isinstance(self._settings, CodexResearchSettings):
-            payload: JsonObject = {
-                "model": self._settings.model_name,
-                "system_prompt": strategy_research_system_prompt(self._mode),
-                "input_json": serialized,
-                "transport_kind": self._settings.adapter_kind,
-            }
-        else:
-            payload = {
-                "model": self._settings.model_name,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": strategy_research_system_prompt(self._mode),
-                    },
-                    {"role": "user", "content": serialized},
-                ],
-                "response_format": {"type": "json_object"},
-                "max_tokens": STRATEGY_RESEARCH_MAX_OUTPUT_TOKENS,
-                "stream": False,
-            }
-            payload.update(strategy_research_request_options(self._settings))
+        payload: JsonObject = {
+            "model": self._settings.model_name,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": strategy_research_system_prompt(self._mode),
+                },
+                {"role": "user", "content": serialized},
+            ],
+            "response_format": {"type": "json_object"},
+            "max_tokens": STRATEGY_RESEARCH_MAX_OUTPUT_TOKENS,
+            "stream": False,
+        }
+        payload.update(strategy_research_request_options(self._settings))
         started = self._monotonic()
         request_fingerprint = content_fingerprint(
             {
@@ -324,8 +311,6 @@ class StrategyResearchModelProvider(ProviderAdapter):
                 "payload": payload,
                 "timeout_seconds": self._timeout_seconds,
             }
-            if isinstance(self._settings, ProviderConnectivitySettings)
-            else {"payload": payload, "timeout_seconds": self._timeout_seconds}
         )
 
         def complete() -> tuple[str, JsonObject]:
@@ -335,55 +320,13 @@ class StrategyResearchModelProvider(ProviderAdapter):
                 "provider.transport_attempted",
                 {
                     "request_fingerprint": request_fingerprint,
-                    "provider_contact_attempted": isinstance(
-                        self._settings, ProviderConnectivitySettings
-                    ),
+                    "provider_contact_attempted": True,
                     "transport_kind": self._settings.adapter_kind,
                 },
             )
-            http_response = None
-            rpc_result = None
             try:
-                if isinstance(self._settings, CodexResearchSettings):
-                    rpc_result = complete_codex_research(
-                        settings=self._settings,
-                        system_prompt=str(payload["system_prompt"]),
-                        input_json=serialized,
-                        timeout_seconds=self._timeout_seconds,
-                        before_model_send=self._execution_guard,
-                    )
-                else:
-                    http_response = self._post_json(payload)
+                http_response = self._post_json(payload)
             except Exception as exc:
-                metadata = getattr(exc, "transport_metadata", {})
-                safe_metadata = (
-                    {
-                        key: value
-                        for key, value in metadata.items()
-                        if key
-                        in {
-                            "phase",
-                            "turn_start_attempted",
-                            "model_invocation_attempted",
-                            "provider_contact_attempted",
-                            "usage",
-                            "tool_event_count",
-                            "tool_call_count",
-                            "unsupported_item_count",
-                            "rejected_item_type",
-                            "transport_kind",
-                            "internal_network_retry_count",
-                            "upstream_network_retry_count",
-                            "response_model",
-                            "server_thread_model",
-                            "reasoning_effort_requested",
-                            "requested_model",
-                        }
-                    }
-                    if isinstance(self._settings, CodexResearchSettings)
-                    and isinstance(metadata, dict)
-                    else {}
-                )
                 self._emit_transport_event(
                     "provider.transport_outcome",
                     {
@@ -391,23 +334,14 @@ class StrategyResearchModelProvider(ProviderAdapter):
                         "response_returned": False,
                         "exception_class": type(exc).__name__,
                         "transport_kind": self._settings.adapter_kind,
-                        **safe_metadata,
                     },
                 )
                 raise
-            if http_response is not None:
-                outcome: JsonObject = {
-                    "http_status": http_response.status_code,
-                    "response_fingerprint": content_fingerprint(http_response.payload),
-                    "transport_kind": "openai_compatible_https",
-                }
-            else:
-                assert rpc_result is not None
-                rpc_content, rpc_provenance = rpc_result
-                outcome = {
-                    "response_fingerprint": content_fingerprint(rpc_content),
-                    **rpc_provenance,
-                }
+            outcome: JsonObject = {
+                "http_status": http_response.status_code,
+                "response_fingerprint": content_fingerprint(http_response.payload),
+                "transport_kind": self._settings.adapter_kind,
+            }
             self._emit_transport_event(
                 "provider.transport_outcome",
                 {
@@ -419,10 +353,7 @@ class StrategyResearchModelProvider(ProviderAdapter):
             # Retain the truthful outcome before revocation rejects admission.
             if self._execution_guard is not None:
                 self._execution_guard()
-            if http_response is not None:
-                return self._decode_https(http_response, payload)
-            assert rpc_result is not None
-            return rpc_result
+            return self._decode_https(http_response, payload)
 
         try:
             if self._send_admission is not None:
@@ -563,7 +494,6 @@ class StrategyResearchModelProvider(ProviderAdapter):
         }
 
     def _post_json(self, payload: JsonObject) -> HttpJsonResponse:
-        assert isinstance(self._settings, ProviderConnectivitySettings)
         return self._transport.post_json(
             url=self._settings.endpoint_url,
             headers={

@@ -14,10 +14,12 @@ from server.ai_runtime.contracts import (
     content_fingerprint,
 )
 from server.ai_runtime.formula_dsl import CANONICAL_COST_MODEL_REFERENCE, FormulaBinding
+from server.ai_runtime.provider_connectivity_contracts import (
+    ProviderConnectivitySettings,
+)
 from server.ai_runtime.strategy_research_backtest import (
     validated_fee_schedule_resolution,
 )
-from server.ai_runtime.strategy_research_codex import StrategyResearchSettings
 from server.ai_runtime.strategy_research_support import (
     build_research_evaluation_bundle,
     build_research_run_projection,
@@ -553,7 +555,7 @@ class StrategyResearchSessionMixin:
             account_truth_as_of=selection.account_truth_freshness_datetime,
         )
 
-    def _require_settings(self) -> StrategyResearchSettings:
+    def _require_settings(self) -> ProviderConnectivitySettings:
         if self._settings is None:
             raise StrategyResearchRejected("external_provider_not_configured")
         return self._settings

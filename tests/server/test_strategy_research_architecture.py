@@ -90,7 +90,6 @@ AI_RUNTIME_PATHS = {
     AI_RUNTIME_ROOT / "strategy_research_backtest.py",
     AI_RUNTIME_ROOT / "strategy_research_backtest_workflow.py",
     AI_RUNTIME_ROOT / "strategy_research_citations.py",
-    AI_RUNTIME_ROOT / "strategy_research_codex.py",
     AI_RUNTIME_ROOT / "strategy_research_critique.py",
     AI_RUNTIME_ROOT / "strategy_research_generation.py",
     AI_RUNTIME_ROOT / "strategy_research_model_contract.py",
@@ -170,7 +169,7 @@ def test_strategy_research_facade_preserves_contracts_and_test_seams() -> None:
     )
     assert str(inspect.signature(StrategyResearchService)) == (
         "(*, db: 'Any', db_path: 'Path', settings: "
-        "'StrategyResearchSettings | None', capture_service: "
+        "'ProviderConnectivitySettings | None', capture_service: "
         "'HumanResearchContextCaptureService', evidence_repository: "
         "'CanonicalEvidenceRepository', ai_store: 'AiAuditStore', research_store: "
         "'StrategyResearchAuditStore', data_store: 'DataStore', transport: "
@@ -207,7 +206,6 @@ def test_strategy_research_layers_do_not_invert_dependencies() -> None:
         CONTRACT,
         BACKTEST_PROJECTION,
         AI_RUNTIME_ROOT / "strategy_research_citations.py",
-        AI_RUNTIME_ROOT / "strategy_research_codex.py",
     }:
         imports = _imports(path)
         assert not {
