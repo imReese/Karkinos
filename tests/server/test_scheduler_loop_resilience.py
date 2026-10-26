@@ -1,14 +1,22 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, time
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any, Callable
 
+import pytest
+
 from core.event_bus import EventBus
 from core.types import AssetClass, Symbol
-from server.scheduler.loop import SchedulerLoopDependencies, run_scheduler_loop
+from data.live import LiveDataFeed
+from server.scheduler.loop import (
+    SchedulerLoop,
+    SchedulerLoopDependencies,
+    run_scheduler_loop,
+)
+from server.scheduler.values import scheduler_quote_evidence
 
 
 @dataclass
@@ -144,6 +152,184 @@ def _dependencies(
         finish_persisted_quote_fetch_run=lambda *args, **kwargs: True,
         finish_quote_fetch_run=lambda *args, **kwargs: True,
     )
+
+
+class FixtureQuoteSource:
+    def __init__(self, snapshot, error: Exception | None = None) -> None:
+        self.snapshot = snapshot
+        self.error = error
+        self.calls = 0
+
+    def fetch_latest(self, symbol, asset_class):
+        self.calls += 1
+        if self.error is not None:
+            raise self.error
+        return None if self.snapshot is None else dict(self.snapshot)
+
+
+def _fixture_stock_quote(timestamp, source="tencent_realtime_quote"):
+    return {
+        "price": 1.0,
+        "volume": 0,
+        "timestamp": timestamp,
+        "quote_source": source,
+        "provider_name": "fixture_provider",
+        "provider_status": "live",
+        "quote_status": "live",
+    }
+
+
+def _initialized_stock_feed(primary, fallback):
+    symbol = Symbol("600001")
+    config = SimpleNamespace(
+        market_data_source_policy="free_cn_research_v1",
+        live_poll_interval=60,
+        initial_cash=Decimal("0"),
+    )
+    dependencies = _dependencies(
+        config=config,
+        runtime_context_factory=lambda config: _runtime(
+            watchlist=[(symbol, AssetClass.STOCK)],
+            sources={"tencent": primary, "akshare": fallback},
+        ),
+        feeds=[],
+        poll_watchlist_quotes=lambda feed: ([], "unused"),
+    )
+    loop = SchedulerLoop(
+        FakeSchedulerState(),
+        replace(dependencies, live_data_feed_factory=LiveDataFeed),
+    )
+    runtime = loop._initialize_runtime()
+    assert runtime is not None
+    return runtime.feed, dependencies, symbol
+
+
+@pytest.mark.parametrize(
+    ("timestamp", "source"),
+    [
+        ("2026-08-27T10:00:00+08:00", "tencent_realtime_quote"),
+        ("2026-08-28T09:00:00+08:00", "tencent_realtime_quote"),
+        ("2026-08-27T15:00:00+08:00", "tushare_daily"),
+        ("invalid-timestamp", "tencent_realtime_quote"),
+        ("2026-08-28T11:00:00+08:00", "tencent_realtime_quote"),
+    ],
+)
+def test_scheduler_feed_tries_configured_backup_using_final_quote_rules(
+    timestamp, source, monkeypatch
+) -> None:
+    import socket
+
+    def forbid_network(*args, **kwargs):
+        raise AssertionError("fixture must not contact real providers")
+
+    monkeypatch.setattr(socket.socket, "connect", forbid_network)
+    primary_snapshot = _fixture_stock_quote(timestamp, source)
+    original_primary_snapshot = dict(primary_snapshot)
+    primary = FixtureQuoteSource(primary_snapshot)
+    backup_snapshot = _fixture_stock_quote(
+        "2026-08-28T10:00:00+08:00", "fixture_independent_realtime"
+    )
+    backup = FixtureQuoteSource(backup_snapshot)
+    feed, dependencies, symbol = _initialized_stock_feed(primary, backup)
+    try:
+        event = feed.poll_latest(symbol, AssetClass.STOCK)
+        assert event is not None
+        selected = feed.get_last_snapshot(symbol, AssetClass.STOCK)
+        assert selected == backup_snapshot
+        evidence = scheduler_quote_evidence(
+            event,
+            selected,
+            now=dependencies.now(),
+            live_poll_interval=dependencies.config.live_poll_interval,
+        )
+        assert evidence.strategy_eligible is True
+        assert evidence.quote_timestamp == backup_snapshot["timestamp"]
+        assert primary.calls == backup.calls == 1
+        assert primary.snapshot == original_primary_snapshot
+    finally:
+        feed.close()
+
+
+def test_scheduler_feed_keeps_fresh_primary_without_backup_call() -> None:
+    primary_snapshot = _fixture_stock_quote("2026-08-28T10:00:00+08:00")
+    primary = FixtureQuoteSource(primary_snapshot)
+    backup = FixtureQuoteSource(None, AssertionError("unnecessary backup call"))
+    feed, _, symbol = _initialized_stock_feed(primary, backup)
+    try:
+        assert feed.poll_latest(symbol, AssetClass.STOCK) is not None
+        assert feed.get_last_snapshot(symbol, AssetClass.STOCK) == primary_snapshot
+        assert primary.calls == 1
+        assert backup.calls == 0
+    finally:
+        feed.close()
+
+
+@pytest.mark.parametrize("backup_case", ["stale", "budget_denied", "missing"])
+def test_scheduler_feed_preserves_final_stale_rejection_when_backup_cannot_help(
+    backup_case,
+) -> None:
+    primary = FixtureQuoteSource(_fixture_stock_quote("2026-08-27T10:00:00+08:00"))
+    backup = (
+        None
+        if backup_case == "missing"
+        else FixtureQuoteSource(
+            _fixture_stock_quote("2026-08-28T09:00:00+08:00"),
+            RuntimeError("fixture_provider_budget_denied")
+            if backup_case == "budget_denied"
+            else None,
+        )
+    )
+    feed, dependencies, symbol = _initialized_stock_feed(primary, backup)
+    try:
+        event = feed.poll_latest(symbol, AssetClass.STOCK)
+        assert event is not None
+        with pytest.raises(RuntimeError, match="scheduler quote is stale:"):
+            scheduler_quote_evidence(
+                event,
+                feed.get_last_snapshot(symbol, AssetClass.STOCK),
+                now=dependencies.now(),
+                live_poll_interval=dependencies.config.live_poll_interval,
+            )
+        assert primary.calls == 1
+        if backup is not None:
+            assert backup.calls == 1
+    finally:
+        feed.close()
+
+
+def test_feed_does_not_bypass_unexpected_predicate_failure() -> None:
+    primary = FixtureQuoteSource(_fixture_stock_quote("2026-08-28T10:00:00+08:00"))
+    backup = FixtureQuoteSource(_fixture_stock_quote("2026-08-28T10:00:00+08:00"))
+
+    def unavailable_check(event, snapshot):
+        raise ValueError("fixture_caller_evidence_unavailable")
+
+    feed = LiveDataFeed(
+        primary,
+        EventBus(),
+        fallback_source=backup,
+        snapshot_is_current=unavailable_check,
+    )
+    try:
+        with pytest.raises(ValueError, match="fixture_caller_evidence_unavailable"):
+            feed.poll_latest(Symbol("600001"), AssetClass.STOCK)
+        assert feed.get_last_snapshot(Symbol("600001"), AssetClass.STOCK) is None
+        assert primary.calls == 1
+        assert backup.calls == 0
+    finally:
+        feed.close()
+
+
+def test_scheduler_feed_does_not_retry_provider_budget_denials() -> None:
+    primary = FixtureQuoteSource(None, RuntimeError("fixture_primary_budget_denied"))
+    backup = FixtureQuoteSource(None, RuntimeError("fixture_backup_budget_denied"))
+    feed, _, symbol = _initialized_stock_feed(primary, backup)
+    try:
+        assert feed.poll_latest(symbol, AssetClass.STOCK) is None
+        assert feed.get_last_snapshot(symbol, AssetClass.STOCK) is None
+        assert primary.calls == backup.calls == 1
+    finally:
+        feed.close()
 
 
 def test_empty_watchlist_waits_and_reinitializes_until_assets_appear() -> None:

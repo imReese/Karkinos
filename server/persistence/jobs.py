@@ -107,6 +107,93 @@ class SQLiteJobStore:
     def enqueue(self, kind, payload, *, now):
         return self.enqueue_many(kind, (payload,), now=now)[0]
 
+    def stop_queued(
+        self,
+        job_id: str,
+        *,
+        expected_input_fingerprint: str,
+        now: datetime,
+        reason: str,
+    ) -> JobRun | None:
+        """Stop one identity-bound, unleased retry without consuming its allowance."""
+        if (
+            not isinstance(job_id, str)
+            or len(job_id) != 64
+            or any(character not in "0123456789abcdef" for character in job_id)
+        ):
+            raise ValueError("job_id_invalid")
+        if (
+            not isinstance(expected_input_fingerprint, str)
+            or len(expected_input_fingerprint) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in expected_input_fingerprint
+            )
+        ):
+            raise ValueError("job_input_fingerprint_invalid")
+        if (
+            not isinstance(now, datetime)
+            or now.tzinfo is None
+            or now.utcoffset() is None
+        ):
+            raise ValueError("job clock must include a timezone")
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError("job_stop_reason_invalid")
+        at = job_time(now)
+        with self._transaction() as conn:
+            row = conn.execute(
+                "SELECT * FROM job_runs WHERE job_id=?", (job_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            encoded = row["payload_json"]
+            if (
+                not isinstance(encoded, str)
+                or not isinstance(row["kind"], str)
+                or not row["kind"].strip()
+            ):
+                raise JobIdentityConflictError("job_identity_conflict")
+            fingerprint = hashlib.sha256(encoded.encode()).hexdigest()
+            expected_id = hashlib.sha256(
+                f"{row['kind']}:{fingerprint}".encode()
+            ).hexdigest()
+            if (
+                row["input_fingerprint"] != fingerprint
+                or fingerprint != expected_input_fingerprint
+                or row["job_id"] != expected_id
+            ):
+                raise JobIdentityConflictError("job_identity_conflict")
+            try:
+                job = _job(row)
+                if not isinstance(job.payload, dict):
+                    raise ValueError("job_payload_invalid")
+            except (KeyError, TypeError, ValueError) as exc:
+                raise JobIdentityConflictError("job_identity_conflict") from exc
+            if job.status in {"failed", "succeeded"}:
+                return job
+            if (
+                job.status != "queued"
+                or job.lease_owner is not None
+                or job.lease_expires_at is not None
+            ):
+                raise ValueError("job_not_unleased_queued")
+            conn.execute(
+                "UPDATE job_runs SET status='failed', error=?, updated_at=? "
+                "WHERE job_id=? AND input_fingerprint=? AND status='queued' "
+                "AND lease_owner IS NULL AND lease_expires_at IS NULL",
+                (
+                    "operator_stopped_queued_retry:" + reason.strip(),
+                    at,
+                    job_id,
+                    expected_input_fingerprint,
+                ),
+            )
+            return _job(
+                conn.execute(
+                    "SELECT * FROM job_runs WHERE job_id=?", (job_id,)
+                ).fetchone()
+            )
+
     def enqueue_many(
         self,
         kind: str,

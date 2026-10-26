@@ -754,6 +754,8 @@ async def _execute_daily_market_job(
                     else type(exc).__name__,
                     retry_seconds=retry_seconds,
                     failure_evidence_ref=exc.failure_evidence_ref,
+                    retryable=job.payload.get("schema_version")
+                    != VERIFIED_DAILY_MARKET_RANGE_JOB_SCHEMA_VERSION,
                 )
             elif isinstance(exc, DailyBarIngestionCapturedFailure):
                 code = getattr(exc, "public_error_code", None)
@@ -789,6 +791,12 @@ async def _execute_daily_market_job(
                     now=now,
                     error=type(exc).__name__,
                     retry_seconds=retry_seconds,
+                    retryable=not (
+                        isinstance(exc, VerifiedDailyMarketJobNotCurrent)
+                        and job.payload.get("schema_version")
+                        == VERIFIED_DAILY_MARKET_RANGE_JOB_SCHEMA_VERSION
+                        and str(exc) == "verified_daily_market_range_calendar_mismatch"
+                    ),
                 )
         except Exception:
             if not isinstance(exc, WorkerExecutionAborted):

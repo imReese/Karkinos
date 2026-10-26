@@ -230,6 +230,7 @@ class SchedulerLoop:
             prefer_fallback_asset_classes=(
                 {AssetClass.FUND} if fallback_source is not None else None
             ),
+            snapshot_is_current=self._snapshot_is_current,
         )
         try:
             self._restore_watchlist(runtime, runtime.data_manager)
@@ -255,6 +256,19 @@ class SchedulerLoop:
             strategy=strategy,
             strategy_events=strategy_events,
         )
+
+    def _snapshot_is_current(self, event: MarketEvent, snapshot: dict) -> bool:
+        """Reuse final scheduler evidence checks before choosing a stock source."""
+        try:
+            scheduler_quote_evidence(
+                event,
+                snapshot,
+                now=self._dependencies.now(),
+                live_poll_interval=self._dependencies.config.live_poll_interval,
+            )
+        except RuntimeError:
+            return False
+        return True
 
     def _restore_watchlist(
         self,

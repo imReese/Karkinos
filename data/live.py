@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, wait
 from datetime import datetime
 from decimal import Decimal
@@ -32,6 +33,7 @@ class LiveDataFeed:
         prefer_fallback_asset_classes: set[AssetClass] | None = None,
         poll_timeout_seconds: float = 8.0,
         max_workers: int = 8,
+        snapshot_is_current: Callable[[MarketEvent, dict], bool] | None = None,
     ) -> None:
         self.source = source
         self.fallback_source = fallback_source
@@ -39,6 +41,7 @@ class LiveDataFeed:
             prefer_fallback_asset_classes or set()
         )
         self.event_bus = event_bus
+        self._snapshot_is_current = snapshot_is_current
         self.poll_timeout_seconds = max(float(poll_timeout_seconds), 0.01)
         self._executor = ThreadPoolExecutor(
             max_workers=max(int(max_workers), 1),
@@ -106,13 +109,17 @@ class LiveDataFeed:
             snapshot = self._last_snapshots.get((symbol, asset_class))
             return None if snapshot is None else dict(snapshot)
 
-    @staticmethod
     def _should_try_fallback_snapshot(
+        self,
         snapshot: dict | None,
         asset_class: AssetClass,
+        symbol: Symbol,
     ) -> bool:
         if snapshot is None or asset_class != AssetClass.STOCK:
             return False
+        if self._snapshot_is_current is not None:
+            event = self._snapshot_event(symbol, asset_class, snapshot)
+            return event is None or not self._snapshot_is_current(event, snapshot)
         quote_source = str(
             snapshot.get("quote_source")
             or snapshot.get("source")
@@ -183,7 +190,7 @@ class LiveDataFeed:
         if (
             not prefer_fallback
             and snapshot is not None
-            and self._should_try_fallback_snapshot(snapshot, asset_class)
+            and self._should_try_fallback_snapshot(snapshot, asset_class, symbol)
         ):
             fallback_snapshot = self._fetch_fallback_latest(symbol, asset_class)
             if fallback_snapshot is not None:
@@ -194,11 +201,27 @@ class LiveDataFeed:
             logger.warning("获取实时行情失败: %s (%s)", symbol, asset_class.value)
             return None
 
+        event = self._snapshot_event(symbol, asset_class, snapshot)
+        if event is None:
+            return None
+        price = snapshot["price"]
+        if not self._publish_if_open(event, snapshot, price=price):
+            return None
+        logger.info("实时行情: %s (%s) price=%.2f", symbol, asset_class.value, price)
+        return event
+
+    @staticmethod
+    def _snapshot_event(
+        symbol: Symbol,
+        asset_class: AssetClass,
+        snapshot: dict,
+    ) -> MarketEvent | None:
+        """Adapt a provider snapshot without publishing or granting authority."""
         price = snapshot["price"]
         if price is None or price <= 0:
             return None
 
-        event_timestamp = self._snapshot_datetime(snapshot)
+        event_timestamp = LiveDataFeed._snapshot_datetime(snapshot)
         if event_timestamp is None:
             logger.warning(
                 "行情时间戳缺失或无效，拒绝发布: %s (%s)",
@@ -208,7 +231,7 @@ class LiveDataFeed:
             return None
 
         # 用当前价构造 OHLC（实时快照全部用最新价）
-        event = MarketEvent(
+        return MarketEvent(
             timestamp=event_timestamp,
             symbol=symbol,
             open=Decimal(str(price)),
@@ -219,11 +242,6 @@ class LiveDataFeed:
             frequency=BarFrequency.DAILY,
             asset_class=asset_class,
         )
-
-        if not self._publish_if_open(event, snapshot, price=price):
-            return None
-        logger.info("实时行情: %s (%s) price=%.2f", symbol, asset_class.value, price)
-        return event
 
     def poll_all(self, watchlist: list[tuple[Symbol, AssetClass]]) -> list[MarketEvent]:
         """轮询所有关注标的最新的行情。"""

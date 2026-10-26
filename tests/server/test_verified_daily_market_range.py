@@ -171,6 +171,7 @@ def test_reverify_actual_capture_lineage_without_any_new_provider_call(
             self.calls.append(kwargs)
             return pd.DataFrame(
                 {
+                    "ts_code": [kwargs["ts_code"]] * len(DAYS),
                     "trade_date": [day.strftime("%Y%m%d") for day in DAYS],
                     "open": [10] * 3,
                     "high": [11] * 3,

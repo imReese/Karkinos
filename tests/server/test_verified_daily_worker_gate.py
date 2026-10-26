@@ -271,7 +271,10 @@ async def test_range_worker_rechecks_calendar_before_each_provider_entry(tmp_pat
     )
     assert calls == ["primary"]
     assert store.get(job.job_id).result_ref is None
-    assert store.get(job.job_id).status == "queued"
+    # A changed range calendar requires a freshly planned request; this stale
+    # immutable payload must not continue fetching or retry against new facts.
+    assert store.get(job.job_id).status == "failed"
+    assert store.get(job.job_id).error == "VerifiedDailyMarketJobNotCurrent"
 
 
 @pytest.mark.asyncio

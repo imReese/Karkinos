@@ -302,6 +302,7 @@ def _run_scheduler_once(
             event_bus,
             fallback_source=None,
             prefer_fallback_asset_classes=None,
+            snapshot_is_current=None,
         ) -> None:
             self.source = source
             self.event_bus = event_bus
@@ -1075,6 +1076,7 @@ def test_scheduler_blocks_strategy_and_runtime_quote_on_ingestion_stage_failure(
             event_bus,
             fallback_source=None,
             prefer_fallback_asset_classes=None,
+            snapshot_is_current=None,
         ) -> None:
             pass
 
@@ -2127,6 +2129,7 @@ def test_scheduler_reconciles_persisted_close_during_closed_window(
             event_bus,
             fallback_source=None,
             prefer_fallback_asset_classes=None,
+            snapshot_is_current=None,
         ) -> None:
             pass
 
@@ -2267,6 +2270,7 @@ def test_scheduler_waits_between_poll_iterations(monkeypatch, tmp_path):
             event_bus,
             fallback_source=None,
             prefer_fallback_asset_classes=None,
+            snapshot_is_current=None,
         ) -> None:
             pass
 
@@ -2478,6 +2482,7 @@ def test_scheduler_prefers_persistent_watchlist_over_config_assets(
             event_bus,
             fallback_source=None,
             prefer_fallback_asset_classes=None,
+            snapshot_is_current=None,
         ) -> None:
             pass
 
@@ -2537,6 +2542,7 @@ def test_scheduler_adds_ledger_holdings_to_watchlist(monkeypatch, tmp_path):
             event_bus,
             fallback_source=None,
             prefer_fallback_asset_classes=None,
+            snapshot_is_current=None,
         ) -> None:
             pass
 

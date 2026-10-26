@@ -33,6 +33,7 @@ from server.services.market.verified_daily_market_data import (
 from server.workers.data_worker import (
     DAILY_MARKET_COLLECTION_JOB,
     VERIFIED_DAILY_MARKET_JOB,
+    VerifiedDailyMarketJobNotCurrent,
     WorkerExecutionAborted,
     enqueue_daily_market_calendar_job,
     execute_calendar_job,
@@ -721,26 +722,38 @@ async def test_collection_worker_records_quality_result_without_dataset(tmp_path
 
 
 @pytest.mark.asyncio
-async def test_verified_market_worker_records_fail_closed_source_resolution(tmp_path):
+@pytest.mark.parametrize("session_count", [None, 2])
+@pytest.mark.parametrize("outcome", ["quality_blocked", "conflict"])
+async def test_verified_market_worker_records_fail_closed_source_resolution(
+    tmp_path, session_count, outcome
+):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     store = SQLiteJobStore(db.path)
     now = datetime.now(timezone.utc)
-    payload = {"fixture": "conflict-telemetry"}
+    payload = _verified_market_payload(session_count)
     store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
     job = store.claim(VERIFIED_DAILY_MARKET_JOB, "worker", now=now)
 
     resolution = VerifiedDailySourceResolution(
         source_policy_id="karkinos.market.source.free_cn_research.v1",
-        outcome="conflict",
+        outcome=outcome,
         attempted_pairs=(("baostock", "akshare_tencent"),),
         selected_pair=("baostock", "akshare_tencent"),
     )
+    code = (
+        "verified_daily_market_quality_blocked"
+        if outcome == "quality_blocked"
+        else "verified_daily_market_cross_source_conflict"
+    )
+    evidence_ref = (
+        "quality:sha256:" if outcome == "quality_blocked" else "verification:sha256:"
+    ) + "d" * 64
     service = Mock()
     service.run.side_effect = VerifiedDailyMarketDataNotPublishable(
-        "verified_daily_market_cross_source_conflict",
+        code,
         source_resolution=resolution,
-        failure_evidence_ref="verification:sha256:" + "d" * 64,
+        failure_evidence_ref=evidence_ref,
     )
 
     recorded: list[dict[str, object]] = []
@@ -753,19 +766,34 @@ async def test_verified_market_worker_records_fail_closed_source_resolution(tmp_
     )
 
     assert len(recorded) == 1
-    assert recorded[0]["outcome"] == "conflict"
+    assert recorded[0]["outcome"] == outcome
     assert recorded[0]["result_ref"] is None
     assert recorded[0]["error_type"] == "VerifiedDailyMarketDataNotPublishable"
 
     replay = store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
-    assert replay.status == "queued"
-    assert replay.error == "verified_daily_market_cross_source_conflict"
-    assert replay.failure_evidence_ref == "verification:sha256:" + "d" * 64
+    assert replay.status == ("queued" if session_count is None else "failed")
+    assert replay.error == code
+    assert replay.failure_evidence_ref == evidence_ref
+    assert replay.attempt == 1 and replay.payload == payload
+    if session_count is not None:
+        assert (
+            store.claim(
+                VERIFIED_DAILY_MARKET_JOB,
+                "later-worker",
+                now=now + timedelta(hours=2),
+                job_id=job.job_id,
+            )
+            is None
+        )
+        new_round = {**payload, "observation_round": "fixture.explicit_reobservation"}
+        replacement = store.enqueue(VERIFIED_DAILY_MARKET_JOB, new_round, now=now)
+        assert replacement.job_id != job.job_id and replacement.status == "queued"
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("session_count", [None, 2])
 async def test_verified_unavailable_defers_without_spending_failure_allowance_or_refunding_io(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, session_count
 ):
     from data.providers.baostock import BAOSTOCK_DAILY_BAR_DESCRIPTOR
 
@@ -784,7 +812,7 @@ async def test_verified_unavailable_defers_without_spending_failure_allowance_or
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     store = SQLiteJobStore(db.path)
-    payload = {"fixture": "external-unavailable-then-quality-conflict"}
+    payload = _verified_market_payload(session_count)
     queued = store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=tick[0])
     failure = [
         VerifiedDailyMarketDataUnavailable(
@@ -798,7 +826,8 @@ async def test_verified_unavailable_defers_without_spending_failure_allowance_or
 
     service = SimpleNamespace(run=run)
     history = []
-    for attempt in range(1, 8):
+    terminal_attempt = 7 if session_count is None else 5
+    for attempt in range(1, terminal_attempt + 1):
         if attempt == 5:
             failure[0] = VerifiedDailyMarketDataNotPublishable(
                 "verified_daily_market_cross_source_conflict",
@@ -839,11 +868,14 @@ async def test_verified_unavailable_defers_without_spending_failure_allowance_or
             "limit": 100,
             "remaining": 100 - attempt,
         }
-        assert persisted.status == ("failed" if attempt == 7 else "queued")
+        assert persisted.status == (
+            "failed" if attempt == terminal_attempt else "queued"
+        )
         if attempt <= 4:
             assert persisted.error == "VerifiedDailyMarketDataUnavailable"
         else:
             assert persisted.error == "verified_daily_market_cross_source_conflict"
+            assert persisted.failure_evidence_ref == "verification:sha256:" + "d" * 64
         later = datetime.fromisoformat(persisted.available_at)
         assert (later - tick[0]).total_seconds() == min(
             60 * 2 ** min(attempt - 1, 6), 3600
@@ -918,29 +950,99 @@ async def test_source_resolution_telemetry_failure_never_changes_job_success(tmp
 
 
 @pytest.mark.asyncio
-async def test_verified_market_worker_retries_failed_publication(tmp_path):
+@pytest.mark.parametrize(
+    ("session_count", "failure_type", "code", "terminal"),
+    [
+        (None, RuntimeError, "verification_conflict", False),
+        (2, RuntimeError, "verified_daily_market_range_calendar_mismatch", False),
+        (
+            None,
+            VerifiedDailyMarketJobNotCurrent,
+            "verified_daily_market_range_calendar_mismatch",
+            False,
+        ),
+        (
+            2,
+            VerifiedDailyMarketJobNotCurrent,
+            "verified_daily_market_range_calendar_mismatch",
+            True,
+        ),
+        (
+            2,
+            VerifiedDailyMarketJobNotCurrent,
+            "verified_daily_market_source_policy_stale",
+            False,
+        ),
+        (
+            2,
+            VerifiedDailyMarketJobNotCurrent,
+            "verified_daily_market_calendar_evidence_stale",
+            False,
+        ),
+        (
+            2,
+            VerifiedDailyMarketJobNotCurrent,
+            "verified_daily_market_session_not_closed",
+            False,
+        ),
+        (
+            2,
+            VerifiedDailyMarketJobNotCurrent,
+            "verified_daily_market_range_calendar_mismatch_other",
+            False,
+        ),
+    ],
+)
+async def test_verified_market_worker_retries_failed_publication(
+    tmp_path, session_count, failure_type, code, terminal
+):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     store = SQLiteJobStore(db.path)
     now = datetime.now(timezone.utc)
-    payload = {"fixture": "conflict"}
+    payload = _verified_market_payload(session_count)
     store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
     job = store.claim(VERIFIED_DAILY_MARKET_JOB, "worker", now=now)
 
     service = Mock()
-    service.run.side_effect = RuntimeError("verification_conflict")
+    service.run.side_effect = failure_type(code)
+    validator = (
+        Mock(side_effect=failure_type(code))
+        if failure_type is VerifiedDailyMarketJobNotCurrent
+        else None
+    )
 
     await execute_verified_daily_market_job(
         store,
         job,
         service,
         heartbeat_interval=60,
+        request_validator=validator,
     )
 
     result = store.enqueue(VERIFIED_DAILY_MARKET_JOB, payload, now=now)
-    assert result.status == "queued"
+    assert result.status == ("failed" if terminal else "queued")
     assert result.result_ref is None
-    assert result.error == "RuntimeError"
+    assert result.failure_evidence_ref is None
+    assert result.error == failure_type.__name__
+    assert result.attempt == 1 and result.payload == payload
+    if validator is not None:
+        validator.assert_called_once_with()
+        service.run.assert_not_called()
+    later = now + timedelta(hours=2)
+    retried = store.claim(
+        VERIFIED_DAILY_MARKET_JOB, "later-worker", now=later, job_id=job.job_id
+    )
+    assert (retried is None) is terminal
+    if not terminal:
+        assert retried.attempt == 2
+    else:
+        replacement = store.enqueue(
+            VERIFIED_DAILY_MARKET_JOB,
+            {**payload, "observation_round": "fixture.explicit_reobservation"},
+            now=later,
+        )
+        assert replacement.job_id != job.job_id and replacement.status == "queued"
 
 
 @pytest.mark.asyncio
