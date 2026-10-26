@@ -12,6 +12,8 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from server.persistence.backtest_results import backtest_evidence_blocker
+
 from .capture import (
     CAPTURE_TOOL_BY_TYPE,
     CapturedProjection,
@@ -396,6 +398,8 @@ async def _research_evidence_projection(
     row = await selected if inspect.isawaitable(selected) else selected
     if not isinstance(row, dict):
         raise LookupError(f"backtest result not found: {result_id}")
+    if blocker := backtest_evidence_blocker(row):
+        raise CaptureSelectionError(blocker)
     metrics, metrics_valid = _json_object(row.get("metrics_json"))
     config, config_valid = _json_object(row.get("config_json"))
     cost_summary, cost_summary_valid = _json_object(row.get("cost_summary_json"))

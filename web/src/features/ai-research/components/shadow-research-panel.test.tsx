@@ -441,6 +441,105 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+test.each([
+  {
+    gateStatus: 'pass',
+    checks: [
+      { name: 'source_binding', status: 'pass' },
+      { name: 'costs', status: 'pass' },
+    ],
+    researchGate: undefined,
+    expected: 'Historical gate record: 2/2 · pass',
+  },
+  {
+    gateStatus: 'blocked',
+    checks: [
+      { name: 'source_binding', status: 'pass' },
+      { name: 'costs', status: 'fail' },
+      { name: 'independent_final', status: 'blocked' },
+    ],
+    researchGate: undefined,
+    expected: 'Historical gate record: 1/3 · blocked',
+  },
+  {
+    gateStatus: 'pass',
+    checks: undefined,
+    researchGate: undefined,
+    expected: 'Historical gate record: pass · check details unavailable',
+  },
+  {
+    gateStatus: 'pass',
+    checks: [{ name: 'source_binding', status: 'pass' }],
+    researchGate: {
+      status: 'blocked',
+      blockers: ['research_evidence_missing'],
+    },
+    expected: 'Historical gate record: blocked · check details unavailable',
+  },
+])(
+  'shows the saved comparison gate without claiming current qualification: $expected',
+  async ({ gateStatus, checks, researchGate, expected }) => {
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+    window.localStorage.setItem('karkinos.locale', 'en');
+    const candidate = status.candidates[0];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/api/ai/strategy-research/shadow-automation'))
+          return jsonResponse({
+            ...status,
+            candidates: [
+              {
+                ...candidate,
+                comparison: {
+                  ...candidate.comparison,
+                  research_gate: researchGate,
+                  promotion_gate: {
+                    status: gateStatus,
+                    blockers: gateStatus === 'pass' ? [] : ['evidence_missing'],
+                    checks,
+                  },
+                },
+              },
+            ],
+          });
+        if (url.endsWith('/api/strategy-promotion/states'))
+          return jsonResponse([]);
+        throw new Error('Unexpected request: ' + url);
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    render(
+      <PreferencesProvider>
+        <QueryClientProvider client={queryClient}>
+          <ShadowResearchPanel />
+        </QueryClientProvider>
+      </PreferencesProvider>,
+    );
+    const gate = await screen.findByTestId('research-recorded-gate');
+    expect(gate.textContent).toBe(expected);
+    expect(gate.className).not.toContain('success');
+    expect(
+      screen.getByText(
+        'Historical gate records do not establish current qualification.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText('Historical backtest comparison')).toBeTruthy();
+    expect(screen.queryByText(/13\/13 Passed/)).toBeNull();
+    expect(screen.queryByText(/Active Gen 7|Queued:.*Gen 8/)).toBeNull();
+  },
+);
+
 test('authorizes independent validation while account publication remains blocked', async () => {
   window.matchMedia = vi.fn().mockReturnValue({
     matches: false,
@@ -1515,3 +1614,90 @@ test('renders critique evolution timeline and strategy lab clone link for candid
   expect(timeline.textContent).toContain('Sharpe: +0.60');
   expect(timeline.textContent).toContain('Return: +7.0%');
 });
+
+test.each(['registry', 'raw_report'] as const)(
+  'keeps withdrawn evidence out of current metrics through %s',
+  async (source) => {
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    });
+    window.localStorage.setItem('karkinos.locale', 'en');
+    const invalidation = {
+      status: 'invalidated',
+      reason: 'Recorded curve contradicted fills.',
+    };
+    const candidate = status.candidates[0];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/api/ai/strategy-research/shadow-automation'))
+        return jsonResponse({
+          ...status,
+          candidates: [
+            {
+              ...candidate,
+              candidate_result_id: 8,
+              evidence_invalidation:
+                source === 'registry' ? invalidation : null,
+              comparison: {
+                ...candidate.comparison,
+                candidate:
+                  source === 'registry'
+                    ? candidate.comparison.candidate
+                    : undefined,
+              },
+            },
+          ],
+        });
+      if (url === '/api/backtest/results/8')
+        return jsonResponse({
+          ...candidateSourceReport(8),
+          evidence_invalidation: invalidation,
+        });
+      if (url.endsWith('/api/strategy-promotion/states'))
+        return jsonResponse([]);
+      throw new Error('Unexpected request: ' + url);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    render(
+      <PreferencesProvider>
+        <QueryClientProvider client={queryClient}>
+          <ShadowResearchPanel />
+        </QueryClientProvider>
+      </PreferencesProvider>,
+    );
+    expect(
+      await screen.findByText(
+        'Source backtest evidence was withdrawn from current research. The historical report remains accessible.',
+      ),
+    ).toBeTruthy();
+    const results = screen.getByLabelText('Research backtest results');
+    expect(
+      within(results).queryByLabelText('Source report metrics'),
+    ).toBeNull();
+    expect(
+      within(results).queryByTestId('research-advancement-delta-ribbon'),
+    ).toBeNull();
+    expect(within(results).getByRole('link').getAttribute('href')).toBe(
+      '/backtest?id=8',
+    );
+    expect(
+      fetchMock.mock.calls.some(
+        ([input]) => String(input) === '/api/backtest/results/8',
+      ),
+    ).toBe(source === 'raw_report');
+    if (source === 'registry')
+      expect(
+        within(screen.getByTestId('strategy-champion-spotlight')).getByText(
+          'No source-bound research selection is available.',
+        ),
+      ).toBeTruthy();
+  },
+);

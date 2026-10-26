@@ -32,6 +32,7 @@ from server.contracts.strategy_research import (
     StrategyResearchRejected,
     StrategyResearchSelection,
 )
+from server.persistence.backtest_results import backtest_evidence_blocker
 
 
 def build_research_run_projection(
@@ -94,6 +95,8 @@ def build_research_evaluation_bundle(
 ) -> ResearchEvaluationBundle:
     """Project persisted deterministic backtest evidence without re-scoring it."""
 
+    if blocker := backtest_evidence_blocker(persisted_row):
+        raise StrategyResearchRejected(blocker)
     metrics_payload = dict(metrics)
     dataset = strategy_research_json_object(metrics_payload.get("dataset_snapshot"))
     research = strategy_research_json_object(

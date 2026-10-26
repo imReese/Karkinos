@@ -2,6 +2,7 @@ import { ArrowUpRight, ChevronDown } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { useCopy } from '../../../shared/i18n/context';
+import { usePreferences } from '../../../shared/preferences/context';
 import { formatStrategyDisplayName } from '../../../shared/strategy-display';
 import {
   EvidenceState,
@@ -288,6 +289,7 @@ export function BacktestReportView({
   view?: 'results' | 'observations';
 }) {
   const copy = useCopy();
+  const { locale } = usePreferences();
   const labels = copy.backtest;
   const results = useBacktestResultsQuery();
   const [requestedId, setSelectedId] = useSearchReportId();
@@ -337,12 +339,30 @@ export function BacktestReportView({
       : (selectedSummary?.total_return ?? 0) < 0
         ? 'pnl-negative'
         : 'neutral';
+  const invalidation =
+    report.data?.evidence_invalidation ??
+    selectedSummary?.evidence_invalidation;
 
   return (
     <div
       data-backtest-report-workspace="saved-evidence"
       className="min-w-0 space-y-6"
     >
+      {invalidation ? (
+        <p
+          role="status"
+          className="rounded-[var(--app-radius-control)] border border-[var(--app-border)] p-4 text-sm"
+          data-testid="backtest-evidence-withdrawal"
+        >
+          {invalidation.status === 'unavailable'
+            ? locale === 'zh'
+              ? '本报告的证据有效性暂时无法核验，不能用于当前研究或晋级。以下保留原始历史记录。'
+              : 'Evidence validity is unavailable for current research or promotion. The original historical record is retained below.'
+            : locale === 'zh'
+              ? '本报告的回测证据已撤回，不能用于当前研究或晋级。以下保留原始历史记录。'
+              : 'This backtest evidence was withdrawn from current research and promotion. The original historical record is retained below.'}
+        </p>
+      ) : null}
       <header className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         {selectedSummary ? (
           <section

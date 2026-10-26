@@ -24,14 +24,27 @@ export function CandidateResearchResults({
       ? candidate.candidate_result_id
       : null;
   const sourceQuery = useBacktestResultQuery(
-    !comparison.candidate ? sourceResultId : null,
+    !comparison.candidate && !candidate.evidence_invalidation
+      ? sourceResultId
+      : null,
   );
+  const invalidation =
+    candidate.evidence_invalidation ?? sourceQuery.data?.evidence_invalidation;
   const sourceReport =
-    !sourceQuery.isError && sourceQuery.data?.id === sourceResultId
+    !invalidation &&
+    !sourceQuery.isError &&
+    sourceQuery.data?.id === sourceResultId
       ? sourceQuery.data
       : null;
-  const baseline = comparison.baseline;
-  const target = comparison.candidate;
+  const baseline = invalidation ? undefined : comparison.baseline;
+  const target = invalidation ? undefined : comparison.candidate;
+  const recordedGate = comparison.research_gate ?? comparison.promotion_gate;
+  const recordedChecks = comparison.research_gate
+    ? undefined
+    : comparison.promotion_gate?.checks;
+  const recordedPassed = recordedChecks?.filter(
+    (check) => check.status === 'pass',
+  ).length;
   const sharpeDelta =
     target && baseline ? target.sharpe - baseline.sharpe : null;
   const returnDelta =
@@ -75,12 +88,16 @@ export function CandidateResearchResults({
             <div className="flex items-center gap-2">
               <span className="app-dsh-pulse-beacon size-2 rounded-full bg-[var(--app-accent)] shadow-[0_0_6px_var(--app-accent)]" />
               <span className="font-semibold text-[var(--app-text)]">
-                {zh
-                  ? '代际晋级胜出超额比对 (vs 现役基线)'
-                  : 'Generation Advancement Delta (vs Baseline)'}
+                {zh ? '历史回测比较' : 'Historical backtest comparison'}
               </span>
-              <span className="rounded-full border border-[var(--app-success-border)] bg-[var(--app-success-bg)] px-2 py-0.5 font-mono app-type-micro font-semibold text-[var(--app-success-text)]">
-                {zh ? '13/13 门禁通关' : '13/13 Passed'}
+              <span
+                className="rounded-full border border-[var(--app-border)] bg-[var(--app-surface-overlay)] px-2 py-0.5 font-mono app-type-micro font-semibold text-[var(--app-text-secondary)]"
+                data-testid="research-recorded-gate"
+              >
+                {zh ? '历史门禁记录: ' : 'Historical gate record: '}
+                {recordedChecks?.length
+                  ? `${recordedPassed}/${recordedChecks.length} · ${recordedGate?.status ?? 'unknown'}`
+                  : `${recordedGate?.status ?? 'unknown'} · ${zh ? '检查明细未记录' : 'check details unavailable'}`}
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-4 text-xs">
@@ -136,22 +153,29 @@ export function CandidateResearchResults({
               ) : null}
             </div>
           </div>
+          <p className="app-muted mt-2 text-xs">
+            {zh
+              ? '历史门禁记录不代表当前资格。'
+              : 'Historical gate records do not establish current qualification.'}
+          </p>
         </div>
       ) : null}
-      <div
-        className={`min-w-0 gap-4 ${comparison.baseline ? 'grid md:grid-cols-2' : ''}`}
-      >
-        {comparison.baseline ? (
-          <MetricComparison
-            label={copy.baseline}
-            metrics={comparison.baseline}
-          />
+      <div className={`min-w-0 gap-4 ${baseline ? 'grid md:grid-cols-2' : ''}`}>
+        {baseline ? (
+          <MetricComparison label={copy.baseline} metrics={baseline} />
         ) : null}
-        {comparison.candidate ? (
-          <MetricComparison
-            label={copy.candidate}
-            metrics={comparison.candidate}
-          />
+        {invalidation ? (
+          <p role="status" className="app-muted text-sm">
+            {invalidation.status === 'unavailable'
+              ? zh
+                ? '来源证据有效性暂时无法核验，不能用于当前研究。历史报告仍可查看。'
+                : 'Source evidence validity is unavailable for current research. The historical report remains accessible.'
+              : zh
+                ? '来源回测证据已撤回，不能用于当前研究。历史报告仍可查看。'
+                : 'Source backtest evidence was withdrawn from current research. The historical report remains accessible.'}
+          </p>
+        ) : target ? (
+          <MetricComparison label={copy.candidate} metrics={target} />
         ) : sourceReport ? (
           <dl
             className="grid grid-cols-1 gap-3 sm:grid-cols-3"

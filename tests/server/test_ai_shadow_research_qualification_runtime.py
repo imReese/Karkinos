@@ -24,6 +24,7 @@ from server.contracts.ai_shadow_research_automation import (
 from server.db import AppDatabase
 from server.dependencies import AppState
 from server.http.ai_shadow_research_qualification import create_router
+from server.persistence.daily_strategy_backups import DailyStrategyBackupStore
 from server.projections import portfolio_application
 from server.services.ai_shadow.ai_shadow_research_commands import (
     AiShadowResearchCommandsMixin,
@@ -38,6 +39,15 @@ from server.services.ai_shadow.ai_shadow_research_qualification_support import (
 
 class _StopLoop(Exception):
     pass
+
+
+_QUALIFICATION_STATUS_FIELDS = (
+    "latest_qualification_attempt",
+    "research_outcome",
+    "qualification_runs",
+    "daily_research_winner_candidate_id",
+    "daily_selections",
+)
 
 
 async def _stop_loop(_: float) -> None:
@@ -246,6 +256,9 @@ def test_status_projects_only_current_source_qualification_attempt(tmp_path) -> 
     assert status["latest_qualification_attempt"] == attempt
     assert status["research_outcome"]["account_qualification_status"] == "blocked"
     assert status["research_outcome"]["qualification_run_id"] is None
+    assert harness.qualification_status() == {
+        key: status[key] for key in _QUALIFICATION_STATUS_FIELDS
+    }
     public_json = str(status["latest_qualification_attempt"])
     assert "account_reference" not in public_json
     assert "backup_path" not in public_json
@@ -260,6 +273,76 @@ def test_status_projects_only_current_source_qualification_attempt(tmp_path) -> 
     batch["backup_artifact_fingerprint"] = original_backup_fingerprint
     batch["selection_id"] = "selection-replaced"
     assert harness.status()["latest_qualification_attempt"] is None
+    assert harness.qualification_status()["latest_qualification_attempt"] is None
+
+
+@pytest.mark.unit
+@pytest.mark.trading_safety
+def test_qualification_status_rechecks_backup_without_publication_status(
+    tmp_path,
+) -> None:
+    from types import SimpleNamespace
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    selection = {
+        "run_id": "source-run-current",
+        "market_date": "2026-09-02",
+        "selection_id": "selection-current",
+        "selection_fingerprint": "a" * 64,
+        "integrity_status": "verified",
+        "status": "no_selection",
+    }
+    backups = DailyStrategyBackupStore(tmp_path / "backups")
+    receipt = backups.write(
+        {
+            "run_id": selection["run_id"],
+            "market_date": selection["market_date"],
+            "selection": {"selection_id": selection["selection_id"]},
+        },
+        created_at="2026-09-02T17:00:00+08:00",
+    )
+    attempt = record_blocked_qualification_attempt(
+        db,
+        batch={
+            **selection,
+            "backup_artifact_fingerprint": receipt["artifact_fingerprint"],
+        },
+        blocker="qualification_valuation_or_ledger_not_complete",
+        recorded_at="2026-09-02T17:00:00+08:00",
+    )
+
+    class Harness(AiShadowResearchCommandsMixin):
+        def __init__(self) -> None:
+            self._db = db
+            self._store = SimpleNamespace(
+                list_public_qualification_runs=lambda **_: [],
+            )
+            self._daily_artifacts = SimpleNamespace(
+                list_selections=lambda **_: [dict(selection)],
+                list_backups=lambda **_: [backups.project_receipt(receipt)],
+            )
+
+        def publication_service(self):
+            return SimpleNamespace(
+                status=lambda **_: pytest.fail(
+                    "qualification explanation must not evaluate publication status"
+                )
+            )
+
+    harness = Harness()
+    current = harness.qualification_status()
+    assert set(current) == set(_QUALIFICATION_STATUS_FIELDS)
+    assert current["latest_qualification_attempt"] == attempt
+    assert current["research_outcome"]["account_qualification_status"] == "blocked"
+
+    backups.resolve_path(receipt).write_text("{}", encoding="utf-8")
+    changed = harness.qualification_status()
+    assert changed["latest_qualification_attempt"] is None
+    assert changed["research_outcome"]["qualification_run_id"] is None
+    assert (
+        changed["research_outcome"]["account_qualification_status"] == "not_applicable"
+    )
 
 
 @pytest.mark.unit
@@ -372,6 +455,9 @@ def test_status_requires_exact_verified_current_pair_for_qualification_run(
         "qualification-current"
     )
     assert current["research_outcome"]["account_qualification_status"] == "passed"
+    assert harness.qualification_status() == {
+        key: current[key] for key in _QUALIFICATION_STATUS_FIELDS
+    }
 
     if drift_field == "selection_integrity":
         selection["integrity_status"] = drift_value
@@ -394,6 +480,9 @@ def test_status_requires_exact_verified_current_pair_for_qualification_run(
     assert drifted["research_outcome"]["qualification_run_id"] is None
     assert drifted["research_outcome"]["winner_qualification_candidate_id"] is None
     assert drifted["research_outcome"]["account_qualification_status"] != "passed"
+    assert harness.qualification_status() == {
+        key: drifted[key] for key in _QUALIFICATION_STATUS_FIELDS
+    }
 
 
 @pytest.mark.unit

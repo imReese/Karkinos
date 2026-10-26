@@ -8,7 +8,12 @@ from server.ai_runtime.contracts import JsonObject, content_fingerprint
 from server.ai_runtime.store import IdempotencyConflict
 from server.contracts.strategy_research import (
     FormulaBacktestRequest,
+    StrategyResearchRejected,
     validate_prior_diagnostic_exposure,
+)
+from server.persistence.backtest_results import (
+    backtest_evidence_blocker,
+    with_backtest_invalidation,
 )
 
 
@@ -345,6 +350,12 @@ class StrategyResearchBacktestRepositoryMixin:
             row = conn.execute(
                 "SELECT * FROM backtest_results WHERE id=?", (result_id,)
             ).fetchone()
-        if row is None:
+            value = (
+                with_backtest_invalidation(conn, dict(row)) if row is not None else None
+            )
+        if value is None:
             raise LookupError("research_backtest_result_missing")
-        return dict(row)
+        if blocker := backtest_evidence_blocker(value):
+            raise StrategyResearchRejected(blocker)
+        value.pop("evidence_invalidation")
+        return value

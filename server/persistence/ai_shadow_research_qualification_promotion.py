@@ -17,6 +17,10 @@ from server.contracts.ai_shadow_research_qualification import (
     qualification_run_record,
 )
 from server.contracts.content_identity import canonical_json, content_fingerprint
+from server.persistence.backtest_results import (
+    backtest_evidence_blocker,
+    with_backtest_invalidation,
+)
 
 
 class ShadowResearchQualificationPromotionRepositoryMixin:
@@ -249,9 +253,13 @@ class ShadowResearchQualificationPromotionRepositoryMixin:
                 "SELECT * FROM backtest_results WHERE id=?",
                 (result_id,),
             ).fetchone()
-        if row is None:
+            value = (
+                with_backtest_invalidation(conn, dict(row)) if row is not None else None
+            )
+        if value is None:
             raise LookupError(f"qualification backtest result not found: {result_id}")
-        value = dict(row)
+        if blocker := backtest_evidence_blocker(value):
+            raise ShadowResearchQualificationRejected(blocker)
         return {
             "id": result_id,
             "initial_cash": value.get("initial_cash"),

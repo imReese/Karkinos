@@ -2,11 +2,108 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
-from collections.abc import Sequence
-from datetime import datetime
+from collections.abc import Mapping, Sequence
+from contextlib import closing
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+V25_BACKTEST_INVALIDATIONS = (
+    """CREATE TABLE backtest_result_invalidations (
+        result_id INTEGER PRIMARY KEY REFERENCES backtest_results(id),
+        row_fingerprint TEXT NOT NULL,
+        actor TEXT NOT NULL CHECK(length(trim(actor)) > 0),
+        reason TEXT NOT NULL CHECK(length(trim(reason)) > 0),
+        idempotency_key TEXT NOT NULL UNIQUE CHECK(length(trim(idempotency_key)) > 0),
+        created_at TEXT NOT NULL
+    )""",
+    """CREATE TRIGGER backtest_result_invalidations_no_update
+        BEFORE UPDATE ON backtest_result_invalidations
+        BEGIN SELECT RAISE(ABORT, 'backtest invalidations are immutable'); END""",
+    """CREATE TRIGGER backtest_result_invalidations_no_delete
+        BEFORE DELETE ON backtest_result_invalidations
+        BEGIN SELECT RAISE(ABORT, 'backtest invalidations are immutable'); END""",
+    """CREATE TRIGGER backtest_result_invalidations_no_replace
+        BEFORE INSERT ON backtest_result_invalidations
+        WHEN EXISTS (SELECT 1 FROM backtest_result_invalidations
+          WHERE result_id=NEW.result_id OR idempotency_key=NEW.idempotency_key)
+        BEGIN SELECT RAISE(ABORT, 'backtest invalidations are immutable'); END""",
+)
+V25_SCHEMA_OBJECTS = (
+    ("table", "backtest_result_invalidations"),
+    ("trigger", "backtest_result_invalidations_no_update"),
+    ("trigger", "backtest_result_invalidations_no_delete"),
+    ("trigger", "backtest_result_invalidations_no_replace"),
+)
+
+
+def backtest_row_fingerprint(row: Mapping[str, Any]) -> str:
+    """Identify exact saved columns, retaining original JSON strings as stored."""
+    raw = {key: value for key, value in row.items() if key != "evidence_invalidation"}
+    encoded = json.dumps(
+        raw, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+    ).encode()
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def backtest_invalidation_for_result(
+    conn: sqlite3.Connection, result_id: int
+) -> dict[str, Any] | None:
+    """Read validity without creating schema or changing the original result."""
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' "
+        "AND name='backtest_result_invalidations'"
+    ).fetchone()
+    if exists is None:
+        return {"status": "unavailable", "result_id": result_id}
+    cursor = conn.execute(
+        "SELECT * FROM backtest_result_invalidations WHERE result_id=?",
+        (result_id,),
+    )
+    found = cursor.fetchone()
+    if found is None:
+        return None
+    assert cursor.description is not None
+    fact = dict(zip((col[0] for col in cursor.description), found, strict=True))
+    source = conn.execute("SELECT * FROM backtest_results WHERE id=?", (result_id,))
+    saved = source.fetchone()
+    assert source.description is not None
+    current = (
+        backtest_row_fingerprint(
+            dict(zip((col[0] for col in source.description), saved, strict=True))
+        )
+        if saved is not None
+        else None
+    )
+    return {
+        **fact,
+        "status": (
+            "invalidated"
+            if current == fact["row_fingerprint"]
+            else "fingerprint_mismatch"
+        ),
+        "current_row_fingerprint": current,
+    }
+
+
+def with_backtest_invalidation(
+    conn: sqlite3.Connection, row: Mapping[str, Any]
+) -> dict[str, Any]:
+    return {
+        **row,
+        "evidence_invalidation": backtest_invalidation_for_result(conn, int(row["id"])),
+    }
+
+
+def backtest_evidence_blocker(row: Mapping[str, Any]) -> str | None:
+    fact = row.get("evidence_invalidation")
+    if fact is None:
+        return None
+    status = fact.get("status") if isinstance(fact, Mapping) else "unavailable"
+    return "backtest_evidence_" + str(status or "unavailable")
 
 
 class BacktestResultsRepository:
@@ -14,6 +111,63 @@ class BacktestResultsRepository:
 
     def __init__(self, database_path: str | Path) -> None:
         self._database_path = Path(database_path)
+
+    def append_invalidation_sync(
+        self,
+        *,
+        result_id: int,
+        expected_row_fingerprint: str,
+        actor: str,
+        reason: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        """Withdraw one exact saved result; keep its original financial row intact."""
+        if type(result_id) is not int or result_id <= 0:
+            raise ValueError("invalid backtest result ID")
+        actor, reason, idempotency_key = (
+            str(value).strip() for value in (actor, reason, idempotency_key)
+        )
+        if not all((actor, reason, idempotency_key)):
+            raise ValueError("invalidation actor, reason and idempotency key required")
+        from server.persistence.connection import connect_sqlite
+
+        with closing(connect_sqlite(self._database_path)) as conn, conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN IMMEDIATE")
+            previous = conn.execute(
+                "SELECT * FROM backtest_result_invalidations "
+                "WHERE idempotency_key=? OR result_id=?",
+                (idempotency_key, result_id),
+            ).fetchall()
+            expected = {
+                "result_id": result_id,
+                "row_fingerprint": expected_row_fingerprint,
+                "actor": actor,
+                "reason": reason,
+                "idempotency_key": idempotency_key,
+            }
+            if previous:
+                if len(previous) != 1 or any(
+                    previous[0][key] != value for key, value in expected.items()
+                ):
+                    raise ValueError("backtest invalidation idempotency conflict")
+                return dict(previous[0])
+            row = conn.execute(
+                "SELECT * FROM backtest_results WHERE id=?", (result_id,)
+            ).fetchone()
+            if (
+                row is None
+                or backtest_row_fingerprint(dict(row)) != expected_row_fingerprint
+            ):
+                raise ValueError("backtest invalidation source fingerprint changed")
+            fact = {**expected, "created_at": datetime.now(timezone.utc).isoformat()}
+            conn.execute(
+                """INSERT INTO backtest_result_invalidations
+                   (result_id,row_fingerprint,actor,reason,idempotency_key,created_at)
+                   VALUES (:result_id,:row_fingerprint,:actor,:reason,:idempotency_key,:created_at)""",
+                fact,
+            )
+            return fact
 
     async def save(
         self,
@@ -59,7 +213,7 @@ class BacktestResultsRepository:
                           final_equity, total_return, sharpe, max_drawdown,
                           equity_curve_json, metrics_json, cost_summary_json
                    FROM backtest_results ORDER BY id DESC""").fetchall()
-            return [dict(row) for row in rows]
+            return [with_backtest_invalidation(conn, dict(row)) for row in rows]
 
     async def get_result(self, result_id: int) -> dict[str, Any] | None:
         with sqlite3.connect(self._database_path) as conn:
@@ -67,7 +221,7 @@ class BacktestResultsRepository:
             row = conn.execute(
                 "SELECT * FROM backtest_results WHERE id = ?", (result_id,)
             ).fetchone()
-            return dict(row) if row else None
+            return with_backtest_invalidation(conn, dict(row)) if row else None
 
 
 def insert_backtest_result(

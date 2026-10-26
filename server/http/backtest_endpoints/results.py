@@ -66,6 +66,7 @@ def create_router(dependencies: ResultEndpointDependencies) -> APIRouter:
                     total_return=metrics_payload.get("total_return", 0),
                     sharpe=metrics_payload.get("sharpe", 0),
                     max_drawdown=metrics_payload.get("max_drawdown", 0),
+                    evidence_invalidation=row.get("evidence_invalidation"),
                 )
             )
         return summaries
@@ -112,6 +113,7 @@ def create_router(dependencies: ResultEndpointDependencies) -> APIRouter:
             cost_summary_json=cost_summary_json,
             evidence_json=evidence_json,
             fills=[BacktestFill(**fill) for fill in metrics_json.get("fills", [])],
+            evidence_invalidation=row.get("evidence_invalidation"),
         )
 
     @r.post("/compare", response_model=CompareResponse)

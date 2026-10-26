@@ -7,6 +7,7 @@ import logging
 import sqlite3
 from typing import Any
 
+from server.persistence.backtest_results import backtest_invalidation_for_result
 from server.persistence.connection import SQLiteRepository
 
 logger = logging.getLogger(__name__)
@@ -186,9 +187,19 @@ class StrategyPromotionRepository(SQLiteRepository):
                     """,
                     (str(candidate_id),),
                 ).fetchone()
+                if row is None:
+                    return None
+                value = dict(row)
+                for prefix in ("baseline", "candidate"):
+                    result_id = value.get(f"{prefix}_result_id")
+                    value[f"{prefix}_evidence_invalidation"] = (
+                        backtest_invalidation_for_result(conn, int(result_id))
+                        if result_id
+                        else {"status": "unavailable"}
+                    )
         except sqlite3.OperationalError:
             return None
-        return dict(row) if row else None
+        return value
 
     def list_strategy_promotion_states_sync(
         self,

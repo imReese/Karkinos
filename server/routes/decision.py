@@ -367,7 +367,7 @@ def _current_shadow_qualification_evidence(
             build_shadow_research_read_service,
         )
 
-        status = build_shadow_research_read_service(state).status()
+        status = build_shadow_research_read_service(state).qualification_status()
     except (OSError, RuntimeError, TypeError, ValueError):
         return [], None
 

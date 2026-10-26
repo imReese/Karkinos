@@ -36,6 +36,7 @@ from server.contracts.ai_shadow_research_qualification import (
 from server.contracts.daily_strategy_artifacts import (
     DAILY_STRATEGY_PROMOTION_BINDING_SCHEMA,
 )
+from server.persistence.backtest_results import backtest_evidence_blocker
 from server.projections.valuation_snapshot import ledger_identity_from_rows
 from server.services.account.reviewed_fee_schedule import (
     active_review_matches_fee_evidence,
@@ -900,6 +901,21 @@ def _ai_shadow_readiness_binding_blockers(
     binding = reader(candidate_id) if callable(reader) and candidate_id else None
     if not isinstance(binding, dict):
         return ["ai_shadow_candidate_approval_binding_missing"]
+    invalidation_blockers = [
+        f"ai_shadow_{prefix}_{blocker}"
+        for prefix in ("baseline", "candidate")
+        if (
+            blocker := backtest_evidence_blocker(
+                {
+                    "evidence_invalidation": binding.get(
+                        f"{prefix}_evidence_invalidation"
+                    )
+                }
+            )
+        )
+    ]
+    if invalidation_blockers:
+        return invalidation_blockers
 
     current_daily_strategy_artifact_binding = (
         _resolve_ai_shadow_daily_strategy_artifact_binding(

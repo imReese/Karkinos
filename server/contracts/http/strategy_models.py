@@ -118,6 +118,7 @@ class BacktestResponse(BaseModel):
     cost_summary_json: dict[str, Any] = Field(default_factory=dict)
     evidence_json: dict[str, Any] = Field(default_factory=dict)
     fills: list[BacktestFill] = Field(default_factory=list)
+    evidence_invalidation: dict[str, Any] | None = None
 
 
 class BacktestSweepRequest(BaseModel):
@@ -209,6 +210,7 @@ class BacktestSummary(BaseModel):
     total_return: float
     sharpe: float
     max_drawdown: float
+    evidence_invalidation: dict[str, Any] | None = None
 
 
 # ---------- Account Strategy ----------

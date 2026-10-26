@@ -34,6 +34,7 @@ from server.contracts.ai_shadow_research_automation import (
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.jobs import JobLease
 from server.contracts.strategy_research import StrategyResearchRejected
+from server.persistence.backtest_results import backtest_evidence_blocker
 from server.persistence.jobs import SQLiteJobStore
 
 FINAL_EVALUATION_SCHEMA = "karkinos.research_final_evaluation.v1"
@@ -247,6 +248,9 @@ async def reserve_final_research_evaluation(
     candidate = await db.get_backtest_result(champion["candidate_result_id"])
     if not isinstance(baseline, Mapping) or not isinstance(candidate, Mapping):
         raise StrategyResearchRejected("sealed_research_result_missing")
+    for row in (baseline, candidate):
+        if blocker := backtest_evidence_blocker(row):
+            raise StrategyResearchRejected(blocker)
     baseline_config = _object(baseline.get("config_json"))
     expected_costs = {
         **research_friction_assumptions(),

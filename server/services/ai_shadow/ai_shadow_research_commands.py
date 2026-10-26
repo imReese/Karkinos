@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from collections.abc import Mapping
+from contextlib import closing
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from server.ai_runtime.contracts import content_fingerprint
 from server.contracts.ai_shadow_research_automation import (
@@ -29,6 +31,9 @@ from server.contracts.ai_shadow_research_automation import (
 from server.contracts.ai_shadow_research_qualification import (
     public_promotion_decision_projection,
 )
+from server.persistence.backtest_results import backtest_invalidation_for_result
+from server.persistence.connection import connect_sqlite
+from server.persistence.database_identity import optional_database_path
 from server.projections.ai_shadow_research import (
     project_shadow_research_candidate_status,
 )
@@ -47,6 +52,13 @@ from server.services.research.strategy_promotion_support import (
     lifecycle_metadata,
     resolve_ai_shadow_qualification_promotion_evidence,
 )
+
+if TYPE_CHECKING:
+    from server.db import AppDatabase
+    from server.persistence.ai_shadow_research import ShadowResearchStore
+    from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
+        DailyStrategyArtifactStore,
+    )
 
 
 def simulation_validation_defaults(now: datetime) -> dict[str, Any]:
@@ -148,7 +160,266 @@ def _simulation_policy_semantics(value):
     return result
 
 
+def _qualification_status(
+    db: Any,
+    *,
+    daily_selections: list[dict[str, Any]],
+    daily_backups: list[dict[str, Any]],
+    qualification_runs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Project qualification only from the current verified artifact pair."""
+    latest_selection = daily_selections[0] if daily_selections else None
+    latest_backup = daily_backups[0] if daily_backups else None
+    latest_qualification_attempt = None
+    daily_winner_candidate_id = None
+    daily_research_winner_candidate_id = None
+    current_source_pair_verified = bool(
+        latest_selection
+        and latest_backup
+        and latest_selection.get("integrity_status") == "verified"
+        and latest_backup.get("verification_status") == "verified"
+        and latest_backup.get("run_id") == latest_selection.get("run_id")
+        and latest_selection.get("run_id")
+        and latest_selection.get("market_date")
+        and latest_selection.get("selection_id")
+        and latest_selection.get("selection_fingerprint")
+        and latest_backup.get("artifact_fingerprint")
+    )
+    if (
+        current_source_pair_verified
+        and latest_selection.get("status") == "winner_selected"
+    ):
+        daily_winner_candidate_id = latest_selection.get("winner_candidate_id")
+    if current_source_pair_verified:
+        latest_qualification_attempt = read_latest_qualification_attempt(
+            db,
+            source_run_id=str(latest_selection.get("run_id") or ""),
+            market_date=str(latest_selection.get("market_date") or ""),
+            source_selection_id=str(latest_selection.get("selection_id") or ""),
+            source_selection_fingerprint=str(
+                latest_selection.get("selection_fingerprint") or ""
+            ),
+            source_backup_fingerprint=str(
+                latest_backup.get("artifact_fingerprint") or ""
+            ),
+        )
+        research_recommendation = latest_selection.get("research_recommendation")
+        if (
+            isinstance(research_recommendation, Mapping)
+            and is_valid_normalized_research_recommendation(research_recommendation)
+            and research_recommendation.get("status")
+            == "best_available_for_further_research"
+            and research_recommendation.get("account_qualified") is False
+            and research_recommendation.get("promotion_eligible") is False
+            and research_recommendation.get("authority_effect") == "none"
+        ):
+            daily_research_winner_candidate_id = research_recommendation.get(
+                "research_winner_candidate_id"
+            )
+    latest_qualification = (
+        next(
+            (
+                item
+                for item in qualification_runs
+                if item.get("source_run_id") == latest_selection.get("run_id")
+                and item.get("market_date") == latest_selection.get("market_date")
+                and item.get("source_selection_id")
+                == latest_selection.get("selection_id")
+                and item.get("source_selection_fingerprint")
+                == latest_selection.get("selection_fingerprint")
+                and item.get("source_backup_fingerprint")
+                == latest_backup.get("artifact_fingerprint")
+            ),
+            None,
+        )
+        if current_source_pair_verified
+        else None
+    )
+    if latest_qualification is not None:
+        latest_qualification_attempt = None
+    winner_qualification_candidate_id = (
+        latest_qualification.get("winner_qualification_candidate_id")
+        if latest_qualification
+        else None
+    )
+    account_qualification_status = (
+        {
+            "completed": "passed",
+            "blocked": "blocked",
+            "failed": "failed",
+            "running": "running",
+        }.get(str(latest_qualification.get("status") or ""), "not_evaluated")
+        if latest_qualification
+        else (
+            str(latest_qualification_attempt["status"])
+            if latest_qualification_attempt is not None
+            else (
+                "not_evaluated"
+                if daily_research_winner_candidate_id
+                else "not_applicable"
+            )
+        )
+    )
+    research_outcome = {
+        "status": (
+            "new_candidate_available_for_human_review"
+            if daily_winner_candidate_id
+            else (
+                "best_available_formula_for_further_research"
+                if daily_research_winner_candidate_id
+                else "no_new_candidate_current_strategy_unchanged"
+            )
+        ),
+        "new_candidate_winner_id": daily_winner_candidate_id,
+        "research_winner_candidate_id": daily_research_winner_candidate_id,
+        "account_qualification_status": account_qualification_status,
+        "qualification_run_id": (
+            latest_qualification.get("qualification_run_id")
+            if latest_qualification
+            else None
+        ),
+        "winner_qualification_candidate_id": (winner_qualification_candidate_id),
+        "incumbent_strategy_policy": (
+            "leave_current_human_approved_strategy_unchanged"
+        ),
+        "incumbent_strategy_state_changed": False,
+        "daily_trading_decision_status": "not_evaluated",
+        "implies_daily_trading_no_action": False,
+    }
+    return {
+        "latest_qualification_attempt": latest_qualification_attempt,
+        "research_outcome": research_outcome,
+        "qualification_runs": qualification_runs,
+        "daily_research_winner_candidate_id": daily_research_winner_candidate_id,
+        "daily_selections": daily_selections,
+    }
+
+
+def _current_candidate_statuses(
+    db: Any, candidates: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Revoke current claims without editing the stored comparison snapshots."""
+    projected = [project_shadow_research_candidate_status(row) for row in candidates]
+    result_ids = {
+        result_id
+        for row in projected
+        for key in ("baseline_result_id", "candidate_result_id")
+        if type(result_id := row.get(key)) is int and result_id > 0
+    }
+    invalidations: dict[int, dict[str, Any] | None] = {
+        result_id: {"status": "unavailable", "result_id": result_id}
+        for result_id in result_ids
+    }
+    path = optional_database_path(db)
+    if path is not None:
+        try:
+            with closing(connect_sqlite(path, readonly=True)) as conn:
+                invalidations = {
+                    result_id: backtest_invalidation_for_result(conn, result_id)
+                    for result_id in result_ids
+                }
+        except (OSError, sqlite3.Error):
+            pass
+    for row in projected:
+        facts = {
+            key: invalidations[result_id]
+            for key in ("baseline_result_id", "candidate_result_id")
+            if type(result_id := row.get(key)) is int
+            and result_id in invalidations
+            and invalidations[result_id] is not None
+        }
+        row["evidence_invalidation"] = (
+            {
+                "status": (
+                    "unavailable"
+                    if any(
+                        not isinstance(fact, Mapping)
+                        or fact.get("status")
+                        not in {"invalidated", "fingerprint_mismatch"}
+                        for fact in facts.values()
+                    )
+                    else "invalidated"
+                ),
+                "sources": facts,
+            }
+            if facts
+            else None
+        )
+        if not facts:
+            continue
+        row["status"] = "failed_closed"
+        row["recommendation"] = "reject"
+        row["promotion_status"] = "blocked_by_evidence"
+        comparison = row["comparison"]
+        for key in ("baseline", "candidate", "deltas"):
+            comparison.pop(key, None)
+        comparison["failure_code"] = "backtest_evidence_unusable"
+        comparison["account_qualification_status"] = "blocked"
+        for key in ("research_gate", "promotion_gate"):
+            comparison[key] = {
+                "status": "blocked",
+                "blockers": ["backtest_evidence_unusable"],
+            }
+    return projected
+
+
+def _current_daily_selections(
+    db: Any,
+    store: Any,
+    selections: list[dict[str, Any]],
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    known_sources = {(row.get("run_id"), row.get("candidate_id")) for row in candidates}
+    unusable_sources = {
+        (row.get("run_id"), row.get("candidate_id"))
+        for row in candidates
+        if row.get("evidence_invalidation")
+    }
+    projected = []
+    for saved in selections:
+        selection = dict(saved)
+        recommendation = selection.get("research_recommendation") or {}
+        source_ids = (
+            selection.get("winner_candidate_id"),
+            recommendation.get("research_winner_candidate_id"),
+        )
+        for candidate_id in source_ids:
+            identity = (selection.get("run_id"), candidate_id)
+            if not candidate_id or identity in known_sources:
+                continue
+            try:
+                source = store.get_candidate(str(candidate_id))
+                current = _current_candidate_statuses(db, [source])[0]
+                if current.get("run_id") != identity[0] or current.get(
+                    "evidence_invalidation"
+                ):
+                    unusable_sources.add(identity)
+            except LookupError:
+                unusable_sources.add(identity)
+            known_sources.add(identity)
+        if any(
+            (selection.get("run_id"), candidate_id) in unusable_sources
+            for candidate_id in source_ids
+        ):
+            selection.update(
+                integrity_status="source_invalidated",
+                status="no_selection",
+                winner_candidate_id=None,
+                research_recommendation=None,
+                blockers=[
+                    *selection.get("blockers", []),
+                    "backtest_evidence_unusable",
+                ],
+            )
+        projected.append(selection)
+    return projected
+
+
 class AiShadowResearchCommandsMixin:
+    _db: AppDatabase
+    _store: ShadowResearchStore
+    _daily_artifacts: DailyStrategyArtifactStore
+
     def publication_service(self):
         from server.services.decision.recommendation_publication import (
             RecommendationPublicationService,
@@ -299,14 +570,35 @@ class AiShadowResearchCommandsMixin:
             "updated_at": saved.get("updated_at"),
         }
 
+    def qualification_status(self) -> dict[str, Any]:
+        """Read current qualification evidence without publication eligibility."""
+        daily_selections = _current_daily_selections(
+            self._db,
+            self._store,
+            self._daily_artifacts.list_selections(limit=20),
+            [],
+        )
+        daily_backups = self._daily_artifacts.list_backups(limit=20)
+        qualification_runs = self._store.list_public_qualification_runs(limit=20)
+        return _qualification_status(
+            self._db,
+            daily_selections=daily_selections,
+            daily_backups=daily_backups,
+            qualification_runs=qualification_runs,
+        )
+
     def status(self) -> dict[str, Any]:
         policy = self.get_policy()
         runs = self._store.list_runs(limit=20)
-        candidates = [
-            project_shadow_research_candidate_status(candidate)
-            for candidate in self._store.list_candidates(limit=50)
-        ]
-        daily_selections = self._daily_artifacts.list_selections(limit=20)
+        candidates = _current_candidate_statuses(
+            self._db, self._store.list_candidates(limit=50)
+        )
+        daily_selections = _current_daily_selections(
+            self._db,
+            self._store,
+            self._daily_artifacts.list_selections(limit=20),
+            candidates,
+        )
         daily_backups = self._daily_artifacts.list_backups(limit=20)
         superseded_daily_selections = self._daily_artifacts.list_superseded_selections(
             limit=20
@@ -334,124 +626,18 @@ class AiShadowResearchCommandsMixin:
         ]
         latest_market_date = runs[0]["market_date"] if runs else None
         kill_switch = self._kill_switch()
-        latest_selection = daily_selections[0] if daily_selections else None
-        latest_backup = daily_backups[0] if daily_backups else None
-        latest_qualification_attempt = None
-        daily_winner_candidate_id = None
-        daily_research_winner_candidate_id = None
-        current_source_pair_verified = bool(
-            latest_selection
-            and latest_backup
-            and latest_selection.get("integrity_status") == "verified"
-            and latest_backup.get("verification_status") == "verified"
-            and latest_backup.get("run_id") == latest_selection.get("run_id")
-            and latest_selection.get("run_id")
-            and latest_selection.get("market_date")
-            and latest_selection.get("selection_id")
-            and latest_selection.get("selection_fingerprint")
-            and latest_backup.get("artifact_fingerprint")
+        qualification = _qualification_status(
+            self._db,
+            daily_selections=daily_selections,
+            daily_backups=daily_backups,
+            qualification_runs=qualification_runs,
         )
-        if (
-            current_source_pair_verified
-            and latest_selection.get("status") == "winner_selected"
-        ):
-            daily_winner_candidate_id = latest_selection.get("winner_candidate_id")
-        if current_source_pair_verified:
-            latest_qualification_attempt = read_latest_qualification_attempt(
-                self._db,
-                source_run_id=str(latest_selection.get("run_id") or ""),
-                market_date=str(latest_selection.get("market_date") or ""),
-                source_selection_id=str(latest_selection.get("selection_id") or ""),
-                source_selection_fingerprint=str(
-                    latest_selection.get("selection_fingerprint") or ""
-                ),
-                source_backup_fingerprint=str(
-                    latest_backup.get("artifact_fingerprint") or ""
-                ),
-            )
-            research_recommendation = latest_selection.get("research_recommendation")
-            if (
-                isinstance(research_recommendation, Mapping)
-                and is_valid_normalized_research_recommendation(research_recommendation)
-                and research_recommendation.get("status")
-                == "best_available_for_further_research"
-                and research_recommendation.get("account_qualified") is False
-                and research_recommendation.get("promotion_eligible") is False
-                and research_recommendation.get("authority_effect") == "none"
-            ):
-                daily_research_winner_candidate_id = research_recommendation.get(
-                    "research_winner_candidate_id"
-                )
-        latest_qualification = (
-            next(
-                (
-                    item
-                    for item in qualification_runs
-                    if item.get("source_run_id") == latest_selection.get("run_id")
-                    and item.get("market_date") == latest_selection.get("market_date")
-                    and item.get("source_selection_id")
-                    == latest_selection.get("selection_id")
-                    and item.get("source_selection_fingerprint")
-                    == latest_selection.get("selection_fingerprint")
-                    and item.get("source_backup_fingerprint")
-                    == latest_backup.get("artifact_fingerprint")
-                ),
-                None,
-            )
-            if current_source_pair_verified
-            else None
-        )
-        if latest_qualification is not None:
-            latest_qualification_attempt = None
-        winner_qualification_candidate_id = (
-            latest_qualification.get("winner_qualification_candidate_id")
-            if latest_qualification
-            else None
-        )
-        account_qualification_status = (
-            {
-                "completed": "passed",
-                "blocked": "blocked",
-                "failed": "failed",
-                "running": "running",
-            }.get(str(latest_qualification.get("status") or ""), "not_evaluated")
-            if latest_qualification
-            else (
-                str(latest_qualification_attempt["status"])
-                if latest_qualification_attempt is not None
-                else (
-                    "not_evaluated"
-                    if daily_research_winner_candidate_id
-                    else "not_applicable"
-                )
-            )
-        )
-        research_outcome = {
-            "status": (
-                "new_candidate_available_for_human_review"
-                if daily_winner_candidate_id
-                else (
-                    "best_available_formula_for_further_research"
-                    if daily_research_winner_candidate_id
-                    else "no_new_candidate_current_strategy_unchanged"
-                )
-            ),
-            "new_candidate_winner_id": daily_winner_candidate_id,
-            "research_winner_candidate_id": daily_research_winner_candidate_id,
-            "account_qualification_status": account_qualification_status,
-            "qualification_run_id": (
-                latest_qualification.get("qualification_run_id")
-                if latest_qualification
-                else None
-            ),
-            "winner_qualification_candidate_id": (winner_qualification_candidate_id),
-            "incumbent_strategy_policy": (
-                "leave_current_human_approved_strategy_unchanged"
-            ),
-            "incumbent_strategy_state_changed": False,
-            "daily_trading_decision_status": "not_evaluated",
-            "implies_daily_trading_no_action": False,
-        }
+        latest_qualification_attempt = qualification["latest_qualification_attempt"]
+        research_outcome = qualification["research_outcome"]
+        daily_winner_candidate_id = research_outcome["new_candidate_winner_id"]
+        daily_research_winner_candidate_id = qualification[
+            "daily_research_winner_candidate_id"
+        ]
         provider_call_window = self._provider_call_window_status()
         now_reader = getattr(self, "_now", None)
         observed_at = (

@@ -10,6 +10,7 @@ import server.persistence.financial_decimal_migrations as _decimal_migrations
 import server.persistence.financial_invariant_migrations as _invariant_migrations
 import server.persistence.migration_schema_contracts as _schema_contracts
 import server.persistence.structured_fact_migrations as _structured_migrations
+from server.persistence.backtest_results import V25_BACKTEST_INVALIDATIONS
 from server.persistence.job_schema_migrations import V13_DURABLE_BACKGROUND_JOBS
 from server.persistence.market_identity_schema import (
     build_market_identity_schema_migration,
@@ -513,5 +514,10 @@ MIGRATIONS = (
         version=24,
         name="persist_independent_research_paper_books",
         statements=V24_RESEARCH_PAPER_BOOKS,
+    ),
+    SchemaMigration(
+        version=25,
+        name="append_backtest_evidence_invalidations",
+        statements=V25_BACKTEST_INVALIDATIONS,
     ),
 )

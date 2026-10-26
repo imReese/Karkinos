@@ -1296,7 +1296,8 @@ def test_shadow_status_projects_candidate_without_full_backtest_evidence(
     persisted = service._store.get_candidate(candidate["candidate_id"])
     serialized_summary = canonical_json(summary)
 
-    assert set(summary) == set(persisted)
+    assert set(summary) == set(persisted) | {"evidence_invalidation"}
+    assert summary["evidence_invalidation"] is None
     assert summary["comparison"]["baseline"] == metric_summary
     assert summary["comparison"]["candidate"] == candidate_summary
     assert summary["comparison"]["promotion_gate"] == {

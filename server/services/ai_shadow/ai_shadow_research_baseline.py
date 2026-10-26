@@ -46,6 +46,7 @@ from server.contracts.ai_shadow_research_automation import (
     shadow_research_json_object,
 )
 from server.models import BacktestRequest
+from server.persistence.backtest_results import backtest_evidence_blocker
 from server.services.account.reviewed_fee_schedule import ReviewedFeeScheduleRejected
 from server.services.ai_shadow.ai_shadow_research_support import (
     shadow_research_asset_class,
@@ -585,9 +586,13 @@ def _load_baseline_seed(
         seed = _run_coroutine(
             db.get_backtest_result(policy.baseline_backtest_result_id)
         )
+        if isinstance(seed, Mapping) and (blocker := backtest_evidence_blocker(seed)):
+            raise ShadowResearchRejected(blocker)
     else:
         for summary in rows:
             candidate = _run_coroutine(db.get_backtest_result(int(summary["id"])))
+            if isinstance(candidate, Mapping) and backtest_evidence_blocker(candidate):
+                continue
             config = shadow_research_json_object(
                 candidate.get("config_json") if candidate else None
             )

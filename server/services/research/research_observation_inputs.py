@@ -25,6 +25,7 @@ from data.storage.objects import ContentAddressedObjectStore
 from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
 from server.ai_runtime.contracts import content_fingerprint
 from server.ai_runtime.formula_dsl import FORMULA_BINDING_CONTRACT, FormulaBinding
+from server.persistence.backtest_results import backtest_evidence_blocker
 from server.services.market.calendar import validate_verified_market_calendar
 from server.services.research.datasets import require_supported_snapshot
 from strategy.schema import STRATEGY_PARAMETER_SCHEMAS, validate_strategy_params
@@ -43,6 +44,8 @@ def load_research_observation_source(
     allow_unbound_dataset: bool = False,
 ) -> dict[str, Any]:
     """Freeze a saved strategy definition without upgrading its historical proof."""
+    if blocker := backtest_evidence_blocker(row):
+        raise ResearchObservationInputError(blocker)
     config = _object(row.get("config_json"))
     metrics = _object(row.get("metrics_json"))
     try:

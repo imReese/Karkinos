@@ -23,6 +23,7 @@ export type ShadowResearchMetricView = {
 
 export type ShadowResearchCandidate = {
   candidate_id: string;
+  evidence_invalidation?: Record<string, unknown> | null;
   run_id: string;
   session_id: string;
   draft_id: string;
@@ -158,7 +159,7 @@ export type ShadowResearchDailySelection = {
   incumbent_strategy_state_changed: false;
   daily_trading_decision_status: 'not_evaluated';
   implies_daily_trading_no_action: false;
-  integrity_status: 'verified' | 'fingerprint_mismatch';
+  integrity_status: 'verified' | 'fingerprint_mismatch' | 'source_invalidated';
 };
 
 export type ShadowResearchDailyBackup = {

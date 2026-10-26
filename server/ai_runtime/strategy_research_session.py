@@ -29,6 +29,7 @@ from server.contracts.strategy_research import (
     StrategyResearchRejected,
     StrategyResearchSelection,
 )
+from server.persistence.backtest_results import backtest_evidence_blocker
 from server.persistence.strategy_research_errors import (
     StrategyResearchDatabaseError,
     StrategyResearchOperationalError,
@@ -111,6 +112,8 @@ class StrategyResearchSessionMixin:
             raise LookupError(
                 f"backtest result not found: {selection.saved_backtest_result_id}"
             )
+        if blocker := backtest_evidence_blocker(row):
+            raise StrategyResearchRejected(blocker)
         config = strategy_research_json_object(row.get("config_json"))
         metrics = strategy_research_json_object(row.get("metrics_json"))
         snapshot = metrics.get("dataset_snapshot")

@@ -40,6 +40,7 @@ from server.contracts.ai_shadow_research_automation import (
     ShadowResearchRejected,
     build_shadow_research_iteration_lineage,
 )
+from server.persistence.backtest_results import backtest_evidence_blocker
 from server.projections.normalized_research_operation_preview import (
     project_normalized_research_operation_preview,
 )
@@ -494,6 +495,9 @@ class AiShadowResearchCandidateWorkflowMixin:
         candidate = await self._db.get_backtest_result(candidate_result_id)
         if not isinstance(baseline, dict) or not isinstance(candidate, dict):
             raise ShadowResearchRejected("comparison_backtest_missing")
+        for row in (baseline, candidate):
+            if blocker := backtest_evidence_blocker(row):
+                raise ShadowResearchRejected(blocker)
         baseline_view = strategy_advancement_backtest_view(baseline)
         candidate_view = strategy_advancement_backtest_view(candidate)
         candidate_metrics = strategy_research_json_object(

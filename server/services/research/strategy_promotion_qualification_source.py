@@ -110,6 +110,8 @@ def load_qualification_sources(
     )
     source_candidate_id = str(qualification_candidate.get("source_candidate_id") or "")
     source_candidate = store.get_candidate(source_candidate_id)
+    for key in ("baseline_result_id", "candidate_result_id"):
+        store.get_qualification_backtest_source(int(source_candidate.get(key) or 0))
     source_artifact = artifacts.require_verified_research_candidate(
         candidate_id=source_candidate_id,
         run_id=str(qualification_run.get("source_run_id") or ""),

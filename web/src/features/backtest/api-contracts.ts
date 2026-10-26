@@ -172,6 +172,7 @@ export type BacktestFill = {
 
 export type BacktestSummary = {
   id: number;
+  evidence_invalidation?: Record<string, unknown> | null;
   created_at: string;
   strategy: string;
   total_return: number;
@@ -487,6 +488,7 @@ export type BacktestCompareResponse = {
 };
 
 export type BacktestReport = {
+  evidence_invalidation?: Record<string, unknown> | null;
   id: number;
   created_at: string;
   config: Omit<

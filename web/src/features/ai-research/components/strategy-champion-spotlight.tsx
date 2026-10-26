@@ -18,7 +18,9 @@ export function StrategyChampionSpotlight({
     selection?.winner_candidate_id;
   const candidate = status?.candidates.find(
     (item) =>
-      item.candidate_id === winnerId && item.run_id === selection?.run_id,
+      item.candidate_id === winnerId &&
+      item.run_id === selection?.run_id &&
+      !item.evidence_invalidation,
   );
   const metrics = candidate?.comparison.candidate;
   const gate =

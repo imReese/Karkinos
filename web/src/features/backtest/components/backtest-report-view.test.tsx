@@ -239,3 +239,37 @@ test('allows choosing another saved report from a deep link and restores the URL
   fireEvent(window, new PopStateEvent('popstate'));
   expect(context).toHaveTextContent('Selected report #8');
 });
+
+test.each([
+  {
+    status: 'invalidated',
+    text: 'This backtest evidence was withdrawn from current research and promotion. The original historical record is retained below.',
+  },
+  {
+    status: 'unavailable',
+    text: 'Evidence validity is unavailable for current research or promotion. The original historical record is retained below.',
+  },
+])(
+  'labels $status evidence while retaining its saved history',
+  async ({ status, text }) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = input instanceof Request ? input.url : input.toString();
+        if (url.endsWith('/api/backtest/results'))
+          return jsonResponse([
+            { ...summary, evidence_invalidation: { status } },
+          ]);
+        if (url.endsWith('/api/backtest/results/7'))
+          return new Promise<Response>(() => undefined);
+        return new Response('Not found', { status: 404 });
+      }),
+    );
+    renderReportView();
+    expect(
+      await screen.findByTestId('backtest-evidence-withdrawal'),
+    ).toHaveTextContent(text);
+    expect(screen.getByText('Selected report #7')).toBeTruthy();
+    expect(screen.getAllByText('8.2%')).toHaveLength(2);
+  },
+);

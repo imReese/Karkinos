@@ -40,6 +40,7 @@ from server.contracts.normalized_strategy_research import (
     SIMULATION_RESEARCH_NOTIONAL_POLICY_ID,
 )
 from server.contracts.strategy_research import StrategyResearchSelection
+from server.persistence.backtest_results import backtest_evidence_blocker
 from server.services.account.account_qualification_admission import (
     QualificationAdmission,
     QualificationAdmissionDeferred,
@@ -467,6 +468,11 @@ class AiShadowResearchQualificationService:
             )
         session = self._research_store.get_session(str(source["session_id"]))
         selection = selection_from_session(session)
+        for result_id in (
+            selection.saved_backtest_result_id,
+            int(source["candidate_result_id"]),
+        ):
+            self._store.get_qualification_backtest_source(result_id)
         if (
             session.get("status") != "completed"
             or session.get("selection_fingerprint") != selection.fingerprint
@@ -903,9 +909,13 @@ class AiShadowResearchQualificationService:
             raise ShadowResearchQualificationRejected(
                 "qualification_backtest_persistence_missing"
             )
+        if blocker := backtest_evidence_blocker(baseline_row):
+            raise ShadowResearchQualificationRejected(blocker)
         baseline_view = strategy_advancement_backtest_view(baseline_row)
 
         def build_candidate_evidence(candidate_row: Mapping[str, Any]):
+            if blocker := backtest_evidence_blocker(candidate_row):
+                raise ShadowResearchQualificationRejected(blocker)
             candidate_view = strategy_advancement_backtest_view(candidate_row)
             gate = self._advancement_gate_builder(
                 baseline=baseline_view,
