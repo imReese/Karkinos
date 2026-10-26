@@ -8,9 +8,14 @@ import logging
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
-from core.types import AssetClass, InstrumentType
+import pandas as pd
+
+from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
 from data.source_policy import MarketDataUseCase
-from data.source_routing import preferred_legacy_provider
+from data.source_routing import (
+    configured_data_provider_names,
+    preferred_legacy_provider,
+)
 from server.scheduler.quote_restore import runtime_quotes_from_persisted
 from server.services.market.calendar import (
     resolve_latest_verified_closed_trading_date,
@@ -35,6 +40,26 @@ _POST_CLOSE_FUND_NAV_RETRY_INTERVAL = timedelta(minutes=15)
 class SchedulerPostCloseMixin:
     """Reconcile verified stock closes and canonical fund NAV facts."""
 
+    def _candidate_daily_providers(
+        self,
+        preferred_provider: str | None = None,
+    ) -> tuple[str, ...]:
+        """Return candidate providers in priority order for daily market bars."""
+        ordered: list[str] = []
+        if preferred_provider:
+            ordered.append(preferred_provider)
+        for name in configured_data_provider_names(
+            self._config,
+            MarketDataUseCase.DAILY_BARS,
+        ):
+            if name not in ordered:
+                ordered.append(name)
+        if not ordered:
+            for fallback in ("akshare_tencent", "akshare", "tushare"):
+                if fallback not in ordered:
+                    ordered.append(fallback)
+        return tuple(ordered)
+
     def _historical_backfill_remote_refresh_policy(
         self,
         data_manager: Any,
@@ -47,112 +72,227 @@ class SchedulerPostCloseMixin:
         receipt_reader = getattr(store, "get_market_daily_ingestion_receipt", None)
         if not callable(receipt_reader):
             return True
-        try:
-            receipt = receipt_reader(
-                trade_date=trade_date,
-                provider_name=preferred_legacy_provider(
-                    self._config,
-                    MarketDataUseCase.DAILY_BARS,
-                ),
-                verify=True,
-            )
-        except Exception:
-            logger.exception(
-                "历史行情补齐被阻断: frozen market-daily receipt is invalid, "
-                "trade_date=%s",
-                trade_date,
-            )
-            return None
-        return receipt is None
+        candidates = self._candidate_daily_providers()
+        for candidate in candidates:
+            try:
+                receipt = receipt_reader(
+                    trade_date=trade_date,
+                    provider_name=candidate,
+                    verify=True,
+                )
+            except Exception:
+                logger.exception(
+                    "历史行情补齐被阻断: frozen market-daily receipt is invalid, "
+                    "trade_date=%s, provider=%s",
+                    trade_date,
+                    candidate,
+                )
+                return None
+            if receipt is not None:
+                return False
+        return True
 
     def _ensure_post_close_market_daily_receipt(
         self,
         data_manager: Any,
         *,
-        provider_name: str,
+        provider_name: str | None = None,
         target_trade_date: str,
-    ) -> bool:
-        """Recover a missing exact-date daily receipt from the batch provider.
+        candidate_providers: tuple[str, ...] | None = None,
+    ) -> str | None:
+        """Recover a missing exact-date daily receipt using provider failover.
 
-        Existing receipts remain immutable and are never replaced here.  This
-        recovery path contacts the configured daily-batch provider only when
-        the verified receipt is absent, then atomically freezes that provider
-        batch before post-close quote publication can continue.
+        Existing receipts remain immutable and are never replaced here. This
+        recovery path checks existing receipts across candidate providers first,
+        then attempts whole-market daily batch recovery, and finally falls back
+        to a scoped daily receipt for watchlist stocks via individual bar fetches.
+        Returns the effective provider name whose receipt was verified, or None.
         """
 
         data_store = getattr(data_manager, "store", None)
         if data_store is None:
-            return False
+            return None
         receipt_reader = getattr(data_store, "get_market_daily_ingestion_receipt", None)
         receipt_writer = getattr(data_store, "ingest_market_daily_batch", None)
         if not callable(receipt_reader) or not callable(receipt_writer):
-            return False
-        try:
-            existing = receipt_reader(
-                trade_date=target_trade_date,
-                provider_name=provider_name,
-                verify=True,
-            )
-        except Exception:
-            logger.exception(
-                "收盘行情凭证校验失败，拒绝自动恢复: date=%s provider=%s",
-                target_trade_date,
-                provider_name,
-            )
-            return False
-        if existing is not None:
-            return True
+            return None
 
-        sources = getattr(data_manager, "sources", None)
-        source = sources.get(provider_name) if isinstance(sources, dict) else None
-        batch_fetcher = getattr(source, "fetch_market_daily_bars", None)
-        if not callable(batch_fetcher):
-            logger.warning(
-                "收盘行情凭证缺失且当前数据源不支持日批次恢复: date=%s provider=%s",
-                target_trade_date,
-                provider_name,
-            )
-            return False
-        try:
-            frame = batch_fetcher(target_trade_date)
-            if frame is None or getattr(frame, "empty", True):
-                logger.warning(
-                    "收盘行情日批次恢复为空，将等待重试: date=%s provider=%s",
-                    target_trade_date,
-                    provider_name,
-                )
-                return False
-            receipt_writer(
-                trade_date=target_trade_date,
-                provider_name=provider_name,
-                bars=frame,
-            )
-            verified = receipt_reader(
-                trade_date=target_trade_date,
-                provider_name=provider_name,
-                verify=True,
-            )
-        except Exception:
-            logger.exception(
-                "收盘行情日批次凭证恢复失败，将等待重试: date=%s provider=%s",
-                target_trade_date,
-                provider_name,
-            )
-            return False
-        if verified is None:
-            logger.warning(
-                "收盘行情日批次已写入但凭证不可验证，将等待重试: date=%s provider=%s",
-                target_trade_date,
-                provider_name,
-            )
-            return False
-        logger.info(
-            "收盘行情日批次凭证自动恢复完成: date=%s provider=%s rows=%s",
-            target_trade_date,
-            provider_name,
-            verified.get("row_count", "unknown"),
+        candidates = candidate_providers or self._candidate_daily_providers(
+            provider_name
         )
-        return True
+        if not candidates and provider_name:
+            candidates = (provider_name,)
+
+        with self._lock:
+            stock_symbols = [
+                str(symbol)
+                for symbol, asset_class in self._watchlist
+                if asset_class is AssetClass.STOCK
+            ]
+
+        # Stage 1: Check existing verified receipts across candidates
+        for candidate in candidates:
+            try:
+                existing = receipt_reader(
+                    trade_date=target_trade_date,
+                    provider_name=candidate,
+                    verify=True,
+                )
+            except Exception:
+                logger.exception(
+                    "收盘行情凭证校验失败，跳过已有凭证: date=%s provider=%s",
+                    target_trade_date,
+                    candidate,
+                )
+                continue
+            if existing is not None:
+                receipt_symbols = {str(s) for s in existing.get("symbols", [])}
+                if not stock_symbols or all(
+                    s in receipt_symbols for s in stock_symbols
+                ):
+                    return candidate
+
+        # Stage 2: Whole-market batch recovery across candidates
+        sources = getattr(data_manager, "sources", None)
+        for candidate in candidates:
+            source = sources.get(candidate) if isinstance(sources, dict) else None
+            batch_fetcher = getattr(source, "fetch_market_daily_bars", None)
+            if not callable(batch_fetcher):
+                continue
+            try:
+                frame = batch_fetcher(target_trade_date)
+                if frame is None or getattr(frame, "empty", True):
+                    logger.warning(
+                        "收盘行情全市场日批次恢复为空，尝试下一个候选数据源: date=%s provider=%s",
+                        target_trade_date,
+                        candidate,
+                    )
+                    continue
+                receipt_writer(
+                    trade_date=target_trade_date,
+                    provider_name=candidate,
+                    bars=frame,
+                )
+                verified = receipt_reader(
+                    trade_date=target_trade_date,
+                    provider_name=candidate,
+                    verify=True,
+                )
+                if verified is not None:
+                    receipt_symbols = {str(s) for s in verified.get("symbols", [])}
+                    if not stock_symbols or all(
+                        s in receipt_symbols for s in stock_symbols
+                    ):
+                        logger.info(
+                            "收盘行情全市场日批次凭证自动恢复完成: date=%s provider=%s rows=%s",
+                            target_trade_date,
+                            candidate,
+                            verified.get("row_count", "unknown"),
+                        )
+                        return candidate
+            except Exception:
+                logger.exception(
+                    "收盘行情全市场日批次恢复异常，尝试下一个候选数据源: date=%s provider=%s",
+                    target_trade_date,
+                    candidate,
+                )
+                continue
+
+        # Stage 3: Scoped fallback for watchlist stocks
+        if not stock_symbols:
+            logger.warning(
+                "收盘行情日批次凭证缺失，且当前无股票关注列表无需作用域恢复: date=%s",
+                target_trade_date,
+            )
+            return None
+
+        start_dt = datetime.combine(
+            date.fromisoformat(target_trade_date), time(0, 0, 0)
+        )
+        end_dt = datetime.combine(
+            date.fromisoformat(target_trade_date), time(23, 59, 59)
+        )
+        target_date_obj = date.fromisoformat(target_trade_date)
+
+        for candidate in candidates:
+            source = sources.get(candidate) if isinstance(sources, dict) else None
+            bar_fetcher = getattr(source, "fetch_bars", None)
+            if not callable(bar_fetcher):
+                continue
+            collected_bars: list[pd.DataFrame] = []
+            candidate_failed = False
+            for sym_str in stock_symbols:
+                try:
+                    df = bar_fetcher(
+                        Symbol(sym_str),
+                        start=start_dt,
+                        end=end_dt,
+                        frequency=BarFrequency.DAILY,
+                        asset_class=AssetClass.STOCK,
+                    )
+                    if df is None or getattr(df, "empty", True):
+                        candidate_failed = True
+                        break
+                    df = df.copy()
+                    if "symbol" not in df.columns:
+                        df["symbol"] = sym_str
+                    df["_bar_date"] = pd.to_datetime(df["timestamp"]).dt.date
+                    df = df[df["_bar_date"] == target_date_obj].drop(
+                        columns=["_bar_date"]
+                    )
+                    if df.empty:
+                        candidate_failed = True
+                        break
+                    if len(df) > 1:
+                        df = df.iloc[[-1]]
+                    collected_bars.append(df)
+                except Exception:
+                    logger.warning(
+                        "收盘行情单标的补齐失败: date=%s provider=%s symbol=%s",
+                        target_trade_date,
+                        candidate,
+                        sym_str,
+                        exc_info=True,
+                    )
+                    candidate_failed = True
+                    break
+            if candidate_failed or not collected_bars:
+                continue
+
+            try:
+                combined = pd.concat(collected_bars, ignore_index=True)
+                receipt_writer(
+                    trade_date=target_trade_date,
+                    provider_name=candidate,
+                    bars=combined,
+                )
+                verified = receipt_reader(
+                    trade_date=target_trade_date,
+                    provider_name=candidate,
+                    verify=True,
+                )
+                if verified is not None:
+                    logger.info(
+                        "收盘行情针对持仓标的的作用域凭证恢复完成: date=%s provider=%s symbols=%s",
+                        target_trade_date,
+                        candidate,
+                        stock_symbols,
+                    )
+                    return candidate
+            except Exception:
+                logger.exception(
+                    "收盘行情作用域凭证写入失败，尝试下一个候选数据源: date=%s provider=%s",
+                    target_trade_date,
+                    candidate,
+                )
+                continue
+
+        logger.warning(
+            "收盘行情凭证恢复在所有候选数据源上均失败: date=%s candidates=%s",
+            target_trade_date,
+            candidates,
+        )
+        return None
 
     def _publish_post_close_stock_quotes(
         self,
@@ -169,31 +309,38 @@ class SchedulerPostCloseMixin:
             return None
         with self._lock:
             watchlist = list(self._watchlist)
-        try:
-            result = publish_post_close_stock_quotes(
-                self._db,
-                data_store,
-                watchlist,
-                provider_name=preferred_legacy_provider(
-                    self._config,
-                    MarketDataUseCase.DAILY_BARS,
-                ),
-                trade_date=trade_date,
-                calendar_evidence_refs=calendar_evidence_refs,
-                captured_at=captured_at,
-            )
-        except Exception:
-            logger.exception(
-                "收盘行情发布检查失败，将重试: date=%s",
-                trade_date,
-            )
-            return None
-        if not result.published:
+        hinted_provider = getattr(self, "_effective_post_close_provider", None)
+        candidates = self._candidate_daily_providers(hinted_provider)
+        result = None
+        for candidate in candidates:
+            try:
+                result = publish_post_close_stock_quotes(
+                    self._db,
+                    data_store,
+                    watchlist,
+                    provider_name=candidate,
+                    trade_date=trade_date,
+                    calendar_evidence_refs=calendar_evidence_refs,
+                    captured_at=captured_at,
+                )
+                if result.published:
+                    self._effective_post_close_provider = candidate
+                    break
+            except Exception:
+                logger.exception(
+                    "收盘行情发布检查失败: date=%s candidate=%s",
+                    trade_date,
+                    candidate,
+                )
+                continue
+        if result is None or not result.published:
+            missing_syms = ",".join(result.missing_symbols) if result else "none"
+            err_msg = result.error_message if result else "no_candidate_succeeded"
             logger.warning(
                 "收盘行情尚未满足原子发布条件: date=%s, missing=%s, error=%s",
                 trade_date,
-                ",".join(result.missing_symbols) or "none",
-                result.error_message or "unknown",
+                missing_syms,
+                err_msg,
             )
             return None
         try:
@@ -253,9 +400,10 @@ class SchedulerPostCloseMixin:
             and now.time() < _POST_CLOSE_MARKET_REFRESH_TIME
         ):
             return False
-        completed_prefix = f"{provider_name}:{target_trade_date}:{refresh_identity}:"
-        if str(self._last_post_close_market_refresh_key or "").startswith(
-            completed_prefix
+        last_key = str(self._last_post_close_market_refresh_key or "")
+        completed_token = f":{target_trade_date}:{refresh_identity}:"
+        if completed_token in last_key or last_key.startswith(
+            f"{provider_name}:{target_trade_date}:{refresh_identity}:"
         ):
             return False
         last_attempt = self._last_post_close_market_refresh_attempt_at
@@ -346,6 +494,10 @@ class SchedulerPostCloseMixin:
                 provider_name=provider_name,
                 target_trade_date=target_trade_date,
             )
+            effective_provider = (
+                receipt_ready if isinstance(receipt_ready, str) else provider_name
+            )
+            self._effective_post_close_provider = effective_provider
             receipt_fingerprint = (
                 self._publish_post_close_stock_quotes(
                     data_store=data_store,
@@ -358,13 +510,14 @@ class SchedulerPostCloseMixin:
             )
             if receipt_fingerprint is not None:
                 self._last_post_close_market_refresh_key = (
-                    f"{provider_name}:{target_trade_date}:"
+                    f"{effective_provider}:{target_trade_date}:"
                     f"{market_refresh_identity}:{receipt_fingerprint}"
                 )
                 logger.info(
-                    "收盘后行情对账完成: trade_date=%s, scheduled_time=%s",
+                    "收盘后行情对账完成: trade_date=%s, scheduled_time=%s, provider=%s",
                     target_trade_date,
                     _POST_CLOSE_MARKET_REFRESH_TIME.isoformat(timespec="minutes"),
+                    effective_provider,
                 )
                 refreshed = True
             elif data_store is None:

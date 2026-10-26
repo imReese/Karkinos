@@ -2567,3 +2567,138 @@ def test_scheduler_adds_ledger_holdings_to_watchlist(monkeypatch, tmp_path):
     scheduler._run_loop()
 
     assert scheduler.watchlist == [(Symbol("600002"), AssetClass.STOCK)]
+
+
+def test_scheduler_post_close_receipt_candidate_failover(tmp_path):
+    from domain.instrument import make_stock
+    from server import scheduler as scheduler_module
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _install_verified_calendar(db)
+    store = DataStore(tmp_path)
+    config = _scheduler_config()
+    scheduler = scheduler_module.TradingScheduler(config, FakeBridge(), db=db)
+    scheduler._watchlist = [(Symbol("600001"), AssetClass.STOCK)]
+    scheduler._instruments = {Symbol("600001"): make_stock("600001", "示例股票")}
+
+    class FakeTencentSource:
+        pass
+
+    class FakeTushareSource:
+        def fetch_market_daily_bars(self, trade_date: str):
+            return pd.DataFrame(
+                [
+                    {
+                        "symbol": "600001",
+                        "timestamp": f"{trade_date} 15:00:00",
+                        "open": 10.0,
+                        "high": 10.5,
+                        "low": 9.8,
+                        "close": 10.2,
+                        "volume": 100000.0,
+                        "amount": 1020000.0,
+                    }
+                ]
+            )
+
+    data_manager = SimpleNamespace(
+        store=store,
+        sources={
+            "akshare_tencent": FakeTencentSource(),
+            "tushare": FakeTushareSource(),
+        },
+    )
+
+    scheduler._candidate_daily_providers = lambda preferred_provider=None: (
+        "akshare_tencent",
+        "tushare",
+    )
+
+    now = datetime(2026, 6, 17, 16, 5)
+    assert (
+        scheduler._maybe_refresh_post_close_valuation_data(data_manager, now=now)
+        is True
+    )
+
+    receipt = store.get_market_daily_ingestion_receipt(
+        trade_date="2026-06-17",
+        provider_name="tushare",
+        verify=True,
+    )
+    assert receipt is not None
+    assert "600001" in receipt["symbols"]
+
+    quotes = db.get_latest_quotes_sync()
+    stock_quote = next(q for q in quotes if q["symbol"] == "600001")
+    assert stock_quote["price"] == 10.2
+    assert stock_quote["quote_status"] == "confirmed"
+
+
+def test_scheduler_post_close_receipt_scoped_fallback(tmp_path):
+    from domain.instrument import make_stock
+    from server import scheduler as scheduler_module
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _install_verified_calendar(db)
+    store = DataStore(tmp_path)
+    config = _scheduler_config()
+    scheduler = scheduler_module.TradingScheduler(config, FakeBridge(), db=db)
+    scheduler._watchlist = [(Symbol("600001"), AssetClass.STOCK)]
+    scheduler._instruments = {Symbol("600001"): make_stock("600001", "示例股票")}
+
+    class FakeTencentSource:
+        def fetch_bars(
+            self,
+            symbol,
+            start,
+            end,
+            frequency=BarFrequency.DAILY,
+            asset_class=AssetClass.STOCK,
+        ):
+            trade_date_str = start.date().isoformat()
+            return pd.DataFrame(
+                [
+                    {
+                        "symbol": str(symbol),
+                        "timestamp": f"{trade_date_str} 15:00:00",
+                        "open": 20.0,
+                        "high": 21.0,
+                        "low": 19.5,
+                        "close": 20.5,
+                        "volume": 50000.0,
+                        "amount": 1025000.0,
+                    }
+                ]
+            )
+
+    data_manager = SimpleNamespace(
+        store=store,
+        sources={
+            "akshare_tencent": FakeTencentSource(),
+        },
+    )
+
+    scheduler._candidate_daily_providers = lambda preferred_provider=None: (
+        "akshare_tencent",
+    )
+
+    now = datetime(2026, 6, 17, 16, 5)
+    assert (
+        scheduler._maybe_refresh_post_close_valuation_data(data_manager, now=now)
+        is True
+    )
+
+    receipt = store.get_market_daily_ingestion_receipt(
+        trade_date="2026-06-17",
+        provider_name="akshare_tencent",
+        verify=True,
+    )
+    assert receipt is not None
+    assert "600001" in receipt["symbols"]
+
+    quotes = db.get_latest_quotes_sync()
+    stock_quote = next(q for q in quotes if q["symbol"] == "600001")
+    assert stock_quote["price"] == 20.5
+    assert stock_quote["quote_status"] == "confirmed"
