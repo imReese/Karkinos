@@ -23,9 +23,11 @@ dependencies = [
     "ruff>=0.17.0",
     "baostock>=0.9.4,<1",
     "pytdx>=1.72",
+    "pypdf>=6.21.0,<7",
 ]
 
 [project.optional-dependencies]
+codex = ["openai-codex==0.163.0"]
 dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
