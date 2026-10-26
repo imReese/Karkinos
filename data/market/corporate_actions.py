@@ -7,9 +7,10 @@ neither an announcement date nor an ex-date proves historical availability.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping, Sequence
 from datetime import date
-from decimal import Decimal, DecimalException
+from decimal import Decimal, DecimalException, Inexact, localcontext
 from typing import Any
 
 from core.types import InstrumentKey, InstrumentType
@@ -94,6 +95,8 @@ def read_corporate_action_observation(
     """Read exact frozen identities offline; never consult latest data or a provider."""
     try:
         observation = _read_json(store, ref)
+        if observation.get("schema_version") == PROJECTED_OBSERVATION_SCHEMA:
+            return _read_eastmoney_projection(store, ref, observation)
         if observation.get("schema_version") != OBSERVATION_SCHEMA:
             raise CorporateActionObservationError(
                 "corporate_action_observation_schema_invalid"
@@ -152,7 +155,7 @@ def summarize_corporate_action_observation(
         )
     ]
     undated = [row for row in records if row["ex_date"] is None]
-    return {
+    result = {
         "schema_version": "karkinos.corporate_action_evidence.v1",
         "status": "observed",
         "observation_ids": [observation["observation_id"]],
@@ -176,6 +179,16 @@ def summarize_corporate_action_observation(
         "returns_modeled": False,
         "limitations": list(_LIMITATIONS),
     }
+    if observation.get("source_extent") == "selected_events":
+        result.update(
+            coverage_status="selected_events",
+            source_extent="selected_events",
+            availability_basis=observation["availability_basis"],
+        )
+        result["limitations"].append(
+            "Selected events do not establish complete instrument or window coverage."
+        )
+    return result
 
 
 def _event_summary(
@@ -342,6 +355,329 @@ def _read_json(store: ContentAddressedObjectStore, ref: ObjectRef) -> dict[str, 
             "corporate_action_object_invalid"
         ) from exc
     return value
+
+
+# A bounded native row projection, never a synthetic per-stock provider capture.
+PROJECTED_OBSERVATION_SCHEMA = "karkinos.corporate_action_observation.v2"
+_EASTMONEY_PROJECTION = "karkinos.eastmoney.fhps_calendar_projection.v1"
+_CALENDAR_ROLES = dict(
+    zip(
+        (
+            "分红转增股权登记日",
+            "分红转增除权除息日",
+            "分红转增红利发放日",
+            "分红转增股份上市日",
+        ),
+        ("record_date", "ex_date", "pay_date", "share_listing_date"),
+        strict=True,
+    )
+)
+
+
+def publish_eastmoney_corporate_action_projection(
+    store: ContentAddressedObjectStore,
+    *,
+    fhps_capture_ref: ObjectRef,
+    fhps_row_index: int,
+    calendar_capture_ref: ObjectRef,
+    calendar_row_indices: Sequence[int],
+) -> ObjectRef:
+    """Derive selected terms from two original market pages; accept no amounts."""
+    parents = [
+        {
+            "role": "fhps_terms",
+            "capture_ref": _projection_ref(fhps_capture_ref),
+            "row_indices": [fhps_row_index],
+        },
+        {
+            "role": "calendar_role_dates",
+            "capture_ref": _projection_ref(calendar_capture_ref),
+            "row_indices": sorted(calendar_row_indices),
+        },
+    ]
+    facts, captures = _eastmoney_projected_facts(store, parents)
+    facts_ref = store.put_bytes(_json_bytes(facts))
+    return store.put_bytes(
+        _json_bytes(_projection_payload(parents, captures, facts_ref))
+    )
+
+
+def _projection_ref(ref: ObjectRef) -> dict[str, Any]:
+    return {"object_id": ref.object_id, "size_bytes": ref.size_bytes}
+
+
+def _projection_payload(parents, captures, facts_ref):
+    latest = max(item.completed_at for item in captures).isoformat()
+    return {
+        "schema_version": PROJECTED_OBSERVATION_SCHEMA,
+        "projection_version": _EASTMONEY_PROJECTION,
+        "facts_ref": _projection_ref(facts_ref),
+        "parents": parents,
+        "source_extent": "selected_events",
+        "available_at": latest,
+        "captured_at": latest,
+        "oldest_captured_at": min(item.completed_at for item in captures).isoformat(),
+        "availability_basis": "all_parent_captures_completed",
+        "historical_availability_verified": False,
+    }
+
+
+def _read_eastmoney_projection(store, ref, observation):
+    facts, captures = _eastmoney_projected_facts(store, observation["parents"])
+    facts_ref = ObjectRef(**observation["facts_ref"])
+    if _read_json(store, facts_ref) != facts or observation != _projection_payload(
+        observation["parents"], captures, facts_ref
+    ):
+        raise CorporateActionObservationError(
+            "corporate_action_projection_binding_invalid"
+        )
+    return {
+        **facts,
+        **{
+            key: observation[key]
+            for key in (
+                "source_extent",
+                "available_at",
+                "captured_at",
+                "oldest_captured_at",
+                "availability_basis",
+                "historical_availability_verified",
+            )
+        },
+        "observation_id": ref.object_id,
+        "facts_revision_id": facts_ref.object_id,
+        "capture_ids": [item.capture_id for item in captures],
+    }
+
+
+def _native_date(value):
+    if not isinstance(value, str) or not re.fullmatch(
+        r"[0-9]{4}-[0-9]{2}-[0-9]{2}( 00:00:00)?", value
+    ):
+        raise CorporateActionObservationError("corporate_action_native_date_invalid")
+    return date.fromisoformat(value[:10]).isoformat()
+
+
+def _eastmoney_page(store, parent, calendar):
+    capture = read_provider_capture(store, ObjectRef(**parent["capture_ref"]))
+    request = json.loads(capture.request_json)
+    parameters = request["parameters"]
+    field = "TRADE_DATE" if calendar else "EX_DIVIDEND_DATE"
+    expected = {
+        "client": "WEB",
+        "source": "WEB",
+        "pageSize": "500",
+        "reportName": "RPT_SPECIAL_DIVIDEND" if calendar else "RPT_SHAREBONUS_DET",
+        "columns": "SECURITY_CODE,SECUCODE,SECURITY_NAME_ABBR,EVENT_TYPE,EVENT_CONTENT,TRADE_DATE"
+        if calendar
+        else "ALL",
+        "sortColumns": "EVENT_CODE,SECURITY_CODE" if calendar else "PLAN_NOTICE_DATE",
+        "sortTypes": "1,-1" if calendar else "-1",
+    }
+    if not calendar:
+        expected.update(js='{"data":(x),"pages":(tp)}', quoteColumns="")
+    match = re.fullmatch(
+        r"\(" + field + r">='([0-9-]+)'\)\(" + field + r"<='([0-9-]+)'\)",
+        parameters["filter"],
+    )
+    body = json.loads(store.read_bytes(capture.raw_object_ref), parse_float=Decimal)
+    result = body["result"]
+    rows, count, pages = result["data"], result["count"], result["pages"]
+    page = parameters["pageNumber"]
+    if (
+        capture.provider != "eastmoney_datacenter"
+        or capture.operation
+        != ("corporate_action_calendar_window" if calendar else "dividend")
+        or capture.adapter_version
+        != (
+            "karkinos.artifact.eastmoney.dividend_calendar_window_raw.v1"
+            if calendar
+            else "karkinos.artifact.eastmoney.sharebonus_page_raw.v1"
+        )
+        or capture.payload_format
+        != (
+            "eastmoney.datacenter.calendar.http_response_body.v1"
+            if calendar
+            else "eastmoney.datacenter.http_response_body.v1"
+        )
+        or set(request) != {"method", "url", "parameters"}
+        or request["method"] != "GET"
+        or request["url"] != "https://datacenter-web.eastmoney.com/api/data/v1/get"
+        or set(parameters) != {*expected, "filter", "pageNumber"}
+        or any(parameters[key] != value for key, value in expected.items())
+        or not match
+        or type(page) is not str
+        or not re.fullmatch(r"[1-9][0-9]*", page)
+        or body["success"] is not True
+        or type(body["code"]) is not int
+        or body["code"] != 0
+        or type(count) is not int
+        or count <= 0
+        or type(pages) is not int
+        or pages != (count + 499) // 500
+        or not 1 <= int(page) <= pages
+        or not isinstance(rows, list)
+        or capture.record_count != len(rows)
+        or len(rows) != min(500, count - (int(page) - 1) * 500)
+    ):
+        raise CorporateActionObservationError("corporate_action_native_capture_invalid")
+    start, end = (_native_date(value) for value in match.groups())
+    if start > end or any(not start <= _native_date(row[field]) <= end for row in rows):
+        raise CorporateActionObservationError("corporate_action_native_range_invalid")
+    return capture, rows
+
+
+def _eastmoney_projected_facts(store, parents):
+    # Fixed v2 source precision: accept exact operations only, never round raw facts.
+    try:
+        with localcontext() as context:
+            context.prec = 28
+            context.traps[Inexact] = True
+            return _eastmoney_projected_facts_exact(store, parents)
+    except DecimalException as exc:
+        raise CorporateActionObservationError(
+            "corporate_action_native_precision_invalid"
+        ) from exc
+
+
+def _eastmoney_projected_facts_exact(store, parents):
+    if (
+        len(parents) != 2
+        or [item["role"] for item in parents] != ["fhps_terms", "calendar_role_dates"]
+        or any(set(item) != {"role", "capture_ref", "row_indices"} for item in parents)
+    ):
+        raise CorporateActionObservationError(
+            "corporate_action_projection_parents_invalid"
+        )
+    captures, pages = zip(
+        *(
+            _eastmoney_page(store, parent, index == 1)
+            for index, parent in enumerate(parents)
+        ),
+        strict=True,
+    )
+    indices = [item["row_indices"] for item in parents]
+    if any(
+        not isinstance(values, list)
+        or len(values) != size
+        or any(type(i) is not int or not 0 <= i < len(rows) for i in values)
+        or values != sorted(set(values))
+        for values, size, rows in zip(indices, (1, 4), pages, strict=True)
+    ):
+        raise CorporateActionObservationError(
+            "corporate_action_projection_indices_invalid"
+        )
+    row = pages[0][indices[0][0]]
+    code, profile = row["SECUCODE"], row["IMPL_PLAN_PROFILE"]
+    if (
+        not isinstance(code, str)
+        or not re.fullmatch(r"[0-9]{6}\.(SH|SZ|BJ)", code)
+        or row["SECURITY_CODE"] != code[:6]
+        or row["ASSIGN_PROGRESS"] != "实施分配"
+    ):
+        raise CorporateActionObservationError(
+            "corporate_action_native_identity_invalid"
+        )
+    # This first projection supports only an explicit three-leg per-ten plan.
+    scheme = re.fullmatch(
+        r"10送([0-9]+(?:\.[0-9]+)?)股转([0-9]+(?:\.[0-9]+)?)股派([0-9]+(?:\.[0-9]+)?)元\(含税(?:,[^()]*)?\)",
+        profile,
+    )
+    if not scheme:
+        raise CorporateActionObservationError(
+            "corporate_action_native_units_unverified"
+        )
+    rates: dict[str, Decimal | None] = {}
+    for key, text in zip(
+        ("BONUS_RATIO", "IT_RATIO", "PRETAX_BONUS_RMB"), scheme.groups(), strict=True
+    ):
+        raw = row[key]
+        rates[key] = (
+            None
+            if raw is None
+            else Decimal(_number_text(raw if isinstance(raw, bool) else str(raw)))
+        )
+        if rates[key] is not None and rates[key] != Decimal(text):
+            raise CorporateActionObservationError(
+                "corporate_action_native_terms_conflicting"
+            )
+    total = (
+        None
+        if row["BONUS_IT_RATIO"] is None
+        else Decimal(_number_text(str(row["BONUS_IT_RATIO"])))
+    )
+    if isinstance(row["BONUS_IT_RATIO"], bool) or (
+        total is not None and total != Decimal(scheme[1]) + Decimal(scheme[2])
+    ):
+        raise CorporateActionObservationError(
+            "corporate_action_native_terms_conflicting"
+        )
+    selected = [pages[1][index] for index in indices[1]]
+    matching = [
+        item
+        for item in pages[1]
+        if item["SECUCODE"] == code and item["EVENT_CONTENT"] == profile
+    ]
+    if (
+        len(matching) != 4
+        or selected != matching
+        or any(item["SECURITY_CODE"] != code[:6] for item in selected)
+        or {item["EVENT_TYPE"] for item in selected} != set(_CALENDAR_ROLES)
+    ):
+        raise CorporateActionObservationError("corporate_action_native_roles_ambiguous")
+    dates = {
+        _CALENDAR_ROLES[item["EVENT_TYPE"]]: _native_date(item["TRADE_DATE"])
+        for item in selected
+    }
+    if (
+        dates["record_date"] != _native_date(row["EQUITY_RECORD_DATE"])
+        or dates["ex_date"] != _native_date(row["EX_DIVIDEND_DATE"])
+        or not dates["record_date"]
+        < dates["ex_date"]
+        <= min(dates["pay_date"], dates["share_listing_date"])
+        or sum(
+            item["SECUCODE"] == code
+            and item["EQUITY_RECORD_DATE"] == row["EQUITY_RECORD_DATE"]
+            and item["EX_DIVIDEND_DATE"] == row["EX_DIVIDEND_DATE"]
+            for item in pages[0]
+        )
+        != 1
+    ):
+        raise CorporateActionObservationError("corporate_action_native_event_ambiguous")
+    record: dict[str, Any] = dict.fromkeys((*DATE_FIELDS, *NUMBER_FIELDS))
+    record.update(
+        dates,
+        source_code=code,
+        implementation_status="实施",
+        report_period=None
+        if row["REPORT_DATE"] is None
+        else _native_date(row["REPORT_DATE"]),
+    )
+    for target, value in zip(
+        (
+            "bonus_share_ratio",
+            "capitalization_ratio",
+            "cash_dividend_before_tax",
+            "stock_dividend_ratio",
+        ),
+        (*rates.values(), total),
+        strict=True,
+    ):
+        record[target] = None if value is None else _number_text(value / Decimal(10))
+    facts: dict[str, Any] = {
+        "schema_version": FACTS_SCHEMA,
+        "provider": "eastmoney_datacenter",
+        "operation": "dividend",
+        "instrument": {"symbol": code[:6], "instrument_type": "stock"},
+        "normalizer_version": NORMALIZER_VERSION,
+        "currency": "CNY",
+        "cash_unit": "per_share",
+        "share_ratio_unit": "shares_per_existing_share",
+        "base_shares_unit": "shares",
+        "records": _canonical_records([record]),
+    }
+    _validate_facts(facts, InstrumentKey.from_values(**facts["instrument"]))
+    return facts, captures
 
 
 # A date query is genuinely market-wide. Its evidence is different from a

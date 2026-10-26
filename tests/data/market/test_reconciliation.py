@@ -104,6 +104,7 @@ def test_bse_whole_hand_precision_replays_actual_raw_and_preserves_exact_primary
         def daily(self, **kwargs):
             return pd.DataFrame(
                 {
+                    "ts_code": [kwargs["ts_code"]],
                     "trade_date": ["20260915"],
                     "open": [10],
                     "high": [11],

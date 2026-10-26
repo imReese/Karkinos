@@ -11,6 +11,7 @@ from data.market.reconciliation import (
     BAOSTOCK_TUSHARE_AMOUNT_RECONCILIATION_V1,
     EASTMONEY_TUSHARE_BSE_RECONCILIATION_V1,
     STRICT_DAILY_RECONCILIATION,
+    TENCENT_TUSHARE_REPORTED_AMOUNT_RECONCILIATION_V1,
     DailyBarReconciliationPolicy,
 )
 from data.provider_registry import ProviderRegistry, build_provider_registry
@@ -206,6 +207,7 @@ def resolve_daily_bar_verification_pairs(
                     else _daily_bar_reconciliation_policy(
                         primary,
                         comparison,
+                        request,
                     ),
                 )
             )
@@ -241,6 +243,7 @@ def daily_bar_verification_pair_for_config(
 def _daily_bar_reconciliation_policy(
     primary: DailyBarProvider,
     comparison: DailyBarProvider,
+    request: DailyBarRequest,
 ) -> DailyBarReconciliationPolicy:
     upstreams = frozenset(
         {
@@ -252,4 +255,15 @@ def _daily_bar_reconciliation_policy(
         return BAOSTOCK_TENCENT_DAILY_RECONCILIATION_V1
     if upstreams == frozenset({"baostock", "tushare"}):
         return BAOSTOCK_TUSHARE_AMOUNT_RECONCILIATION_V1
+    if (
+        upstreams == frozenset({"tushare", "tencent"})
+        and {primary.descriptor.provider, comparison.descriptor.provider}
+        == {"tushare", "akshare_tencent"}
+        and all(
+            key.instrument_type is InstrumentType.STOCK
+            and not key.symbol.startswith(("4", "8", "92"))
+            for key in request.instruments
+        )
+    ):
+        return TENCENT_TUSHARE_REPORTED_AMOUNT_RECONCILIATION_V1
     return STRICT_DAILY_RECONCILIATION

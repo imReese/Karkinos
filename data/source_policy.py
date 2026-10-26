@@ -181,13 +181,53 @@ CN_RESEARCH_V1 = MarketSourcePolicy(
     ),
 )
 
+TUSHARE_TENCENT_RESEARCH_V1 = MarketSourcePolicy(
+    policy_id="karkinos.market.source.tushare_tencent_research.v1",
+    routes=tuple(
+        (
+            use_case,
+            SourceRoute(
+                candidates=("tushare", "akshare_tencent"),
+                min_sources=2,
+                require_independent_upstream=True,
+                price_basis="unadjusted",
+            )
+            if use_case is MarketDataUseCase.DAILY_BARS
+            else route,
+        )
+        for use_case, route in FREE_CN_RESEARCH_V1.routes
+    ),
+)
+
+TENCENT_EASTMONEY_RESEARCH_V1 = MarketSourcePolicy(
+    policy_id="karkinos.market.source.tencent_eastmoney_research.v1",
+    routes=tuple(
+        (
+            use_case,
+            SourceRoute(
+                candidates=("akshare_tencent", "akshare"),
+                min_sources=2,
+                require_independent_upstream=True,
+                price_basis="unadjusted",
+            )
+            if use_case is MarketDataUseCase.DAILY_BARS
+            else route,
+        )
+        for use_case, route in FREE_CN_RESEARCH_V1.routes
+    ),
+)
+
 _POLICY_ALIASES = {
     "free_cn_research_v1": FREE_CN_RESEARCH_V1.policy_id,
     "cn_research_v1": CN_RESEARCH_V1.policy_id,
+    "tushare_tencent_research_v1": TUSHARE_TENCENT_RESEARCH_V1.policy_id,
+    "tencent_eastmoney_research_v1": TENCENT_EASTMONEY_RESEARCH_V1.policy_id,
 }
 _POLICIES = {
     FREE_CN_RESEARCH_V1.policy_id: FREE_CN_RESEARCH_V1,
     CN_RESEARCH_V1.policy_id: CN_RESEARCH_V1,
+    TUSHARE_TENCENT_RESEARCH_V1.policy_id: TUSHARE_TENCENT_RESEARCH_V1,
+    TENCENT_EASTMONEY_RESEARCH_V1.policy_id: TENCENT_EASTMONEY_RESEARCH_V1,
 }
 
 

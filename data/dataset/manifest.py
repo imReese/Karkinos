@@ -147,6 +147,7 @@ def serialize_daily_bar_dataset_manifest(
         if snapshot.verification_bound
         else DATASET_MANIFEST_SCHEMA_VERSION
     )
+    instrument_payloads: dict[InstrumentKey, dict[str, Any]] = {}
     payload: dict[str, Any] = {
         "schema_version": schema_version,
         "kind": snapshot.kind,
@@ -156,10 +157,15 @@ def serialize_daily_bar_dataset_manifest(
         "resolver_policy_id": (snapshot.resolver_policy_id),
         "market_schema_version": (snapshot.market_schema_version),
         "instruments": [
-            _instrument_payload(instrument) for instrument in snapshot.instruments
+            _instrument_payload(instrument, instrument_payloads=instrument_payloads)
+            for instrument in snapshot.instruments
         ],
         "partitions": [
-            _partition_payload(partition, schema_version=schema_version)
+            _partition_payload(
+                partition,
+                schema_version=schema_version,
+                instrument_payloads=instrument_payloads,
+            )
             for partition in snapshot.partitions
         ],
     }
@@ -172,14 +178,18 @@ def serialize_daily_bar_dataset_manifest(
         payload["session_memberships"] = [
             {
                 "partition_date": item.partition_date.isoformat(),
-                "instruments": [_instrument_payload(key) for key in item.instruments],
+                "instruments": [
+                    _instrument_payload(key, instrument_payloads=instrument_payloads)
+                    for key in item.instruments
+                ],
                 "available_at": _format_utc_instant(item.available_at),
                 "source_observation_ids": list(item.source_observation_ids),
                 "decision_at": _format_utc_instant(item.decision_at)
                 if item.decision_at
                 else None,
                 "maintenance_instruments": [
-                    _instrument_payload(key) for key in item.maintenance_instruments
+                    _instrument_payload(key, instrument_payloads=instrument_payloads)
+                    for key in item.maintenance_instruments
                 ],
             }
             for item in snapshot.session_memberships
@@ -268,10 +278,16 @@ def deserialize_daily_bar_dataset_manifest(
         field="partitions",
     )
 
-    instruments = tuple(_instrument_from_payload(item) for item in instruments_value)
+    instrument_keys: dict[tuple[str, InstrumentType], InstrumentKey] = {}
+    instruments = tuple(
+        _instrument_from_payload(item, instrument_keys=instrument_keys)
+        for item in instruments_value
+    )
 
     partitions = tuple(
-        _partition_from_payload(item, schema_version=schema_version)
+        _partition_from_payload(
+            item, schema_version=schema_version, instrument_keys=instrument_keys
+        )
         for item in partitions_value
     )
 
@@ -314,7 +330,7 @@ def deserialize_daily_bar_dataset_manifest(
             in {DATASET_MANIFEST_SCHEMA_VERSION_V3, DATASET_MANIFEST_SCHEMA_VERSION_V4}
             else (),
             session_memberships=tuple(
-                _membership_from_payload(item)
+                _membership_from_payload(item, instrument_keys=instrument_keys)
                 for item in _require_list(
                     root["session_memberships"], field="session_memberships"
                 )
@@ -340,17 +356,25 @@ def deserialize_daily_bar_dataset_manifest(
 
 def _instrument_payload(
     instrument: InstrumentKey,
+    *,
+    instrument_payloads: dict[InstrumentKey, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    return {
+    if instrument_payloads is not None and instrument in instrument_payloads:
+        return instrument_payloads[instrument]
+    payload = {
         "symbol": instrument.symbol,
         "instrument_type": (instrument.instrument_type.value),
     }
+    if instrument_payloads is not None:
+        instrument_payloads[instrument] = payload
+    return payload
 
 
 def _partition_payload(
     partition: DailyBarDatasetPartition,
     *,
     schema_version: str,
+    instrument_payloads: dict[InstrumentKey, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "partition_date": partition.partition_date.isoformat(),
@@ -368,12 +392,17 @@ def _partition_payload(
         payload["verification_id"] = partition.verification_id
     if schema_version == DATASET_MANIFEST_SCHEMA_VERSION_V4:
         payload["instruments"] = [
-            _instrument_payload(key) for key in partition.instruments
+            _instrument_payload(key, instrument_payloads=instrument_payloads)
+            for key in partition.instruments
         ]
     return payload
 
 
-def _membership_from_payload(value: object) -> DailyBarDatasetMembership:
+def _membership_from_payload(
+    value: object,
+    *,
+    instrument_keys: dict[tuple[str, InstrumentType], InstrumentKey] | None = None,
+) -> DailyBarDatasetMembership:
     payload = _require_object(value, field="membership")
     _require_exact_keys(
         payload,
@@ -390,7 +419,7 @@ def _membership_from_payload(value: object) -> DailyBarDatasetMembership:
     return DailyBarDatasetMembership(
         partition_date=_parse_date(payload["partition_date"], field="membership_date"),
         instruments=tuple(
-            _instrument_from_payload(item)
+            _instrument_from_payload(item, instrument_keys=instrument_keys)
             for item in _require_list(
                 payload["instruments"], field="membership_instruments"
             )
@@ -410,7 +439,7 @@ def _membership_from_payload(value: object) -> DailyBarDatasetMembership:
         if payload["decision_at"] is not None
         else None,
         maintenance_instruments=tuple(
-            _instrument_from_payload(item)
+            _instrument_from_payload(item, instrument_keys=instrument_keys)
             for item in _require_list(
                 payload["maintenance_instruments"],
                 field="membership_maintenance_instruments",
@@ -442,6 +471,8 @@ def bind_stock_master_observation(
 
 def _instrument_from_payload(
     value: object,
+    *,
+    instrument_keys: dict[tuple[str, InstrumentType], InstrumentKey] | None = None,
 ) -> InstrumentKey:
     payload = _require_object(
         value,
@@ -475,10 +506,16 @@ def _instrument_from_payload(
         ) from exc
 
     try:
-        return InstrumentKey(
+        identity = symbol, instrument_type
+        if instrument_keys is not None and identity in instrument_keys:
+            return instrument_keys[identity]
+        instrument = InstrumentKey(
             symbol=symbol,
             instrument_type=instrument_type,
         )
+        if instrument_keys is not None:
+            instrument_keys[identity] = instrument
+        return instrument
     except (
         TypeError,
         ValueError,
@@ -492,6 +529,7 @@ def _partition_from_payload(
     value: object,
     *,
     schema_version: str,
+    instrument_keys: dict[tuple[str, InstrumentType], InstrumentKey] | None = None,
 ) -> DailyBarDatasetPartition:
     payload = _require_object(
         value,
@@ -544,7 +582,7 @@ def _partition_from_payload(
                 )
             ),
             instruments=tuple(
-                _instrument_from_payload(item)
+                _instrument_from_payload(item, instrument_keys=instrument_keys)
                 for item in _require_list(
                     payload["instruments"], field="shard_instruments"
                 )

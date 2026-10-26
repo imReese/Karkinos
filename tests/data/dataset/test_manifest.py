@@ -20,6 +20,7 @@ from data.dataset.manifest import (
 )
 from data.dataset.model import (
     DATASET_KIND_DAILY_BARS,
+    DailyBarDatasetMembership,
     DailyBarDatasetPartition,
     DailyBarDatasetSnapshot,
     DatasetRef,
@@ -691,3 +692,142 @@ def test_read_requires_dataset_ref(
             store,
             "sha256:not-a-dataset-ref",
         )
+
+
+def _dated_manifest_snapshot(*, instrument_count=12, session_count=3):
+    instruments = tuple(
+        _instrument(str(600000 + index)) for index in range(instrument_count)
+    )
+    # Equal symbols with different instrument types must remain separate keys.
+    instruments = (*instruments, _instrument("600000", InstrumentType.ETF))
+    days = tuple(_START_DATE + timedelta(days=index) for index in range(session_count))
+    return DailyBarDatasetSnapshot(
+        start_date=days[0],
+        end_date=days[-1],
+        cutoff=datetime.combine(days[-1], datetime.min.time(), timezone.utc)
+        + timedelta(days=1),
+        instruments=instruments,
+        resolver_policy_id="fixture.verified.v1",
+        market_schema_version="karkinos.market.daily_bar.v1",
+        partitions=tuple(
+            DailyBarDatasetPartition(
+                day,
+                "fixture",
+                _content_id("a"),
+                _content_id("b"),
+                _content_id("c"),
+                instruments[offset : offset + 4],
+            )
+            for day in days
+            for offset in range(0, len(instruments), 4)
+        ),
+        session_memberships=tuple(
+            DailyBarDatasetMembership(
+                day,
+                instruments[:-1],
+                datetime.combine(day, datetime.min.time(), timezone.utc)
+                + timedelta(hours=8),
+                maintenance_instruments=instruments[-1:],
+            )
+            for day in days
+        ),
+        universe_policy_id="fixture.full_scope.v1",
+    )
+
+
+def test_dated_manifest_reuses_instrument_payloads_only_within_each_serialization(
+    monkeypatch,
+):
+    import data.dataset.manifest as owner
+
+    snapshot = _dated_manifest_snapshot(instrument_count=200, session_count=20)
+    encoded = owner._canonical_json
+    payloads = []
+
+    def inspect_payload(value):
+        payloads.append(value)
+        occurrences = [
+            *value["instruments"],
+            *(item for part in value["partitions"] for item in part["instruments"]),
+            *(
+                item
+                for membership in value["session_memberships"]
+                for item in (
+                    *membership["instruments"],
+                    *membership["maintenance_instruments"],
+                )
+            ),
+        ]
+        assert len(occurrences) == len(snapshot.instruments) * 41
+        assert len({id(item) for item in occurrences}) == len(snapshot.instruments)
+        return encoded(value)
+
+    monkeypatch.setattr(owner, "_canonical_json", inspect_payload)
+    first = serialize_daily_bar_dataset_manifest(snapshot)
+    second = serialize_daily_bar_dataset_manifest(snapshot)
+    assert first == second
+    assert all(
+        left is not right
+        for left, right in zip(
+            payloads[0]["instruments"], payloads[1]["instruments"], strict=True
+        )
+    )
+
+
+def test_dated_manifest_reuses_validated_typed_keys_only_within_each_deserialization():
+    snapshot = _dated_manifest_snapshot(instrument_count=200, session_count=20)
+    payload = serialize_daily_bar_dataset_manifest(snapshot)
+    first = deserialize_daily_bar_dataset_manifest(payload)
+    second = deserialize_daily_bar_dataset_manifest(payload)
+    assert first == second == snapshot
+    keys = {key: key for key in first.instruments}
+    occurrences = [
+        *(key for part in first.partitions for key in part.instruments),
+        *(
+            key
+            for membership in first.session_memberships
+            for key in (*membership.instruments, *membership.maintenance_instruments)
+        ),
+    ]
+    assert all(key is keys[key] for key in occurrences)
+    assert all(
+        left is not right
+        for left, right in zip(first.instruments, second.instruments, strict=True)
+    )
+    assert serialize_daily_bar_dataset_manifest(first) == payload
+
+
+@pytest.mark.parametrize("location", ["partition", "membership", "maintenance"])
+@pytest.mark.parametrize("invalid", ["extra_key", "symbol_type", "instrument_type"])
+def test_cached_instrument_identity_does_not_skip_repeated_payload_validation(
+    location, invalid
+):
+    payload = _decode_manifest(
+        serialize_daily_bar_dataset_manifest(_dated_manifest_snapshot())
+    )
+    if location == "partition":
+        instrument = payload["partitions"][0]["instruments"][0]
+    else:
+        field = "instruments" if location == "membership" else "maintenance_instruments"
+        instrument = payload["session_memberships"][0][field][0]
+    if invalid == "extra_key":
+        instrument["extra"] = "must not be hidden by cached identity"
+    elif invalid == "symbol_type":
+        instrument["symbol"] = 600000
+    else:
+        instrument["instrument_type"] = "unknown_instrument_type"
+    with pytest.raises(
+        DatasetManifestIntegrityError, match="dataset_manifest_instrument"
+    ):
+        deserialize_daily_bar_dataset_manifest(_encode_json(payload))
+
+
+def test_unknown_valid_instrument_still_fails_snapshot_membership_validation():
+    payload = _decode_manifest(
+        serialize_daily_bar_dataset_manifest(_dated_manifest_snapshot())
+    )
+    payload["partitions"][0]["instruments"][0]["symbol"] = "999999"
+    with pytest.raises(
+        DatasetManifestIntegrityError, match="dataset_manifest_semantics_invalid"
+    ):
+        deserialize_daily_bar_dataset_manifest(_encode_json(payload))

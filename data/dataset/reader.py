@@ -51,7 +51,11 @@ from data.dataset.model import (
 from data.market.model import (
     DailyBarObservation,
 )
-from data.market.reconciliation import reconcile_daily_bar_revisions_with_bars
+from data.market.reconciliation import (
+    BseTencentReportedRelation,
+    reconcile_daily_bar_revisions_with_bars,
+    tencent_tushare_native_read_scope,
+)
 from data.market.revision import (
     MARKET_DATA_KIND_DAILY_BARS,
     MarketRevision,
@@ -69,7 +73,9 @@ from data.market.verification_evidence import (
     MarketVerificationEvidenceError,
     MarketVerificationStatus,
     read_market_verification_evidence,
+    read_market_verification_evidence_with_component_bars,
 )
+from data.providers.bse_sina_history import bse_native_read_scope
 from data.storage.objects import (
     ContentAddressedObjectStore,
     ObjectStoreError,
@@ -185,6 +191,8 @@ def read_daily_bar_dataset(
     return result
 
 
+@bse_native_read_scope()
+@tencent_tushare_native_read_scope()
 def _read_daily_bar_dataset(
     store: ContentAddressedObjectStore,
     ref: DatasetRef,
@@ -456,7 +464,7 @@ def read_dataset_corporate_action_evidence(
             raise DatasetReaderIntegrityError(
                 "dataset_corporate_action_unreadable"
             ) from exc
-    summaries, seen = [], set()
+    summaries, seen, oldest = [], set(), []
     try:
         for observation_id in snapshot.corporate_action_observation_ids:
             observation = read_corporate_action_observation(
@@ -471,6 +479,9 @@ def read_dataset_corporate_action_evidence(
                     "dataset_corporate_action_instrument_mismatch"
                 )
             seen.add(instrument)
+            oldest.append(
+                observation.get("oldest_captured_at", observation["captured_at"])
+            )
             if datetime.fromisoformat(observation["available_at"]) > snapshot.cutoff:
                 raise DatasetReaderIntegrityError(
                     "dataset_corporate_action_after_cutoff"
@@ -504,13 +515,23 @@ def read_dataset_corporate_action_evidence(
             {limit for item in summaries for limit in item["limitations"]}
         ),
     )
+    if any(
+        item.get("source_extent") == "selected_events"
+        or item.get("coverage_status") == "selected_events"
+        for item in summaries
+    ):
+        result.update(
+            coverage_status="selected_events",
+            source_extent="selected_events",
+            availability_basis="all_parent_captures_completed",
+        )
     for key in ("total_record_count", "matched_event_count", "undated_event_count"):
         result[key] = sum(item[key] for item in summaries)
     if include_capture_freshness:
         # Keep the default summary byte-for-byte compatible with frozen report
         # bindings; operational freshness is an optional derived projection.
         result["oldest_captured_at"] = min(
-            (item["captured_at"] for item in summaries),
+            oldest,
             key=datetime.fromisoformat,
         )
     return result
@@ -626,9 +647,11 @@ def _validate_partition_lineage(
 
     if partition.verification_id is not None:
         try:
-            verification = read_market_verification_evidence(
-                store,
-                store.resolve_ref(partition.verification_id),
+            verification, component_bars = (
+                read_market_verification_evidence_with_component_bars(
+                    store,
+                    store.resolve_ref(partition.verification_id),
+                )
             )
         except (ObjectStoreError, MarketVerificationEvidenceError) as exc:
             raise DatasetReaderIntegrityError(
@@ -669,6 +692,28 @@ def _validate_partition_lineage(
             raise DatasetReaderIntegrityError(
                 "dataset_reader_verification_lineage_mismatch"
             )
+        if verification.component_relation is not None and selected != (
+            verification.report.primary_provider,
+            verification.report.primary_revision_id,
+            verification.primary_materialization_id,
+        ):
+            raise DatasetReaderIntegrityError(
+                "dataset_reader_tencent_relation_requires_official_bar"
+                if type(verification.component_relation) is BseTencentReportedRelation
+                else "dataset_reader_auction_requires_sina_bar"
+            )
+        if component_bars is not None:
+            # The evidence owner already reproduced both materializations and
+            # the complete component report during this read. The lineage and
+            # temporal checks above still apply to these exact verified sides.
+            primary_bars, comparison_bars = component_bars
+            if selected == (
+                verification.report.primary_provider,
+                verification.report.primary_revision_id,
+                verification.primary_materialization_id,
+            ):
+                return primary_bars
+            return comparison_bars
         try:
             primary_revision = read_market_revision(
                 store,
@@ -698,6 +743,8 @@ def _validate_partition_lineage(
                     comparison_revision=comparison_revision,
                     comparison_materialization=comparison_materialization,
                     policy=verification.policy,
+                    component_relation=verification.component_relation,
+                    component_checked_at=verification.checked_at,
                 )
             )
         except (
@@ -831,6 +878,20 @@ def _validate_membership_evidence(
         BaoStockDailyBarError,
         read_baostock_historical_status,
     )
+    from data.providers.bse_official_activity import (
+        read_bse_official_historical_activity,
+    )
+    from data.providers.sse_suspension import read_sse_structured_suspension_status
+    from data.providers.szse_memo_suspension import (
+        read_szse_security_identity_relation,
+        read_szse_structured_suspension_status,
+    )
+    from data.providers.szse_suspension import (
+        SZSE_SUSPENSION_V2_ADAPTER_VERSION,
+        read_sse_suspension_status,
+        read_szse_suspension_status,
+        read_szse_suspension_status_v2,
+    )
     from data.providers.tushare_status import read_tushare_historical_status
 
     verified = _CALL_VERIFIED_MEMBERSHIPS.get()
@@ -859,6 +920,14 @@ def _validate_membership_evidence(
     # A range capture and master may serve thousands of dates. Reopen their
     # bytes once in this validation call; a later cold read verifies them again.
     sources = {}
+    headers: dict[str, tuple[Any, Any]] = {}
+
+    def source_header(identity: str) -> tuple[Any, Any]:
+        if identity not in headers:
+            ref = store.resolve_ref(identity)
+            headers[identity] = ref, json.loads(store.read_bytes(ref))
+        return headers[identity]
+
     for membership in getattr(snapshot, "session_memberships", ()):
         if session_date is not None and membership.partition_date != session_date:
             continue
@@ -871,26 +940,96 @@ def _validate_membership_evidence(
         availability = []
         try:
             for identity in membership.source_observation_ids:
-                if identity not in sources:
-                    source = json.loads(store.read_bytes(store.resolve_ref(identity)))
+                source_key = identity
+                identity_refs = ()
+                source_ref, source = source_header(identity)
+                if (source.get("provider"), source.get("operation")) == (
+                    "szse_memo",
+                    "suspension_status_probe",
+                ):
+                    # Identity must be bound independently by every dated
+                    # membership; a prior alias-cache hit cannot supply it.
+                    identity_ids = []
+                    for related in membership.source_observation_ids:
+                        _, header = source_header(related)
+                        if (header.get("provider"), header.get("operation")) == (
+                            "szse_disclosure",
+                            "security_identity_announcement",
+                        ):
+                            identity_ids.append(related)
+                    identity_ids = tuple(sorted(identity_ids))
+                    identity_refs = tuple(
+                        source_header(item)[0] for item in identity_ids
+                    )
+                    source_key = identity, identity_ids
+                if source_key not in sources:
                     if source.get("schema_version") == "karkinos.provider_capture.v1":
                         source_kind = (source.get("provider"), source.get("operation"))
-                        if source_kind == ("baostock", "daily_bars"):
+                        status_kwargs = {}
+                        if source_kind == (
+                            "szse_disclosure",
+                            "security_identity_announcement",
+                        ):
+                            sources[source_key] = (
+                                "security_identity",
+                                read_szse_security_identity_relation(store, source_ref),
+                            )
+                            # Identity provenance supplies no members/status.
+                            availability.append(sources[source_key][1][0].completed_at)
+                            continue
+                        if source_kind == ("szse_memo", "suspension_status_probe"):
+                            read_status = read_szse_structured_suspension_status
+                            status_kwargs = {
+                                "selected_instruments": snapshot.instruments,
+                                "identity_capture_refs": identity_refs,
+                            }
+                        elif source_kind == ("baostock", "daily_bars"):
                             read_status = read_baostock_historical_status
                         elif source_kind == ("tushare", "suspend_d"):
                             read_status = read_tushare_historical_status
+                        elif source_kind == (
+                            "szse_disclosure",
+                            "suspension_announcement",
+                        ):
+                            read_status = (
+                                read_szse_suspension_status_v2
+                                if source.get("adapter_version")
+                                == SZSE_SUSPENSION_V2_ADAPTER_VERSION
+                                else read_szse_suspension_status
+                            )
+                        elif source_kind == (
+                            "sse_disclosure",
+                            "suspension_announcement",
+                        ):
+                            read_status = read_sse_suspension_status
+                        elif source_kind == (
+                            "bse_official_kline_probe",
+                            "public_kline_probe",
+                        ):
+                            read_status = read_bse_official_historical_activity
+                        elif source_kind == (
+                            "sse_suspension",
+                            "suspension_status_probe",
+                        ):
+                            read_status = read_sse_structured_suspension_status
+                            status_kwargs = {
+                                "selected_instruments": snapshot.instruments
+                            }
                         else:
                             raise ValueError("historical_status_source_unsupported")
-                        sources[identity] = (
+                        sources[source_key] = (
                             "historical_status",
-                            read_status(store, store.resolve_ref(identity)),
+                            read_status(store, source_ref, **status_kwargs),
                         )
                     else:
-                        sources[identity] = (
+                        sources[source_key] = (
                             "master",
                             _membership_master_evidence(store, source),
                         )
-                kind, source = sources[identity]
+                kind, source = sources[source_key]
+                if kind == "security_identity":
+                    availability.append(source[0].completed_at)
+                    continue
                 if kind == "historical_status":
                     capture, request, statuses = source
                     if membership.decision_at is not None or not (

@@ -467,6 +467,7 @@ def test_stock_and_etf_ranges_keep_existing_endpoint_units_and_one_sdk_call_each
             return pd.DataFrame(
                 [
                     {
+                        "ts_code": kwargs["ts_code"],
                         "trade_date": day.strftime("%Y%m%d"),
                         "open": 10,
                         "high": 10.1,

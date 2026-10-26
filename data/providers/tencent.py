@@ -8,7 +8,7 @@ import io
 import logging
 import math
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date, datetime, time, timezone
 from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation, localcontext
 from importlib.metadata import version as distribution_version
@@ -30,9 +30,9 @@ from data.market.contracts import (
 from data.providers.akshare_sdk import provider_network_env
 from data.source import DataSource, ProviderQuote
 
-AKSHARE_TENCENT_DAILY_BAR_ADAPTER_VERSION = "karkinos.akshare_tencent.daily_bar.v4"
+AKSHARE_TENCENT_DAILY_BAR_ADAPTER_VERSION = "karkinos.akshare_tencent.daily_bar.v5"
 AKSHARE_TENCENT_DAILY_BAR_PAYLOAD_FORMAT = (
-    "akshare.tencent.stock_zh_a_hist_tx.dataframe.v4"
+    "akshare.tencent.stock_zh_a_hist_tx.dataframe.v5"
 )
 _REVIEWED_AKSHARE_VERSION = "1.18.97"
 _AMOUNT_FLOAT_NORMALIZATION = (
@@ -132,7 +132,11 @@ class AkshareTencentDailyBarProvider:
             getattr(client, "__version__", None) or distribution_version("akshare")
         )
         volume_scales = {
-            instrument: _sdk_volume_scale(instrument, sdk_version)
+            instrument: _sdk_volume_scale(
+                instrument,
+                sdk_version,
+                adapter_version=AKSHARE_TENCENT_DAILY_BAR_ADAPTER_VERSION,
+            )
             for instrument, _ in targets
         }
         rows: list[ProviderDailyBarRow] = []
@@ -301,15 +305,43 @@ def _rows_from_frame(
 ) -> list[ProviderDailyBarRow]:
     if frame.empty:
         return []
+    return _rows_from_records(
+        tuple(
+            {column: item[column] for column in frame.columns}
+            for _, item in frame.iterrows()
+        ),
+        columns=tuple(frame.columns),
+        instrument=instrument,
+        expected_session=expected_session,
+        expected_end=expected_end,
+        volume_scale=volume_scale,
+        sdk_version=sdk_version,
+        adapter_version=adapter_version,
+    )
 
-    missing = set(_REQUIRED_COLUMNS) - set(frame.columns)
+
+def _rows_from_records(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    columns: Sequence[str],
+    instrument: InstrumentKey,
+    expected_session: date,
+    expected_end: date | None = None,
+    volume_scale: Decimal = Decimal("1"),
+    sdk_version: str | None = None,
+    adapter_version: str = "karkinos.akshare_tencent.daily_bar.v2",
+) -> list[ProviderDailyBarRow]:
+    if not records or not columns:
+        return []
+
+    missing = set(_REQUIRED_COLUMNS) - set(columns)
     if missing:
         raise AkshareTencentDailyBarResponseError(
             "akshare_tencent_response_columns_missing:" + ",".join(sorted(missing))
         )
 
     result: list[ProviderDailyBarRow] = []
-    for _, item in frame.iterrows():
+    for item in records:
         session = _trade_date(item["date"])
         if not expected_session <= session <= (expected_end or expected_session):
             raise AkshareTencentDailyBarResponseError(
@@ -361,14 +393,19 @@ def _normalized_volume(
     if hasattr(value, "item") and not isinstance(value, (str, bytes, Decimal)):
         value = value.item()
     if (
-        adapter_version != "karkinos.akshare_tencent.daily_bar.v4"
+        adapter_version
+        not in {
+            "karkinos.akshare_tencent.daily_bar.v4",
+            "karkinos.akshare_tencent.daily_bar.v5",
+        }
         or sdk_version != _REVIEWED_AKSHARE_VERSION
         or not isinstance(value, float)
         or not _sdk_multiplies_volume(_provider_symbol(instrument))
     ):
         return volume
     # This SDK multiplies Tencent's 0.01-lot grid by 100 using binary floats.
-    # Recover only a unique integer-share grid point within one binary ULP;
+    # Recover only a unique integer grid point in the SDK returned unit within
+    # one binary ULP, before applying the capture-version-bound unit scale;
     # keep larger differences and exact decimals subject to the storage gate.
     grid = volume.to_integral_value(rounding=ROUND_HALF_EVEN)
     ulp = Decimal.from_float(math.ulp(value))
@@ -398,6 +435,7 @@ def _normalized_amount(
         not in {
             "karkinos.akshare_tencent.daily_bar.v3",
             "karkinos.akshare_tencent.daily_bar.v4",
+            "karkinos.akshare_tencent.daily_bar.v5",
         }
         or sdk_version != _REVIEWED_AKSHARE_VERSION
         or not isinstance(value, float)
@@ -416,7 +454,25 @@ def _normalized_amount(
     return amount
 
 
-def _sdk_volume_scale(instrument: InstrumentKey, sdk_version: str) -> Decimal:
+def _sdk_volume_scale(
+    instrument: InstrumentKey,
+    sdk_version: str,
+    *,
+    adapter_version: str = "karkinos.akshare_tencent.daily_bar.v4",
+) -> Decimal:
+    # This SDK already receives shares for STAR 689 but excludes only sh688
+    # from its *100 branch. Undo that exact SDK bug only for new v5 captures;
+    # v4 and earlier captures retain their original interpretation and metadata.
+    if (
+        adapter_version == "karkinos.akshare_tencent.daily_bar.v5"
+        and instrument.instrument_type is InstrumentType.STOCK
+        and instrument.symbol.startswith("689")
+    ):
+        if sdk_version != _REVIEWED_AKSHARE_VERSION:
+            raise AkshareTencentDailyBarRequestError(
+                "akshare_tencent_stock_volume_units_unreviewed_sdk"
+            )
+        return Decimal("0.01")
     # AKShare 1.18.97 stock_hist_tx excludes every sz000 symbol from its lot
     # conversion, although those typed STOCK keys are main-board stocks, not
     # indices. Its returned volume therefore remains in lots for this prefix.

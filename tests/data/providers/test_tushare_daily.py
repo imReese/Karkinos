@@ -33,16 +33,19 @@ class FakePro:
 
     def daily(self, **kwargs: object) -> pd.DataFrame:
         self.calls.append(("daily", kwargs))
-        return _frame("20260915", close=10.48)
+        return _frame("20260915", close=10.48, ts_code=str(kwargs["ts_code"]))
 
     def fund_daily(self, **kwargs: object) -> pd.DataFrame:
         self.calls.append(("fund_daily", kwargs))
-        return _frame("20260915", close=4.017)
+        return _frame("20260915", close=4.017, ts_code=str(kwargs["ts_code"]))
 
 
-def _frame(trade_date: str, *, close: float) -> pd.DataFrame:
+def _frame(
+    trade_date: str, *, close: float, ts_code: str = "600000.SH"
+) -> pd.DataFrame:
     return pd.DataFrame(
         {
+            "ts_code": [ts_code],
             "trade_date": [trade_date],
             "open": [round(close - 0.1, 2)],
             "high": [round(close + 0.1, 2)],
@@ -98,6 +101,7 @@ def test_tushare_daily_provider_preserves_stable_sdk_response_evidence() -> None
     assert payload["calls"][0]["endpoint"] == "daily"
     assert payload["calls"][0]["ts_code"] == "000001.SZ"
     assert payload["calls"][0]["frame"]["columns"] == [
+        "ts_code",
         "trade_date",
         "open",
         "high",
@@ -159,6 +163,61 @@ def test_tushare_daily_provider_rejects_nonfinite_values() -> None:
         provider.fetch_daily_bars(
             _request(InstrumentKey("600000", InstrumentType.STOCK))
         )
+
+
+@pytest.mark.parametrize("code", ["600001.SH", "600000.SZ", "600000.SH ", None, 600000])
+def test_tushare_daily_rejects_returned_code_instead_of_relabeling(code):
+    client = MarketPro(_frame("20260915", close=10.48).assign(ts_code=code))
+    with pytest.raises(
+        TushareDailyBarResponseError, match="tushare_response_code_mismatch"
+    ):
+        TushareDailyBarProvider(client, clock=lambda: AFTER_CLOSE).fetch_daily_bars(
+            _request(InstrumentKey("600000", InstrumentType.STOCK))
+        )
+    assert len(client.calls) == 1
+
+
+def test_tushare_daily_requires_returned_code_column():
+    client = MarketPro(_frame("20260915", close=10.48).drop(columns="ts_code"))
+    with pytest.raises(
+        TushareDailyBarResponseError,
+        match="tushare_response_columns_missing:daily:ts_code",
+    ):
+        TushareDailyBarProvider(client, clock=lambda: AFTER_CLOSE).fetch_daily_bars(
+            _request(InstrumentKey("600000", InstrumentType.STOCK))
+        )
+
+
+@pytest.mark.parametrize("count", [6000, 6001])
+@pytest.mark.parametrize("market_batch", [False, True])
+def test_daily_row_cap_rejects_possible_truncation_before_partial_acceptance(
+    count, market_batch
+):
+    frame = pd.concat([_frame("20260915", close=10.48)] * count, ignore_index=True)
+    client = MarketPro(frame)
+    instruments = (InstrumentKey("600000", InstrumentType.STOCK),)
+    if market_batch:
+        instruments += (InstrumentKey("600001", InstrumentType.STOCK),)
+    with pytest.raises(
+        TushareDailyBarResponseError, match="tushare_response_truncation_possible:daily"
+    ):
+        TushareDailyBarProvider(client, clock=lambda: AFTER_CLOSE).fetch_daily_bars(
+            _request(*instruments)
+        )
+    assert len(client.calls) == 1
+
+
+def test_daily_preserves_optional_after_hours_fields_without_inventing_a_total():
+    frame = _frame("20260915", close=10.48).assign(ah_vol=200, ah_amount=321.5)
+    client = MarketPro(frame)
+    batch = TushareDailyBarProvider(client, clock=lambda: AFTER_CLOSE).fetch_daily_bars(
+        _request(InstrumentKey("600000", InstrumentType.STOCK))
+    )
+    assert batch.rows[0].volume == Decimal("123450.0")
+    assert batch.rows[0].amount == Decimal("6789250.00")
+    evidence = json.loads(batch.raw_payload)["calls"][0]["frame"]
+    assert evidence["columns"] == frame.columns.tolist()
+    assert evidence["data"] == frame.values.tolist()
 
 
 def _stock_batch():

@@ -11,6 +11,7 @@ from enum import Enum
 
 from core.types import InstrumentKey, InstrumentType
 from data.market.contracts import MarketDataProviderDescriptor
+from data.market.model import DailyBarObservation
 from data.market.quality import MarketQualityStatus
 from data.market.quality_evidence import (
     MarketQualityEvidence,
@@ -18,10 +19,21 @@ from data.market.quality_evidence import (
     read_market_quality_evidence,
 )
 from data.market.reconciliation import (
+    BSE_AUCTION_RELATION_KIND,
+    BSE_TENCENT_AMOUNT_COMPARISON,
+    BSE_TENCENT_REPORTED_RELATION_KIND,
+    STRICT_DAILY_RECONCILIATION,
+    BseAuctionRelation,
+    BseTencentReportedRelation,
     DailyBarReconciliationPolicy,
     MarketReconciliationDifference,
     MarketReconciliationReport,
     ReconciliationDifferenceKind,
+)
+from data.providers.bse_sina_history import (
+    TENCENT_BSE_NATIVE_ADAPTERS,
+    bse_native_read_scope,
+    exact_bse_arithmetic,
 )
 from data.storage.objects import (
     ContentAddressedObjectStore,
@@ -31,6 +43,7 @@ from data.storage.objects import (
 
 MARKET_VERIFICATION_EVIDENCE_SCHEMA_VERSION = "karkinos.market_verification_evidence.v1"
 MARKET_VERIFICATION_POLICY_ID = "karkinos.market_verification.daily.v1"
+BSE_AUCTION_VERIFICATION_SCHEMA = "karkinos.market_verification_evidence.v2"
 _CONTENT_ID = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
@@ -61,6 +74,7 @@ class MarketVerificationEvidence:
     comparison_adapter_version: str
     policy: DailyBarReconciliationPolicy
     checked_at: datetime
+    component_relation: BseAuctionRelation | BseTencentReportedRelation | None = None
 
     @property
     def verification_id(self) -> str:
@@ -85,6 +99,7 @@ def publish_market_verification_evidence(
     comparison_descriptor: MarketDataProviderDescriptor,
     policy: DailyBarReconciliationPolicy,
     checked_at: datetime,
+    component_relation: BseAuctionRelation | BseTencentReportedRelation | None = None,
 ) -> MarketVerificationEvidence:
     if not isinstance(store, ContentAddressedObjectStore):
         raise TypeError("market_verification_evidence_store_invalid")
@@ -147,7 +162,11 @@ def publish_market_verification_evidence(
         comparison_adapter_version=comparison_descriptor.adapter_version,
         policy=policy,
         checked_at=_utc_instant(checked_at),
+        component_relation=component_relation,
     )
+    if component_relation is not None:
+        _validate_component_metadata(evidence)
+        _replay_component_evidence(store, evidence)
     payload = _serialize(evidence)
     ref = store.put_bytes(payload)
     return MarketVerificationEvidence(
@@ -163,6 +182,7 @@ def publish_market_verification_evidence(
         comparison_adapter_version=evidence.comparison_adapter_version,
         policy=evidence.policy,
         checked_at=evidence.checked_at,
+        component_relation=evidence.component_relation,
     )
 
 
@@ -170,6 +190,18 @@ def read_market_verification_evidence(
     store: ContentAddressedObjectStore,
     ref: ObjectRef,
 ) -> MarketVerificationEvidence:
+    evidence, _ = read_market_verification_evidence_with_component_bars(store, ref)
+    return evidence
+
+
+def read_market_verification_evidence_with_component_bars(
+    store: ContentAddressedObjectStore,
+    ref: ObjectRef,
+) -> tuple[
+    MarketVerificationEvidence,
+    tuple[tuple[DailyBarObservation, ...], tuple[DailyBarObservation, ...]] | None,
+]:
+    """Read all evidence and retain the bars from this component replay only."""
     if not isinstance(store, ContentAddressedObjectStore):
         raise TypeError("market_verification_evidence_store_invalid")
     if not isinstance(ref, ObjectRef):
@@ -193,7 +225,15 @@ def read_market_verification_evidence(
             "market_verification_evidence_not_canonical"
         )
     _validate_referenced_quality(store, evidence)
-    return evidence
+    component_bars = None
+    if evidence.component_relation is not None:
+        try:
+            component_bars = _replay_component_evidence(store, evidence)
+        except (ObjectStoreError, TypeError, ValueError) as exc:
+            raise MarketVerificationEvidenceIntegrityError(
+                "market_verification_component_replay_failed"
+            ) from exc
+    return evidence, component_bars
 
 
 def _validate_quality_binding(
@@ -273,8 +313,12 @@ def _validate_referenced_quality(
 
 def _serialize(evidence: MarketVerificationEvidence) -> bytes:
     payload = {
-        "schema_version": MARKET_VERIFICATION_EVIDENCE_SCHEMA_VERSION,
-        "policy_id": MARKET_VERIFICATION_POLICY_ID,
+        "schema_version": MARKET_VERIFICATION_EVIDENCE_SCHEMA_VERSION
+        if evidence.component_relation is None
+        else BSE_AUCTION_VERIFICATION_SCHEMA,
+        "policy_id": MARKET_VERIFICATION_POLICY_ID
+        if evidence.component_relation is None
+        else _component_kind(evidence.component_relation),
         "checked_at": _format_utc(evidence.checked_at),
         "status": evidence.status.value,
         "policy": {
@@ -320,6 +364,17 @@ def _serialize(evidence: MarketVerificationEvidence) -> bytes:
             _difference_payload(item) for item in evidence.report.differences
         ],
     }
+    if evidence.component_relation is not None:
+        relation = evidence.component_relation
+        payload["component_relation"] = (
+            _tencent_component_payload(relation)
+            if type(relation) is BseTencentReportedRelation
+            else {
+                "kind": _component_kind(relation),
+                "block_page_capture_ids": list(relation.block_page_capture_ids),
+                "mapping_capture_id": relation.mapping_capture_id,
+            }
+        )
     return json.dumps(
         payload,
         sort_keys=True,
@@ -331,6 +386,7 @@ def _serialize(evidence: MarketVerificationEvidence) -> bytes:
 
 def _from_payload(ref: ObjectRef, value: object) -> MarketVerificationEvidence:
     payload = _object(value, field="root")
+    component = payload.get("schema_version") == BSE_AUCTION_VERIFICATION_SCHEMA
     _exact_keys(
         payload,
         {
@@ -343,14 +399,22 @@ def _from_payload(ref: ObjectRef, value: object) -> MarketVerificationEvidence:
             "comparison",
             "matched_instrument_count",
             "differences",
-        },
+        }
+        | ({"component_relation"} if component else set()),
         field="root",
     )
-    if payload["schema_version"] != MARKET_VERIFICATION_EVIDENCE_SCHEMA_VERSION:
+    if payload["schema_version"] not in (
+        MARKET_VERIFICATION_EVIDENCE_SCHEMA_VERSION,
+        BSE_AUCTION_VERIFICATION_SCHEMA,
+    ):
         raise MarketVerificationEvidenceIntegrityError(
             "market_verification_evidence_schema_unsupported"
         )
-    if payload["policy_id"] != MARKET_VERIFICATION_POLICY_ID:
+    if payload["policy_id"] != (
+        _component_kind(_component_from_payload(payload["component_relation"]))
+        if component
+        else MARKET_VERIFICATION_POLICY_ID
+    ):
         raise MarketVerificationEvidenceIntegrityError(
             "market_verification_policy_unsupported"
         )
@@ -413,7 +477,12 @@ def _from_payload(ref: ObjectRef, value: object) -> MarketVerificationEvidence:
         comparison_adapter_version=comparison["adapter_version"],
         policy=policy,
         checked_at=_parse_utc(payload["checked_at"], field="checked_at"),
+        component_relation=_component_from_payload(payload["component_relation"])
+        if component
+        else None,
     )
+    if component:
+        _validate_component_metadata(evidence)
     expected_status = (
         MarketVerificationStatus.MATCHED
         if report.matched
@@ -427,6 +496,164 @@ def _from_payload(ref: ObjectRef, value: object) -> MarketVerificationEvidence:
             "market_verification_status_mismatch"
         )
     return evidence
+
+
+def _component_kind(relation) -> str:
+    if type(relation) is BseAuctionRelation:
+        return BSE_AUCTION_RELATION_KIND
+    if type(relation) is BseTencentReportedRelation:
+        return BSE_TENCENT_REPORTED_RELATION_KIND
+    raise MarketVerificationEvidenceIntegrityError(
+        "market_verification_component_kind_invalid"
+    )
+
+
+def _tencent_component_payload(relation: BseTencentReportedRelation) -> dict:
+    with exact_bse_arithmetic():
+        difference = relation.tencent_amount - relation.official_amount
+    return {
+        "kind": BSE_TENCENT_REPORTED_RELATION_KIND,
+        "block_page_capture_ids": list(relation.block_page_capture_ids),
+        "mapping_capture_id": relation.mapping_capture_id,
+        "amount_comparison": BSE_TENCENT_AMOUNT_COMPARISON,
+        "amount_representation_grid_CNY": "100",
+        "official_amount_CNY": _decimal_text(relation.official_amount),
+        "tencent_amount_CNY": _decimal_text(relation.tencent_amount),
+        "tencent_minus_official_amount_CNY": _decimal_text(difference),
+        "raw_six_fields_exact": relation.official_amount == relation.tencent_amount,
+    }
+
+
+def _component_from_payload(
+    value: object,
+) -> BseAuctionRelation | BseTencentReportedRelation:
+    payload = _object(value, field="component_relation")
+    if payload.get("kind") == BSE_TENCENT_REPORTED_RELATION_KIND:
+        if not isinstance(payload.get("block_page_capture_ids"), list):
+            raise MarketVerificationEvidenceIntegrityError(
+                "market_verification_component_refs_invalid"
+            )
+        relation = BseTencentReportedRelation(
+            tuple(payload["block_page_capture_ids"]),
+            payload.get("mapping_capture_id"),
+            _decimal(payload.get("official_amount_CNY"), field="official_amount_CNY"),
+            _decimal(payload.get("tencent_amount_CNY"), field="tencent_amount_CNY"),
+        )
+        if (
+            payload != _tencent_component_payload(relation)
+            or type(payload.get("raw_six_fields_exact")) is not bool
+        ):
+            raise MarketVerificationEvidenceIntegrityError(
+                "market_verification_component_amount_metadata_invalid"
+            )
+        return relation
+    _exact_keys(
+        payload,
+        {"kind", "block_page_capture_ids", "mapping_capture_id"},
+        field="component_relation",
+    )
+    if payload["kind"] != BSE_AUCTION_RELATION_KIND or not isinstance(
+        payload["block_page_capture_ids"], list
+    ):
+        raise MarketVerificationEvidenceIntegrityError(
+            "market_verification_component_kind_invalid"
+        )
+    return BseAuctionRelation(
+        tuple(payload["block_page_capture_ids"]), payload["mapping_capture_id"]
+    )
+
+
+def _validate_component_metadata(evidence: MarketVerificationEvidence) -> None:
+    if type(evidence.component_relation) is BseTencentReportedRelation:
+        if (
+            evidence.policy != STRICT_DAILY_RECONCILIATION
+            or (
+                evidence.report.primary_provider,
+                evidence.primary_upstream_group,
+                evidence.primary_adapter_version,
+            )
+            != (
+                "bse_official_kline_probe",
+                "bse_official",
+                "operation.bse.official_kline.public_probe.v1",
+            )
+            or (evidence.report.comparison_provider, evidence.comparison_upstream_group)
+            != ("tencent_native_public_probe", "tencent")
+            or evidence.comparison_adapter_version not in TENCENT_BSE_NATIVE_ADAPTERS
+            or evidence.report.primary_instrument_count != 1
+            or evidence.report.comparison_instrument_count != 1
+        ):
+            raise MarketVerificationEvidenceIntegrityError(
+                "market_verification_component_pair_invalid"
+            )
+        return
+    if (
+        not isinstance(evidence.component_relation, BseAuctionRelation)
+        or evidence.policy != STRICT_DAILY_RECONCILIATION
+        or (
+            evidence.report.primary_provider,
+            evidence.primary_upstream_group,
+            evidence.primary_adapter_version,
+        )
+        != (
+            "sina_native_public_probe",
+            "sina",
+            "operation.sina.native_bse_history_js_probe.v1",
+        )
+        or (
+            evidence.report.comparison_provider,
+            evidence.comparison_upstream_group,
+            evidence.comparison_adapter_version,
+        )
+        != (
+            "bse_official_kline_probe",
+            "bse_official",
+            "operation.bse.official_kline.public_probe.v1",
+        )
+        or evidence.report.primary_instrument_count != 1
+        or evidence.report.comparison_instrument_count != 1
+    ):
+        raise MarketVerificationEvidenceIntegrityError(
+            "market_verification_component_pair_invalid"
+        )
+
+
+@bse_native_read_scope(join_existing=True)
+def _replay_component_evidence(store, evidence):
+    from data.market.reconciliation import reconcile_daily_bar_revisions_with_bars
+    from data.market.revision import (
+        MarketRevisionRef,
+        read_market_revision,
+        read_market_revision_materialization,
+    )
+
+    replayed, primary_bars, comparison_bars = reconcile_daily_bar_revisions_with_bars(
+        store,
+        primary_revision=read_market_revision(
+            store,
+            MarketRevisionRef(store.resolve_ref(evidence.report.primary_revision_id)),
+        ),
+        primary_materialization=read_market_revision_materialization(
+            store, store.resolve_ref(evidence.primary_materialization_id)
+        ),
+        comparison_revision=read_market_revision(
+            store,
+            MarketRevisionRef(
+                store.resolve_ref(evidence.report.comparison_revision_id)
+            ),
+        ),
+        comparison_materialization=read_market_revision_materialization(
+            store, store.resolve_ref(evidence.comparison_materialization_id)
+        ),
+        policy=evidence.policy,
+        component_relation=evidence.component_relation,
+        component_checked_at=evidence.checked_at,
+    )
+    if replayed != evidence.report:
+        raise MarketVerificationEvidenceIntegrityError(
+            "market_verification_component_report_mismatch"
+        )
+    return primary_bars, comparison_bars
 
 
 def _side(value: object, *, field: str) -> dict[str, object]:

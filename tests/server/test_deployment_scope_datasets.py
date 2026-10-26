@@ -593,6 +593,421 @@ def test_seed_waits_for_real_jobs_then_binds_only_current_observed_membership(
     )
 
 
+def _source_prefix_seed(tmp_path, *, suffix_receipts=True, current_day=None):
+    from types import SimpleNamespace
+
+    import pandas as pd
+
+    from data.source_policy import FREE_CN_RESEARCH_V1
+    from server.services.market.market_universe_truth import market_deployment_scope
+    from tests.server.test_verified_daily_market_range import DAYS as THREE_DAYS
+
+    objects, original = _composed(tmp_path)
+    current_day = current_day or THREE_DAYS[-1]
+    days = tuple(day for day in THREE_DAYS if day <= current_day)
+    db = _db(tmp_path, trading_days=days)
+    market = DataStore(tmp_path / "market")
+    third = InstrumentKey("600002", InstrumentType.STOCK)
+    current = (STOCK, SECOND, third) if current_day > DAYS[-1] else (STOCK, SECOND)
+    market.save_market_universe_snapshot(
+        trade_date=current_day.isoformat(),
+        provider_name="fixture",
+        members=normalize_a_share_members([key.symbol for key in current]),
+        capture_started_at=NOW - timedelta(seconds=1),
+        capture_completed_at=NOW,
+        source_metadata=[
+            {"symbol": key.symbol, "display_name": "普通股"} for key in current
+        ],
+    )
+    if suffix_receipts:
+        market.ingest_market_daily_batch(
+            trade_date=current_day.isoformat(),
+            provider_name="fixture",
+            bars=pd.DataFrame(
+                [
+                    {
+                        "symbol": key.symbol,
+                        "timestamp": pd.Timestamp(current_day),
+                        "open": 10.0,
+                        "high": 10.1,
+                        "low": 9.9,
+                        "close": 10.0,
+                        "volume": 1_000_000,
+                        "amount": 10_000_000,
+                    }
+                    for key in current
+                ]
+            ),
+        )
+    scope = market_deployment_scope(
+        MarketUniversePolicy(minimum_master_member_count=2, minimum_history_rows=2)
+    )
+    snapshot = replace(
+        original.snapshot, universe_policy_id=scope["deployment_scope_fingerprint"]
+    )
+    ref = publish_daily_bar_dataset_manifest(objects, snapshot)
+    source = {
+        "immutable_dataset_id": ref.dataset_id,
+        "start_date": DAYS[0].isoformat(),
+        "minimum_bars": 2,
+        "instruments": [
+            {"symbol": key.symbol, "instrument_type": key.instrument_type.value}
+            for key in snapshot.instruments
+        ],
+        "source_selection": {"deployment_scope": scope},
+    }
+    config = SimpleNamespace(
+        market_data_verification_source_policy=FREE_CN_RESEARCH_V1.policy_id
+    )
+    return db, market, config, source, objects, snapshot, current
+
+
+def test_source_prefix_reuses_cas_without_historical_receipts_and_preserves_new_ipo(
+    tmp_path,
+):
+    from data.dataset.model import DatasetRef
+    from server.persistence.automation_runs import AutomationRunRepository
+    from server.services.market.verified_daily_market_data import (
+        VerifiedDailyMarketJobRequest,
+    )
+    from server.services.market.verified_daily_market_jobs import (
+        VERIFIED_DAILY_MARKET_JOB,
+    )
+
+    db, market, config, source, objects, prefix, current = _source_prefix_seed(tmp_path)
+    assert (
+        market.list_market_daily_ingestion_receipts(
+            start_date=DAYS[0].isoformat(), end_date=DAYS[-1].isoformat()
+        )
+        == []
+    )
+    assert market.get_market_universe_snapshot(trade_date=DAYS[0].isoformat()) is None
+    jobs = SQLiteJobStore(db.path)
+    original_jobs = jobs.list_recent(VERIFIED_DAILY_MARKET_JOB)
+    pending = ensure_forward_seed_for_source(
+        db, config, source=source, now=NOW, data_store=market
+    )
+    assert pending["status"] == "waiting", pending
+    assert len(pending["job_ids"]) == 1
+    job = jobs.get(pending["job_ids"][0])
+    request = VerifiedDailyMarketJobRequest.from_payload(job.payload)
+    assert request.expected_sessions() == (date(2026, 9, 21),)
+    assert request.instruments == current
+    assert len(jobs.list_recent(VERIFIED_DAILY_MARKET_JOB)) == len(original_jobs) + 1
+    repository = AutomationRunRepository(db.path)
+    origin = repository.list_automation_runs_sync(run_type="forward_seed_preparation")[
+        0
+    ]
+    assert origin["status"] == "claimed" and origin["source_ref"] is None
+    assert (
+        json.loads(origin["payload_json"])["planning_prefix_dataset_id"]
+        == source["immutable_dataset_id"]
+    )
+    suffix_ref = _verified_day(
+        tmp_path / "research", date(2026, 9, 21), instruments=current
+    )
+    claimed = jobs.claim(
+        VERIFIED_DAILY_MARKET_JOB, "fixture", now=NOW, job_id=job.job_id
+    )
+    jobs.finish(claimed.lease, now=NOW, result_ref=f"dataset:{suffix_ref.dataset_id}")
+    ready = ensure_forward_seed_for_source(
+        db, config, source=source, now=NOW, data_store=market
+    )
+    assert ready["status"] == "ready", ready
+    result = read_daily_bar_dataset(
+        objects, DatasetRef(objects.resolve_ref(ready["dataset_id"]))
+    ).snapshot
+    assert result.partitions[: len(prefix.partitions)] == prefix.partitions
+    assert result.session_memberships[: len(prefix.session_memberships)] == (
+        prefix.session_memberships
+    )
+    assert result.instruments == current
+    assert result.session_memberships[-1].instruments == current
+    assert result.session_memberships[-1].decision_at == NOW
+    # Completed origins use their independently verified published prefix.
+    again = ensure_forward_seed_for_source(
+        db,
+        config,
+        source={**source, "immutable_dataset_id": "sha256:" + "f" * 64},
+        now=NOW,
+        data_store=market,
+    )
+    assert again["status"] == "ready" and again["dataset_id"] == ready["dataset_id"]
+    # A separate, strictly verified exact-through seed remains the first choice.
+    custom_ref = publish_daily_bar_dataset_manifest(
+        objects,
+        replace(
+            prefix,
+            resolver_policy_id="karkinos.dataset.gen7.explicit_history_recovery.v2:"
+            + "a" * 64,
+        ),
+    )
+    discovered = ensure_forward_seed_for_source(
+        db,
+        config,
+        source={
+            **source,
+            "minimum_bars": 3,
+            "immutable_dataset_id": custom_ref.dataset_id,
+        },
+        now=NOW,
+        data_store=market,
+    )
+    assert discovered == {
+        "status": "ready",
+        "dataset_id": ready["dataset_id"],
+        "job_ids": [],
+        "last_blocker": None,
+    }
+
+
+@pytest.mark.parametrize(
+    "failure", ["custom", "policy", "scope", "cutoff", "unreadable", "proof"]
+)
+def test_source_prefix_failure_never_enqueues_or_completes_origin(tmp_path, failure):
+    from server.persistence.automation_runs import AutomationRunRepository
+    from server.services.market.verified_daily_market_jobs import (
+        VERIFIED_DAILY_MARKET_JOB,
+    )
+
+    db, market, config, source, objects, snapshot, _ = _source_prefix_seed(tmp_path)
+    if failure in {"custom", "policy"}:
+        snapshot = replace(
+            snapshot,
+            resolver_policy_id=(
+                "karkinos.dataset.gen7.explicit_history_recovery.v2:" + "a" * 64
+                if failure == "custom"
+                else "karkinos.dataset.pit.verified.daily.v1:other_policy"
+            ),
+        )
+        code = "forward_seed_source_prefix_policy_unsupported"
+    elif failure == "scope":
+        snapshot = replace(snapshot, universe_policy_id="other_scope")
+        code = "forward_seed_source_prefix_mismatch"
+    elif failure == "cutoff":
+        snapshot = replace(snapshot, cutoff=NOW + timedelta(days=1))
+        code = "forward_seed_source_prefix_mismatch"
+    else:
+        code = "forward_seed_source_prefix_unreadable"
+    source["immutable_dataset_id"] = (
+        "sha256:" + "f" * 64
+        if failure == "unreadable"
+        else publish_daily_bar_dataset_manifest(objects, snapshot).dataset_id
+    )
+    if failure == "proof":
+        path = objects._path_for(snapshot.partitions[0].materialization_id)
+        path.chmod(0o644)
+        path.write_bytes(b"corrupt fixture")
+    jobs = SQLiteJobStore(db.path)
+    before = jobs.list_recent(VERIFIED_DAILY_MARKET_JOB)
+    result = ensure_forward_seed_for_source(
+        db, config, source=source, now=NOW, data_store=market
+    )
+    assert result == {
+        "status": "blocked",
+        "job_ids": [],
+        "last_blocker": {"code": code},
+    }
+    assert jobs.list_recent(VERIFIED_DAILY_MARKET_JOB) == before
+    assert all(
+        row["source_ref"] is None and row["status"] == "claimed"
+        for row in AutomationRunRepository(db.path).list_automation_runs_sync(
+            run_type="forward_seed_preparation"
+        )
+    )
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_source_without_verified_dated_prefix_keeps_existing_warmup(tmp_path, legacy):
+    from server.persistence.automation_runs import AutomationRunRepository
+    from server.services.market.verified_daily_market_data import (
+        VerifiedDailyMarketJobRequest,
+    )
+
+    db, market, config, source, objects, snapshot, _ = _source_prefix_seed(
+        tmp_path, suffix_receipts=False
+    )
+    if legacy:
+        snapshot = replace(
+            snapshot,
+            resolver_policy_id="karkinos.dataset.pit.strict.v1",
+            partitions=tuple(
+                replace(part, verification_id=None) for part in snapshot.partitions
+            ),
+        )
+        source["immutable_dataset_id"] = publish_daily_bar_dataset_manifest(
+            objects, snapshot
+        ).dataset_id
+    else:
+        source.pop("immutable_dataset_id")
+    result = ensure_forward_seed_for_source(
+        db, config, source=source, now=NOW, data_store=market
+    )
+    assert result["status"] == "waiting", result
+    assert len(result["job_ids"]) == 1
+    request = VerifiedDailyMarketJobRequest.from_payload(
+        SQLiteJobStore(db.path).get(result["job_ids"][0]).payload
+    )
+    assert request.is_range and request.expected_sessions() == (
+        *DAYS,
+        date(2026, 9, 21),
+    )
+    origin = AutomationRunRepository(db.path).list_automation_runs_sync(
+        run_type="forward_seed_preparation"
+    )[0]
+    assert "planning_prefix_dataset_id" not in json.loads(origin["payload_json"])
+
+
+@pytest.mark.parametrize("old_pending", [False, True])
+def test_pending_source_prefix_cannot_change_cas_or_rewrite_older_recipe(
+    tmp_path, old_pending
+):
+    from server.persistence.automation_runs import AutomationRunRepository
+    from server.services.market.verified_daily_market_jobs import (
+        VERIFIED_DAILY_MARKET_JOB,
+    )
+
+    db, market, config, source, objects, snapshot, _ = _source_prefix_seed(
+        tmp_path, suffix_receipts=not old_pending
+    )
+    first_source = dict(source)
+    if old_pending:
+        first_source.pop("immutable_dataset_id")
+    pending = ensure_forward_seed_for_source(
+        db, config, source=first_source, now=NOW, data_store=market
+    )
+    assert pending["status"] == "waiting", pending
+    repository = AutomationRunRepository(db.path)
+    before = repository.list_automation_runs_sync(run_type="forward_seed_preparation")
+    jobs = SQLiteJobStore(db.path)
+    before_jobs = jobs.list_recent(VERIFIED_DAILY_MARKET_JOB)
+    if not old_pending:
+        source["immutable_dataset_id"] = publish_daily_bar_dataset_manifest(
+            objects, replace(snapshot, cutoff=snapshot.cutoff + timedelta(seconds=1))
+        ).dataset_id
+    result = ensure_forward_seed_for_source(
+        db, config, source=source, now=NOW, data_store=market
+    )
+    assert result == {
+        "status": "blocked",
+        "job_ids": [],
+        "last_blocker": {"code": "forward_seed_pending_prefix_mismatch"},
+    }
+    assert (
+        repository.list_automation_runs_sync(run_type="forward_seed_preparation")
+        == before
+    )
+    assert jobs.list_recent(VERIFIED_DAILY_MARKET_JOB) == before_jobs
+
+
+def test_pending_source_prefix_keeps_fixed_window_and_master_when_latest_advances(
+    tmp_path,
+):
+    from server.persistence.automation_runs import AutomationRunRepository
+
+    db, market, config, source, _, _, _ = _source_prefix_seed(tmp_path)
+    pending = ensure_forward_seed_for_source(
+        db, config, source=source, now=NOW, data_store=market
+    )
+    assert pending["status"] == "waiting", pending
+    repository = AutomationRunRepository(db.path)
+    before = repository.list_automation_runs_sync(run_type="forward_seed_preparation")
+    next_day = date(2026, 9, 22)
+    db = _db(tmp_path, trading_days=(*DAYS, date(2026, 9, 21), next_day))
+    current = (*source["instruments"], {"symbol": "600003", "instrument_type": "stock"})
+    market.save_market_universe_snapshot(
+        trade_date=next_day.isoformat(),
+        provider_name="fixture",
+        members=normalize_a_share_members([item["symbol"] for item in current]),
+        capture_started_at=NOW + timedelta(days=1, seconds=-1),
+        capture_completed_at=NOW + timedelta(days=1),
+        source_metadata=[
+            {"symbol": item["symbol"], "display_name": "普通股"} for item in current
+        ],
+    )
+    resumed = ensure_forward_seed_for_source(
+        db, config, source=source, now=NOW + timedelta(days=1), data_store=market
+    )
+    assert resumed["job_ids"] == pending["job_ids"]
+    assert resumed["status"] == "waiting", resumed
+    assert (
+        repository.list_automation_runs_sync(run_type="forward_seed_preparation")
+        == before
+    )
+
+
+@pytest.mark.parametrize("mode", ["missing", "master_only", "custom"])
+def test_current_source_prefix_requires_supported_policy_and_complete_decision_proof(
+    tmp_path, mode
+):
+    from data.dataset.catalog import DatasetCatalog
+    from server.persistence.automation_runs import AutomationRunRepository
+    from server.services.market.market_universe_truth import (
+        require_complete_market_universe_snapshot,
+    )
+    from server.services.market.verified_daily_market_jobs import (
+        VERIFIED_DAILY_MARKET_JOB,
+    )
+
+    db, market, config, source, objects, snapshot, _ = _source_prefix_seed(
+        tmp_path, current_day=DAYS[-1]
+    )
+    if mode != "missing":
+        master = require_complete_market_universe_snapshot(
+            market.get_market_universe_snapshot(
+                trade_date=DAYS[-1].isoformat(), as_of=NOW
+            ),
+            policy=MarketUniversePolicy.from_dict(
+                source["source_selection"]["deployment_scope"]["universe_policy"]
+            ),
+            expected_trade_date=DAYS[-1].isoformat(),
+            available_as_of=NOW,
+        )
+        identity = bind_stock_master_observation(objects, master)
+        snapshot = replace(
+            snapshot,
+            cutoff=NOW,
+            resolver_policy_id=(
+                "karkinos.dataset.gen7.explicit_history_recovery.v2:" + "a" * 64
+                if mode == "custom"
+                else snapshot.resolver_policy_id
+            ),
+            session_memberships=(
+                snapshot.session_memberships[0],
+                replace(
+                    snapshot.session_memberships[-1],
+                    available_at=NOW,
+                    source_observation_ids=(identity,),
+                    decision_at=NOW if mode == "custom" else None,
+                ),
+            ),
+        )
+        ref = publish_daily_bar_dataset_manifest(objects, snapshot)
+        source["immutable_dataset_id"] = ref.dataset_id
+        DatasetCatalog(tmp_path / "research").register(objects, ref)
+    jobs = SQLiteJobStore(db.path)
+    before = jobs.list_recent(VERIFIED_DAILY_MARKET_JOB)
+    result = ensure_forward_seed_for_source(
+        db, config, source=source, now=NOW, data_store=market
+    )
+    assert result == {
+        "status": "blocked",
+        "job_ids": [],
+        "last_blocker": {
+            "code": "forward_seed_source_prefix_policy_unsupported"
+            if mode == "custom"
+            else "forward_seed_source_prefix_current_membership_unverified"
+        },
+    }
+    assert jobs.list_recent(VERIFIED_DAILY_MARKET_JOB) == before
+    assert (
+        AutomationRunRepository(db.path).list_automation_runs_sync(
+            run_type="forward_seed_preparation"
+        )[0]["source_ref"]
+        is None
+    )
+
+
 @pytest.mark.parametrize("declared_window", [False, True])
 def test_pending_seed_keeps_fixed_range_across_latest_session_then_appends_only_new_day(
     tmp_path, monkeypatch, declared_window

@@ -6,7 +6,7 @@ import importlib
 import json
 import math
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date, datetime, time, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
@@ -190,6 +190,10 @@ class TushareDailyBarProvider:
                 raise TushareDailyBarResponseError(
                     "tushare_response_must_be_dataframe:daily"
                 )
+            if len(frame) >= 6000:
+                raise TushareDailyBarResponseError(
+                    "tushare_response_truncation_possible:daily"
+                )
             if not frame.empty:
                 if "ts_code" not in frame.columns:
                     raise TushareDailyBarResponseError(
@@ -228,6 +232,10 @@ class TushareDailyBarProvider:
             if not isinstance(frame, pd.DataFrame):
                 raise TushareDailyBarResponseError(
                     f"tushare_response_must_be_dataframe:{endpoint}"
+                )
+            if endpoint == "daily" and len(frame) >= 6000:
+                raise TushareDailyBarResponseError(
+                    "tushare_response_truncation_possible:daily"
                 )
             parsed_rows = _rows_from_frame(
                 frame,
@@ -357,21 +365,61 @@ def _rows_from_frame(
 ) -> list[ProviderDailyBarRow]:
     if frame.empty:
         return []
-    required = {"trade_date", "open", "high", "low", "close", "vol", "amount"}
-    missing = required - set(frame.columns)
+    return _rows_from_records(
+        tuple(
+            {column: item[column] for column in frame.columns}
+            for _, item in frame.iterrows()
+        ),
+        columns=tuple(frame.columns),
+        instrument=instrument,
+        expected_session=expected_session,
+        expected_end=expected_end,
+        endpoint=endpoint,
+    )
+
+
+def _rows_from_records(
+    records: Sequence[Mapping[str, Any]],
+    *,
+    columns: Sequence[str],
+    instrument: InstrumentKey,
+    expected_session: date,
+    endpoint: str,
+    expected_end: date | None = None,
+) -> list[ProviderDailyBarRow]:
+    if not records or not columns:
+        return []
+    required = {
+        "ts_code",
+        "trade_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "vol",
+        "amount",
+    }
+    missing = required - set(columns)
     if missing:
         raise TushareDailyBarResponseError(
             f"tushare_response_columns_missing:{endpoint}:{','.join(sorted(missing))}"
         )
 
     result: list[ProviderDailyBarRow] = []
-    for _, row in frame.iterrows():
+    expected_code = _request_target(instrument)[1]
+    for row in records:
+        if not isinstance(row["ts_code"], str) or row["ts_code"] != expected_code:
+            raise TushareDailyBarResponseError(
+                f"tushare_response_code_mismatch:{endpoint}"
+            )
         session = _trade_date(row["trade_date"])
         if not expected_session <= session <= (expected_end or expected_session):
             raise TushareDailyBarResponseError(
                 f"tushare_response_session_mismatch:{session.isoformat()}"
             )
         volume_lots = _decimal(row["vol"], field="vol")
+        # Preserve the native daily fields. Optional ah_vol/ah_amount remain
+        # raw evidence; no reviewed contract authorizes adding them again.
         amount_thousand = _decimal(row["amount"], field="amount")
         result.append(
             ProviderDailyBarRow(

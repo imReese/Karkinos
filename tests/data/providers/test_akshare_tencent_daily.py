@@ -138,7 +138,7 @@ def test_tencent_preserves_sdk_dataframe_as_stable_raw_evidence() -> None:
     ).fetch_daily_bars(_request(InstrumentKey("600000", InstrumentType.STOCK)))
 
     payload = json.loads(result.raw_payload)
-    assert payload["schema"] == "akshare.tencent.stock_zh_a_hist_tx.dataframe.v4"
+    assert payload["schema"] == "akshare.tencent.stock_zh_a_hist_tx.dataframe.v5"
     assert payload["sdk_version"] == "1.18.97"
     assert payload["calls"][0]["volume_scale_to_shares"] == "1"
     assert payload["calls"][0]["symbol"] == "sh600000"
@@ -176,7 +176,7 @@ def test_tencent_v2_binds_reviewed_typed_volume_correction(symbol, sdk_volume, s
     batch = AkshareTencentDailyBarProvider(
         client, clock=lambda: AFTER_CLOSE
     ).fetch_daily_bars(_request(InstrumentKey(symbol, InstrumentType.STOCK)))
-    assert batch.adapter_version == "karkinos.akshare_tencent.daily_bar.v4"
+    assert batch.adapter_version == "karkinos.akshare_tencent.daily_bar.v5"
     assert batch.rows[0].volume == shares
     payload = json.loads(batch.raw_payload)
     # The response stays exactly as captured; only canonical normalization
@@ -352,7 +352,7 @@ def test_v4_retains_reviewed_sdk_one_ulp_amount_recovery_and_preserves_raw(
         reopened, revision=result.revision, materialization=result.materialization
     )
     assert bars[0].amount == Decimal(expected)
-    assert capture.adapter_version == "karkinos.akshare_tencent.daily_bar.v4"
+    assert capture.adapter_version == "karkinos.akshare_tencent.daily_bar.v5"
     assert result.eligible_for_dataset_publication
 
 
@@ -455,12 +455,12 @@ def _volume_provider(volume, instrument, *, sdk="1.18.97"):
         ("002244", InstrumentType.STOCK, 33359009.000000004, "33359009"),
         ("600000", InstrumentType.STOCK, 33359008.999999996, "33359009"),
         ("300001", InstrumentType.STOCK, 67108863.99999999, "67108864"),
-        ("689001", InstrumentType.STOCK, 33359009.000000004, "33359009"),
+        ("689001", InstrumentType.STOCK, 33359009.000000004, "333590.09"),
         ("510300", InstrumentType.ETF, 33359009.000000004, "33359009"),
         ("159915", InstrumentType.ETF, 33359009.000000004, "33359009"),
     ],
 )
-def test_v4_recovers_reviewed_sdk_one_ulp_volume_and_preserves_raw(
+def test_v5_recovers_reviewed_sdk_one_ulp_volume_and_preserves_raw(
     tmp_path, symbol, kind, captured, expected
 ):
     from data.market.capture import read_provider_capture, read_provider_raw_payload
@@ -485,9 +485,11 @@ def test_v4_recovers_reviewed_sdk_one_ulp_volume_and_preserves_raw(
     assert call["volume_normalization"] == (
         "karkinos.akshare.1.18.97.tencent.volume_100_one_binary_ulp.v1"
     )
-    assert call["volume_scale_to_shares"] == "1"
-    assert capture.adapter_version == "karkinos.akshare_tencent.daily_bar.v4"
-    assert raw["schema"] == "akshare.tencent.stock_zh_a_hist_tx.dataframe.v4"
+    assert call["volume_scale_to_shares"] == (
+        "0.01" if symbol.startswith("689") else "1"
+    )
+    assert capture.adapter_version == "karkinos.akshare_tencent.daily_bar.v5"
+    assert raw["schema"] == "akshare.tencent.stock_zh_a_hist_tx.dataframe.v5"
     bars = validate_daily_bar_materialization(
         reopened, revision=result.revision, materialization=result.materialization
     )
