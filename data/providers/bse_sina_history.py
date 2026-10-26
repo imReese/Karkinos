@@ -11,6 +11,7 @@ import importlib.metadata
 import json
 import math
 import re
+import sys
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import date, datetime, time, timezone
@@ -21,6 +22,8 @@ from zoneinfo import ZoneInfo
 
 DECODER_SHA = "sha256:39a599c94dde4df1c2eb0882d4bff9560160cfd52ead0797cebb04b3122c2f52"
 READER_VERSION = "karkinos.operation.bse_sina.actual_reported_quantization.v1"
+SINA_JS_DISTRIBUTION = "py-mini-racer" if sys.platform == "linux" else "mini-racer"
+SINA_JS_VERSION = "0.6.0" if sys.platform == "linux" else "0.14.1"
 FIELDS = ("open", "high", "low", "close", "volume", "amount")
 OFFICIAL_FIELDS = {"cjje", "cjl", "jrsp", "jrkp", "jsrq", "drzd", "drzx", "zrsp"}
 
@@ -403,12 +406,41 @@ def read_sina_a_share_rows(objects, capture_id, instrument, *, session_date=None
     return result[0], *(_select_day(values, session_date) for values in result[1:])
 
 
+def _require_sina_decoder(source):
+    try:
+        reviewed = (
+            importlib.metadata.version("akshare") == "1.18.97"
+            and importlib.metadata.version(SINA_JS_DISTRIBUTION) == SINA_JS_VERSION
+            and "sha256:" + hashlib.sha256(source.encode()).hexdigest() == DECODER_SHA
+        )
+    except importlib.metadata.PackageNotFoundError:
+        reviewed = False
+    if not reviewed:
+        raise ValueError("bse_sina_assignment_or_decoder_unreviewed")
+
+
+def _decode_sina_js(source, encoded):
+    """Use the locked platform runtime with the same 5s and 64 MiB limits."""
+    from py_mini_racer import MiniRacer
+
+    if SINA_JS_DISTRIBUTION == "py-mini-racer":
+        js = MiniRacer()
+        try:
+            js.eval(source, timeout=5000, max_memory=64 * 1024 * 1024)
+            return js.call("d", encoded, timeout=5000, max_memory=64 * 1024 * 1024)
+        finally:
+            # The pinned 0.6 API frees its isolate in __del__, without a context manager.
+            del js
+    with MiniRacer() as js:
+        js.eval(source, timeout_sec=5, max_memory=64 * 1024 * 1024)
+        return js.call("d", encoded, timeout_sec=5, max_memory=64 * 1024 * 1024)
+
+
 def _read_sina_rows_from_capture(
     objects, cap, body, *, source_symbol, max_rows, session_date=None
 ):
     """Shared pinned K2 codec; source identity belongs to strict wrappers."""
     from akshare.stock.cons import hk_js_decode
-    from py_mini_racer import MiniRacer
 
     match = re.fullmatch(
         r"\s*var\s+KLC_K2_"
@@ -416,14 +448,9 @@ def _read_sina_rows_from_capture(
         + r'\s*=\s*"([A-Za-z0-9+/]+)"\s*;\s*/\* ([A-Za-z0-9+/]+) \*/\s*',
         body.decode("ascii"),
     )
-    if (
-        match is None
-        or not match[1].startswith("K2")
-        or importlib.metadata.version("akshare") != "1.18.97"
-        or importlib.metadata.version("mini-racer") != "0.14.1"
-        or "sha256:" + hashlib.sha256(hk_js_decode.encode()).hexdigest() != DECODER_SHA
-    ):
+    if match is None or not match[1].startswith("K2"):
         raise ValueError("bse_sina_assignment_or_decoder_unreviewed")
+    _require_sina_decoder(hk_js_decode)
     cached = _cached_native(objects, cap)
     if cached is not None:
         return cap, *(_select_day(values, session_date) for values in cached)
@@ -438,12 +465,8 @@ def _read_sina_rows_from_capture(
     diagnostic_source = (
         hk_js_decode[:start] + part.replace("t.push(i)", addition) + hk_js_decode[end:]
     )
-    with MiniRacer() as js:
-        js.eval(hk_js_decode, timeout_sec=5, max_memory=64 * 1024 * 1024)
-        normal = js.call("d", match[1], timeout_sec=5, max_memory=64 * 1024 * 1024)
-    with MiniRacer() as js:
-        js.eval(diagnostic_source, timeout_sec=5, max_memory=64 * 1024 * 1024)
-        traced = js.call("d", match[1], timeout_sec=5, max_memory=64 * 1024 * 1024)
+    normal = _decode_sina_js(hk_js_decode, match[1])
+    traced = _decode_sina_js(diagnostic_source, match[1])
     if (
         not isinstance(normal, list)
         or not 1 <= len(normal) <= max_rows

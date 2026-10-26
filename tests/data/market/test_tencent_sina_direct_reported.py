@@ -30,6 +30,7 @@ from data.market.revision import publish_daily_bar_revision
 from data.market.schema import DAILY_BAR_SCHEMA_VERSION
 from data.market.verification_evidence import publish_market_verification_evidence
 from data.providers.bse_sina_history import (
+    SINA_JS_DISTRIBUTION,
     bse_native_read_scope,
     read_sina_a_share_rows,
 )
@@ -374,17 +375,35 @@ def test_valid_suspended_zero_model_cannot_enter_reported_pair(pair):
         )
 
 
-@pytest.mark.parametrize("package", ["akshare", "mini-racer"])
-def test_unknown_sina_decoder_package_fails_closed(pair, monkeypatch, package):
+def test_locked_platform_js_runtime_preserves_json_dates_and_numbers():
+    from data.providers.bse_sina_history import _decode_sina_js
+
+    decoded = _decode_sina_js(
+        'function d(value) { return [{date: new Date("2026-01-05T00:00:00.000Z"), '
+        "price: Number(value), amount: 123.45}]; }",
+        "0.01",
+    )
+    assert decoded == [
+        {"date": "2026-01-05T00:00:00.000Z", "price": 0.01, "amount": 123.45}
+    ]
+
+
+@pytest.mark.parametrize("package", ["akshare", SINA_JS_DISTRIBUTION])
+@pytest.mark.parametrize("missing", [False, True])
+def test_unknown_sina_decoder_package_fails_closed(pair, monkeypatch, package, missing):
     import importlib.metadata
 
     p = pair()
     original = importlib.metadata.version
-    monkeypatch.setattr(
-        importlib.metadata,
-        "version",
-        lambda name: "unreviewed" if name == package else original(name),
-    )
+
+    def version(name):
+        if name == package:
+            if missing:
+                raise importlib.metadata.PackageNotFoundError(package)
+            return "unreviewed"
+        return original(name)
+
+    monkeypatch.setattr(importlib.metadata, "version", version)
     with pytest.raises(ValueError, match="decoder_unreviewed"):
         p["reconcile"]()
 
