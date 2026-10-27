@@ -54,6 +54,7 @@ def test_docker_build_inputs_are_explicitly_allowlisted() -> None:
         "web/src/",
         "web/test-fixtures/shadow-observations.ts",
         "web/test-fixtures/publication-policy.ts",
+        "web/test-fixtures/research-simulation-fixture.ts",
         *(f"{package}/" for package in RUNTIME_PACKAGE_DIRS),
     }
     assert sources == expected_sources
@@ -84,6 +85,7 @@ def test_docker_context_is_deny_by_default_and_matches_copy_allowlist() -> None:
         "web/test-fixtures/",
         "web/test-fixtures/shadow-observations.ts",
         "web/test-fixtures/publication-policy.ts",
+        "web/test-fixtures/research-simulation-fixture.ts",
         "strategy/extensions/__init__.py",
         *(f"{package}/" for package in RUNTIME_PACKAGE_DIRS),
         *(f"{package}/**/*.py" for package in RUNTIME_PACKAGE_DIRS),

@@ -5,7 +5,7 @@ COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/index.html web/tsconfig.json web/vite.config.ts ./
 COPY web/src/ ./src/
-COPY web/test-fixtures/ ./test-fixtures/
+COPY web/test-fixtures/shadow-observations.ts web/test-fixtures/publication-policy.ts web/test-fixtures/research-simulation-fixture.ts ./test-fixtures/
 RUN npm run build
 
 # ---- Stage 2: Python runtime ----

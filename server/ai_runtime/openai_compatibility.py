@@ -16,7 +16,7 @@ def is_thinking_provider_settings(settings: ProviderConnectivitySettings) -> boo
         return True
     if is_gemini_provider_endpoint(settings.provider_id, settings.endpoint_origin):
         return True
-    model = (settings.model_name or "").strip().casefold()
+    model = (getattr(settings, "model_name", None) or "").strip().casefold()
     return "deepseek" in model or "gemini" in model
 
 

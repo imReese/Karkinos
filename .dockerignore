@@ -57,6 +57,7 @@ web/src/**
 web/test-fixtures/**
 !web/test-fixtures/shadow-observations.ts
 !web/test-fixtures/publication-policy.ts
+!web/test-fixtures/research-simulation-fixture.ts
 
 # Runtime/generated files remain excluded even if they appear below an allowed
 # source directory.
