@@ -37,6 +37,21 @@ def test_strategy_research_request_options_use_maximum_reasoning_for_deepseek():
     }
 
 
+def test_strategy_research_request_options_use_maximum_reasoning_for_gemini():
+    gemini_settings = ProviderConnectivitySettings(
+        provider_id="google.gemini",
+        model_name="gemini-3.8-flash",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+        api_key="fixture-api-key",
+        credential_source="test-only",
+        enabled=True,
+    )
+    assert strategy_research_request_options(gemini_settings) == {
+        "thinking": {"type": "enabled"},
+        "reasoning_effort": "max",
+    }
+
+
 def test_reasoning_roi_evidence_passes_without_reasoning():
     evidence = build_reasoning_roi_evidence(
         reasoning_mode_requested=False,

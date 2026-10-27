@@ -3,16 +3,26 @@
 from __future__ import annotations
 
 from .contracts import JsonObject
-from .provider_call_window import is_deepseek_provider_endpoint
+from .provider_call_window import (
+    is_deepseek_provider_endpoint,
+    is_gemini_provider_endpoint,
+)
 from .provider_connectivity_contracts import ProviderConnectivitySettings
+
+
+def is_thinking_provider_settings(settings: ProviderConnectivitySettings) -> bool:
+    """Classify providers/models that support maximum reasoning / thinking mode."""
+    if is_deepseek_provider_endpoint(settings.provider_id, settings.endpoint_origin):
+        return True
+    if is_gemini_provider_endpoint(settings.provider_id, settings.endpoint_origin):
+        return True
+    model = (settings.model_name or "").strip().casefold()
+    return "deepseek" in model or "gemini" in model
 
 
 def edge_request_options(settings: ProviderConnectivitySettings) -> JsonObject:
     """Preserve configured reasoning while avoiding unsupported sampling knobs."""
-    if is_deepseek_provider_endpoint(
-        settings.provider_id,
-        settings.endpoint_origin,
-    ):
+    if is_thinking_provider_settings(settings):
         return {
             "thinking": {"type": "enabled"},
             "reasoning_effort": "max",
@@ -49,4 +59,9 @@ def safe_usage(value: object) -> dict[str, int]:
     return result
 
 
-__all__ = ["edge_request_options", "message_text", "safe_usage"]
+__all__ = [
+    "edge_request_options",
+    "is_thinking_provider_settings",
+    "message_text",
+    "safe_usage",
+]

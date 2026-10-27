@@ -57,6 +57,33 @@ def is_deepseek_provider_endpoint(
     )
 
 
+def is_gemini_endpoint(endpoint_origin: str | None) -> bool:
+    """Return whether an HTTPS origin belongs to Google Gemini's API domains."""
+
+    if not endpoint_origin:
+        return False
+    host = (urlparse(endpoint_origin).hostname or "").casefold().rstrip(".")
+    return (
+        host == "generativelanguage.googleapis.com"
+        or host.endswith(".googleapis.com")
+        or host == "aiplatform.googleapis.com"
+    )
+
+
+def is_gemini_provider_endpoint(
+    provider_id: str,
+    endpoint_origin: str | None = None,
+) -> bool:
+    """Classify Gemini consistently from either reviewed identity signal."""
+
+    pid = provider_id.strip().casefold()
+    return (
+        pid in ("google.gemini", "gemini")
+        or pid.startswith("google.gemini")
+        or is_gemini_endpoint(endpoint_origin)
+    )
+
+
 class ProviderCallWindowConfigurationError(ValueError):
     """Raised when a call-window decision cannot be made safely."""
 

@@ -8,6 +8,7 @@ from pathlib import Path
 from data.store import DataStore
 from server.ai_runtime.capture import HumanResearchContextCaptureService
 from server.ai_runtime.evidence import CanonicalEvidenceRepository
+from server.ai_runtime.openai_compatibility import is_thinking_provider_settings
 from server.ai_runtime.provider_call_window import (
     PROVIDER_CALL_COMPLETION_GUARD_SECONDS,
     ProviderExecutionFence,
@@ -101,11 +102,8 @@ def build_strategy_research_write_service(
 def strategy_research_model_timeout_seconds(
     settings: ProviderConnectivitySettings | None,
 ) -> float:
-    """Allow the configured DeepSeek research call up to ten minutes."""
-    if settings is not None and is_deepseek_provider_endpoint(
-        settings.provider_id,
-        settings.endpoint_origin,
-    ):
+    """Allow configured thinking research calls up to ten minutes."""
+    if settings is not None and is_thinking_provider_settings(settings):
         return DEEPSEEK_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS
     return DEFAULT_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS
 

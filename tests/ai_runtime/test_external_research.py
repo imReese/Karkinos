@@ -419,6 +419,27 @@ def test_deepseek_edge_explicitly_preserves_thinking_without_provider_tools():
 
 
 @pytest.mark.unit
+def test_gemini_edge_explicitly_preserves_thinking_without_provider_tools():
+    settings = ProviderConnectivitySettings(
+        provider_id="google.gemini",
+        model_name="gemini-3.8-flash",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+        api_key="fixture-secret",
+        credential_source="test-only",
+        enabled=True,
+    )
+
+    options = edge_request_options(settings)
+
+    assert options == {
+        "thinking": {"type": "enabled"},
+        "reasoning_effort": "max",
+    }
+    assert "temperature" not in options
+    assert "tools" not in options
+
+
+@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_exact_restart_reuses_report_without_second_provider_call(tmp_path):
     db_path = tmp_path / "app.db"

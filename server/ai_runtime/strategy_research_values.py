@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from server.ai_runtime.contracts import JsonObject, WorkflowStatus
-from server.ai_runtime.openai_compatibility import edge_request_options
+from server.ai_runtime.openai_compatibility import (
+    edge_request_options,
+    is_thinking_provider_settings,
+)
 from server.ai_runtime.provider_call_window import is_deepseek_provider_endpoint
 from server.ai_runtime.provider_connectivity_contracts import (
     ProviderConnectivitySettings,
@@ -35,10 +38,7 @@ def strategy_research_request_options(
     settings: ProviderConnectivitySettings,
 ) -> JsonObject:
     """Reserve the response budget for the bounded final JSON contract."""
-    if is_deepseek_provider_endpoint(
-        settings.provider_id,
-        settings.endpoint_origin,
-    ):
+    if is_thinking_provider_settings(settings):
         return strategy_research_reasoning_policy()
     return edge_request_options(settings)
 
