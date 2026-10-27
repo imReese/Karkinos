@@ -187,6 +187,15 @@ export const SHADOW_RESEARCH_COPY = {
     pauseNote: 'Pause / revocation reason',
     pauseConfirm:
       'I confirm pausing this exact candidate. Existing approval remains auditable, but new tickets must fail closed until a new explicit review.',
+    reinstate: 'Reinstate champion to paper/shadow',
+    reinstating: 'Recording reinstatement…',
+    reinstateNote: 'Reinstatement reason',
+    reinstateConfirm:
+      'I confirm reinstating this verified champion strategy to paper/shadow simulation without execution or capital authority.',
+    reinstateSuccess: 'Reinstated to paper/shadow',
+    reinstateTitle: 'Verified champion reinstatement',
+    reinstateSubtitle:
+      'Safely fall back to a previously verified champion when an experimental challenger is withdrawn or paused.',
     noAuthority:
       'Normalized-notional discovery · Account Truth remains required for promotion/execution · no broker order',
     failure: 'The operation failed closed. No strategy or order was changed.',
@@ -377,6 +386,15 @@ export const SHADOW_RESEARCH_COPY = {
     pauseNote: '暂停 / 撤销原因',
     pauseConfirm:
       '我确认暂停这一精确候选；原批准保留供审计，但重新明确复核前，新票据必须 fail closed。',
+    reinstate: '恢复冠军至 paper/shadow',
+    reinstating: '正在记录恢复…',
+    reinstateNote: '恢复原因',
+    reinstateConfirm:
+      '我确认将该已验证冠军策略恢复至 paper/shadow 前向模拟；不授予交易或资本权限。',
+    reinstateSuccess: '已恢复至 paper/shadow',
+    reinstateTitle: '已验证冠军恢复（降级兜底）',
+    reinstateSubtitle:
+      '当实验性挑战者策略被撤回或失效时，可安全降级回退至历史验证通过的冠军策略。',
     noAuthority:
       '归一化名义资金研究 · Account Truth 仅用于后续晋级/执行 · 不会创建 broker 订单',
     failure: '操作已 fail closed；没有修改策略或订单。',

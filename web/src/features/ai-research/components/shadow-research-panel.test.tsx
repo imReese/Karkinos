@@ -1701,3 +1701,182 @@ test.each(['registry', 'raw_report'] as const)(
       ).toBeTruthy();
   },
 );
+
+test('reinstates a previously verified champion strategy when experimental challenger is withdrawn or paused', async () => {
+  window.matchMedia = vi.fn().mockReturnValue({
+    matches: false,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
+  const candidate = status.candidates[0];
+  const pausedChampionStatus = {
+    ...status,
+    candidates: [
+      {
+        ...candidate,
+        candidate_id: 'champion-1',
+        draft_id: 'draft-champ-1',
+        promotion_status: 'paper_shadow_approved' as const,
+      },
+    ],
+  };
+  let promotionStage = 'paused';
+  const fetchMock = vi.fn(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/ai/strategy-research/shadow-automation')) {
+        return jsonResponse(pausedChampionStatus);
+      }
+      if (url.endsWith('/api/strategy-promotion/states')) {
+        return jsonResponse([
+          {
+            strategy_id: 'ai_formula_shadow:champion-1',
+            stage: promotionStage,
+            gate_status:
+              promotionStage === 'paper_shadow'
+                ? 'paper_shadow_enabled'
+                : 'paused',
+            live_like_enabled: false,
+          },
+        ]);
+      }
+      if (
+        url.endsWith(
+          '/api/strategy-promotion/ai_formula_shadow%3Achampion-1/reinstate',
+        ) &&
+        init?.method === 'POST'
+      ) {
+        promotionStage = 'paper_shadow';
+        return jsonResponse({
+          strategy_id: 'ai_formula_shadow:champion-1',
+          stage: 'paper_shadow',
+          gate_status: 'paper_shadow_enabled',
+          live_like_enabled: false,
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    },
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <ShadowResearchPanel />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  expect(
+    (await screen.findByTestId('shadow-research-candidate-inspector'))
+      .textContent,
+  ).toContain('Verified champion reinstatement');
+
+  const reinstateButton = screen.getByTestId(
+    'reinstate-candidate-button',
+  ) as HTMLButtonElement;
+  expect(reinstateButton.disabled).toBe(true);
+
+  fireEvent.change(screen.getByTestId('reinstatement-reason-input'), {
+    target: { value: 'Challenger withdrawn; restoring incumbent champion.' },
+  });
+  fireEvent.click(screen.getByTestId('reinstatement-confirmation-checkbox'));
+  expect(reinstateButton.disabled).toBe(false);
+
+  fireEvent.click(reinstateButton);
+
+  await vi.waitFor(() => {
+    const reinstateCall = fetchMock.mock.calls.find(([input]) =>
+      String(input).includes('ai_formula_shadow%3Achampion-1/reinstate'),
+    );
+    expect(reinstateCall).toBeTruthy();
+    expect(JSON.parse(String(reinstateCall?.[1]?.body))).toEqual({
+      reason: 'Challenger withdrawn; restoring incumbent champion.',
+      actor: 'human:owner',
+      confirmation:
+        'reinstate_verified_strategy_to_paper_shadow_without_execution_or_capital_authority',
+    });
+  });
+
+  expect(
+    await screen.findByText('Authorized · Paper simulation active'),
+  ).toBeTruthy();
+  expect(screen.queryByTestId('candidate-reinstate-form')).toBeNull();
+});
+
+test('displays fail-closed alert when reinstatement request is rejected by promotion gate', async () => {
+  window.matchMedia = vi.fn().mockReturnValue({
+    matches: false,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
+  const candidate = status.candidates[0];
+  const pausedChampionStatus = {
+    ...status,
+    candidates: [
+      {
+        ...candidate,
+        candidate_id: 'champion-conflict',
+        draft_id: 'draft-champ-conflict',
+        promotion_status: 'paper_shadow_approved' as const,
+      },
+    ],
+  };
+  const fetchMock = vi.fn(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/ai/strategy-research/shadow-automation')) {
+        return jsonResponse(pausedChampionStatus);
+      }
+      if (url.endsWith('/api/strategy-promotion/states')) {
+        return jsonResponse([
+          {
+            strategy_id: 'ai_formula_shadow:champion-conflict',
+            stage: 'paused',
+            gate_status: 'paused',
+            live_like_enabled: false,
+          },
+        ]);
+      }
+      if (
+        url.endsWith(
+          '/api/strategy-promotion/ai_formula_shadow%3Achampion-conflict/reinstate',
+        ) &&
+        init?.method === 'POST'
+      ) {
+        return jsonResponse(
+          { detail: 'missing readiness requirements for reinstatement' },
+          409,
+        );
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    },
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+
+  render(
+    <PreferencesProvider>
+      <QueryClientProvider client={queryClient}>
+        <ShadowResearchPanel />
+      </QueryClientProvider>
+    </PreferencesProvider>,
+  );
+
+  await screen.findByTestId('candidate-reinstate-form');
+  fireEvent.change(screen.getByTestId('reinstatement-reason-input'), {
+    target: { value: 'Attempting invalid champion reinstatement.' },
+  });
+  fireEvent.click(screen.getByTestId('reinstatement-confirmation-checkbox'));
+  fireEvent.click(screen.getByTestId('reinstate-candidate-button'));
+
+  const alert = await screen.findByRole('alert');
+  expect(alert.textContent).toContain(
+    'missing readiness requirements for reinstatement',
+  );
+});

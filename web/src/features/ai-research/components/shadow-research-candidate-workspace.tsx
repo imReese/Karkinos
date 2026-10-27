@@ -31,8 +31,14 @@ export function ShadowResearchCandidateWorkspace({
   onPause,
   onPauseConfirmationChange,
   onPauseNoteChange,
+  onReinstate,
+  onReinstateConfirmationChange,
+  onReinstateNoteChange,
   pauseConfirmations,
   pauseNotes,
+  reinstateConfirmations,
+  reinstateNotes,
+  reinstateError,
   pending,
   promotionStates,
   verifiedResearchWinnerCandidateIds,
@@ -51,8 +57,16 @@ export function ShadowResearchCandidateWorkspace({
   onPause: (candidate: ShadowResearchCandidate) => Promise<void>;
   onPauseConfirmationChange: Dispatch<SetStateAction<Record<string, boolean>>>;
   onPauseNoteChange: Dispatch<SetStateAction<Record<string, string>>>;
+  onReinstate?: (candidate: ShadowResearchCandidate) => Promise<void>;
+  onReinstateConfirmationChange?: Dispatch<
+    SetStateAction<Record<string, boolean>>
+  >;
+  onReinstateNoteChange?: Dispatch<SetStateAction<Record<string, string>>>;
   pauseConfirmations: Record<string, boolean>;
   pauseNotes: Record<string, string>;
+  reinstateConfirmations?: Record<string, boolean>;
+  reinstateNotes?: Record<string, string>;
+  reinstateError?: string | null;
   pending: boolean;
   promotionStates: ReturnType<typeof useStrategyPromotionStatesQuery>;
   verifiedResearchWinnerCandidateIds: Set<string>;
@@ -190,6 +204,22 @@ export function ShadowResearchCandidateWorkspace({
       }
       pauseConfirmations={pauseConfirmations}
       pauseNotes={pauseNotes}
+      onReinstate={onReinstate ? () => void onReinstate(candidate) : undefined}
+      onReinstateConfirmationChange={(checked) =>
+        onReinstateConfirmationChange?.((currentState) => ({
+          ...currentState,
+          [candidate.candidate_id]: checked,
+        }))
+      }
+      onReinstateNoteChange={(value) =>
+        onReinstateNoteChange?.((currentState) => ({
+          ...currentState,
+          [candidate.candidate_id]: value,
+        }))
+      }
+      reinstateConfirmations={reinstateConfirmations}
+      reinstateNotes={reinstateNotes}
+      reinstateError={reinstateError}
       pending={pending}
       promotionStage={
         promotionStates.data?.find(

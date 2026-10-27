@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown } from 'lucide-react';
 
-import { formatTimestamp } from '../../../shared/format';
 import { usePreferences } from '../../../shared/preferences/context';
 import { EvidenceState } from '../../../shared/ui/workbench';
 import {
   useApproveShadowResearchQualificationCandidateMutation,
   useApproveShadowResearchCandidateMutation,
   usePauseShadowResearchCandidateMutation,
+  useReinstateShadowResearchCandidateMutation,
   useRunShadowResearchMutation,
   useShadowResearchAutomationQuery,
   useStrategyPromotionStatesQuery,
@@ -16,16 +15,15 @@ import {
   type ShadowResearchCandidate,
   type ShadowResearchPolicyInput,
 } from '../api';
+import { ShadowResearchAutomationDisclosure } from './shadow-research-automation-disclosure';
 import { SHADOW_RESEARCH_COPY } from './shadow-research-copy';
 import { ShadowResearchCandidateWorkspace } from './shadow-research-candidate-workspace';
 import { ShadowResearchQualificationReview } from './shadow-research-qualification';
 import {
   MAX_PROVIDER_CALLS,
   MAX_CANDIDATES,
-  ShadowResearchPolicyCard,
   hasValidResearchDates,
 } from './shadow-research-policy-card';
-import { StatusMetric } from './shadow-research-view';
 import { StrategyChampionSpotlight } from './strategy-champion-spotlight';
 import { AutomaticPublicationPolicy } from './automatic-publication-policy';
 
@@ -147,28 +145,6 @@ function verifiedDailyCandidateIds(
         .filter((candidateId): candidateId is string => Boolean(candidateId)),
     ),
   };
-}
-
-function TodayProviderActivityMetric({
-  copy,
-  activity,
-}: {
-  copy: (typeof SHADOW_RESEARCH_COPY)[keyof typeof SHADOW_RESEARCH_COPY];
-  activity: ShadowResearchAutomationStatus['today_provider_activity'];
-}) {
-  return (
-    <StatusMetric
-      label={copy.todayCalls}
-      value={activity ? String(activity.provider_calls) : '—'}
-      detail={
-        activity?.last_provider_call_at
-          ? `${copy.lastProviderCall}: ${formatTimestamp(
-              activity.last_provider_call_at,
-            )} · ${copy.researchMarketDate}: ${activity.last_provider_call_market_date ?? '—'}`
-          : `${activity?.local_date ?? '—'} · ${copy.noCallsToday}`
-      }
-    />
-  );
 }
 
 function ShadowResearchTelemetryHUD({
@@ -309,56 +285,6 @@ function ShadowResearchTelemetryHUD({
   );
 }
 
-function ShadowResearchUsageMetrics({
-  copy,
-  status,
-  policy,
-  providerWindow,
-}: {
-  copy: (typeof SHADOW_RESEARCH_COPY)[keyof typeof SHADOW_RESEARCH_COPY];
-  status: ShadowResearchAutomationStatus | undefined;
-  policy: ShadowResearchPolicyInput;
-  providerWindow: ShadowResearchAutomationStatus['provider_call_window'];
-}) {
-  const latestRun = status?.runs[0];
-  return (
-    <div
-      className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-5"
-      data-testid="shadow-research-usage-metrics"
-    >
-      <StatusMetric
-        label={copy.calls}
-        value={`${status?.usage.provider_calls ?? 0} / ${
-          status?.policy.max_provider_calls_per_market_date ??
-          policy.max_provider_calls_per_market_date
-        }`}
-        detail={status?.usage.market_date ?? '—'}
-      />
-      <TodayProviderActivityMetric
-        copy={copy}
-        activity={status?.today_provider_activity}
-      />
-      <ProviderCallWindowMetric copy={copy} providerWindow={providerWindow} />
-      <StatusMetric
-        label={copy.tokens}
-        value={String(status?.usage.actual_tokens ?? 0)}
-        detail={`${
-          status?.policy.token_budget_mode === 'unbounded_daily'
-            ? copy.unboundedDailyTokens
-            : copy.legacyBoundedDailyTokens
-        } · ${copy.tokenAccountingEstimate} ${status?.usage.reserved_tokens ?? 0}`}
-      />
-      <StatusMetric
-        label={copy.candidates}
-        value={String(status?.candidates.length ?? 0)}
-        detail={
-          latestRun ? `${latestRun.market_date} · ${latestRun.status}` : '—'
-        }
-      />
-    </div>
-  );
-}
-
 export function ShadowResearchPanel() {
   const { locale } = usePreferences();
   const copy = SHADOW_RESEARCH_COPY[locale];
@@ -370,6 +296,7 @@ export function ShadowResearchPanel() {
   const approveQualification =
     useApproveShadowResearchQualificationCandidateMutation();
   const pause = usePauseShadowResearchCandidateMutation();
+  const reinstate = useReinstateShadowResearchCandidateMutation();
   const [policy, setPolicy] = useState<ShadowResearchPolicyInput>(EMPTY_POLICY);
   const [policyConfirmed, setPolicyConfirmed] = useState(false);
   const [initialized, setInitialized] = useState(false);
@@ -377,6 +304,12 @@ export function ShadowResearchPanel() {
   const [approvals, setApprovals] = useState<Record<string, boolean>>({});
   const [pauseNotes, setPauseNotes] = useState<Record<string, string>>({});
   const [pauseConfirmations, setPauseConfirmations] = useState<
+    Record<string, boolean>
+  >({});
+  const [reinstateNotes, setReinstateNotes] = useState<Record<string, string>>(
+    {},
+  );
+  const [reinstateConfirmations, setReinstateConfirmations] = useState<
     Record<string, boolean>
   >({});
 
@@ -457,6 +390,28 @@ export function ShadowResearchPanel() {
         [candidate.candidate_id]: false,
       }));
       setPauseNotes((current) => ({
+        ...current,
+        [candidate.candidate_id]: '',
+      }));
+    } catch {
+      // Mutation state renders the fail-closed error.
+    }
+  };
+
+  const reinstateCandidate = async (candidate: ShadowResearchCandidate) => {
+    const reason = reinstateNotes[candidate.candidate_id]?.trim();
+    if (!reason || !reinstateConfirmations[candidate.candidate_id]) return;
+    try {
+      await reinstate.mutateAsync({
+        candidate_id: candidate.candidate_id,
+        actor: policy.updated_by,
+        reason,
+      });
+      setReinstateConfirmations((current) => ({
+        ...current,
+        [candidate.candidate_id]: false,
+      }));
+      setReinstateNotes((current) => ({
         ...current,
         [candidate.candidate_id]: '',
       }));
@@ -560,9 +515,19 @@ export function ShadowResearchPanel() {
           onPause={pauseCandidate}
           onPauseConfirmationChange={setPauseConfirmations}
           onPauseNoteChange={setPauseNotes}
+          onReinstate={reinstateCandidate}
+          onReinstateConfirmationChange={setReinstateConfirmations}
+          onReinstateNoteChange={setReinstateNotes}
           pauseConfirmations={pauseConfirmations}
           pauseNotes={pauseNotes}
-          pending={approve.isPending || pause.isPending}
+          reinstateConfirmations={reinstateConfirmations}
+          reinstateNotes={reinstateNotes}
+          reinstateError={
+            reinstate.isError
+              ? (reinstate.error as Error)?.message || copy.failure
+              : null
+          }
+          pending={approve.isPending || pause.isPending || reinstate.isPending}
           promotionStates={promotionStates}
           verifiedResearchWinnerCandidateIds={verifiedCandidateIds.research}
           verifiedWinnerCandidateIds={verifiedCandidateIds.promotion}
@@ -596,123 +561,47 @@ export function ShadowResearchPanel() {
           </div>
 
           {/* Automation diagnostics and policy configuration */}
-          <details
-            className="group rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-overlay)] p-4"
-            data-testid="research-automation-disclosure"
-          >
-            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold text-[var(--app-text)] hover:text-[var(--app-accent)] transition-colors">
-              <span>
-                {locale === 'zh'
-                  ? '自动化研究运行诊断与策略配置'
-                  : 'Automation Diagnostics & Policy Configuration'}
-              </span>
-              <ChevronDown
-                aria-hidden="true"
-                className="size-4 shrink-0 transition-transform group-open:rotate-180"
-              />
-            </summary>
-
-            <div className="mt-4 space-y-6">
-              <ShadowResearchUsageMetrics
-                copy={copy}
-                status={status}
-                policy={policy}
-                providerWindow={providerWindow}
-              />
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <StatusMetric
-                  label={copy.dailyWinner}
-                  value={dailyOutcome.value}
-                  detail={dailyOutcome.detail}
-                />
-                <StatusMetric
-                  label={copy.backup}
-                  value={
-                    latestBackup?.verification_status === 'verified'
-                      ? copy.backupVerified
-                      : latestBackup?.verification_status || '—'
-                  }
-                  detail={latestBackup?.artifact_fingerprint || '—'}
-                />
-              </div>
-
-              <p className="sr-only">{copy.fiveCandidateRule}</p>
-
-              <div className="mt-4">
-                <ShadowResearchPolicyCard
-                  copy={copy}
-                  datesValid={datesValid}
-                  draftPolicyReady={draftPolicyReady}
-                  locale={locale}
-                  onRun={() => run.mutate()}
-                  onSavePolicy={() => void savePolicy()}
-                  persistedPolicyReady={persistedPolicyReady}
-                  policy={policy}
-                  policyConfirmed={policyConfirmed}
-                  policyDirty={policyDirty}
-                  providerWindowEligible={providerWindowEligible}
-                  runPending={run.isPending}
-                  runReceipt={run.isPending ? undefined : run.data}
-                  setPolicy={(update) => {
-                    run.reset();
-                    setPolicy(update);
-                    setPolicyConfirmed(false);
-                  }}
-                  setPolicyConfirmed={setPolicyConfirmed}
-                  status={status}
-                  updatePolicyPending={updatePolicy.isPending}
-                />
-              </div>
-              {updatePolicy.isSuccess && !policyDirty ? (
-                <p
-                  role="status"
-                  className="mt-3 text-sm text-[var(--app-success-text)]"
-                >
-                  {copy.policySaved}
-                </p>
-              ) : null}
-              {(query.isError ||
-                updatePolicy.isError ||
-                run.isError ||
-                approve.isError ||
-                approveQualification.isError ||
-                pause.isError ||
-                promotionStates.isError) && (
-                <p className="mt-3 text-sm text-[var(--app-danger-text)]">
-                  {copy.failure}
-                </p>
-              )}
-            </div>
-          </details>
+          <ShadowResearchAutomationDisclosure
+            copy={copy}
+            dailyOutcome={dailyOutcome}
+            datesValid={datesValid}
+            draftPolicyReady={draftPolicyReady}
+            hasError={Boolean(
+              query.isError ||
+              updatePolicy.isError ||
+              run.isError ||
+              approve.isError ||
+              approveQualification.isError ||
+              pause.isError ||
+              reinstate.isError ||
+              promotionStates.isError,
+            )}
+            latestBackup={latestBackup}
+            locale={locale}
+            onRun={() => run.mutate()}
+            onSavePolicy={() => void savePolicy()}
+            persistedPolicyReady={persistedPolicyReady}
+            policy={policy}
+            policyConfirmed={policyConfirmed}
+            policyDirty={policyDirty}
+            providerWindow={providerWindow}
+            providerWindowEligible={providerWindowEligible}
+            runPending={run.isPending}
+            runReceipt={run.isPending ? undefined : run.data}
+            setPolicy={(update) => {
+              run.reset();
+              setPolicy(update);
+              setPolicyConfirmed(false);
+            }}
+            setPolicyConfirmed={setPolicyConfirmed}
+            status={status}
+            updatePolicyPending={updatePolicy.isPending}
+            updatePolicySuccess={Boolean(
+              updatePolicy.isSuccess && !policyDirty,
+            )}
+          />
         </div>
       </div>
     </section>
-  );
-}
-
-function ProviderCallWindowMetric({
-  copy,
-  providerWindow,
-}: {
-  copy: (typeof SHADOW_RESEARCH_COPY)[keyof typeof SHADOW_RESEARCH_COPY];
-  providerWindow: ShadowResearchAutomationStatus['provider_call_window'];
-}) {
-  return (
-    <StatusMetric
-      label={copy.providerWindow}
-      value={
-        providerWindow?.status === 'eligible_off_peak'
-          ? copy.offPeakEligible
-          : providerWindow
-            ? copy.offPeakDeferred
-            : '—'
-      }
-      detail={
-        providerWindow?.next_eligible_at
-          ? `${copy.nextEligible}: ${providerWindow.next_eligible_at}`
-          : copy.offPeakSchedule
-      }
-    />
   );
 }

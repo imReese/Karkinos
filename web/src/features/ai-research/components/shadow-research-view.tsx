@@ -15,6 +15,7 @@ import {
   formatDraftSummaryName,
   resolveCandidateEngine,
 } from '../candidate-display';
+import { CandidateDecisionForms } from './candidate-decision-forms';
 
 export function CandidateCard({
   candidate,
@@ -30,6 +31,13 @@ export function CandidateCard({
   onPauseNoteChange,
   onPauseConfirmationChange,
   onPause,
+  reinstatable: explicitReinstatable,
+  reinstateNotes,
+  reinstateConfirmations,
+  reinstateError,
+  onReinstateNoteChange,
+  onReinstateConfirmationChange,
+  onReinstate,
   promotionStage,
   promotionStateLoaded,
   publicationUsable,
@@ -50,6 +58,13 @@ export function CandidateCard({
   onPauseNoteChange: (value: string) => void;
   onPauseConfirmationChange: (value: boolean) => void;
   onPause: () => void;
+  reinstatable?: boolean;
+  reinstateNotes?: Record<string, string>;
+  reinstateConfirmations?: Record<string, boolean>;
+  reinstateError?: string | null;
+  onReinstateNoteChange?: (value: string) => void;
+  onReinstateConfirmationChange?: (value: boolean) => void;
+  onReinstate?: () => void;
   promotionStage: string | undefined;
   promotionStateLoaded: boolean;
   publicationUsable: boolean;
@@ -58,6 +73,10 @@ export function CandidateCard({
   pending: boolean;
 }) {
   const comparison = candidate.comparison;
+  const hasHistoricalPromotion =
+    promotionStage !== undefined && promotionStage !== 'paper_shadow';
+  const isCurrentlyActiveInPaperShadow = promotionStage === 'paper_shadow';
+
   const eligible =
     candidate.status === 'awaiting_human_approval' &&
     candidate.recommendation === 'paper_shadow_review' &&
@@ -68,6 +87,14 @@ export function CandidateCard({
   const revocable =
     candidate.promotion_status === 'paper_shadow_approved' &&
     promotionStage === 'paper_shadow';
+  const reinstatable =
+    explicitReinstatable ??
+    (hasHistoricalPromotion &&
+      (promotionStage === 'paused' ||
+        promotionStage === 'retired' ||
+        candidate.promotion_status === 'paper_shadow_approved') &&
+      !isCurrentlyActiveInPaperShadow &&
+      !eligible);
   const critique = comparison.deepseek_critique;
   const evidenceGate = comparison.research_gate ?? comparison.promotion_gate;
   const { locale } = usePreferences();
@@ -214,13 +241,17 @@ export function CandidateCard({
                 ? zh
                   ? '已授权 · 前向模拟运行中'
                   : 'Authorized · Paper simulation active'
-                : comparison.research_capital_mode === 'normalized_notional'
+                : reinstatable
                   ? zh
-                    ? '前向观察已记录'
-                    : 'Forward observation recorded'
-                  : zh
-                    ? '需补齐证据缺口'
-                    : 'Evidence gaps pending'}
+                    ? '已暂停/退役 · 可恢复冠军前向模拟'
+                    : 'Paused/retired · Reinstatable champion'
+                  : comparison.research_capital_mode === 'normalized_notional'
+                    ? zh
+                      ? '前向观察已记录'
+                      : 'Forward observation recorded'
+                    : zh
+                      ? '需补齐证据缺口'
+                      : 'Evidence gaps pending'}
           </p>
           {comparison.risk_impact ? (
             <p className="mt-1.5 text-xs text-[var(--app-text-secondary)]">
@@ -240,7 +271,7 @@ export function CandidateCard({
         </p>
       ) : null}
 
-      {eligible || revocable ? (
+      {eligible || revocable || reinstatable ? (
         <CandidateDecisionForms
           approvals={approvals}
           approvalError={approvalError}
@@ -256,6 +287,13 @@ export function CandidateCard({
           onPauseNoteChange={onPauseNoteChange}
           pauseConfirmations={pauseConfirmations}
           pauseNotes={pauseNotes}
+          reinstatable={reinstatable}
+          reinstateConfirmations={reinstateConfirmations}
+          reinstateNotes={reinstateNotes}
+          reinstateError={reinstateError}
+          onReinstate={onReinstate}
+          onReinstateConfirmationChange={onReinstateConfirmationChange}
+          onReinstateNoteChange={onReinstateNoteChange}
           pending={pending}
           promotionStage={promotionStage}
           revocable={revocable}
@@ -288,179 +326,6 @@ export function CandidateCard({
         </div>
       </details>
     </article>
-  );
-}
-
-function CandidateDecisionForms({
-  approvals,
-  approvalError,
-  candidate,
-  copy,
-  eligible,
-  notes,
-  onApprovalChange,
-  onApprove,
-  onNoteChange,
-  onPause,
-  onPauseConfirmationChange,
-  onPauseNoteChange,
-  pauseConfirmations,
-  pauseNotes,
-  pending,
-  promotionStage,
-  revocable,
-  zh,
-}: {
-  approvals: Record<string, boolean>;
-  approvalError?: string | null;
-  candidate: ShadowResearchCandidate;
-  copy: ShadowResearchCopy;
-  eligible: boolean;
-  notes: Record<string, string>;
-  onApprovalChange: (value: boolean) => void;
-  onApprove: () => void;
-  onNoteChange: (value: string) => void;
-  onPause: () => void;
-  onPauseConfirmationChange: (value: boolean) => void;
-  onPauseNoteChange: (value: string) => void;
-  pauseConfirmations: Record<string, boolean>;
-  pauseNotes: Record<string, string>;
-  pending: boolean;
-  promotionStage: string | undefined;
-  revocable: boolean;
-  zh: boolean;
-}) {
-  return (
-    <>
-      {eligible ? (
-        <div className="space-y-4 rounded-[var(--app-radius-control)] border border-[color-mix(in_srgb,var(--app-accent)_40%,var(--app-border))] bg-[var(--app-surface-raised)] p-5">
-          <div className="flex items-center justify-between border-b border-[var(--app-divider)] pb-2.5">
-            <h4 className="flex items-center gap-2 text-sm font-semibold text-[var(--app-text)]">
-              <span className="size-2 rounded-full bg-[var(--app-accent)]" />
-              {zh ? '人工复核与授权决策' : 'Human Review & Authorization'}
-            </h4>
-            <span className="app-type-micro font-medium text-[var(--app-text-tertiary)]">
-              {zh
-                ? '需要人工核准后方可进入前向模拟'
-                : 'Human approval required for paper shadow'}
-            </span>
-          </div>
-          <div className="max-w-2xl space-y-3">
-            <label className="block">
-              <span className="text-xs font-medium text-[var(--app-text)]">
-                {copy.approvalNote}
-              </span>
-              <textarea
-                className="app-input mt-1.5 min-h-20 w-full resize-y rounded-[var(--app-radius-control)] p-2.5 font-sans text-xs text-[var(--app-text)] focus:border-[var(--app-accent)]"
-                placeholder={
-                  zh
-                    ? '请输入复核依据、风险评估或前向观察理由…'
-                    : 'Enter review notes and forward observation rationale…'
-                }
-                onChange={(event) => onNoteChange(event.target.value)}
-                value={notes[candidate.candidate_id] ?? ''}
-              />
-            </label>
-            <label className="flex cursor-pointer items-start gap-2.5 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-3 text-xs leading-5 text-[var(--app-text-secondary)] transition-colors hover:border-[var(--app-border)]">
-              <input
-                checked={approvals[candidate.candidate_id] ?? false}
-                className="mt-0.5 size-4 cursor-pointer rounded accent-[var(--app-accent)]"
-                onChange={(event) => onApprovalChange(event.target.checked)}
-                type="checkbox"
-              />
-              <span>{copy.approvalConfirm}</span>
-            </label>
-            <div>
-              <button
-                className="app-button app-button-primary min-h-10 rounded-[var(--app-radius-control)] px-5 py-2 text-xs font-semibold"
-                disabled={
-                  pending ||
-                  !approvals[candidate.candidate_id] ||
-                  !notes[candidate.candidate_id]?.trim()
-                }
-                onClick={onApprove}
-                type="button"
-              >
-                {pending
-                  ? copy.approving
-                  : promotionStage === 'paused'
-                    ? copy.reapprove
-                    : copy.approve}
-              </button>
-            </div>
-            {approvalError ? (
-              <div
-                role="alert"
-                className="rounded-[var(--app-radius-control)] border border-[var(--app-danger-border)] bg-[var(--app-danger-bg)] p-3 text-xs text-[var(--app-danger-text)] animate-in fade-in"
-              >
-                <div className="font-semibold">
-                  {zh
-                    ? '审核被拦截 / 无法进入前向模拟：'
-                    : 'Approval rejected: '}
-                </div>
-                <div className="mt-1 leading-relaxed">
-                  {formatApprovalError(approvalError, zh)}
-                </div>
-                <div className="mt-1.5 font-mono app-type-micro opacity-75">
-                  {approvalError}
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-
-      {revocable ? (
-        <div className="space-y-4 rounded-[var(--app-radius-control)] border border-[var(--app-border)] bg-[var(--app-surface-raised)] p-5">
-          <div className="flex items-center justify-between border-b border-[var(--app-divider)] pb-2.5">
-            <h4 className="flex items-center gap-2 text-sm font-semibold text-[var(--app-text)]">
-              <span className="size-2 rounded-full bg-[var(--app-warning)]" />
-              {zh ? '前向模拟暂停与撤销' : 'Pause / Revoke Simulation'}
-            </h4>
-          </div>
-          <div className="max-w-2xl space-y-3">
-            <label className="block">
-              <span className="text-xs font-medium text-[var(--app-text)]">
-                {copy.pauseNote}
-              </span>
-              <textarea
-                className="app-input mt-1.5 min-h-20 w-full resize-y rounded-[var(--app-radius-control)] p-2.5 font-sans text-xs text-[var(--app-text)] focus:border-[var(--app-warning)]"
-                placeholder={
-                  zh ? '请输入暂停或撤销的原因…' : 'Enter revocation reason…'
-                }
-                onChange={(event) => onPauseNoteChange(event.target.value)}
-                value={pauseNotes[candidate.candidate_id] ?? ''}
-              />
-            </label>
-            <label className="flex cursor-pointer items-start gap-2.5 rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface)] p-3 text-xs leading-5 text-[var(--app-text-secondary)] transition-colors hover:border-[var(--app-border)]">
-              <input
-                checked={pauseConfirmations[candidate.candidate_id] ?? false}
-                className="mt-0.5 size-4 cursor-pointer rounded accent-[var(--app-warning)]"
-                onChange={(event) =>
-                  onPauseConfirmationChange(event.target.checked)
-                }
-                type="checkbox"
-              />
-              <span>{copy.pauseConfirm}</span>
-            </label>
-            <div>
-              <button
-                className="app-button app-button-secondary min-h-10 rounded-[var(--app-radius-control)] px-5 py-2 text-xs font-semibold"
-                disabled={
-                  pending ||
-                  !pauseConfirmations[candidate.candidate_id] ||
-                  !pauseNotes[candidate.candidate_id]?.trim()
-                }
-                onClick={onPause}
-                type="button"
-              >
-                {pending ? copy.pausing : copy.pause}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </>
   );
 }
 
@@ -720,29 +585,4 @@ export function CritiqueEvolutionTimeline({
       </div>
     </div>
   );
-}
-
-function formatApprovalError(error: string, zh: boolean): string {
-  if (!zh) return error;
-  if (
-    error.includes('daily_strategy_operating_constraints_candidate_mismatch')
-  ) {
-    return '候选策略未包含在当日备份快照中（存证不匹配），系统拒绝未经验证的策略晋级';
-  }
-  if (error.includes('candidate_account_qualification_required')) {
-    return '候选策略尚未通过账户级资格认证';
-  }
-  if (error.includes('daily_strategy_operating_constraints_incomplete')) {
-    return '候选策略操作约束与风控假设不完整';
-  }
-  if (error.includes('canonical_paper_shadow_stage_conflict')) {
-    return '策略前向模拟阶段冲突';
-  }
-  if (error.includes('candidate_is_not_verified_daily_winner')) {
-    return '候选策略不是经核准的当日优胜策略';
-  }
-  if (error.includes('automated_decision_cannot_create_human_approval')) {
-    return '自动化身份不能签署人工复核批准';
-  }
-  return error;
 }
