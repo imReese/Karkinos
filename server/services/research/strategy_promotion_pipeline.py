@@ -321,26 +321,48 @@ class StrategyPromotionPipeline:
         normalized_actor = str(actor or "").strip()
         if not normalized_actor:
             raise ValueError("reinstatement reviewer is required")
+        if normalized_actor.startswith(("automation:", "policy:")):
+            raise ValueError("automated_decision_cannot_create_human_approval")
         if confirmation != STRATEGY_REINSTATE_CONFIRMATION:
             raise ValueError("reinstatement requires exact human confirmation")
 
         current = self._db.get_strategy_promotion_state_sync(strategy_id)
-        current_payload = _json_object(current.get("payload_json")) if current else {}
+        if current is None:
+            raise ValueError(
+                f"cannot reinstate strategy {strategy_id}: no historical promotion record found"
+            )
+        from_stage = str(current["stage"])
+        if from_stage == "paper_shadow":
+            raise ValueError(f"strategy {strategy_id} is already in paper_shadow")
+
+        current_payload = _json_object(current.get("payload_json"))
         effective_readiness = readiness or current_payload.get("readiness")
         if not isinstance(effective_readiness, dict):
             raise ValueError(
                 f"cannot reinstate strategy {strategy_id}: missing verified readiness binding"
             )
+        if strategy_id != _strategy_id(effective_readiness):
+            raise ValueError("readiness strategy_id does not match promotion target")
 
         _require_ai_shadow_readiness_binding(self._db, effective_readiness)
+        if strategy_id.startswith(AI_SHADOW_STRATEGY_PREFIX):
+            from server.services.research.research_final_evaluation import (
+                require_new_publication_final_evaluation,
+            )
+
+            require_new_publication_final_evaluation(
+                self._db,
+                int(effective_readiness.get("backtest_result_id") or 0),
+                expected_candidate_id=strategy_id.removeprefix(
+                    AI_SHADOW_STRATEGY_PREFIX
+                ),
+            )
         missing = _missing_requirements(effective_readiness)
         if missing or not _is_promotable(effective_readiness):
             raise ValueError(
                 "missing readiness requirements for reinstatement: "
                 + ", ".join(missing or ["unknown"])
             )
-
-        from_stage = str(current["stage"]) if current else "retired"
         payload = {
             "schema_version": STRATEGY_PROMOTION_SCHEMA_VERSION,
             "readiness": effective_readiness,
@@ -361,6 +383,8 @@ class StrategyPromotionPipeline:
             "broker_submission_enabled": False,
             "does_not_change_capital_authority": True,
         }
+        if "human_review" in current_payload:
+            payload["historical_human_review"] = current_payload["human_review"]
         state = self._db.upsert_strategy_promotion_state_sync(
             strategy_id=strategy_id,
             stage="paper_shadow",

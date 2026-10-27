@@ -579,3 +579,35 @@ export function usePauseShadowResearchCandidateMutation() {
     },
   });
 }
+
+export function useReinstateShadowResearchCandidateMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      candidate_id: string;
+      actor: string;
+      reason: string;
+      readiness?: Record<string, unknown>;
+    }) =>
+      postJson<StrategyPromotionState>(
+        `/api/strategy-promotion/${encodeURIComponent(`ai_formula_shadow:${input.candidate_id}`)}/reinstate`,
+        {
+          reason: input.reason,
+          actor: input.actor,
+          confirmation:
+            'reinstate_verified_strategy_to_paper_shadow_without_execution_or_capital_authority',
+          ...(input.readiness ? { readiness: input.readiness } : {}),
+        },
+      ),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['ai-shadow-research-automation'],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ['strategy-promotion-states'],
+        }),
+      ]);
+    },
+  });
+}

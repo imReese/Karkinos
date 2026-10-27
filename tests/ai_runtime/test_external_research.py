@@ -431,10 +431,8 @@ def test_gemini_edge_explicitly_preserves_thinking_without_provider_tools():
 
     options = edge_request_options(settings)
 
-    assert options == {
-        "thinking": {"type": "enabled"},
-        "reasoning_effort": "max",
-    }
+    assert options == {"reasoning_effort": "high"}
+    assert "thinking" not in options
     assert "temperature" not in options
     assert "tools" not in options
 

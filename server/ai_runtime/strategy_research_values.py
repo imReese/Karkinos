@@ -38,8 +38,6 @@ def strategy_research_request_options(
     settings: ProviderConnectivitySettings,
 ) -> JsonObject:
     """Reserve the response budget for the bounded final JSON contract."""
-    if is_thinking_provider_settings(settings):
-        return strategy_research_reasoning_policy()
     return edge_request_options(settings)
 
 

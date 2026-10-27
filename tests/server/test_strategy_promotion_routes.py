@@ -339,3 +339,77 @@ def test_strategy_promotion_route_rejects_controlled_bridge_pilot_lifecycle(
     events = client.get("/api/strategy-promotion/dual_ma/events")
     assert events.status_code == 200
     assert events.json()[-1]["event_type"] == "controlled_bridge_pilot_rejected"
+
+
+def test_strategy_promotion_route_reinstates_retired_strategy(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    db = AppDatabase(tmp_path / "strategy-promotion.db")
+    db.init_sync()
+    client = _client_for_db(monkeypatch, db)
+    monkeypatch.setattr(
+        "server.services.research.strategy_promotion_pipeline._require_ai_shadow_readiness_binding",
+        lambda db, readiness: None,
+    )
+    monkeypatch.setattr(
+        "server.services.research.research_final_evaluation.require_new_publication_final_evaluation",
+        lambda db, result_id, expected_candidate_id: None,
+    )
+    strat_id = "ai_formula_shadow:candidate_champion"
+    readiness = {**_readiness(promotable=True), "strategy_id": strat_id}
+    cmd = {**_promotion_command(), "readiness": readiness}
+    promote_res = client.post(
+        f"/api/strategy-promotion/{strat_id}/promote",
+        json=cmd,
+    )
+    assert promote_res.status_code == 200
+
+    client.post(
+        f"/api/strategy-promotion/{strat_id}/lifecycle",
+        json={
+            "target_stage": "retired",
+            "reason": "temporarily retired",
+            "actor": "operator",
+            "confirmation": (
+                "pause_or_retire_strategy_without_execution_or_capital_authority"
+            ),
+        },
+    )
+
+    # 1. Reinstating non-existent strategy returns 409
+    bad_res = client.post(
+        "/api/strategy-promotion/non_existent/reinstate",
+        json={
+            "reason": "restore champion",
+            "actor": "operator",
+            "confirmation": (
+                "reinstate_verified_strategy_to_paper_shadow_without_execution_or_capital_authority"
+            ),
+        },
+    )
+    assert bad_res.status_code == 409
+    assert "no historical promotion record found" in bad_res.json()["detail"]
+
+    # 2. Reinstating valid retired strategy succeeds
+    res = client.post(
+        f"/api/strategy-promotion/{strat_id}/reinstate",
+        json={
+            "reason": "challenger withdrawn, restore incumbent champion",
+            "actor": "operator",
+            "confirmation": (
+                "reinstate_verified_strategy_to_paper_shadow_without_execution_or_capital_authority"
+            ),
+        },
+    )
+    assert res.status_code == 200, res.json()
+    body = res.json()
+    assert body["stage"] == "paper_shadow"
+    assert body["gate_status"] == "paper_shadow_enabled"
+    assert body["payload"]["reinstatement"]["reinstated_reason"] == (
+        "challenger withdrawn, restore incumbent champion"
+    )
+
+    events = client.get(f"/api/strategy-promotion/{strat_id}/events")
+    assert events.status_code == 200
+    assert events.json()[-1]["event_type"] == "reinstated_to_paper_shadow"

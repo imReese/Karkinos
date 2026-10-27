@@ -454,3 +454,95 @@ def test_reinstate_promoted_strategy_recovers_incumbent_to_paper_shadow(
     assert events[-1]["event_type"] == "reinstated_to_paper_shadow"
     assert events[-1]["to_stage"] == "paper_shadow"
     assert events[-1]["from_stage"] == "retired"
+
+
+def test_reinstate_promoted_strategy_enforces_safety_and_historical_checks(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    service = _service(tmp_path)
+    monkeypatch.setattr(
+        "server.services.research.strategy_promotion_pipeline._require_ai_shadow_readiness_binding",
+        lambda db, readiness: None,
+    )
+    monkeypatch.setattr(
+        "server.services.research.research_final_evaluation.require_new_publication_final_evaluation",
+        lambda db, result_id, expected_candidate_id: None,
+    )
+    strat_id = "ai_formula_shadow:candidate_champion_safety"
+    readiness = {**_readiness(promotable=True), "strategy_id": strat_id}
+
+    # 1. Non-existent strategy cannot be reinstated
+    with pytest.raises(ValueError, match="no historical promotion record found"):
+        service.reinstate_promoted_strategy(
+            strat_id,
+            actor="operator",
+            reason="restore champion",
+            confirmation=STRATEGY_REINSTATE_CONFIRMATION,
+            readiness=readiness,
+        )
+
+    # Promote to paper_shadow first
+    service.request_promotion(
+        strat_id,
+        target_stage="paper_shadow",
+        readiness=readiness,
+        actor="operator",
+        review_note="initial champion promotion",
+        confirmation=STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION,
+    )
+
+    # 2. Already in paper_shadow cannot be reinstated
+    with pytest.raises(ValueError, match="already in paper_shadow"):
+        service.reinstate_promoted_strategy(
+            strat_id,
+            actor="operator",
+            reason="restore champion",
+            confirmation=STRATEGY_REINSTATE_CONFIRMATION,
+        )
+
+    # Retire the strategy
+    service.request_lifecycle_transition(
+        strat_id,
+        target_stage="retired",
+        reason="challenger trial",
+        actor="operator",
+        confirmation=STRATEGY_LIFECYCLE_SAFETY_CONFIRMATION,
+    )
+
+    # 3. Automated actor cannot create human reinstatement
+    with pytest.raises(
+        ValueError, match="automated_decision_cannot_create_human_approval"
+    ):
+        service.reinstate_promoted_strategy(
+            strat_id,
+            actor="automation:scheduler",
+            reason="auto restore",
+            confirmation=STRATEGY_REINSTATE_CONFIRMATION,
+        )
+
+    # 4. Strategy ID mismatch with readiness
+    mismatched_readiness = {**readiness, "strategy_id": "ai_formula_shadow:other"}
+    with pytest.raises(
+        ValueError, match="readiness strategy_id does not match promotion target"
+    ):
+        service.reinstate_promoted_strategy(
+            strat_id,
+            actor="operator",
+            reason="restore champion",
+            confirmation=STRATEGY_REINSTATE_CONFIRMATION,
+            readiness=mismatched_readiness,
+        )
+
+    # 5. Successful reinstatement after checks pass
+    reinstated = service.reinstate_promoted_strategy(
+        strat_id,
+        actor="operator",
+        reason="restore champion",
+        confirmation=STRATEGY_REINSTATE_CONFIRMATION,
+        readiness=readiness,
+    )
+    assert reinstated["stage"] == "paper_shadow"
+    events = service.list_events(strat_id)
+    assert events[-1]["from_stage"] == "retired"
+    assert events[-1]["to_stage"] == "paper_shadow"

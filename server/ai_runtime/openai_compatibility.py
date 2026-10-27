@@ -21,12 +21,28 @@ def is_thinking_provider_settings(settings: ProviderConnectivitySettings) -> boo
 
 
 def edge_request_options(settings: ProviderConnectivitySettings) -> JsonObject:
-    """Preserve configured reasoning while avoiding unsupported sampling knobs."""
-    if is_thinking_provider_settings(settings):
+    """Preserve configured reasoning per provider while avoiding unsupported knobs."""
+    if is_deepseek_provider_endpoint(settings.provider_id, settings.endpoint_origin):
         return {
             "thinking": {"type": "enabled"},
             "reasoning_effort": "max",
         }
+    if is_gemini_provider_endpoint(settings.provider_id, settings.endpoint_origin):
+        return {"reasoning_effort": "high"}
+
+    model = (getattr(settings, "model_name", None) or "").strip().casefold()
+    if "deepseek" in model:
+        return {
+            "thinking": {"type": "enabled"},
+            "reasoning_effort": "max",
+        }
+    if "gemini" in model:
+        return {"reasoning_effort": "high"}
+    if "gpt-" in model or "o1" in model or "o3" in model or "sol" in model:
+        return {"reasoning_effort": "max"}
+    if "kimi" in model or "moonshot" in model:
+        return {"reasoning_effort": "high"}
+
     return {"temperature": 0}
 
 

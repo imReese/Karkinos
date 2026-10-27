@@ -47,8 +47,7 @@ def test_strategy_research_request_options_use_maximum_reasoning_for_gemini():
         enabled=True,
     )
     assert strategy_research_request_options(gemini_settings) == {
-        "thinking": {"type": "enabled"},
-        "reasoning_effort": "max",
+        "reasoning_effort": "high",
     }
 
 

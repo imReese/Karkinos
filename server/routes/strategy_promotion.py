@@ -32,6 +32,15 @@ class StrategyPromotionLifecycleRequest(BaseModel):
     ]
 
 
+class StrategyPromotionReinstatementRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=8_000)
+    actor: str = Field(min_length=1, max_length=128)
+    confirmation: Literal[
+        "reinstate_verified_strategy_to_paper_shadow_without_execution_or_capital_authority"
+    ]
+    readiness: dict[str, Any] | None = None
+
+
 def create_router() -> APIRouter:
     r = APIRouter(prefix="/api/strategy-promotion", tags=["strategy-promotion"])
 
@@ -73,6 +82,22 @@ def create_router() -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+    @r.post("/{strategy_id}/reinstate")
+    async def reinstate_promoted_strategy(
+        strategy_id: str,
+        request: StrategyPromotionReinstatementRequest,
+    ) -> dict[str, Any]:
+        try:
+            return _service().reinstate_promoted_strategy(
+                strategy_id,
+                actor=request.actor,
+                reason=request.reason,
+                confirmation=request.confirmation,
+                readiness=request.readiness,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     @r.get("/{strategy_id}/events")
     async def list_strategy_promotion_events(
         strategy_id: str,
@@ -90,6 +115,7 @@ def _service() -> StrategyPromotionPipeline:
 
 __all__ = [
     "StrategyPromotionLifecycleRequest",
+    "StrategyPromotionReinstatementRequest",
     "StrategyPromotionRequest",
     "create_router",
 ]

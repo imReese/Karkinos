@@ -18,7 +18,7 @@ from server.contracts.external_memory_analysis import (
 )
 
 from .contracts import JsonObject, canonical_json
-from .openai_compatibility import is_thinking_provider_settings
+from .openai_compatibility import edge_request_options, is_thinking_provider_settings
 from .provider_call_window import is_deepseek_provider_endpoint
 from .provider_connectivity_contracts import ProviderConnectivitySettings
 
@@ -221,12 +221,7 @@ def build_system_instructions(
 def external_edge_request_options(
     settings: ProviderConnectivitySettings,
 ) -> JsonObject:
-    if is_thinking_provider_settings(settings):
-        return {
-            "thinking": {"type": "enabled"},
-            "reasoning_effort": "max",
-        }
-    return {"temperature": 0}
+    return edge_request_options(settings)
 
 
 def decode_stage_output(
