@@ -200,7 +200,7 @@ export function OverviewEquityCurve({
   );
 
   return (
-    <div className="flex flex-1 min-w-0 flex-col">
+    <div className="flex flex-1 min-w-0 min-h-0 flex-col">
       {compact ? (
         <div className="mb-2 flex min-w-0 shrink-0 flex-col gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4">
           {rangeControls}
@@ -222,8 +222,8 @@ export function OverviewEquityCurve({
         className={
           (usablePoints.length >= 2
             ? compact
-              ? 'h-[220px] sm:h-[300px] xl:h-[380px] shrink-0'
-              : 'h-[260px] sm:h-[320px] xl:h-[380px] shrink-0'
+              ? 'flex-1 min-h-[220px] sm:min-h-[280px] xl:min-h-[300px]'
+              : 'flex-1 min-h-[260px] sm:min-h-[300px] xl:min-h-[320px]'
             : 'h-[72px] sm:h-[84px]') + ' min-w-0 overflow-hidden'
         }
       >

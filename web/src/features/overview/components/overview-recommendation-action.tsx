@@ -193,109 +193,123 @@ export function RecommendationActionItem({
         : null;
   const isBuy = action.side === 'buy';
   const isSell = action.side === 'sell';
+  const hasAdditionalMetrics =
+    showPortfolioSizing ||
+    presentationLevel === 'manual_review' ||
+    (action.target_quantity ??
+      action.estimated_quantity ??
+      intent?.estimated_quantity) != null ||
+    grossAmount != null;
 
   return (
     <li
       key={action.action_id ?? `${symbol || 'action'}-${index}`}
-      className="min-w-0 py-3.5 first:pt-0 last:pb-0"
+      className="min-w-0 py-2.5 first:pt-0 last:pb-0 break-inside-avoid"
       data-testid={`overview-recommendation-item-${symbol || index}`}
     >
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span
-            className={`inline-flex items-center rounded px-2 py-0.5 text-xs font-bold border ${sideBadgeClass(action.side)}`}
+            className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-bold border ${sideBadgeClass(action.side)}`}
           >
             {sideLabel(action.side, dashboard.decisionActionLabels)}
           </span>
-          <span className="text-base font-semibold text-[var(--app-text)]">
+          <span className="text-sm font-semibold text-[var(--app-text)]">
             {name}
           </span>
           {symbol && name !== symbol ? (
-            <span className="font-mono text-sm text-[var(--app-text-tertiary)]">
+            <span className="font-mono text-xs text-[var(--app-text-tertiary)]">
               {symbol}
             </span>
           ) : null}
         </div>
-        {action.submission_status ? (
-          <span className="app-type-micro rounded-full bg-[var(--app-surface-overlay)] px-2 py-0.5 font-medium text-[var(--app-text-tertiary)] border border-[var(--app-divider)]">
-            {action.submission_status === 'manual_confirmation_required'
-              ? dashboard.strategyRecommendationReview
-              : action.submission_status === 'read_only_signal'
-                ? dashboard.strategyRecommendationSignal
-                : action.submission_status}
-          </span>
+
+        {!hasAdditionalMetrics ? (
+          <div className="flex shrink-0 items-baseline gap-1.5 text-right">
+            <span className="app-type-micro text-[var(--app-text-tertiary)]">
+              {actionPriceLabel(action.side, dashboard)}
+            </span>
+            <span
+              className="text-sm font-semibold font-mono tabular-nums text-[var(--app-text)]"
+              data-testid="recommendation-price"
+            >
+              {price != null ? formatCurrency(price) : '--'}
+            </span>
+          </div>
         ) : null}
       </div>
 
-      <div className="mt-3 grid gap-3 grid-cols-2 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
-        <div className="min-w-0">
-          <div className="app-type-label text-[var(--app-text-tertiary)]">
-            {actionPriceLabel(action.side, dashboard)}
-          </div>
-          <div
-            className="mt-1 text-sm font-semibold font-mono tabular-nums text-[var(--app-text)]"
-            data-testid="recommendation-price"
-          >
-            {price != null ? formatCurrency(price) : '--'}
-          </div>
-        </div>
-
-        {showPortfolioSizing ? (
+      {hasAdditionalMetrics ? (
+        <div className="mt-2 grid gap-2 grid-cols-2 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
           <div className="min-w-0">
-            <div className="app-type-label text-[var(--app-text-tertiary)]">
-              {locale === 'zh' ? '建议仓位' : 'Target allocation'}
+            <div className="app-type-micro text-[var(--app-text-tertiary)] truncate">
+              {actionPriceLabel(action.side, dashboard)}
             </div>
-            <div className="mt-1 text-sm font-semibold tabular-nums text-[var(--app-text)]">
-              {weight == null ? '--' : formatPercent(weight)}
-              <span className="mx-1 text-[var(--app-text-tertiary)]">→</span>
-              <span className="text-[var(--app-accent)]">
-                {(action.target_allocation ?? action.target_weight) == null
+            <div
+              className="mt-0.5 text-sm font-semibold font-mono tabular-nums text-[var(--app-text)] truncate"
+              data-testid="recommendation-price"
+            >
+              {price != null ? formatCurrency(price) : '--'}
+            </div>
+          </div>
+
+          {showPortfolioSizing ? (
+            <div className="min-w-0">
+              <div className="app-type-micro text-[var(--app-text-tertiary)] truncate">
+                {locale === 'zh' ? '建议仓位' : 'Target allocation'}
+              </div>
+              <div className="mt-0.5 text-sm font-semibold tabular-nums text-[var(--app-text)] truncate">
+                {weight == null ? '--' : formatPercent(weight)}
+                <span className="mx-1 text-[var(--app-text-tertiary)]">→</span>
+                <span className="text-[var(--app-accent)]">
+                  {(action.target_allocation ?? action.target_weight) == null
+                    ? '--'
+                    : formatPercent(
+                        (action.target_allocation ?? action.target_weight)!,
+                      )}
+                </span>
+              </div>
+            </div>
+          ) : null}
+
+          {presentationLevel === 'manual_review' ||
+          (action.target_quantity ??
+            action.estimated_quantity ??
+            intent?.estimated_quantity) != null ? (
+            <div className="min-w-0">
+              <div className="app-type-micro text-[var(--app-text-tertiary)] truncate">
+                {dashboard.strategyRecommendationQuantity}
+              </div>
+              <div className="mt-0.5 text-sm font-semibold tabular-nums text-[var(--app-text)] truncate">
+                {(action.target_quantity ??
+                  action.estimated_quantity ??
+                  intent?.estimated_quantity) == null
                   ? '--'
-                  : formatPercent(
-                      (action.target_allocation ?? action.target_weight)!,
-                    )}
-              </span>
+                  : `${formatQuantity(
+                      (action.target_quantity ??
+                        action.estimated_quantity ??
+                        intent?.estimated_quantity)!,
+                    )} ${quantityUnit(action.asset_class ?? null, locale)}`}
+              </div>
             </div>
-          </div>
-        ) : null}
+          ) : null}
 
-        {presentationLevel === 'manual_review' ||
-        (action.target_quantity ??
-          action.estimated_quantity ??
-          intent?.estimated_quantity) != null ? (
-          <div className="min-w-0">
-            <div className="app-type-label text-[var(--app-text-tertiary)]">
-              {dashboard.strategyRecommendationQuantity}
+          {presentationLevel === 'manual_review' || grossAmount != null ? (
+            <div className="min-w-0">
+              <div className="app-type-micro text-[var(--app-text-tertiary)] truncate">
+                {dashboard.strategyRecommendationAmount}
+              </div>
+              <div className="mt-0.5 text-sm font-semibold font-mono tabular-nums text-[var(--app-text)] truncate">
+                {grossAmount != null ? formatCurrency(grossAmount) : '--'}
+              </div>
             </div>
-            <div className="mt-1 text-sm font-semibold tabular-nums text-[var(--app-text)]">
-              {(action.target_quantity ??
-                action.estimated_quantity ??
-                intent?.estimated_quantity) == null
-                ? '--'
-                : `${formatQuantity(
-                    (action.target_quantity ??
-                      action.estimated_quantity ??
-                      intent?.estimated_quantity)!,
-                  )} ${quantityUnit(action.asset_class ?? null, locale)}`}
-            </div>
-          </div>
-        ) : null}
-
-        {presentationLevel === 'manual_review' || grossAmount != null ? (
-          <div className="min-w-0">
-            <div className="app-type-label text-[var(--app-text-tertiary)]">
-              {dashboard.strategyRecommendationAmount}
-            </div>
-            <div className="mt-1 text-sm font-semibold font-mono tabular-nums text-[var(--app-text)]">
-              {grossAmount != null ? formatCurrency(grossAmount) : '--'}
-            </div>
-          </div>
-        ) : null}
-      </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {strategyContext ? (
         <div
-          className="mt-3 space-y-1.5 border-t border-[var(--app-divider)] pt-2.5 text-sm text-[var(--app-text-secondary)]"
+          className="mt-2 space-y-1 border-t border-[var(--app-divider)] pt-2 text-xs text-[var(--app-text-secondary)]"
           data-testid="overview-account-strategy-evidence"
         >
           {strategyContext.strategy_stage === 'paper_shadow' ? (
@@ -396,7 +410,7 @@ export function RecommendationActionItem({
       fee != null ||
       positionEffect != null ||
       constraintChecks.length > 0 ? (
-        <div className="mt-3 rounded-lg border border-[var(--app-divider)] bg-[var(--app-surface-overlay)]/40 p-2.5">
+        <div className="mt-2 rounded-lg border border-[var(--app-divider)] bg-[var(--app-surface-overlay)]/40 p-2">
           <div className="grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
             {netCash != null ? (
               <div>

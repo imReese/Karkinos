@@ -143,6 +143,107 @@ function statusTone(level: PresentationLevel) {
   return 'neutral' as const;
 }
 
+function HistoricalComparisonDetails({
+  comparison,
+  locale,
+}: {
+  comparison: NonNullable<
+    DailyTradingPlanResponse['historical_research_comparison']
+  >;
+  locale: 'en' | 'zh';
+}) {
+  return (
+    <details
+      data-testid="overview-historical-research-comparison"
+      className="mt-3 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 px-4 py-3 app-type-compact text-[var(--app-text-secondary)]"
+    >
+      <summary className="cursor-pointer font-semibold text-[var(--app-text)]">
+        {locale === 'zh'
+          ? '历史研究对比 · Gen7 与候选策略'
+          : 'Historical research · Gen7 and candidate'}
+      </summary>
+      <div className="mt-3 space-y-2">
+        <p>
+          {locale === 'zh'
+            ? '已保存的研究事实；账户建议资格、前向观测和人工确认分别核验。'
+            : 'Saved research facts; account recommendation eligibility, forward observation and human confirmation are assessed separately.'}
+        </p>
+        <SavedHistoricalComparison
+          comparison={comparison}
+          locale={locale}
+          testId="overview-historical-research-results"
+        />
+        <a
+          href={`/backtest?id=${comparison.source_result_id}`}
+          onClick={(event) =>
+            handleClientNavigation(
+              event,
+              `/backtest?id=${comparison.source_result_id}`,
+            )
+          }
+          className="inline-block font-semibold text-[var(--app-accent)] hover:underline"
+        >
+          {locale === 'zh' ? '公式来源' : 'Formula source'} #
+          {comparison.source_result_id}
+        </a>
+        <div
+          data-testid="overview-historical-forward-state"
+          className="space-y-1"
+        >
+          <p className="font-semibold">
+            {locale === 'zh'
+              ? '前向观测（独立）'
+              : 'Forward observation (separate)'}
+          </p>
+          {(
+            [
+              ['Gen7', comparison.forward.baseline],
+              [
+                locale === 'zh' ? '候选策略' : 'Candidate',
+                comparison.forward.candidate,
+              ],
+            ] as const
+          ).map(([label, forward]) => (
+            <p key={label}>
+              {label} #{forward.source_backtest_result_id}：
+              {forwardObservationLabel(forward, locale)}
+            </p>
+          ))}
+        </div>
+      </div>
+    </details>
+  );
+}
+
+function ResearchSimulationSection({
+  preview,
+  collapsible,
+  locale,
+}: {
+  preview: NonNullable<DailyTradingPlanResponse['research_simulation_preview']>;
+  collapsible: boolean;
+  locale: 'en' | 'zh';
+}) {
+  if (collapsible) {
+    return (
+      <details
+        data-testid="overview-research-simulation-details"
+        className="mt-3 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 px-4 py-3 app-type-compact text-[var(--app-text-secondary)]"
+      >
+        <summary className="cursor-pointer font-semibold text-[var(--app-text)]">
+          {locale === 'zh'
+            ? '账户研究／模拟预览'
+            : 'Account research / simulation preview'}
+        </summary>
+        <div className="mt-3">
+          <OverviewResearchSimulationPreview preview={preview} />
+        </div>
+      </details>
+    );
+  }
+  return <OverviewResearchSimulationPreview preview={preview} />;
+}
+
 export function OverviewStrategyRecommendation({
   marketClosed,
   nextTradingDate,
@@ -206,6 +307,7 @@ export function OverviewStrategyRecommendation({
     ['manual_review', 'portfolio_preview', 'signal'].includes(
       presentationLevel,
     ) && presentationActions.length > 0;
+  const shouldCollapseResearch = !marketClosed && showDetailedActions;
 
   const effectivePlan = plan;
   const showPortfolioSizing =
@@ -276,11 +378,18 @@ export function OverviewStrategyRecommendation({
           </a>
         </div>
       ) : plan && showDetailedActions ? (
-        <div className="flex flex-1 min-w-0 flex-col rounded-[var(--app-radius-control)] border border-[var(--app-accent-border)] bg-[var(--app-surface-raised)]/80 p-4 shadow-sm">
+        <div className="flex flex-1 min-w-0 flex-col rounded-[var(--app-radius-control)] border border-[var(--app-accent-border)] bg-[var(--app-surface-raised)]/80 p-3.5 shadow-sm">
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
-            <StatusBadge tone={statusTone(presentationLevel)}>
-              {statusLabel(presentationLevel, dashboard)}
-            </StatusBadge>
+            <div className="flex items-center gap-2">
+              <StatusBadge tone={statusTone(presentationLevel)}>
+                {statusLabel(presentationLevel, dashboard)}
+              </StatusBadge>
+              {presentationActions.length > 0 ? (
+                <span className="app-type-micro font-medium text-[var(--app-text-tertiary)]">
+                  ({presentationActions.length})
+                </span>
+              ) : null}
+            </div>
             <div className="flex items-center gap-2">
               <span className="app-type-label text-[var(--app-text-tertiary)]">
                 {locale === 'zh' ? '只读建议' : 'Read only'}
@@ -288,7 +397,7 @@ export function OverviewStrategyRecommendation({
             </div>
           </div>
 
-          <ul className="mt-3 flex-1 divide-y divide-[var(--app-divider)] overflow-y-auto overscroll-y-contain pr-1 max-h-[30rem]">
+          <ul className="mt-2.5 flex-1 divide-y divide-[var(--app-divider)] overflow-y-auto overscroll-y-contain pr-1 max-h-[19rem] [scrollbar-gutter:stable] [scrollbar-width:thin]">
             {presentationActions.map((action, index) => (
               <RecommendationActionItem
                 key={
@@ -372,74 +481,18 @@ export function OverviewStrategyRecommendation({
       ) : null}
 
       {plan?.research_simulation_preview ? (
-        <OverviewResearchSimulationPreview
+        <ResearchSimulationSection
           preview={plan.research_simulation_preview}
+          collapsible={shouldCollapseResearch}
+          locale={locale}
         />
       ) : null}
 
       {plan?.historical_research_comparison ? (
-        <details
-          data-testid="overview-historical-research-comparison"
-          className="mt-3 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 px-4 py-3 app-type-compact text-[var(--app-text-secondary)]"
-        >
-          <summary className="cursor-pointer font-semibold text-[var(--app-text)]">
-            {locale === 'zh'
-              ? '历史研究对比 · Gen7 与候选策略'
-              : 'Historical research · Gen7 and candidate'}
-          </summary>
-          <div className="mt-3 space-y-2">
-            <p>
-              {locale === 'zh'
-                ? '已保存的研究事实；账户建议资格、前向观测和人工确认分别核验。'
-                : 'Saved research facts; account recommendation eligibility, forward observation and human confirmation are assessed separately.'}
-            </p>
-            <SavedHistoricalComparison
-              comparison={plan.historical_research_comparison}
-              locale={locale}
-              testId="overview-historical-research-results"
-            />
-            <a
-              href={`/backtest?id=${plan.historical_research_comparison.source_result_id}`}
-              onClick={(event) =>
-                handleClientNavigation(
-                  event,
-                  `/backtest?id=${plan.historical_research_comparison!.source_result_id}`,
-                )
-              }
-              className="inline-block font-semibold text-[var(--app-accent)] hover:underline"
-            >
-              {locale === 'zh' ? '公式来源' : 'Formula source'} #
-              {plan.historical_research_comparison.source_result_id}
-            </a>
-            <div
-              data-testid="overview-historical-forward-state"
-              className="space-y-1"
-            >
-              <p className="font-semibold">
-                {locale === 'zh'
-                  ? '前向观测（独立）'
-                  : 'Forward observation (separate)'}
-              </p>
-              {(
-                [
-                  [
-                    'Gen7',
-                    plan.historical_research_comparison.forward.baseline,
-                  ],
-                  [
-                    locale === 'zh' ? '候选策略' : 'Candidate',
-                    plan.historical_research_comparison.forward.candidate,
-                  ],
-                ] as const
-              ).map(([label, forward]) => (
-                <p key={label}>
-                  {label} #{forward.source_backtest_result_id}：
-                  {forwardObservationLabel(forward, locale)}
-                </p>
-              ))}
-            </div>
-          </div>
-        </details>
+        <HistoricalComparisonDetails
+          comparison={plan.historical_research_comparison}
+          locale={locale}
+        />
       ) : null}
 
       {!marketClosed &&

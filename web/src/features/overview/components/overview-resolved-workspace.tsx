@@ -57,12 +57,12 @@ export function OverviewResolvedWorkspace({
         onAction={() => void equityCurve.refetch()}
       />
     ) : (
-      <div className="flex flex-1 min-w-0 flex-col">
+      <div className="flex flex-1 min-w-0 min-h-0 flex-col">
         {equityCurve.isError ? (
           <p
             role="status"
             data-testid="equity-curve-refresh-warning"
-            className="app-type-compact mb-3 text-[var(--app-warning-text)]"
+            className="app-type-compact mb-3 shrink-0 text-[var(--app-warning-text)]"
           >
             {copy.overview.curveRefreshError}
           </p>
@@ -106,8 +106,8 @@ export function OverviewResolvedWorkspace({
         className="min-w-0 border-b border-[var(--app-divider)] pb-6"
         data-testid="overview-performance-card"
       >
-        <div className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
-          <div className="flex h-full min-w-0 flex-col">
+        <div className="grid min-w-0 items-start xl:items-stretch gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+          <div className="flex h-full min-w-0 min-h-0 flex-col">
             <div
               role="tablist"
               aria-label={copy.overview.dashboard.equityPanel}
@@ -148,20 +148,20 @@ export function OverviewResolvedWorkspace({
 
             {analysisView === 'curve' ? (
               <p
-                className="app-type-micro mb-2 text-[var(--app-text-tertiary)]"
+                className="app-type-micro mb-2 shrink-0 text-[var(--app-text-tertiary)]"
                 data-testid="overview-value-curve-basis"
               >
                 {copy.overview.dashboard.valueCurveBasis}
               </p>
             ) : null}
 
-            <div className="flex flex-1 min-w-0 flex-col">
+            <div className="flex flex-1 min-w-0 min-h-0 flex-col">
               {analysisView === 'curve' ? (
                 <div
                   id="overview-analysis-panel-curve"
                   role="tabpanel"
                   aria-labelledby="overview-analysis-tab-curve"
-                  className="flex flex-1 min-w-0 flex-col"
+                  className="flex flex-1 min-w-0 min-h-0 flex-col"
                 >
                   {performance}
                 </div>
@@ -170,7 +170,7 @@ export function OverviewResolvedWorkspace({
                   id="overview-analysis-panel-calendar"
                   role="tabpanel"
                   aria-labelledby="overview-analysis-tab-calendar"
-                  className="flex flex-1 min-w-0 flex-col"
+                  className="flex flex-1 min-w-0 min-h-0 flex-col"
                 >
                   {calendar}
                 </div>
@@ -185,6 +185,7 @@ export function OverviewResolvedWorkspace({
             todayQuery={controller.todayDecision}
             positions={state.snapshot.positions}
             currentWeightBySymbol={weightBySymbol}
+            className="h-full"
           />
         </div>
       </section>
