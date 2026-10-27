@@ -45,6 +45,9 @@ STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION = (
 STRATEGY_LIFECYCLE_SAFETY_CONFIRMATION = (
     "pause_or_retire_strategy_without_execution_or_capital_authority"
 )
+STRATEGY_REINSTATE_CONFIRMATION = (
+    "reinstate_verified_strategy_to_paper_shadow_without_execution_or_capital_authority"
+)
 
 _AUDIT_ONLY_LIFECYCLE_TRANSITIONS = {
     "paused": "lifecycle_paused",
@@ -250,6 +253,7 @@ class StrategyPromotionPipeline:
             raise ValueError(f"unsupported lifecycle target: {target_stage}")
 
         current = self._db.get_strategy_promotion_state_sync(strategy_id)
+        current_payload = _json_object(current.get("payload_json")) if current else {}
         from_stage = str(current["stage"]) if current else "research"
         missing_requirements = (
             _json_list(current.get("missing_requirements_json")) if current else []
@@ -270,6 +274,10 @@ class StrategyPromotionPipeline:
             "does_not_submit_broker_orders": True,
             "does_not_mutate_production_ledger": True,
         }
+        if "readiness" in current_payload:
+            payload["readiness"] = current_payload["readiness"]
+        if "human_review" in current_payload:
+            payload["historical_human_review"] = current_payload["human_review"]
         state = self._db.upsert_strategy_promotion_state_sync(
             strategy_id=strategy_id,
             stage=target_stage,
@@ -286,6 +294,103 @@ class StrategyPromotionPipeline:
             to_stage=target_stage,
             actor=normalized_actor,
             payload=payload,
+        )
+        return self._normalize_state(state)
+
+    def reinstate_promoted_strategy(
+        self,
+        strategy_id: str,
+        *,
+        actor: str,
+        reason: str,
+        confirmation: str,
+        readiness: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Reinstate a previously verified strategy back to paper_shadow.
+
+        Ensures that when experimental challengers are withdrawn, the system can
+        cleanly and safely fall back to an incumbent verified champion strategy
+        without creating a void or bypassing advancement gates.
+        """
+        strategy_id = str(strategy_id or "").strip()
+        if not strategy_id:
+            raise ValueError("strategy_id is required")
+        reason = str(reason or "").strip()
+        if not reason:
+            raise ValueError("reinstatement reason is required")
+        normalized_actor = str(actor or "").strip()
+        if not normalized_actor:
+            raise ValueError("reinstatement reviewer is required")
+        if confirmation != STRATEGY_REINSTATE_CONFIRMATION:
+            raise ValueError("reinstatement requires exact human confirmation")
+
+        current = self._db.get_strategy_promotion_state_sync(strategy_id)
+        current_payload = _json_object(current.get("payload_json")) if current else {}
+        effective_readiness = readiness or current_payload.get("readiness")
+        if not isinstance(effective_readiness, dict):
+            raise ValueError(
+                f"cannot reinstate strategy {strategy_id}: missing verified readiness binding"
+            )
+
+        _require_ai_shadow_readiness_binding(self._db, effective_readiness)
+        missing = _missing_requirements(effective_readiness)
+        if missing or not _is_promotable(effective_readiness):
+            raise ValueError(
+                "missing readiness requirements for reinstatement: "
+                + ", ".join(missing or ["unknown"])
+            )
+
+        from_stage = str(current["stage"]) if current else "retired"
+        payload = {
+            "schema_version": STRATEGY_PROMOTION_SCHEMA_VERSION,
+            "readiness": effective_readiness,
+            "human_review": {
+                "reviewer": normalized_actor,
+                "review_note": f"Reinstated to paper_shadow: {reason}",
+                "confirmation_recorded": True,
+                "strategy_advancement_gate_fingerprint": (
+                    _strategy_advancement_gate_fingerprint(effective_readiness)
+                ),
+            },
+            "reinstatement": {
+                "reinstated_by": normalized_actor,
+                "reinstated_reason": reason,
+                "reinstated_from_stage": from_stage,
+            },
+            "live_like_enabled": False,
+            "broker_submission_enabled": False,
+            "does_not_change_capital_authority": True,
+        }
+        state = self._db.upsert_strategy_promotion_state_sync(
+            strategy_id=strategy_id,
+            stage="paper_shadow",
+            gate_status="paper_shadow_enabled",
+            live_like_enabled=False,
+            missing_requirements=[],
+            backtest_result_id=_int_or_none(
+                effective_readiness.get("backtest_result_id")
+            ),
+            payload=payload,
+        )
+        self._db.record_strategy_promotion_event_sync(
+            strategy_id=strategy_id,
+            event_type="reinstated_to_paper_shadow",
+            from_stage=from_stage,
+            to_stage="paper_shadow",
+            actor=normalized_actor,
+            payload={
+                "manual_confirmation_required": True,
+                "manual_confirmation_recorded": True,
+                "reviewer": normalized_actor,
+                "review_note": f"Reinstated to paper_shadow: {reason}",
+                "reinstated_from_stage": from_stage,
+                "strategy_advancement_gate_fingerprint": (
+                    _strategy_advancement_gate_fingerprint(effective_readiness)
+                ),
+                "live_like_enabled": False,
+                "broker_submission_enabled": False,
+                "does_not_change_capital_authority": True,
+            },
         )
         return self._normalize_state(state)
 

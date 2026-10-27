@@ -10,6 +10,7 @@ from server.db import AppDatabase
 from server.services.research.strategy_promotion_pipeline import (
     STRATEGY_LIFECYCLE_SAFETY_CONFIRMATION,
     STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION,
+    STRATEGY_REINSTATE_CONFIRMATION,
     StrategyPromotionPipeline,
     resolve_strategy_order_generation_gate,
     resolve_strategy_promotion_binding,
@@ -303,6 +304,10 @@ def test_human_paper_shadow_promotion_preserves_other_active_strategy(
         "server.services.research.research_final_evaluation.require_new_publication_final_evaluation",
         lambda db, result_id, expected_candidate_id: None,
     )
+    monkeypatch.setattr(
+        "server.services.research.research_final_evaluation.require_new_publication_final_evaluation",
+        lambda db, result_id, expected_candidate_id: None,
+    )
     strat_1_id = "ai_formula_shadow:candidate_1"
     strat_2_id = "ai_formula_shadow:candidate_2"
     readiness_strat_1 = {**_readiness(promotable=True), "strategy_id": strat_1_id}
@@ -341,3 +346,111 @@ def test_human_paper_shadow_promotion_preserves_other_active_strategy(
 
     events_1 = service.list_events(strat_1_id)
     assert not any(e["event_type"] == "lifecycle_retired" for e in events_1)
+
+
+def test_lifecycle_transition_preserves_historical_readiness_and_review(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    service = _service(tmp_path)
+    monkeypatch.setattr(
+        "server.services.research.strategy_promotion_pipeline._require_ai_shadow_readiness_binding",
+        lambda db, readiness: None,
+    )
+    monkeypatch.setattr(
+        "server.services.research.research_final_evaluation.require_new_publication_final_evaluation",
+        lambda db, result_id, expected_candidate_id: None,
+    )
+    strat_id = "ai_formula_shadow:candidate_champion"
+    readiness = {**_readiness(promotable=True), "strategy_id": strat_id}
+
+    service.request_promotion(
+        strat_id,
+        target_stage="paper_shadow",
+        readiness=readiness,
+        actor="operator",
+        review_note="promoted initial champion",
+        confirmation=STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION,
+    )
+
+    retired = service.request_lifecycle_transition(
+        strat_id,
+        target_stage="retired",
+        reason="superseded by experimental challenger",
+        actor="operator",
+        confirmation=STRATEGY_LIFECYCLE_SAFETY_CONFIRMATION,
+    )
+
+    assert retired["stage"] == "retired"
+    assert retired["payload"]["reason"] == "superseded by experimental challenger"
+    assert retired["payload"]["readiness"] == readiness
+    assert retired["payload"]["historical_human_review"]["reviewer"] == "operator"
+
+
+def test_reinstate_promoted_strategy_recovers_incumbent_to_paper_shadow(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    service = _service(tmp_path)
+    monkeypatch.setattr(
+        "server.services.research.strategy_promotion_pipeline._require_ai_shadow_readiness_binding",
+        lambda db, readiness: None,
+    )
+    monkeypatch.setattr(
+        "server.services.research.research_final_evaluation.require_new_publication_final_evaluation",
+        lambda db, result_id, expected_candidate_id: None,
+    )
+    monkeypatch.setattr(
+        "server.services.research.research_final_evaluation.require_new_publication_final_evaluation",
+        lambda db, result_id, expected_candidate_id: None,
+    )
+    strat_id = "ai_formula_shadow:candidate_champion"
+    readiness = {**_readiness(promotable=True), "strategy_id": strat_id}
+
+    service.request_promotion(
+        strat_id,
+        target_stage="paper_shadow",
+        readiness=readiness,
+        actor="operator",
+        review_note="initial champion promotion",
+        confirmation=STRATEGY_PAPER_SHADOW_PROMOTION_CONFIRMATION,
+    )
+
+    service.request_lifecycle_transition(
+        strat_id,
+        target_stage="retired",
+        reason="temporarily retired for challenger experiment",
+        actor="operator",
+        confirmation=STRATEGY_LIFECYCLE_SAFETY_CONFIRMATION,
+    )
+
+    # Reinstatement requires exact safety confirmation
+    with pytest.raises(
+        ValueError, match="reinstatement requires exact human confirmation"
+    ):
+        service.reinstate_promoted_strategy(
+            strat_id,
+            actor="operator",
+            reason="challenger withdrawn, restore verified champion",
+            confirmation="wrong_confirmation",
+        )
+
+    # Reinstatement restores paper_shadow using preserved historical readiness
+    reinstated = service.reinstate_promoted_strategy(
+        strat_id,
+        actor="operator",
+        reason="challenger withdrawn, restore verified champion",
+        confirmation=STRATEGY_REINSTATE_CONFIRMATION,
+    )
+
+    assert reinstated["stage"] == "paper_shadow"
+    assert reinstated["gate_status"] == "paper_shadow_enabled"
+    assert reinstated["live_like_enabled"] is False
+    assert reinstated["payload"]["reinstatement"]["reinstated_reason"] == (
+        "challenger withdrawn, restore verified champion"
+    )
+
+    events = service.list_events(strat_id)
+    assert events[-1]["event_type"] == "reinstated_to_paper_shadow"
+    assert events[-1]["to_stage"] == "paper_shadow"
+    assert events[-1]["from_stage"] == "retired"

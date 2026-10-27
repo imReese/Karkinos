@@ -80,7 +80,7 @@ def build_verified_research_candidate_strategy_batch(
         or recommendation.get("authority_effect") != "none"
         or not isinstance(expected_count, int)
         or isinstance(expected_count, bool)
-        or expected_count != 5
+        or expected_count < 1
         or selection.get("observed_candidate_count") != expected_count
         or recommendation.get("expected_candidate_count") != expected_count
         or recommendation.get("evaluated_candidate_count") != expected_count
