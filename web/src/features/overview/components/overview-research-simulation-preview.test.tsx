@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
-import { researchSimulationFixture } from '../../../../e2e/research-simulation-fixture';
+import { researchSimulationFixture } from '../../../../test-fixtures/research-simulation-fixture';
 import { PreferencesProvider } from '../../../app/providers/preferences-provider';
 import { OverviewResearchSimulationPreview } from './overview-research-simulation-preview';
 
