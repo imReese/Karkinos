@@ -2693,6 +2693,7 @@ def test_scheduler_post_close_receipt_scoped_fallback(tmp_path):
     receipt = store.get_market_daily_ingestion_receipt(
         trade_date="2026-06-17",
         provider_name="akshare_tencent",
+        symbols=["600001"],
         verify=True,
     )
     assert receipt is not None

@@ -195,8 +195,12 @@ if sys.argv[3] == "-":
 else:
     ref = DatasetCatalog(sys.argv[3]).get(sys.argv[2]).ref
 result = read_daily_bar_dataset(store, ref)
-print(json.dumps({"dataset_id": ref.dataset_id, "rows": result.table.to_pylist()},
-                 default=str, sort_keys=True))
+payload = json.dumps({"dataset_id": ref.dataset_id, "rows": result.table.to_pylist()},
+                     default=str, sort_keys=True)
+del result
+import os
+print(payload, flush=True)
+os._exit(0)
 """
 
 
