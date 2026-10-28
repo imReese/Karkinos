@@ -208,7 +208,9 @@ class EtfRotationAutomationService:
     ) -> list[pd.Timestamp] | None:
         try:
             from server.db import AppDatabase
-            from server.services.market.calendar import _calendar_days
+            from server.services.market.calendar import (
+                validate_verified_market_calendar,
+            )
 
             db = AppDatabase(self._database_path)
             calendar_dates: list[pd.Timestamp] = []
@@ -216,11 +218,19 @@ class EtfRotationAutomationService:
                 row = db.get_market_calendar_snapshot_sync(exchange="SSE", year=year)
                 if row is None:
                     return None
-                days = _calendar_days(row)
-                if not days:
+                validation = validate_verified_market_calendar(row)
+                if not validation.verified:
+                    return None
+                days = row.get("days") or row.get("days_json")
+                if isinstance(days, str):
+                    try:
+                        days = json.loads(days)
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        return None
+                if not isinstance(days, list) or not days:
                     return None
                 for d in days:
-                    if d.get("is_trading_day"):
+                    if isinstance(d, dict) and d.get("is_trading_day"):
                         dt = pd.to_datetime(d["date"])
                         if pd.Timestamp(start_date) <= dt <= pd.Timestamp(end_date):
                             calendar_dates.append(dt)
