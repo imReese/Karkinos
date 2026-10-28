@@ -13,7 +13,7 @@ from backtest.costs import RESEARCH_SLIPPAGE_BPS
 from core.types import Symbol
 from domain.instrument import Instrument
 from domain.research_targets import allocate_formula_targets
-from server.ai_runtime.formula_dsl import evaluate_formula
+from server.ai_runtime.formula_dsl import evaluate_formula, evaluate_formula_universe
 from server.services.backtest.backtest_costs import quote_formula_purchase
 
 
@@ -24,26 +24,31 @@ def prepare_formula_sessions(
     universe_size: int,
 ) -> dict[str, pd.DataFrame]:
     """Compute causal DSL series once; consumers select only their known date."""
+    ordered_frames = {
+        str(symbol): frame.sort_values("timestamp").reset_index(drop=True)
+        for symbol, frame in frames.items()
+    }
+    entries, exits, _ = evaluate_formula_universe(
+        formula_ast,
+        ordered_frames,
+        universe_size=universe_size,
+    )
     prepared = {}
-    for symbol, frame in frames.items():
-        ordered = frame.sort_values("timestamp").reset_index(drop=True)
-        entry, exit_signal, _ = evaluate_formula(
-            formula_ast, ordered, universe_size=universe_size
-        )
+    for symbol, ordered in ordered_frames.items():
         amount = pd.to_numeric(
             ordered["amount"]
             if "amount" in ordered
             else ordered["close"] * ordered["volume"],
             errors="coerce",
         )
-        prepared[str(symbol)] = pd.DataFrame(
+        prepared[symbol] = pd.DataFrame(
             {
                 "session": pd.to_datetime(ordered["timestamp"]).dt.date,
                 "close": ordered["close"],
                 "volume": ordered["volume"],
                 "history_rows": range(1, len(ordered) + 1),
-                "entry": entry.fillna(False).astype(bool),
-                "exit": exit_signal.fillna(False).astype(bool),
+                "entry": entries[symbol].fillna(False).astype(bool),
+                "exit": exits[symbol].fillna(False).astype(bool),
                 "liquidity": amount.rolling(20, min_periods=1).median(),
             }
         ).set_index("session", verify_integrity=True)

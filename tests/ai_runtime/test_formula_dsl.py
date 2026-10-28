@@ -11,6 +11,7 @@ from server.ai_runtime.formula_dsl import (
     FormulaBinding,
     FormulaValidationError,
     evaluate_formula,
+    evaluate_formula_universe,
     formula_operator_catalog,
     validate_formula_ast,
 )
@@ -327,3 +328,176 @@ def test_rank_operator_evaluates_rolling_percentile() -> None:
     assert entry.iloc[2]
     assert not entry.iloc[3]
     assert not entry.iloc[4]
+
+
+def test_formula_catalog_exposes_cross_sectional_operators() -> None:
+    catalog = formula_operator_catalog()
+    assert "cs_rank" in catalog["enabled_operators"]
+    assert "cs_zscore" in catalog["enabled_operators"]
+    assert "cross_sectional_operator" in catalog["expression_shapes"]
+    assert "cs_rank" in catalog["operator_semantics"]
+    assert "cs_zscore" in catalog["operator_semantics"]
+
+
+@pytest.mark.parametrize("op", ["cs_rank", "cs_zscore"])
+def test_cross_sectional_ast_validation(op: str) -> None:
+    ast = _formula()
+    ast["entry"] = {
+        "op": "gte",
+        "left": {
+            "op": op,
+            "input": {"op": "field", "name": "close"},
+        },
+        "right": {"op": "constant", "value": 0.5},
+    }
+    validated = validate_formula_ast(ast, universe_size=3)
+    assert validated["entry"]["left"]["op"] == op
+
+    # Invalid: missing input
+    ast["entry"]["left"] = {"op": op}
+    with pytest.raises(FormulaValidationError) as exc_info:
+        validate_formula_ast(ast, universe_size=3)
+    assert "expression_keys_mismatch" in exc_info.value.code
+
+
+def test_cross_sectional_rank_evaluates_across_universe_correctly() -> None:
+    frames = {
+        "A": pd.DataFrame(
+            {
+                "timestamp": ["2025-01-01", "2025-01-02", "2025-01-03"],
+                "close": [10.0, 20.0, 30.0],
+            }
+        ),
+        "B": pd.DataFrame(
+            {
+                "timestamp": ["2025-01-01", "2025-01-02", "2025-01-03"],
+                "close": [20.0, 10.0, 40.0],
+            }
+        ),
+        "C": pd.DataFrame(
+            {
+                "timestamp": ["2025-01-01", "2025-01-02", "2025-01-03"],
+                "close": [30.0, 30.0, 20.0],
+            }
+        ),
+    }
+
+    ast = _formula()
+    # Entry when cross-sectional rank of close >= 0.8 (top 1 of 3 assets)
+    ast["entry"] = {
+        "op": "gte",
+        "left": {
+            "op": "cs_rank",
+            "input": {"op": "field", "name": "close"},
+        },
+        "right": {"op": "constant", "value": 0.8},
+    }
+    ast["exit"] = {"op": "constant", "value": 0}
+
+    entries, exits, weight = evaluate_formula_universe(ast, frames)
+
+    # Day 0: A=10, B=20, C=30 -> C is top (rank 1.0)
+    # Day 1: A=20, B=10, C=30 -> C is top (rank 1.0)
+    # Day 2: A=30, B=40, C=20 -> B is top (rank 1.0)
+    assert entries["C"].tolist() == [True, True, False]
+    assert entries["B"].tolist() == [False, False, True]
+    assert entries["A"].tolist() == [False, False, False]
+
+    # Causal / anti-lookahead check: evaluate on prefix must match exactly
+    for end in range(1, 4):
+        prefix_frames = {k: v.iloc[:end] for k, v in frames.items()}
+        p_entries, _, _ = evaluate_formula_universe(ast, prefix_frames)
+        for sym in frames:
+            pd.testing.assert_series_equal(
+                p_entries[sym], entries[sym].iloc[:end], check_names=False
+            )
+
+
+def test_cross_sectional_zscore_evaluates_across_universe() -> None:
+    frames = {
+        "A": pd.DataFrame({"close": [10.0, 20.0]}),
+        "B": pd.DataFrame({"close": [20.0, 10.0]}),
+        "C": pd.DataFrame({"close": [30.0, 30.0]}),
+    }
+    ast = _formula()
+    ast["entry"] = {
+        "op": "gt",
+        "left": {
+            "op": "cs_zscore",
+            "input": {"op": "field", "name": "close"},
+        },
+        "right": {"op": "constant", "value": 0.5},
+    }
+    ast["exit"] = {"op": "constant", "value": 0}
+
+    entries, _, _ = evaluate_formula_universe(ast, frames)
+    # Day 0: mean=20, std=10 -> A=-1, B=0, C=+1 -> only C > 0.5
+    # Day 1: mean=20, std=10 -> A=0, B=-1, C=+1 -> only C > 0.5
+    assert entries["C"].tolist() == [True, True]
+    assert entries["A"].tolist() == [False, False]
+    assert entries["B"].tolist() == [False, False]
+
+
+def test_cross_sectional_operators_fallback_on_single_asset() -> None:
+    frame = pd.DataFrame({"close": [10.0, 20.0, 30.0]})
+    ast = _formula()
+    ast["entry"] = {
+        "op": "gte",
+        "left": {
+            "op": "cs_rank",
+            "input": {"op": "field", "name": "close"},
+        },
+        "right": {"op": "constant", "value": 0.9},
+    }
+    ast["exit"] = {"op": "constant", "value": 0}
+
+    # For universe of 1, cs_rank is 1.0 >= 0.9 -> True for all rows
+    entry, _, _ = evaluate_formula(ast, frame, universe_size=1)
+    assert entry.tolist() == [True, True, True]
+
+    # cs_zscore is NaN -> False for all rows
+    ast["entry"]["left"]["op"] = "cs_zscore"
+    entry_z, _, _ = evaluate_formula(ast, frame, universe_size=1)
+    assert entry_z.tolist() == [False, False, False]
+
+
+def test_cross_sectional_rank_with_suspended_asset() -> None:
+    frames = {
+        "A": pd.DataFrame(
+            {
+                "timestamp": ["2025-01-01", "2025-01-02", "2025-01-03"],
+                "close": [10.0, 15.0, 20.0],
+            }
+        ),
+        "B": pd.DataFrame(
+            {
+                # B suspended on 2025-01-02
+                "timestamp": ["2025-01-01", "2025-01-03"],
+                "close": [20.0, 10.0],
+            }
+        ),
+        "C": pd.DataFrame(
+            {
+                "timestamp": ["2025-01-01", "2025-01-02", "2025-01-03"],
+                "close": [30.0, 5.0, 15.0],
+            }
+        ),
+    }
+    ast = _formula()
+    ast["entry"] = {
+        "op": "gt",
+        "left": {
+            "op": "cs_rank",
+            "input": {"op": "field", "name": "close"},
+        },
+        "right": {"op": "constant", "value": 0.6},
+    }
+    ast["exit"] = {"op": "constant", "value": 0}
+
+    entries, _, _ = evaluate_formula_universe(ast, frames)
+    # Day 1 (2025-01-01): A=10 (0.33), B=20 (0.67), C=30 (1.0) -> B and C > 0.6
+    # Day 2 (2025-01-02): B suspended; A=15 (1.0), C=5 (0.5) -> A > 0.6
+    # Day 3 (2025-01-03): A=20 (1.0), B=10 (0.33), C=15 (0.67) -> A and C > 0.6
+    assert entries["A"].tolist() == [False, True, True]
+    assert entries["B"].tolist() == [True, False]
+    assert entries["C"].tolist() == [True, False, True]

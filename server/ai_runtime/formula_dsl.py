@@ -64,6 +64,7 @@ _BINARY_OPERATORS = frozenset(
     }
 )
 _UNARY_OPERATORS = frozenset({"not"})
+_CROSS_SECTIONAL_OPERATORS = frozenset({"cs_rank", "cs_zscore"})
 _UNSUPPORTED_REVIEWED_OPERATORS = frozenset({"volatility_target"})
 _MAX_WINDOW = 252
 _MAX_DEPTH = 32
@@ -175,6 +176,7 @@ def formula_operator_catalog() -> JsonObject:
                 *_PERIOD_OPERATORS,
                 *_BINARY_OPERATORS,
                 *_UNARY_OPERATORS,
+                *_CROSS_SECTIONAL_OPERATORS,
             }
         ),
         "reviewed_but_unsupported": {
@@ -200,6 +202,10 @@ def formula_operator_catalog() -> JsonObject:
                 "right": "expression",
             },
             "not": {"op": "not", "input": "expression"},
+            "cross_sectional_operator": {
+                "op": "cs_rank|cs_zscore",
+                "input": "expression",
+            },
             "equal_weight": {"op": "equal_weight"},
             "max_weight": {
                 "op": "max_weight",
@@ -214,6 +220,14 @@ def formula_operator_catalog() -> JsonObject:
             "rolling_max": "maximum of the complete trailing window, including the current bar",
             "rolling_min": "minimum of the complete trailing window, including the current bar",
             "rank": "percentile rank (0.0 to 1.0) of the current value within the trailing window",
+            "cs_rank": (
+                "cross-sectional percentile rank (0.0 to 1.0) of the current value "
+                "across the universe at the matching timestamp"
+            ),
+            "cs_zscore": (
+                "cross-sectional standard score (value - mean) / std across the "
+                "universe at the matching timestamp; missing or zero variance returns NaN"
+            ),
         },
         "signal_timing": (
             "expressions observe completed bars; target changes execute on the next "
@@ -257,17 +271,66 @@ def evaluate_formula(
     frame: pd.DataFrame,
     *,
     universe_size: int,
+    symbol: str = "_primary_",
+    cross_sectional_frames: Mapping[str, pd.DataFrame] | None = None,
+    _cs_cache: dict[str, dict[str, pd.Series]] | None = None,
 ) -> tuple[pd.Series, pd.Series, float]:
     """Evaluate validated expressions over history without future references."""
     normalized = validate_formula_ast(formula_ast, universe_size=universe_size)
-    entry = _evaluate_expression(normalized["entry"], frame).fillna(False).astype(bool)
+    entry = (
+        _evaluate_expression(
+            normalized["entry"],
+            frame,
+            symbol=symbol,
+            cross_sectional_frames=cross_sectional_frames,
+            _cs_cache=_cs_cache,
+        )
+        .fillna(False)
+        .astype(bool)
+    )
     exit_signal = (
-        _evaluate_expression(normalized["exit"], frame).fillna(False).astype(bool)
+        _evaluate_expression(
+            normalized["exit"],
+            frame,
+            symbol=symbol,
+            cross_sectional_frames=cross_sectional_frames,
+            _cs_cache=_cs_cache,
+        )
+        .fillna(False)
+        .astype(bool)
     )
     target_weight = _evaluate_sizing(
         normalized["position_size"], universe_size=universe_size
     )
     return entry, exit_signal, target_weight
+
+
+def evaluate_formula_universe(
+    formula_ast: Mapping[str, Any],
+    frames: Mapping[str, pd.DataFrame],
+    *,
+    universe_size: int | None = None,
+) -> tuple[dict[str, pd.Series], dict[str, pd.Series], float]:
+    """Evaluate validated expressions across an entire universe of frames."""
+    effective_universe_size = (
+        universe_size if universe_size is not None else len(frames)
+    )
+    entries: dict[str, pd.Series] = {}
+    exits: dict[str, pd.Series] = {}
+    weight = 0.0
+    cs_cache: dict[str, dict[str, pd.Series]] = {}
+    for symbol, frame in frames.items():
+        entry, exit_sig, weight = evaluate_formula(
+            formula_ast,
+            frame,
+            universe_size=effective_universe_size,
+            symbol=str(symbol),
+            cross_sectional_frames=frames,
+            _cs_cache=cs_cache,
+        )
+        entries[str(symbol)] = entry
+        exits[str(symbol)] = exit_sig
+    return entries, exits, weight
 
 
 def formula_fingerprint(binding: FormulaBinding) -> str:
@@ -331,6 +394,10 @@ def _validate_expression(value: Any, path: str, *, depth: int) -> None:
         _expect_keys(value, required={"op", "input"}, path=path)
         _validate_expression(value["input"], f"{path}.input", depth=depth + 1)
         return
+    if op in _CROSS_SECTIONAL_OPERATORS:
+        _expect_keys(value, required={"op", "input"}, path=path)
+        _validate_expression(value["input"], f"{path}.input", depth=depth + 1)
+        return
     raise FormulaValidationError("unknown_operator", path)
 
 
@@ -357,7 +424,14 @@ def _validate_sizing(value: Any, path: str, *, universe_size: int) -> None:
     raise FormulaValidationError("unknown_sizing_operator", path)
 
 
-def _evaluate_expression(value: Mapping[str, Any], frame: pd.DataFrame) -> pd.Series:
+def _evaluate_expression(
+    value: Mapping[str, Any],
+    frame: pd.DataFrame,
+    *,
+    symbol: str = "_primary_",
+    cross_sectional_frames: Mapping[str, pd.DataFrame] | None = None,
+    _cs_cache: dict[str, dict[str, pd.Series]] | None = None,
+) -> pd.Series:
     op = str(value["op"])
     index = frame.index
     if op == "field":
@@ -365,7 +439,13 @@ def _evaluate_expression(value: Mapping[str, Any], frame: pd.DataFrame) -> pd.Se
     if op == "constant":
         return pd.Series(float(value["value"]), index=index, dtype=float)
     if op in _PERIOD_OPERATORS:
-        item = _evaluate_expression(value["input"], frame)
+        item = _evaluate_expression(
+            value["input"],
+            frame,
+            symbol=symbol,
+            cross_sectional_frames=cross_sectional_frames,
+            _cs_cache=_cs_cache,
+        )
         period = int(value["period"])
         if op == "lag":
             return item.shift(period)
@@ -380,7 +460,13 @@ def _evaluate_expression(value: Mapping[str, Any], frame: pd.DataFrame) -> pd.Se
         window = int(value["window"])
         if op == "atr":
             return FeatureEngine.atr(frame, period=window)
-        item = _evaluate_expression(value["input"], frame)
+        item = _evaluate_expression(
+            value["input"],
+            frame,
+            symbol=symbol,
+            cross_sectional_frames=cross_sectional_frames,
+            _cs_cache=_cs_cache,
+        )
         scratch = pd.DataFrame({"value": item}, index=index)
         if op == "rolling_mean":
             return FeatureEngine.sma(scratch, column="value", period=window)
@@ -401,8 +487,20 @@ def _evaluate_expression(value: Mapping[str, Any], frame: pd.DataFrame) -> pd.Se
         if op == "rank":
             return FeatureEngine.rolling_percentile(item, window=window)
     if op in _BINARY_OPERATORS:
-        left = _evaluate_expression(value["left"], frame)
-        right = _evaluate_expression(value["right"], frame)
+        left = _evaluate_expression(
+            value["left"],
+            frame,
+            symbol=symbol,
+            cross_sectional_frames=cross_sectional_frames,
+            _cs_cache=_cs_cache,
+        )
+        right = _evaluate_expression(
+            value["right"],
+            frame,
+            symbol=symbol,
+            cross_sectional_frames=cross_sectional_frames,
+            _cs_cache=_cs_cache,
+        )
         if op == "add":
             return left + right
         if op == "subtract":
@@ -428,7 +526,88 @@ def _evaluate_expression(value: Mapping[str, Any], frame: pd.DataFrame) -> pd.Se
         if op == "cross":
             return (left > right) & (left.shift(1) <= right.shift(1))
     if op == "not":
-        return ~_evaluate_expression(value["input"], frame).fillna(False).astype(bool)
+        return ~_evaluate_expression(
+            value["input"],
+            frame,
+            symbol=symbol,
+            cross_sectional_frames=cross_sectional_frames,
+            _cs_cache=_cs_cache,
+        ).fillna(False).astype(bool)
+    if op in _CROSS_SECTIONAL_OPERATORS:
+        if cross_sectional_frames is None or len(cross_sectional_frames) <= 1:
+            item = _evaluate_expression(
+                value["input"],
+                frame,
+                symbol=symbol,
+                cross_sectional_frames=cross_sectional_frames,
+                _cs_cache=_cs_cache,
+            )
+            if op == "cs_rank":
+                return item.where(item.isna(), 1.0)
+            return pd.Series(float("nan"), index=index, dtype=float)
+
+        ast_key = canonical_json(value)
+        if _cs_cache is not None and ast_key in _cs_cache:
+            cached = _cs_cache[ast_key].get(symbol)
+            if cached is not None:
+                return cached
+
+        series_by_sym = {
+            sym: _evaluate_expression(
+                value["input"],
+                s_frame,
+                symbol=sym,
+                cross_sectional_frames=cross_sectional_frames,
+                _cs_cache=_cs_cache,
+            )
+            for sym, s_frame in cross_sectional_frames.items()
+        }
+
+        has_timestamp = all(
+            "timestamp" in s_frame.columns
+            for s_frame in cross_sectional_frames.values()
+        )
+        if has_timestamp:
+            matrix = pd.DataFrame(
+                {
+                    sym: pd.Series(
+                        s.values,
+                        index=pd.to_datetime(cross_sectional_frames[sym]["timestamp"]),
+                    )
+                    for sym, s in series_by_sym.items()
+                }
+            )
+            if op == "cs_rank":
+                res_matrix = FeatureEngine.cross_sectional_rank(
+                    matrix, ascending=True, pct=True
+                )
+            else:
+                res_matrix = FeatureEngine.cross_sectional_zscore(matrix)
+            result_by_symbol = {
+                sym: pd.Series(
+                    res_matrix[sym]
+                    .reindex(pd.to_datetime(s_frame["timestamp"]))
+                    .values,
+                    index=s_frame.index,
+                    dtype=float,
+                )
+                for sym, s_frame in cross_sectional_frames.items()
+            }
+        else:
+            matrix = pd.DataFrame(series_by_sym)
+            if op == "cs_rank":
+                res_matrix = FeatureEngine.cross_sectional_rank(
+                    matrix, ascending=True, pct=True
+                )
+            else:
+                res_matrix = FeatureEngine.cross_sectional_zscore(matrix)
+            result_by_symbol = {sym: res_matrix[sym] for sym in series_by_sym}
+
+        if _cs_cache is not None:
+            _cs_cache[ast_key] = result_by_symbol
+        return result_by_symbol.get(
+            symbol, pd.Series(float("nan"), index=index, dtype=float)
+        )
     raise FormulaValidationError("unknown_operator", "evaluation")
 
 
