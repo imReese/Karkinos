@@ -109,7 +109,8 @@ export type PersistedTask = {
 /**
  * Validates whether an enqueued scheduler record is actively pending/queued.
  * If the associated persisted task has progressed to 'running', 'completed',
- * or 'failed', the queued beacon must no longer be shown.
+ * 'failed', or has been evicted from the recent tasks window, the queued
+ * beacon must not be shown.
  */
 export function isSchedulerRecordActiveQueued(
   record?: SchedulerRecord | null,
@@ -121,7 +122,10 @@ export function isSchedulerRecordActiveQueued(
   if (!isEnqueued) return false;
 
   const taskId = record.job_id || record.run_id;
-  if (taskId && persistedTasks && persistedTasks.length > 0) {
+  if (!taskId) return false;
+
+  // Once the persisted task list has been successfully retrieved (non-null/defined):
+  if (persistedTasks !== undefined && persistedTasks !== null) {
     const matched = persistedTasks.find((t) => t.id === taskId);
     if (matched) {
       return (
@@ -130,6 +134,9 @@ export function isSchedulerRecordActiveQueued(
         matched.status === 'pending'
       );
     }
+    // Task was not found in the recent tasks window (evicted / finished / unknown).
+    // Must NOT fall back to true, which would resurrect old receipts as queued.
+    return false;
   }
 
   return true;

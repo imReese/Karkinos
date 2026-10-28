@@ -220,7 +220,11 @@ export function EtfRotationTradingCard({
           </div>
         ) : orders.length === 0 ? (
           <div className="rounded-xl border border-dashed border-[var(--app-divider)] p-6 text-center text-sm text-[var(--app-text-secondary)]">
-            当前账户资产比例完全符合最优轮动权重，今日无需进行任何买卖操作。
+            {(data.rebalance?.is_rebalance_due ??
+            data.rebalance?.rebalance_triggered ??
+            true)
+              ? '今日已到调仓日，当前持仓结构无需调仓交易。'
+              : '今日非策略调仓日，维持现有持仓，无调仓交易。'}
           </div>
         ) : (
           <EtfRebalanceOrdersTable orders={orders} />

@@ -475,6 +475,26 @@ describe('StrategyEvolutionLineage', () => {
       );
       expect(screen.queryByTestId('strategy-lineage-queued-beacon')).toBeNull();
       unmountFailed();
+
+      // Lifecycle progression: task evicted / pushed out from recent tasks window must NOT resurrect as Queued
+      const { unmount: unmountEvicted } = renderWithClient(
+        <StrategyEvolutionLineage
+          candidates={[candidate]}
+          selectedCandidateId="cand-1"
+          onSelectCandidate={() => {}}
+          schedulerRecord={{
+            status: 'enqueued',
+            job_id: 'job-task-1',
+            model_name: 'DeepSeek V4.1 Flash',
+          }}
+          persistedTasks={[
+            { id: 'job-newer-task-21', status: 'completed' },
+            { id: 'job-newer-task-22', status: 'completed' },
+          ]}
+        />,
+      );
+      expect(screen.queryByTestId('strategy-lineage-queued-beacon')).toBeNull();
+      unmountEvicted();
     });
 
     it('6. 两代对比差值: suppresses delta when either current or prior generation evidence is invalid', async () => {

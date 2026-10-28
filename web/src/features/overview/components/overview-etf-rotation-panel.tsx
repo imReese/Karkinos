@@ -108,7 +108,11 @@ export function EtfRotationOverviewPanel({
           </div>
         ) : orders.length === 0 ? (
           <div className="rounded-xl border border-dashed border-[var(--app-divider)] p-4 text-center text-xs text-[var(--app-text-secondary)]">
-            当前账户资产比例完全符合最优轮动权重，今日无需调整。
+            {(rebalance?.is_rebalance_due ??
+            rebalance?.rebalance_triggered ??
+            true)
+              ? '今日已到调仓日，当前持仓结构无需调整。'
+              : '今日非调仓日，维持现有持仓，无调仓交易。'}
           </div>
         ) : (
           <ul className="space-y-2 max-h-[16rem] overflow-y-auto overscroll-y-contain pr-1">

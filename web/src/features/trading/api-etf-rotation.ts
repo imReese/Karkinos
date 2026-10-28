@@ -60,6 +60,8 @@ export type EtfRebalancePlanSummary = {
   plan_id?: string;
   evaluated_at: string;
   as_of_date: string;
+  rebalance_triggered?: boolean;
+  is_rebalance_due?: boolean;
   total_equity: number;
   capital_source?:
     | 'available_cash'
