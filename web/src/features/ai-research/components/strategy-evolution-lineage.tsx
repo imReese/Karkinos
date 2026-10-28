@@ -3,8 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatPercent } from '../../../shared/format';
 import { usePreferences } from '../../../shared/preferences/context';
 import { useBacktestResultQuery } from '../ai-research-feature-boundary';
+import { evaluateCandidateEvidence } from '../candidate-evidence';
 import type { ShadowResearchCandidate } from '../shadow-research-api';
-import { formatCandidateOptionLabel } from '../candidate-display';
+import {
+  formatCandidateOptionLabel,
+  formatModelDisplayName,
+} from '../candidate-display';
 import { SHADOW_RESEARCH_COPY } from './shadow-research-copy';
 
 export function StrategyEvolutionLineage({
@@ -15,6 +19,7 @@ export function StrategyEvolutionLineage({
   onSelectCandidate,
   verifiedWinnerCandidateIds = new Set(),
   registryControl,
+  schedulerRecord,
 }: {
   candidates: ShadowResearchCandidate[];
   currentCandidates?: ShadowResearchCandidate[];
@@ -23,6 +28,13 @@ export function StrategyEvolutionLineage({
   onSelectCandidate: (candidateId: string) => void;
   verifiedWinnerCandidateIds?: Set<string>;
   registryControl?: React.ReactNode;
+  schedulerRecord?: {
+    status?: string | null;
+    failure_code?: string | null;
+    model_name?: string | null;
+    model_id?: string | null;
+    available_at?: string | null;
+  } | null;
 }) {
   const { locale } = usePreferences();
   const zh = locale === 'zh';
@@ -282,90 +294,91 @@ export function StrategyEvolutionLineage({
           );
         })}
 
-        {/* Next Generation Queued Beacon */}
-        {(() => {
-          const nextGenNumber = lineageChain.length + 1;
-          const prevGenNumber = lineageChain.length;
-          return (
-            <div
-              className="group relative z-10 flex min-w-[210px] max-w-[250px] shrink-0 flex-col justify-between rounded-[var(--app-radius-control)] border border-dashed border-[color-mix(in_srgb,var(--app-accent)_40%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-surface-raised)_60%,transparent)] p-3 text-left transition-colors"
-              title={
-                zh
-                  ? `Gen ${nextGenNumber} 计划在今晚低谷期（21:00后）由 DeepSeek V4.1 Flash 执行下一轮因式变异与探索`
-                  : `Gen ${nextGenNumber} scheduled to be explored by DeepSeek V4.1 Flash during off-peak window`
-              }
-            >
-              <div>
-                <div className="flex items-center justify-between gap-1.5">
-                  <span className="app-type-micro inline-flex items-center gap-1.5 font-mono font-bold text-[var(--app-text-tertiary)]">
-                    <span className="size-1.5 rounded-full bg-[var(--app-accent)] opacity-60" />
-                    Gen {nextGenNumber}
-                    <span className="font-normal text-[var(--app-text-tertiary)]">
-                      /{Math.max(totalIterations, nextGenNumber)}
-                    </span>
-                  </span>
-                  <span className="app-type-micro rounded-full border border-[color-mix(in_srgb,var(--app-accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)] px-1.5 py-0.2 font-sans font-semibold text-[var(--app-accent)]">
-                    {zh ? '今晚待启动' : 'Queued'}
-                  </span>
-                </div>
-
-                <div className="mt-2 text-xs font-semibold leading-snug text-[var(--app-text)] font-sans">
-                  {zh
-                    ? 'DeepSeek V4.1 Flash 待命中'
-                    : 'DeepSeek V4.1 Flash Scheduled'}
-                </div>
-                <p className="mt-1 app-type-micro text-[var(--app-text-tertiary)] line-clamp-2 leading-relaxed font-sans">
-                  {zh
-                    ? `将在低谷调度窗口根据 Gen ${prevGenNumber} 评议启动下一轮探索。`
-                    : `Will evolve based on Gen ${prevGenNumber} critique during off-peak window.`}
-                </p>
-              </div>
-
-              <div className="mt-3 flex items-center justify-between border-t border-[var(--app-divider)] pt-2 app-type-micro text-[var(--app-text-tertiary)]">
-                <span className="font-sans">
-                  {zh ? '执行模型: ' : 'Engine: '}
-                  <span className="font-mono font-semibold text-[var(--app-accent)]">
-                    DeepSeek V4.1 Flash
-                  </span>
-                </span>
-                <span className="font-mono text-xs opacity-60">
-                  Standby &rarr;
-                </span>
-              </div>
-            </div>
-          );
-        })()}
+        {schedulerRecord &&
+        (schedulerRecord.status === 'enqueued' ||
+          schedulerRecord.status === 'already_enqueued') ? (
+          <QueuedBeacon
+            lineageLength={lineageChain.length}
+            schedulerRecord={schedulerRecord}
+            totalIterations={totalIterations}
+            zh={zh}
+          />
+        ) : null}
       </div>
     </section>
   );
 }
 
-type LineageMetrics = {
-  sharpe: number;
-  total_return: number;
-  max_drawdown: number;
-};
+function QueuedBeacon({
+  lineageLength,
+  totalIterations,
+  schedulerRecord,
+  zh,
+}: {
+  lineageLength: number;
+  totalIterations: number;
+  schedulerRecord: {
+    status?: string | null;
+    model_name?: string | null;
+    model_id?: string | null;
+    available_at?: string | null;
+  };
+  zh: boolean;
+}) {
+  const nextGenNumber = lineageLength + 1;
+  const prevGenNumber = lineageLength;
+  const modelName =
+    schedulerRecord.model_name ||
+    (schedulerRecord.model_id
+      ? formatModelDisplayName(schedulerRecord.model_id)
+      : zh
+        ? '已排队模型'
+        : 'Queued model');
+  return (
+    <div
+      className="group relative z-10 flex min-w-[210px] max-w-[250px] shrink-0 flex-col justify-between rounded-[var(--app-radius-control)] border border-dashed border-[color-mix(in_srgb,var(--app-accent)_40%,var(--app-border))] bg-[color-mix(in_srgb,var(--app-surface-raised)_60%,transparent)] p-3 text-left transition-colors"
+      data-testid="strategy-lineage-queued-beacon"
+      title={
+        zh
+          ? `Gen ${nextGenNumber} 调度记录已入队，由 ${modelName} 规划探索`
+          : `Gen ${nextGenNumber} scheduled for exploration by ${modelName}`
+      }
+    >
+      <div>
+        <div className="flex items-center justify-between gap-1.5">
+          <span className="app-type-micro inline-flex items-center gap-1.5 font-mono font-bold text-[var(--app-text-tertiary)]">
+            <span className="size-1.5 rounded-full bg-[var(--app-accent)] opacity-60" />
+            Gen {nextGenNumber}
+            <span className="font-normal text-[var(--app-text-tertiary)]">
+              /{Math.max(totalIterations, nextGenNumber)}
+            </span>
+          </span>
+          <span className="app-type-micro rounded-full border border-[color-mix(in_srgb,var(--app-accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--app-accent)_10%,transparent)] px-1.5 py-0.2 font-sans font-semibold text-[var(--app-accent)]">
+            {zh ? '已排队' : 'Queued'}
+          </span>
+        </div>
 
-function extractCandidateMetrics(
-  candidate: ShadowResearchCandidate | null | undefined,
-  reportMetrics:
-    { sharpe: number; total_return: number; max_drawdown: number } | undefined,
-): LineageMetrics | null {
-  if (candidate?.comparison?.candidate) {
-    return {
-      sharpe: candidate.comparison.candidate.sharpe,
-      total_return: candidate.comparison.candidate.total_return,
-      max_drawdown: candidate.comparison.candidate.max_drawdown,
-    };
-  }
-  if (reportMetrics) {
-    return {
-      sharpe: reportMetrics.sharpe,
-      total_return: reportMetrics.total_return,
-      max_drawdown: reportMetrics.max_drawdown,
-    };
-  }
-  return null;
+        <div className="mt-2 text-xs font-semibold leading-snug text-[var(--app-text)] font-sans">
+          {zh ? `${modelName} 待命中` : `${modelName} Scheduled`}
+        </div>
+        <p className="mt-1 app-type-micro text-[var(--app-text-tertiary)] line-clamp-2 leading-relaxed font-sans">
+          {zh
+            ? `已由调度器记录，将在调度窗口根据 Gen ${prevGenNumber} 评议启动下一轮探索。`
+            : `Recorded by job scheduler for exploration based on Gen ${prevGenNumber} critique.`}
+        </p>
+      </div>
+
+      <div className="mt-3 flex items-center justify-between border-t border-[var(--app-divider)] pt-2 app-type-micro text-[var(--app-text-tertiary)]">
+        <span className="font-sans">
+          {zh ? '执行模型: ' : 'Engine: '}
+          <span className="font-mono font-semibold text-[var(--app-accent)]">
+            {modelName}
+          </span>
+        </span>
+        <span className="font-mono text-xs opacity-60">Enqueued &rarr;</span>
+      </div>
+    </div>
+  );
 }
 
 function LineageCard({
@@ -398,7 +411,11 @@ function LineageCard({
       ? candidate.candidate_result_id
       : null;
   const sourceQuery = useBacktestResultQuery(
-    !candidate.comparison?.candidate ? sourceResultId : null,
+    !candidate.comparison?.candidate &&
+      !candidate.evidence_invalidation &&
+      candidate.status !== 'failed_closed'
+      ? sourceResultId
+      : null,
   );
 
   const prevResultId =
@@ -408,14 +425,18 @@ function LineageCard({
       ? prevCandidate.candidate_result_id
       : null;
   const prevQuery = useBacktestResultQuery(
-    !prevCandidate?.comparison?.candidate ? prevResultId : null,
+    !prevCandidate?.comparison?.candidate &&
+      !prevCandidate?.evidence_invalidation &&
+      prevCandidate?.status !== 'failed_closed'
+      ? prevResultId
+      : null,
   );
 
-  const metrics = extractCandidateMetrics(candidate, sourceQuery.data?.metrics);
-  const prevMetrics = extractCandidateMetrics(
-    prevCandidate,
-    prevQuery.data?.metrics,
-  );
+  const currEvaluation = evaluateCandidateEvidence(candidate, sourceQuery);
+  const prevEvaluation = evaluateCandidateEvidence(prevCandidate, prevQuery);
+
+  const metrics = currEvaluation.metrics;
+  const prevMetrics = prevEvaluation.metrics;
 
   const lineage = candidate.comparison?.iteration_lineage;
   const iterationNum = lineage?.iteration_number ?? index + 1;
@@ -464,7 +485,14 @@ function LineageCard({
               /{totalIterations}
             </span>
           </span>
-          {isWinner ? (
+          {currEvaluation.invalidation ? (
+            <span
+              className="app-type-micro rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)] px-1.5 py-0.2 font-sans font-semibold text-[var(--app-warning-text)]"
+              data-testid="lineage-evidence-withdrawn-badge"
+            >
+              {zh ? '已撤回' : 'Withdrawn'}
+            </span>
+          ) : isWinner && currEvaluation.isReportValid ? (
             <span
               className={`app-type-micro rounded-full border px-1.5 py-0.2 font-sans font-semibold ${
                 isProfitable

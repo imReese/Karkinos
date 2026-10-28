@@ -41,6 +41,7 @@ export function ShadowResearchCandidateWorkspace({
   reinstateError,
   pending,
   promotionStates,
+  schedulerRecord,
   verifiedResearchWinnerCandidateIds,
   verifiedWinnerCandidateIds,
 }: {
@@ -69,6 +70,12 @@ export function ShadowResearchCandidateWorkspace({
   reinstateError?: string | null;
   pending: boolean;
   promotionStates: ReturnType<typeof useStrategyPromotionStatesQuery>;
+  schedulerRecord?: {
+    status?: string | null;
+    model_name?: string | null;
+    model_id?: string | null;
+    available_at?: string | null;
+  } | null;
   verifiedResearchWinnerCandidateIds: Set<string>;
   verifiedWinnerCandidateIds: Set<string>;
 }) {
@@ -282,6 +289,7 @@ export function ShadowResearchCandidateWorkspace({
           historicalCandidates={historical}
           onSelectCandidate={setSelectedCandidateId}
           registryControl={registryControl}
+          schedulerRecord={schedulerRecord}
           selectedCandidateId={selectedCandidate?.candidate_id ?? null}
           verifiedWinnerCandidateIds={verifiedWinnerCandidateIds}
         />

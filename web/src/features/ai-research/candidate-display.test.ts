@@ -162,4 +162,18 @@ describe('candidate-display', () => {
       '在等权分配的股票池中捕捉突破',
     );
   });
+
+  it('does not guess model name or strategy title merely by generation number', () => {
+    const candidateGen1 = makeMockCandidate('opaque-draft-alpha', 1);
+    expect(resolveCandidateEngine(candidateGen1)).toBe('—');
+    expect(formatCandidateTitle(candidateGen1, true)).toBe(
+      'Gen 1 · 策略候选 opaque-d',
+    );
+
+    const candidateGen7 = makeMockCandidate('opaque-draft-beta', 7);
+    expect(resolveCandidateEngine(candidateGen7)).toBe('—');
+    expect(formatCandidateTitle(candidateGen7, true)).toBe(
+      'Gen 7 · 策略候选 opaque-d',
+    );
+  });
 });

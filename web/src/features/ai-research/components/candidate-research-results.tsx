@@ -24,12 +24,17 @@ export function CandidateResearchResults({
       ? candidate.candidate_result_id
       : null;
   const sourceQuery = useBacktestResultQuery(
-    !comparison.candidate && !candidate.evidence_invalidation
+    !comparison.candidate &&
+      !candidate.evidence_invalidation &&
+      candidate.status !== 'failed_closed'
       ? sourceResultId
       : null,
   );
   const invalidation =
-    candidate.evidence_invalidation ?? sourceQuery.data?.evidence_invalidation;
+    candidate.status === 'failed_closed'
+      ? { status: 'failed_closed', reason: 'candidate_failed_closed' }
+      : (candidate.evidence_invalidation ??
+        sourceQuery.data?.evidence_invalidation);
   const sourceReport =
     !invalidation &&
     !sourceQuery.isError &&

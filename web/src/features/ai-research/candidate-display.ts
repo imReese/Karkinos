@@ -10,35 +10,34 @@ export function resolveCandidateEngine(
     return formatModelDisplayName(candidate.model_id);
   }
 
+  // 2. Authoritative provider_id if available
+  if (candidate.provider_id) {
+    return formatModelDisplayName(candidate.provider_id);
+  }
+
   const draftId = (candidate.draft_id || '').toLowerCase();
   const candId = (candidate.candidate_id || '').toLowerCase();
-  const genNum = candidate.comparison?.iteration_lineage?.iteration_number;
 
-  // Gen 5 & 6: Gemini 3.8 Flash
+  // 3. Explicit model identifier saved in draft or candidate id
   if (
     draftId.includes('gemini') ||
     candId.includes('7f8a7bb') ||
-    candId.includes('d02c03e') ||
-    genNum === 5 ||
-    genNum === 6
+    candId.includes('d02c03e')
   ) {
     return 'Gemini 3.8 Flash';
   }
 
-  // Gen 7 (and future active/queued like Gen 8): DeepSeek V4.1 Flash
+  // DeepSeek Flash
   if (
-    draftId.includes('v7') ||
     draftId.includes('deepseek-v7') ||
     candId.includes('9a4f21d') ||
-    draftId.includes('flash') ||
-    (typeof genNum === 'number' && genNum >= 7)
+    draftId.includes('flash')
   ) {
     return 'DeepSeek V4.1 Flash';
   }
 
-  // Gen 1 - 4: DeepSeek V4 Pro
+  // DeepSeek Pro
   if (
-    (typeof genNum === 'number' && genNum >= 1 && genNum <= 4) ||
     draftId.includes('51a80e75') ||
     draftId.includes('870abf84') ||
     draftId.includes('1952a2c4') ||
@@ -46,13 +45,10 @@ export function resolveCandidateEngine(
     draftId.includes('v4') ||
     draftId.includes('v3') ||
     draftId.includes('v2') ||
-    draftId.includes('v1')
+    draftId.includes('v1') ||
+    draftId.includes('deepseek') ||
+    candidate.comparison?.deepseek_critique
   ) {
-    return 'DeepSeek V4 Pro';
-  }
-
-  // Fallback for any DeepSeek-associated candidate
-  if (draftId.includes('deepseek') || candidate.comparison?.deepseek_critique) {
     return 'DeepSeek V4 Pro';
   }
   return '—';
@@ -156,48 +152,42 @@ export function formatCandidateTitle(
     ''
   ).toLowerCase();
 
-  // 1. Explicit promoted generation titles
-  if (
-    draftId.includes('v7') ||
-    draftId.includes('deepseek-v7') ||
-    genNum === 7
-  ) {
+  // 1. Explicit promoted generation titles from recorded draft ID
+  if (draftId.includes('deepseek-v7') || draftId.includes('v7')) {
     return zh
       ? 'Gen 7 · 缩量超跌均值回归策略'
       : 'Gen 7 · Deep Pullback Reversion Strategy';
   }
   if (
-    draftId.includes('v6') ||
     draftId.includes('gemini-v6') ||
     draftId.includes('deepseek-v6') ||
-    genNum === 6
+    draftId.includes('v6')
   ) {
     return zh
       ? 'Gen 6 · 量价共振波动防御策略'
       : 'Gen 6 · Volume-Price Resonance Defense';
   }
   if (
-    draftId.includes('v5') ||
     draftId.includes('gemini-v5') ||
-    candidate.candidate_id?.includes('7f8a7bb') ||
-    genNum === 5
+    draftId.includes('v5') ||
+    candidate.candidate_id?.includes('7f8a7bb')
   ) {
     return zh
       ? 'Gen 5 · 中周期均线趋势回踩策略'
       : 'Gen 5 · Trend Pullback & Vol Defense';
   }
-  if (draftId.includes('51a80e75') || genNum === 4) {
+  if (draftId.includes('51a80e75') || draftId.includes('gen4')) {
     return zh ? 'Gen 4 · 短期均线反转策略' : 'Gen 4 · Short MA Reversal';
   }
-  if (draftId.includes('870abf84') || genNum === 3) {
+  if (draftId.includes('870abf84') || draftId.includes('gen3')) {
     return zh ? 'Gen 3 · 波动率止损过滤策略' : 'Gen 3 · Volatility Stop Filter';
   }
-  if (draftId.includes('1952a2c4') || genNum === 2) {
+  if (draftId.includes('1952a2c4') || draftId.includes('gen2')) {
     return zh
       ? 'Gen 2 · 滚动均线偏离跟踪策略'
       : 'Gen 2 · Rolling Mean Deviation';
   }
-  if (draftId.includes('14876873') || genNum === 1) {
+  if (draftId.includes('14876873') || draftId.includes('gen1')) {
     return zh ? 'Gen 1 · 双均线交叉基础策略' : 'Gen 1 · Dual MA Baseline';
   }
 

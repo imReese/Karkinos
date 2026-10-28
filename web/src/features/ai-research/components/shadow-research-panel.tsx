@@ -529,6 +529,7 @@ export function ShadowResearchPanel() {
           }
           pending={approve.isPending || pause.isPending || reinstate.isPending}
           promotionStates={promotionStates}
+          schedulerRecord={run.isPending ? undefined : run.data}
           verifiedResearchWinnerCandidateIds={verifiedCandidateIds.research}
           verifiedWinnerCandidateIds={verifiedCandidateIds.promotion}
         />
