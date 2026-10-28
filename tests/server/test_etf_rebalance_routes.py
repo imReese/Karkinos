@@ -1165,3 +1165,104 @@ def test_paper_book_resolution_not_masked_by_observation_without_paper(
         assert dash["paper_book"]["observation_id"] == "obs-with-paper"
     finally:
         EtfRotationAutomationService.reset_state()
+
+
+def test_etf_rotation_blocks_when_missing_targets_incomplete_universe():
+    data_dir = EtfRotationAutomationService.default_data_dir
+    assert data_dir is not None
+
+    # Delete 6 out of 8 symbols to simulate missing targets
+    all_files = sorted(data_dir.glob("*.csv"))
+    assert len(all_files) == 8
+    to_delete = all_files[:6]
+    for p in to_delete:
+        p.unlink()
+
+    svc = EtfRotationAutomationService()
+    with pytest.raises(
+        ValueError, match="etf_rotation_universe_incomplete: missing 6/8 symbols"
+    ) as exc_info:
+        svc.load_aligned_market_data()
+
+    for p in to_delete:
+        assert p.stem in str(exc_info.value)
+
+
+def test_etf_rotation_day_6_does_not_rebalance(tmp_path: Path):
+    """Regression test: day 6 (with interval 5) must not rebalance, maintaining cadence."""
+    data_dir = tmp_path / "day6_etfs"
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    # 6 business days
+    dates = pd.bdate_range("2026-01-05", periods=6)
+    trend_rates = {
+        "512890": (2.0, 0.005),
+        "513100": (10.0, 0.004),
+        "518880": (4.0, 0.002),
+        "513500": (1.5, 0.001),
+        "510500": (6.0, 0.0002),
+        "159915": (2.0, -0.001),
+        "510300": (4.0, -0.003),
+        "511010": (100.0, 0.0),
+    }
+
+    # First write 5 days of data
+    for sym, (base_px, rate) in trend_rates.items():
+        prices = base_px * ((1.0 + rate) ** np.arange(5))
+        df = pd.DataFrame(
+            {
+                "timestamp": dates[:5],
+                "open": prices,
+                "high": prices * 1.01,
+                "low": prices * 0.99,
+                "close": prices,
+                "volume": [1000000] * 5,
+            }
+        )
+        df.to_csv(data_dir / f"{sym}.csv", index=False)
+
+    svc = EtfRotationAutomationService(data_dir=data_dir)
+    params = {
+        "lookback_period": 2,
+        "volatility_window": 2,
+        "top_k": 2,
+        "rebalance_interval": 5,
+        "use_risk_adjusted": False,
+        "trend_filter_period": 0,
+    }
+
+    # Day 5 (5 % 5 == 0): rebalances!
+    summary_day5 = svc.evaluate_rebalance(
+        total_equity=100000.0,
+        strategy_params=params,
+    )
+    assert summary_day5["rebalance_triggered"] is True
+    assert summary_day5["is_rebalance_due"] is True
+    assert summary_day5["orders_count"] > 0
+    assert len(summary_day5["orders"]) > 0
+
+    # Now add Day 6 to all files
+    for sym, (base_px, rate) in trend_rates.items():
+        prices = base_px * ((1.0 + rate) ** np.arange(6))
+        df = pd.DataFrame(
+            {
+                "timestamp": dates,
+                "open": prices,
+                "high": prices * 1.01,
+                "low": prices * 0.99,
+                "close": prices,
+                "volume": [1000000] * 6,
+            }
+        )
+        df.to_csv(data_dir / f"{sym}.csv", index=False)
+
+    # Day 6 (6 % 5 == 1 != 0): MUST NOT REBALANCE!
+    summary_day6 = svc.evaluate_rebalance(
+        total_equity=100000.0,
+        strategy_params=params,
+    )
+    assert summary_day6["rebalance_triggered"] is False
+    assert summary_day6["is_rebalance_due"] is False
+    assert summary_day6["orders_count"] == 0
+    assert len(summary_day6["orders"]) == 0
+    assert "今日非调仓日" in summary_day6["markdown_table"]

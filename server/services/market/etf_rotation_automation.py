@@ -184,6 +184,7 @@ class EtfRotationAutomationService:
             logger.debug("Canonical DataStore preparation bypassed: %s", exc)
         market_files = self._market_file_state()
         raw_dfs: dict[Symbol, pd.DataFrame] = {}
+        missing_symbols: list[Symbol] = []
         for sym in ETF_METADATA:
             df: pd.DataFrame | None = None
             if store is not None:
@@ -210,6 +211,7 @@ class EtfRotationAutomationService:
                     df = pd.read_csv(p_csv)
                 else:
                     logger.warning("Missing dataset for %s in %s", sym, self.data_dir)
+                    missing_symbols.append(sym)
                     continue
 
             df["timestamp"] = pd.to_datetime(df["timestamp"])
@@ -222,6 +224,12 @@ class EtfRotationAutomationService:
 
         if not raw_dfs:
             raise FileNotFoundError(f"No ETF datasets found in {self.data_dir}")
+
+        if missing_symbols:
+            missing_desc = ", ".join(sorted(str(s) for s in missing_symbols))
+            raise ValueError(
+                f"etf_rotation_universe_incomplete: missing {len(missing_symbols)}/{len(ETF_METADATA)} symbols: {missing_desc}"
+            )
 
         common_dates = None
         for df in raw_dfs.values():
@@ -290,15 +298,19 @@ class EtfRotationAutomationService:
             strategy.on_init(symbols)
 
             target_weights: dict[Symbol, Decimal] = {sym: Decimal(0) for sym in symbols}
+            rebalanced_today = False
 
             def _on_signal(ev: SignalEvent) -> None:
+                nonlocal rebalanced_today
                 target_weights[ev.symbol] = ev.target_weight
+                rebalanced_today = True
 
             bus.subscribe(SignalEvent, _on_signal)
 
             # Feed daily history into strategy to populate moving averages and momentum windows
             dates = sorted(list(set(aligned_dfs[symbols[0]]["timestamp"])))
             for dt in dates:
+                rebalanced_today = False
                 for sym in symbols:
                     sub = aligned_dfs[sym]
                     row = sub[sub["timestamp"] == dt]
@@ -314,13 +326,10 @@ class EtfRotationAutomationService:
                             volume=Decimal(100),
                         )
                         strategy.on_data(ev)
+                bus.drain()
 
-            # Force evaluation as of today's close
-            strategy._evaluate_and_rebalance()
-            bus.drain()
-
-            # If all in cash_proxy, ensure 511010 has 1.0
-            if sum(target_weights.values()) == 0:
+            # If rebalanced today and all in cash_proxy, ensure 511010 has 1.0
+            if rebalanced_today and sum(target_weights.values()) == 0:
                 target_weights[Symbol("511010")] = Decimal("1.0")
 
             # 2. Extract latest market prices
@@ -387,14 +396,24 @@ class EtfRotationAutomationService:
                 capital_source = "fallback_demo"
                 is_demo = True
 
-            plan = generate_rebalance_plan(
-                target_weights=target_weights,
-                current_holdings=holdings,
-                latest_prices=latest_prices,
-                total_equity=eq,
-                symbol_names=ETF_METADATA,
-                lot_size=100,
-            )
+            if rebalanced_today:
+                plan = generate_rebalance_plan(
+                    target_weights=target_weights,
+                    current_holdings=holdings,
+                    latest_prices=latest_prices,
+                    total_equity=eq,
+                    symbol_names=ETF_METADATA,
+                    lot_size=100,
+                )
+            else:
+                plan = RebalancePlan(
+                    sell_orders=[],
+                    buy_orders=[],
+                    total_sell_amount=Decimal(0),
+                    total_buy_amount=Decimal(0),
+                    estimated_net_cash_flow=Decimal(0),
+                    turnover_ratio=Decimal(0),
+                )
 
             now = datetime.now(_SHANGHAI)
             latest_date_str = (
@@ -424,6 +443,8 @@ class EtfRotationAutomationService:
                 "plan_id": plan_id,
                 "evaluated_at": now.isoformat(),
                 "as_of_date": latest_date_str,
+                "rebalance_triggered": rebalanced_today,
+                "is_rebalance_due": rebalanced_today,
                 "total_equity": float(eq),
                 "capital_source": capital_source,
                 "is_demo": is_demo,
@@ -457,7 +478,11 @@ class EtfRotationAutomationService:
                     }
                     for o in plan.all_orders
                 ],
-                "markdown_table": plan.to_markdown_table(),
+                "markdown_table": (
+                    plan.to_markdown_table()
+                    if rebalanced_today
+                    else "今日非调仓日，维持现有持仓，无调仓交易。"
+                ),
                 "csv_content": plan.to_csv(),
                 "miniqmt_script": (
                     plan.to_miniqmt_script()
