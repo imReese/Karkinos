@@ -8,7 +8,11 @@ from server.ai_runtime.formula_dsl import (
     FormulaValidationError,
     evaluate_formula,
 )
-from server.ai_runtime.formula_portfolio import prepare_formula_sessions
+from server.ai_runtime.formula_portfolio import (
+    formula_session_candidates,
+    formula_session_targets,
+    prepare_formula_sessions,
+)
 from server.projections.normalized_research_operation_preview import (
     build_normalized_research_operation_preview,
 )
@@ -221,3 +225,97 @@ def test_ineligible_symbol_does_not_distort_ranking_denominator() -> None:
     assert buy_symbols == [], (
         f"Expected no buys because 000002 rank is 0.67, got {buy_symbols}"
     )
+
+
+def test_unified_formula_session_candidates_parity_between_scan_and_portfolio_kernel() -> (
+    None
+):
+    """Entry, exit, prices and liquidity must match between formula_session_candidates and scan signals."""
+    from decimal import Decimal
+
+    from core.types import Symbol
+    from domain.instrument import make_research_stock
+
+    frames = _build_test_frames("2025-01-05")
+    formula = {
+        "schema_version": FORMULA_AST_CONTRACT,
+        "entry": {
+            "op": "gt",
+            "left": {
+                "op": "cs_rank",
+                "input": {"op": "field", "name": "close"},
+            },
+            "right": {"op": "constant", "value": 0.8},
+        },
+        "exit": {
+            "op": "lt",
+            "left": {"op": "field", "name": "close"},
+            "right": {"op": "constant", "value": 15.0},
+        },
+        "position_size": {
+            "op": "max_weight",
+            "input": {"op": "equal_weight"},
+            "value": 0.33,
+        },
+    }
+
+    # 000001 close is 10.0 (< 15.0 exit threshold)
+    # 000003 close is 30.0 (cs_rank 1.0 > 0.8 entry threshold)
+    held_symbols = {"000001"}
+    eligible_symbols = ["000001", "000002", "000003"]
+    decision_date = pd.Timestamp("2025-01-05").date()
+
+    # 1. Common candidate extraction via prepare_formula_sessions
+    prepared = prepare_formula_sessions(formula, frames, universe_size=3)
+    session_data = formula_session_candidates(
+        prepared=prepared,
+        decision_session=decision_date,
+        held_symbols=held_symbols,
+        eligible_symbols=eligible_symbols,
+        minimum_history_rows=1,
+    )
+    assert session_data["exits"] == ["000001"]
+    assert session_data["entries"] == ["000003"]
+    assert session_data["prices"]["000001"] == Decimal("10.0")
+    assert session_data["prices"]["000003"] == Decimal("30.0")
+
+    # 2. Recommendation scan consumption
+    signals = evaluate_strategy_signals(
+        strategy_id="test_parity_strat",
+        formula_ast=formula,
+        universe_size=3,
+        target_weight=0.33,
+        frames=frames,
+        eligible_symbols=eligible_symbols,
+        maintenance_symbols=[],
+        held_symbols=held_symbols,
+        market_date="2025-01-05",
+        prepared=prepared,
+    )
+    sells = [s for s in signals if s["direction"] == "sell"]
+    buys = [s for s in signals if s["direction"] == "buy"]
+    assert [s["symbol"] for s in sells] == ["000001"]
+    assert [s["symbol"] for s in buys] == ["000003"]
+    assert sells[0]["frozen_close"] == float(session_data["prices"]["000001"])
+    assert sells[0]["ranking_liquidity"] == float(session_data["liquidity"]["000001"])
+    assert buys[0]["frozen_close"] == float(session_data["prices"]["000003"])
+    assert buys[0]["ranking_liquidity"] == float(session_data["liquidity"]["000003"])
+
+    # 3. Kernel formula_session_targets consumption
+    instruments = {Symbol(s): make_research_stock(s, s) for s in eligible_symbols}
+    decision = formula_session_targets(
+        prepared=prepared,
+        decision_session=decision_date,
+        quantities={
+            "000001": Decimal("100"),
+            "000002": Decimal("0"),
+            "000003": Decimal("0"),
+        },
+        cash=Decimal("100000"),
+        equity=Decimal("101000"),
+        instruments=instruments,
+        eligible_symbols=eligible_symbols,
+        minimum_history_rows=1,
+    )
+    assert decision["exit_symbols"] == ["000001"]
+    assert decision["selected_entries"] == ["000003"]

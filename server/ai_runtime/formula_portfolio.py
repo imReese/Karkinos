@@ -55,26 +55,17 @@ def prepare_formula_sessions(
     return prepared
 
 
-def formula_session_targets(
+def formula_session_candidates(
     *,
     prepared: Mapping[str, pd.DataFrame],
     decision_session: date,
-    quantities: Mapping[str, Decimal],
-    cash: Decimal,
-    equity: Decimal,
-    instruments: Mapping[Symbol, Instrument],
-    commission_calc: Any = None,
+    held_symbols: set[str] | Sequence[str] | None = None,
     eligible_symbols: Sequence[str] | None = None,
-    max_positions: int = 4,
-    max_symbol_weight: Decimal = Decimal("0.25"),
-    max_gross_weight: Decimal = Decimal("0.97"),
-    cash_buffer_ratio: Decimal = Decimal("0.03"),
-    slippage_bps: Decimal = RESEARCH_SLIPPAGE_BPS,
     minimum_history_rows: int = 120,
     entry_board_policy: Mapping[str, Any] | None = None,
     nontrading_symbols: Sequence[str] | None = None,
 ) -> dict[str, Any]:
-    """One session decision shared by backtest, paper and account adapters."""
+    """Extract verified session observations and entry/exit candidates from prepared sessions."""
     if type(minimum_history_rows) is not int or minimum_history_rows < 1:
         raise ValueError("formula_session_minimum_history_invalid")
     eligible = {
@@ -86,7 +77,7 @@ def formula_session_targets(
         >= minimum_history_rows
         and Decimal(str(prepared[symbol].loc[decision_session, "volume"])) > 0
     }
-    held = {str(s): q for s, q in quantities.items() if q > 0}
+    held = set(held_symbols) if held_symbols is not None else set()
     permitted_entries = eligible
     if entry_board_policy is not None:
         from domain.instrument import entry_board_symbols
@@ -98,9 +89,9 @@ def formula_session_targets(
             validate_entry_board_policy(entry_board_policy)["allowed_boards"],
             sorted(eligible),
         )
-    entries, exits, prices, liquidity, values, lots = [], [], {}, {}, {}, {}
+    entries, exits, prices, liquidity = [], [], {}, {}
     forecasts = []
-    for symbol in sorted(eligible | set(held)):
+    for symbol in sorted(eligible | held):
         observations = prepared.get(symbol)
         if observations is None:
             raise ValueError(f"formula_session_observation_missing:{symbol}")
@@ -122,16 +113,13 @@ def formula_session_targets(
         ):
             raise ValueError(f"formula_session_holding_valuation_missing:{symbol}")
         price = Decimal(str(row["close"]))
-        instrument = instruments.get(Symbol(symbol))
-        if instrument is None or not price.is_finite() or price <= 0:
+        if not price.is_finite() or price <= 0:
             raise ValueError(f"formula_session_instrument_invalid:{symbol}")
         prices[symbol] = price
-        lots[symbol] = instrument.lot_size
-        liquidity[symbol] = Decimal(str(row["liquidity"]))
-        if not liquidity[symbol].is_finite():
+        liq = Decimal(str(row["liquidity"]))
+        if not liq.is_finite():
             raise ValueError(f"formula_session_liquidity_invalid:{symbol}")
-        if symbol in held:
-            values[symbol] = held[symbol] * price
+        liquidity[symbol] = liq
         should_exit = current_observation and bool(row["exit"])
         if symbol in held and should_exit:
             exits.append(symbol)
@@ -163,6 +151,62 @@ def formula_session_targets(
                 ),
             }
         )
+    return {
+        "decision_session": decision_session,
+        "eligible": eligible,
+        "permitted_entries": permitted_entries,
+        "entries": entries,
+        "exits": exits,
+        "prices": prices,
+        "liquidity": liquidity,
+        "forecasts": sorted(forecasts, key=lambda item: item["symbol"]),
+    }
+
+
+def formula_session_targets(
+    *,
+    prepared: Mapping[str, pd.DataFrame],
+    decision_session: date,
+    quantities: Mapping[str, Decimal],
+    cash: Decimal,
+    equity: Decimal,
+    instruments: Mapping[Symbol, Instrument],
+    commission_calc: Any = None,
+    eligible_symbols: Sequence[str] | None = None,
+    max_positions: int = 4,
+    max_symbol_weight: Decimal = Decimal("0.25"),
+    max_gross_weight: Decimal = Decimal("0.97"),
+    cash_buffer_ratio: Decimal = Decimal("0.03"),
+    slippage_bps: Decimal = RESEARCH_SLIPPAGE_BPS,
+    minimum_history_rows: int = 120,
+    entry_board_policy: Mapping[str, Any] | None = None,
+    nontrading_symbols: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    """One session decision shared by backtest, paper and account adapters."""
+    held = {str(s): q for s, q in quantities.items() if q > 0}
+    candidates = formula_session_candidates(
+        prepared=prepared,
+        decision_session=decision_session,
+        held_symbols=set(held),
+        eligible_symbols=eligible_symbols,
+        minimum_history_rows=minimum_history_rows,
+        entry_board_policy=entry_board_policy,
+        nontrading_symbols=nontrading_symbols,
+    )
+    entries = candidates["entries"]
+    exits = candidates["exits"]
+    prices = candidates["prices"]
+    liquidity = candidates["liquidity"]
+    forecasts = candidates["forecasts"]
+    permitted_entries = candidates["permitted_entries"]
+    values, lots = {}, {}
+    for symbol in sorted(candidates["eligible"] | set(held)):
+        instrument = instruments.get(Symbol(symbol))
+        if instrument is None:
+            raise ValueError(f"formula_session_instrument_invalid:{symbol}")
+        lots[symbol] = instrument.lot_size
+        if symbol in held:
+            values[symbol] = held[symbol] * prices[symbol]
 
     def buy_cost(symbol: str, price: Decimal, quantity: Decimal) -> Decimal | None:
         return quote_formula_purchase(

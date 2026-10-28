@@ -19,8 +19,11 @@ from server.ai_runtime.contracts import content_fingerprint
 from server.ai_runtime.formula_dsl import (
     FORMULA_AST_CONTRACT,
     evaluate_formula,
-    evaluate_formula_universe,
     validate_formula_ast,
+)
+from server.ai_runtime.formula_portfolio import (
+    formula_session_candidates,
+    prepare_formula_sessions,
 )
 from server.services.controlled_execution.manual_trade_fees import (
     resolve_manual_trade_fee_breakdown,
@@ -76,56 +79,73 @@ def evaluate_strategy_signals(
     maintenance_symbols: list[str],
     held_symbols: set[str],
     market_date: str,
+    prepared: Mapping[str, pd.DataFrame] | None = None,
 ) -> list[dict[str, Any]]:
     signals: list[dict[str, Any]] = []
     if not frames:
         return signals
 
-    # Evaluate across the full frozen deployment scope / frames so that
-    # cross-sectional operators preserve the full-universe rank and distribution.
-    entries, exits, _ = evaluate_formula_universe(
-        formula_ast,
-        frames,
-        universe_size=universe_size,
-    )
+    if prepared is None:
+        prepared = prepare_formula_sessions(
+            formula_ast,
+            frames,
+            universe_size=universe_size,
+        )
 
+    decision_session = date.fromisoformat(market_date)
     candidates = sorted(set(eligible_symbols) | set(maintenance_symbols))
-    eligible_set = set(eligible_symbols)
+
     for symbol in candidates:
         frame = frames.get(symbol)
-        if frame is None or frame.empty or symbol not in entries:
+        if frame is None or frame.empty:
             continue
-        latest = frame.sort_values("timestamp").iloc[-1]
-        latest_date = pd.Timestamp(latest["timestamp"]).date().isoformat()
-        if latest_date != market_date:
+        df = prepared.get(symbol)
+        if (
+            df is None
+            or df.empty
+            or decision_session not in df.index
+            or df.index[-1] != decision_session
+        ):
             raise ValueError(f"formula_market_date_missing:{symbol}")
-        is_held = symbol in held_symbols
-        exit_now = bool(exits[symbol].iloc[-1])
-        entry_now = bool(entries[symbol].iloc[-1])
-        if is_held and exit_now:
-            direction = "sell"
-            signal_weight = 0.0
-        elif not is_held and entry_now and not exit_now and symbol in eligible_set:
-            direction = "buy"
-            signal_weight = target_weight
-        else:
-            continue
-        amount = pd.to_numeric(
-            frame.get("amount", frame["close"] * frame["volume"]),
-            errors="coerce",
-        ).tail(20)
-        liquidity = float(amount.median()) if not amount.empty else 0.0
-        signals.append(
-            {
-                "strategy_id": strategy_id,
-                "symbol": symbol,
-                "direction": direction,
-                "target_weight": float(signal_weight),
-                "frozen_close": float(latest["close"]),
-                "frozen_market_date": market_date,
-                "ranking_liquidity": liquidity if math.isfinite(liquidity) else 0.0,
-            }
-        )
+
+    session_candidates = formula_session_candidates(
+        prepared=prepared,
+        decision_session=decision_session,
+        held_symbols=set(held_symbols) & set(prepared),
+        eligible_symbols=eligible_symbols,
+        minimum_history_rows=1,
+    )
+
+    prices = session_candidates["prices"]
+    liquidity = session_candidates["liquidity"]
+    exits_set = set(session_candidates["exits"])
+    entries_set = set(session_candidates["entries"])
+
+    for symbol in candidates:
+        if symbol in exits_set:
+            signals.append(
+                {
+                    "strategy_id": strategy_id,
+                    "symbol": symbol,
+                    "direction": "sell",
+                    "target_weight": 0.0,
+                    "frozen_close": float(prices[symbol]),
+                    "frozen_market_date": market_date,
+                    "ranking_liquidity": float(liquidity[symbol]),
+                }
+            )
+        elif symbol in entries_set:
+            signals.append(
+                {
+                    "strategy_id": strategy_id,
+                    "symbol": symbol,
+                    "direction": "buy",
+                    "target_weight": float(target_weight),
+                    "frozen_close": float(prices[symbol]),
+                    "frozen_market_date": market_date,
+                    "ranking_liquidity": float(liquidity[symbol]),
+                }
+            )
     return signals
 
 
