@@ -230,3 +230,175 @@ def test_each_symbol_gets_its_own_history_and_previous_target() -> None:
         ("600001", "hold"),
         ("600002", "enter"),
     ]
+
+
+def test_cross_sectional_rank_forecast_multi_stock_does_not_eagerly_eval_fallback() -> (
+    None
+):
+    """Multi-stock formula with cs_rank must calculate via universe without triggering eager fallback error."""
+    source = {
+        "instruments": [
+            {"symbol": "600001", "instrument_type": "stock"},
+            {"symbol": "600002", "instrument_type": "stock"},
+            {"symbol": "600003", "instrument_type": "stock"},
+        ],
+        "strategy_kind": "formula",
+        "minimum_bars": 4,
+        "formula_binding": {
+            "formula_ast": {
+                "schema_version": FORMULA_AST_CONTRACT,
+                "entry": {
+                    "op": "gt",
+                    "left": {
+                        "op": "cs_rank",
+                        "input": {"op": "field", "name": "close"},
+                    },
+                    "right": {"op": "constant", "value": 0.8},
+                },
+                "exit": {"op": "constant", "value": 0},
+                "position_size": {
+                    "op": "max_weight",
+                    "input": {"op": "equal_weight"},
+                    "value": 1.0,
+                },
+            }
+        },
+    }
+    # 3 stocks with closes on final day: 10, 20, 30.
+    # cs_rank: 600001=1/3 (~0.33), 600002=2/3 (~0.67), 600003=3/3 (1.0).
+    # cs_rank > 0.8: only 600003 enters!
+    bars_1 = _bars([10, 10, 10, 10], symbol="600001")
+    bars_2 = _bars([20, 20, 20, 20], symbol="600002")
+    bars_3 = _bars([30, 30, 30, 30], symbol="600003")
+    all_bars = [*bars_1, *bars_2, *bars_3]
+
+    result = build_observation_forecasts(
+        source,
+        all_bars,
+        decision_session=bars_1[-1].session_date,
+        previous_targets={
+            "600001": Decimal("0"),
+            "600002": Decimal("0"),
+            "600003": Decimal("0"),
+        },
+    )
+
+    action_by_sym = {row["symbol"]: row["action"] for row in result}
+    assert action_by_sym == {
+        "600001": "hold",
+        "600002": "hold",
+        "600003": "enter",
+    }
+
+
+def test_cross_sectional_zscore_forecast_multi_stock() -> None:
+    """Multi-stock formula with cs_zscore must select top stock with zscore > 0.5."""
+    source = {
+        "instruments": [
+            {"symbol": "600001", "instrument_type": "stock"},
+            {"symbol": "600002", "instrument_type": "stock"},
+            {"symbol": "600003", "instrument_type": "stock"},
+        ],
+        "strategy_kind": "formula",
+        "minimum_bars": 4,
+        "formula_binding": {
+            "formula_ast": {
+                "schema_version": FORMULA_AST_CONTRACT,
+                "entry": {
+                    "op": "gt",
+                    "left": {
+                        "op": "cs_zscore",
+                        "input": {"op": "field", "name": "close"},
+                    },
+                    "right": {"op": "constant", "value": 0.5},
+                },
+                "exit": {"op": "constant", "value": 0},
+                "position_size": {
+                    "op": "max_weight",
+                    "input": {"op": "equal_weight"},
+                    "value": 1.0,
+                },
+            }
+        },
+    }
+    # 3 stocks with closes 10, 20, 30. Mean=20, std=10.
+    # zscore: 600001=-1.0, 600002=0.0, 600003=+1.0.
+    # zscore > 0.5: only 600003 enters!
+    bars_1 = _bars([10, 10, 10, 10], symbol="600001")
+    bars_2 = _bars([20, 20, 20, 20], symbol="600002")
+    bars_3 = _bars([30, 30, 30, 30], symbol="600003")
+    all_bars = [*bars_1, *bars_2, *bars_3]
+
+    result = build_observation_forecasts(
+        source,
+        all_bars,
+        decision_session=bars_1[-1].session_date,
+        previous_targets={
+            "600001": Decimal("0"),
+            "600002": Decimal("0"),
+            "600003": Decimal("0"),
+        },
+    )
+
+    action_by_sym = {row["symbol"]: row["action"] for row in result}
+    assert action_by_sym == {
+        "600001": "hold",
+        "600002": "hold",
+        "600003": "enter",
+    }
+
+
+def test_cross_sectional_holding_exit_forecast_multi_stock() -> None:
+    """Holding positions with cs_rank < 0.5 exit, while top holding holds."""
+    source = {
+        "instruments": [
+            {"symbol": "600001", "instrument_type": "stock"},
+            {"symbol": "600002", "instrument_type": "stock"},
+            {"symbol": "600003", "instrument_type": "stock"},
+        ],
+        "strategy_kind": "formula",
+        "minimum_bars": 4,
+        "formula_binding": {
+            "formula_ast": {
+                "schema_version": FORMULA_AST_CONTRACT,
+                "entry": {"op": "constant", "value": 0},
+                "exit": {
+                    "op": "lt",
+                    "left": {
+                        "op": "cs_rank",
+                        "input": {"op": "field", "name": "close"},
+                    },
+                    "right": {"op": "constant", "value": 0.5},
+                },
+                "position_size": {
+                    "op": "max_weight",
+                    "input": {"op": "equal_weight"},
+                    "value": 1.0,
+                },
+            }
+        },
+    }
+    # All 3 stocks have existing target weight > 0 (active holding).
+    # Closes: 10, 20, 30. cs_rank: 600001=0.33 (<0.5 -> exit), 600002=0.67 (>0.5 -> hold), 600003=1.0 (>0.5 -> hold).
+    bars_1 = _bars([10, 10, 10, 10], symbol="600001")
+    bars_2 = _bars([20, 20, 20, 20], symbol="600002")
+    bars_3 = _bars([30, 30, 30, 30], symbol="600003")
+    all_bars = [*bars_1, *bars_2, *bars_3]
+
+    result = build_observation_forecasts(
+        source,
+        all_bars,
+        decision_session=bars_1[-1].session_date,
+        previous_targets={
+            "600001": Decimal("0.33"),
+            "600002": Decimal("0.33"),
+            "600003": Decimal("0.33"),
+        },
+    )
+
+    action_by_sym = {row["symbol"]: row["action"] for row in result}
+    assert action_by_sym == {
+        "600001": "exit",
+        "600002": "hold",
+        "600003": "hold",
+    }

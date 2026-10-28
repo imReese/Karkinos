@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { usePreferences } from '../../../shared/preferences/context';
 import { EvidenceState } from '../../../shared/ui/workbench';
@@ -9,6 +9,7 @@ import {
   useReinstateShadowResearchCandidateMutation,
   useRunShadowResearchMutation,
   useShadowResearchAutomationQuery,
+  useShadowResearchWorkerJobsQuery,
   useStrategyPromotionStatesQuery,
   useUpdateShadowResearchPolicyMutation,
   type ShadowResearchAutomationStatus,
@@ -289,6 +290,7 @@ export function ShadowResearchPanel() {
   const { locale } = usePreferences();
   const copy = SHADOW_RESEARCH_COPY[locale];
   const query = useShadowResearchAutomationQuery();
+  const workerJobs = useShadowResearchWorkerJobsQuery();
   const promotionStates = useStrategyPromotionStatesQuery();
   const updatePolicy = useUpdateShadowResearchPolicyMutation();
   const run = useRunShadowResearchMutation();
@@ -312,6 +314,21 @@ export function ShadowResearchPanel() {
   const [reinstateConfirmations, setReinstateConfirmations] = useState<
     Record<string, boolean>
   >({});
+
+  const persistedTasks = useMemo(() => {
+    const tasks: Array<{ id: string; status: string }> = [];
+    if (workerJobs.data?.jobs) {
+      for (const job of workerJobs.data.jobs) {
+        tasks.push({ id: job.job_id, status: job.status });
+      }
+    }
+    if (query.data?.runs) {
+      for (const r of query.data.runs) {
+        tasks.push({ id: r.run_id, status: r.status });
+      }
+    }
+    return tasks;
+  }, [workerJobs.data?.jobs, query.data?.runs]);
 
   useEffect(() => {
     if (!initialized && query.data?.policy) {
@@ -530,6 +547,7 @@ export function ShadowResearchPanel() {
           pending={approve.isPending || pause.isPending || reinstate.isPending}
           promotionStates={promotionStates}
           schedulerRecord={run.isPending ? undefined : run.data}
+          persistedTasks={persistedTasks}
           verifiedResearchWinnerCandidateIds={verifiedCandidateIds.research}
           verifiedWinnerCandidateIds={verifiedCandidateIds.promotion}
         />

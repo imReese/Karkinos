@@ -16,6 +16,7 @@ import { SHADOW_RESEARCH_COPY } from './shadow-research-copy';
 import { CandidateCard } from './shadow-research-view';
 import { StrategyEvolutionLineage } from './strategy-evolution-lineage';
 import { usePublicationPolicy } from '../publication-policy-api';
+import type { PersistedTask, SchedulerRecord } from '../candidate-evidence';
 
 export function ShadowResearchCandidateWorkspace({
   approvals,
@@ -42,6 +43,7 @@ export function ShadowResearchCandidateWorkspace({
   pending,
   promotionStates,
   schedulerRecord,
+  persistedTasks,
   verifiedResearchWinnerCandidateIds,
   verifiedWinnerCandidateIds,
 }: {
@@ -70,12 +72,8 @@ export function ShadowResearchCandidateWorkspace({
   reinstateError?: string | null;
   pending: boolean;
   promotionStates: ReturnType<typeof useStrategyPromotionStatesQuery>;
-  schedulerRecord?: {
-    status?: string | null;
-    model_name?: string | null;
-    model_id?: string | null;
-    available_at?: string | null;
-  } | null;
+  schedulerRecord?: SchedulerRecord | null;
+  persistedTasks?: PersistedTask[] | null;
   verifiedResearchWinnerCandidateIds: Set<string>;
   verifiedWinnerCandidateIds: Set<string>;
 }) {
@@ -290,6 +288,7 @@ export function ShadowResearchCandidateWorkspace({
           onSelectCandidate={setSelectedCandidateId}
           registryControl={registryControl}
           schedulerRecord={schedulerRecord}
+          persistedTasks={persistedTasks}
           selectedCandidateId={selectedCandidate?.candidate_id ?? null}
           verifiedWinnerCandidateIds={verifiedWinnerCandidateIds}
         />

@@ -403,15 +403,17 @@ describe('StrategyEvolutionLineage', () => {
       unmountBlocked();
 
       // With real enqueued record: renders beacon with model name from record
-      renderWithClient(
+      const { unmount: unmountEnqueued } = renderWithClient(
         <StrategyEvolutionLineage
           candidates={[candidate]}
           selectedCandidateId="cand-1"
           onSelectCandidate={() => {}}
           schedulerRecord={{
             status: 'enqueued',
+            job_id: 'job-task-1',
             model_name: 'DeepSeek V4.1 Flash',
           }}
+          persistedTasks={[{ id: 'job-task-1', status: 'pending' }]}
         />,
       );
       expect(screen.getByTestId('strategy-lineage-queued-beacon')).toBeTruthy();
@@ -421,6 +423,58 @@ describe('StrategyEvolutionLineage', () => {
         ),
       ).toBeTruthy();
       expect(screen.getByText(/已排队|Queued/)).toBeTruthy();
+      unmountEnqueued();
+
+      // Lifecycle progression: running task suppresses queued beacon
+      const { unmount: unmountRunning } = renderWithClient(
+        <StrategyEvolutionLineage
+          candidates={[candidate]}
+          selectedCandidateId="cand-1"
+          onSelectCandidate={() => {}}
+          schedulerRecord={{
+            status: 'enqueued',
+            job_id: 'job-task-1',
+            model_name: 'DeepSeek V4.1 Flash',
+          }}
+          persistedTasks={[{ id: 'job-task-1', status: 'running' }]}
+        />,
+      );
+      expect(screen.queryByTestId('strategy-lineage-queued-beacon')).toBeNull();
+      unmountRunning();
+
+      // Lifecycle progression: completed task suppresses queued beacon
+      const { unmount: unmountCompleted } = renderWithClient(
+        <StrategyEvolutionLineage
+          candidates={[candidate]}
+          selectedCandidateId="cand-1"
+          onSelectCandidate={() => {}}
+          schedulerRecord={{
+            status: 'enqueued',
+            job_id: 'job-task-1',
+            model_name: 'DeepSeek V4.1 Flash',
+          }}
+          persistedTasks={[{ id: 'job-task-1', status: 'completed' }]}
+        />,
+      );
+      expect(screen.queryByTestId('strategy-lineage-queued-beacon')).toBeNull();
+      unmountCompleted();
+
+      // Lifecycle progression: failed task suppresses queued beacon
+      const { unmount: unmountFailed } = renderWithClient(
+        <StrategyEvolutionLineage
+          candidates={[candidate]}
+          selectedCandidateId="cand-1"
+          onSelectCandidate={() => {}}
+          schedulerRecord={{
+            status: 'enqueued',
+            job_id: 'job-task-1',
+            model_name: 'DeepSeek V4.1 Flash',
+          }}
+          persistedTasks={[{ id: 'job-task-1', status: 'failed' }]}
+        />,
+      );
+      expect(screen.queryByTestId('strategy-lineage-queued-beacon')).toBeNull();
+      unmountFailed();
     });
 
     it('6. 两代对比差值: suppresses delta when either current or prior generation evidence is invalid', async () => {

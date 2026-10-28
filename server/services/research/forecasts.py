@@ -107,15 +107,15 @@ def build_observation_forecasts(
         if source["strategy_kind"] == "dual_ma":
             action = _dual_ma_action(source["parameters"], history)
         elif source["strategy_kind"] == "formula":
-            action = formula_actions.get(
-                symbol,
-                _formula_action(
+            if symbol in formula_actions:
+                action = formula_actions[symbol]
+            else:
+                action = _formula_action(
                     source["formula_binding"]["formula_ast"],
                     history,
                     universe_size=len(symbols),
                     active=previous_targets[symbol] > 0,
-                ),
-            )
+                )
         elif source["strategy_kind"] == "etf_rotation":
             weight = rotation.get(symbol) if rotation is not None else None
             action = "hold" if weight is None else "enter" if weight > 0 else "exit"

@@ -454,12 +454,46 @@ export type ShadowResearchRunReceipt = {
   schema_version: 'karkinos.ai.shadow_research_job_scheduler.v1';
   status: 'enqueued' | 'already_enqueued' | 'blocked' | 'disabled';
   failure_code: string | null;
+  job_id?: string;
+  run_id?: string;
   available_at?: string;
   provider_call_performed: false;
   broker_order_created: false;
   execution_authority_granted: false;
   capital_authority_granted: false;
 };
+
+export type ShadowResearchWorkerJob = {
+  job_id: string;
+  run_date: string;
+  status: string;
+  available_at: string | null;
+  deadline_at: string | null;
+  attempt_count: number;
+  lease_generation: number;
+  takeover_count: number;
+  lease_expires_at: string | null;
+  last_result: Record<string, unknown> | null;
+};
+
+export type ShadowResearchWorkerStatus = {
+  schema_version: 'karkinos.ai.shadow_research_worker_status.v1';
+  jobs: ShadowResearchWorkerJob[];
+  latest_job: ShadowResearchWorkerJob | null;
+};
+
+export function useShadowResearchWorkerJobsQuery() {
+  return useQuery({
+    queryKey: ['ai-shadow-research-worker-jobs'],
+    queryFn: () =>
+      apiClient<ShadowResearchWorkerStatus>(
+        '/api/ai/strategy-research/shadow-automation/worker-jobs',
+      ),
+    refetchOnWindowFocus: true,
+    refetchInterval: visiblePersistedProjectionRefetchInterval,
+    staleTime: 5_000,
+  });
+}
 
 export function useRunShadowResearchMutation() {
   const queryClient = useQueryClient();

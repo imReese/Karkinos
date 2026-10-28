@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  formatCandidateTitle,
   formatCandidateOptionLabel,
+  formatCandidateTitle,
   formatDraftSummaryName,
   formatModelDisplayName,
   resolveCandidateEngine,
@@ -53,78 +53,55 @@ function makeMockCandidate(
 }
 
 describe('candidate-display', () => {
-  it('formats Gen 7 DeepSeek strategy title and option correctly', () => {
-    const c7 = makeMockCandidate('ai-strategy-draft-deepseek-v7-promoted', 7);
-    expect(formatCandidateTitle(c7, true)).toBe('Gen 7 · 缩量超跌均值回归策略');
-    expect(formatCandidateTitle(c7, false)).toBe(
-      'Gen 7 · Deep Pullback Reversion Strategy',
+  it('formats strategy title from economic hypothesis, never guessing from draft ID', () => {
+    // Hypothesis is prioritized, even if draft ID contains v7, v6, v5
+    const c7 = makeMockCandidate(
+      'ai-strategy-draft-deepseek-v7-promoted',
+      7,
+      '缩量超跌均值回归策略',
+      'deepseek-flash',
     );
+    expect(formatCandidateTitle(c7, true)).toBe('Gen 7 · 缩量超跌均值回归策略');
     expect(resolveCandidateEngine(c7)).toBe('DeepSeek V4.1 Flash');
     expect(formatCandidateOptionLabel(c7, true)).toBe(
       'Gen 7 · 缩量超跌均值回归策略 (DeepSeek V4.1 Flash)',
     );
-  });
 
-  it('formats Gen 6 Gemini strategy title correctly', () => {
-    const c6 = makeMockCandidate('ai-strategy-draft-gemini-v6-promoted', 6);
-    expect(formatCandidateTitle(c6, true)).toBe('Gen 6 · 量价共振波动防御策略');
-    expect(resolveCandidateEngine(c6)).toBe('Gemini 3.8 Flash');
-    expect(formatCandidateOptionLabel(c6, true)).toBe(
-      'Gen 6 · 量价共振波动防御策略 (Gemini 3.8 Flash)',
+    // When draft ID contains v5 but hypothesis is something else, hypothesis MUST win
+    const c5 = makeMockCandidate(
+      'ai-strategy-draft-gemini-v5-custom',
+      5,
+      '真实研究假设：高频量价共振反转',
+      'gemini-3.8-flash',
     );
-  });
-
-  it('formats Gen 5 Gemini strategy title correctly', () => {
-    const c5 = makeMockCandidate('ai-strategy-draft-gemini-v5-promoted', 5);
-    expect(formatCandidateTitle(c5, true)).toBe(
-      'Gen 5 · 中周期均线趋势回踩策略',
-    );
+    expect(formatCandidateTitle(c5, true)).toBe('Gen 5 · 高频量价共振反转');
     expect(resolveCandidateEngine(c5)).toBe('Gemini 3.8 Flash');
+
+    // When no hypothesis is provided, draft ID acts strictly as identifier, never guessing strategy type
+    const cNoHypo = makeMockCandidate('ai-strategy-draft-v5-opaque-1234', 5);
+    expect(formatCandidateTitle(cNoHypo, true)).toBe(
+      'Gen 5 · 策略候选 v5-opaqu',
+    );
+    expect(formatCandidateTitle(cNoHypo, false)).toBe(
+      'Gen 5 · Candidate v5-opaqu',
+    );
   });
 
-  it('formats draft summary names for parent lineages', () => {
-    expect(
-      formatDraftSummaryName('ai-strategy-draft-gemini-v6-promoted', true),
-    ).toBe('Gen 6 · Gemini 3.8 Flash');
-    expect(
-      formatDraftSummaryName('ai-strategy-draft-deepseek-v7-promoted', true),
-    ).toBe('Gen 7 · DeepSeek V4.1 Flash');
-    expect(formatDraftSummaryName(null, true)).toBe('无记录');
-    expect(
-      formatDraftSummaryName('ai-strategy-draft-51a80e75-gen4', true),
-    ).toBe('Gen 4 · DeepSeek V4 Pro');
-    expect(
-      formatDraftSummaryName('ai-strategy-draft-870abf84-gen3', true),
-    ).toBe('Gen 3 · DeepSeek V4 Pro');
-    expect(
-      formatDraftSummaryName('ai-strategy-draft-1952a2c4-gen2', true),
-    ).toBe('Gen 2 · DeepSeek V4 Pro');
-    expect(
-      formatDraftSummaryName('ai-strategy-draft-14876873-gen1', true),
-    ).toBe('Gen 1 · DeepSeek V4 Pro');
-  });
+  it('preserves exact raw model values for unknown models like gemini-2.5-pro', () => {
+    // Crucial requirement: gemini-2.5-pro must NOT be formatted as Gemini 3.8 Flash
+    expect(formatModelDisplayName('gemini-2.5-pro')).toBe('gemini-2.5-pro');
+    expect(formatModelDisplayName('gemini-2.0-flash')).toBe('gemini-2.0-flash');
+    expect(formatModelDisplayName('deepseek-r1-custom')).toBe(
+      'deepseek-r1-custom',
+    );
 
-  it('formats Gen 1-4 DeepSeek V4 Pro strategy candidates correctly', () => {
-    const c4 = makeMockCandidate('ai-strategy-draft-51a80e75-gen4', 4);
-    expect(resolveCandidateEngine(c4)).toBe('DeepSeek V4 Pro');
-    expect(formatCandidateOptionLabel(c4, true)).toContain('DeepSeek V4 Pro');
-
-    const c3 = makeMockCandidate('ai-strategy-draft-870abf84-gen3', 3);
-    expect(resolveCandidateEngine(c3)).toBe('DeepSeek V4 Pro');
-
-    const c2 = makeMockCandidate('ai-strategy-draft-1952a2c4-gen2', 2);
-    expect(resolveCandidateEngine(c2)).toBe('DeepSeek V4 Pro');
-
-    const c1 = makeMockCandidate('ai-strategy-draft-14876873-gen1', 1);
-    expect(resolveCandidateEngine(c1)).toBe('DeepSeek V4 Pro');
-  });
-
-  it('formats model display names from provider or session registration correctly', () => {
+    // Known exact aliases still format nicely
     expect(
       formatModelDisplayName(
         'karkinos.strategy_research.hypothesis.deepseek.v1:deepseek-v4-pro',
       ),
     ).toBe('DeepSeek V4 Pro');
+    expect(formatModelDisplayName('deepseek-v4-pro')).toBe('DeepSeek V4 Pro');
     expect(formatModelDisplayName('deepseek-flash')).toBe(
       'DeepSeek V4.1 Flash',
     );
@@ -134,46 +111,29 @@ describe('candidate-display', () => {
     );
   });
 
-  it('prefers authoritative model_id directly from candidate over heuristics', () => {
+  it('resolves candidate engine strictly from model_id or provider_id without guessing from draft ID', () => {
     const candidate = makeMockCandidate(
       'ai-strategy-draft-opaque-hash-1234',
       1,
       undefined,
-      'karkinos.strategy_research.hypothesis.deepseek.v1:deepseek-v4-pro',
+      'gemini-2.5-pro',
     );
-    expect(resolveCandidateEngine(candidate)).toBe('DeepSeek V4 Pro');
+    expect(resolveCandidateEngine(candidate)).toBe('gemini-2.5-pro');
 
-    const geminiCandidate = makeMockCandidate(
-      'ai-strategy-draft-opaque-hash-5678',
+    const noModelCandidate = makeMockCandidate(
+      'ai-strategy-draft-v5-random',
       1,
-      undefined,
-      'gemini-3.8-flash',
     );
-    expect(resolveCandidateEngine(geminiCandidate)).toBe('Gemini 3.8 Flash');
+    expect(resolveCandidateEngine(noModelCandidate)).toBe('—');
   });
 
-  it('handles generic candidates gracefully with clean fallback', () => {
-    const fallback = makeMockCandidate(
-      'ai-strategy-draft-abc12345xyz',
-      undefined,
-      '在等权分配的股票池中捕捉突破',
-    );
-    expect(formatCandidateTitle(fallback, true)).toContain(
-      '在等权分配的股票池中捕捉突破',
-    );
-  });
-
-  it('does not guess model name or strategy title merely by generation number', () => {
-    const candidateGen1 = makeMockCandidate('opaque-draft-alpha', 1);
-    expect(resolveCandidateEngine(candidateGen1)).toBe('—');
-    expect(formatCandidateTitle(candidateGen1, true)).toBe(
-      'Gen 1 · 策略候选 opaque-d',
-    );
-
-    const candidateGen7 = makeMockCandidate('opaque-draft-beta', 7);
-    expect(resolveCandidateEngine(candidateGen7)).toBe('—');
-    expect(formatCandidateTitle(candidateGen7, true)).toBe(
-      'Gen 7 · 策略候选 opaque-d',
-    );
+  it('formats draft summary names as clean identifiers without guessing models', () => {
+    expect(formatDraftSummaryName(null, true)).toBe('无记录');
+    expect(
+      formatDraftSummaryName('ai-strategy-draft-gemini-v6-promoted', true),
+    ).toBe('gemini-v6-pr…');
+    expect(
+      formatDraftSummaryName('ai-strategy-draft-51a80e75-gen4', true),
+    ).toBe('51a80e75-gen…');
   });
 });

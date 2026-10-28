@@ -3,7 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatPercent } from '../../../shared/format';
 import { usePreferences } from '../../../shared/preferences/context';
 import { useBacktestResultQuery } from '../ai-research-feature-boundary';
-import { evaluateCandidateEvidence } from '../candidate-evidence';
+import {
+  evaluateCandidateEvidence,
+  isSchedulerRecordActiveQueued,
+  type PersistedTask,
+  type SchedulerRecord,
+} from '../candidate-evidence';
 import type { ShadowResearchCandidate } from '../shadow-research-api';
 import {
   formatCandidateOptionLabel,
@@ -20,6 +25,7 @@ export function StrategyEvolutionLineage({
   verifiedWinnerCandidateIds = new Set(),
   registryControl,
   schedulerRecord,
+  persistedTasks,
 }: {
   candidates: ShadowResearchCandidate[];
   currentCandidates?: ShadowResearchCandidate[];
@@ -28,13 +34,8 @@ export function StrategyEvolutionLineage({
   onSelectCandidate: (candidateId: string) => void;
   verifiedWinnerCandidateIds?: Set<string>;
   registryControl?: React.ReactNode;
-  schedulerRecord?: {
-    status?: string | null;
-    failure_code?: string | null;
-    model_name?: string | null;
-    model_id?: string | null;
-    available_at?: string | null;
-  } | null;
+  schedulerRecord?: SchedulerRecord | null;
+  persistedTasks?: PersistedTask[] | null;
 }) {
   const { locale } = usePreferences();
   const zh = locale === 'zh';
@@ -294,12 +295,10 @@ export function StrategyEvolutionLineage({
           );
         })}
 
-        {schedulerRecord &&
-        (schedulerRecord.status === 'enqueued' ||
-          schedulerRecord.status === 'already_enqueued') ? (
+        {isSchedulerRecordActiveQueued(schedulerRecord, persistedTasks) ? (
           <QueuedBeacon
             lineageLength={lineageChain.length}
-            schedulerRecord={schedulerRecord}
+            schedulerRecord={schedulerRecord!}
             totalIterations={totalIterations}
             zh={zh}
           />

@@ -90,3 +90,47 @@ export function evaluateCandidateEvidence(
     metrics,
   };
 }
+
+export type SchedulerRecord = {
+  status?: string | null;
+  failure_code?: string | null;
+  model_name?: string | null;
+  model_id?: string | null;
+  available_at?: string | null;
+  job_id?: string | null;
+  run_id?: string | null;
+};
+
+export type PersistedTask = {
+  id: string;
+  status: string;
+};
+
+/**
+ * Validates whether an enqueued scheduler record is actively pending/queued.
+ * If the associated persisted task has progressed to 'running', 'completed',
+ * or 'failed', the queued beacon must no longer be shown.
+ */
+export function isSchedulerRecordActiveQueued(
+  record?: SchedulerRecord | null,
+  persistedTasks?: PersistedTask[] | null,
+): boolean {
+  if (!record) return false;
+  const isEnqueued =
+    record.status === 'enqueued' || record.status === 'already_enqueued';
+  if (!isEnqueued) return false;
+
+  const taskId = record.job_id || record.run_id;
+  if (taskId && persistedTasks && persistedTasks.length > 0) {
+    const matched = persistedTasks.find((t) => t.id === taskId);
+    if (matched) {
+      return (
+        matched.status === 'enqueued' ||
+        matched.status === 'already_enqueued' ||
+        matched.status === 'pending'
+      );
+    }
+  }
+
+  return true;
+}
