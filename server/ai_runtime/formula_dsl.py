@@ -281,6 +281,7 @@ def evaluate_formula(
         _evaluate_expression(
             normalized["entry"],
             frame,
+            universe_size=universe_size,
             symbol=symbol,
             cross_sectional_frames=cross_sectional_frames,
             _cs_cache=_cs_cache,
@@ -292,6 +293,7 @@ def evaluate_formula(
         _evaluate_expression(
             normalized["exit"],
             frame,
+            universe_size=universe_size,
             symbol=symbol,
             cross_sectional_frames=cross_sectional_frames,
             _cs_cache=_cs_cache,
@@ -428,6 +430,7 @@ def _evaluate_expression(
     value: Mapping[str, Any],
     frame: pd.DataFrame,
     *,
+    universe_size: int = 1,
     symbol: str = "_primary_",
     cross_sectional_frames: Mapping[str, pd.DataFrame] | None = None,
     _cs_cache: dict[str, dict[str, pd.Series]] | None = None,
@@ -442,6 +445,7 @@ def _evaluate_expression(
         item = _evaluate_expression(
             value["input"],
             frame,
+            universe_size=universe_size,
             symbol=symbol,
             cross_sectional_frames=cross_sectional_frames,
             _cs_cache=_cs_cache,
@@ -463,6 +467,7 @@ def _evaluate_expression(
         item = _evaluate_expression(
             value["input"],
             frame,
+            universe_size=universe_size,
             symbol=symbol,
             cross_sectional_frames=cross_sectional_frames,
             _cs_cache=_cs_cache,
@@ -490,6 +495,7 @@ def _evaluate_expression(
         left = _evaluate_expression(
             value["left"],
             frame,
+            universe_size=universe_size,
             symbol=symbol,
             cross_sectional_frames=cross_sectional_frames,
             _cs_cache=_cs_cache,
@@ -497,6 +503,7 @@ def _evaluate_expression(
         right = _evaluate_expression(
             value["right"],
             frame,
+            universe_size=universe_size,
             symbol=symbol,
             cross_sectional_frames=cross_sectional_frames,
             _cs_cache=_cs_cache,
@@ -529,15 +536,21 @@ def _evaluate_expression(
         return ~_evaluate_expression(
             value["input"],
             frame,
+            universe_size=universe_size,
             symbol=symbol,
             cross_sectional_frames=cross_sectional_frames,
             _cs_cache=_cs_cache,
         ).fillna(False).astype(bool)
     if op in _CROSS_SECTIONAL_OPERATORS:
         if cross_sectional_frames is None or len(cross_sectional_frames) <= 1:
+            if universe_size > 1:
+                raise FormulaValidationError(
+                    "cross_sectional_context_required", f"formula_ast.{op}"
+                )
             item = _evaluate_expression(
                 value["input"],
                 frame,
+                universe_size=universe_size,
                 symbol=symbol,
                 cross_sectional_frames=cross_sectional_frames,
                 _cs_cache=_cs_cache,
@@ -556,6 +569,7 @@ def _evaluate_expression(
             sym: _evaluate_expression(
                 value["input"],
                 s_frame,
+                universe_size=universe_size,
                 symbol=sym,
                 cross_sectional_frames=cross_sectional_frames,
                 _cs_cache=_cs_cache,

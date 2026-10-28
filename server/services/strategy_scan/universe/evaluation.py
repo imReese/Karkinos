@@ -19,6 +19,7 @@ from server.ai_runtime.contracts import content_fingerprint
 from server.ai_runtime.formula_dsl import (
     FORMULA_AST_CONTRACT,
     evaluate_formula,
+    evaluate_formula_universe,
     validate_formula_ast,
 )
 from server.services.controlled_execution.manual_trade_fees import (
@@ -77,27 +78,34 @@ def evaluate_strategy_signals(
     market_date: str,
 ) -> list[dict[str, Any]]:
     signals: list[dict[str, Any]] = []
+    if not frames:
+        return signals
+
+    # Evaluate across the full frozen deployment scope / frames so that
+    # cross-sectional operators preserve the full-universe rank and distribution.
+    entries, exits, _ = evaluate_formula_universe(
+        formula_ast,
+        frames,
+        universe_size=universe_size,
+    )
+
     candidates = sorted(set(eligible_symbols) | set(maintenance_symbols))
+    eligible_set = set(eligible_symbols)
     for symbol in candidates:
         frame = frames.get(symbol)
-        if frame is None or frame.empty:
+        if frame is None or frame.empty or symbol not in entries:
             continue
-        entry, exit_signal, _provider_sizing_ignored = evaluate_formula(
-            formula_ast,
-            frame,
-            universe_size=universe_size,
-        )
         latest = frame.sort_values("timestamp").iloc[-1]
         latest_date = pd.Timestamp(latest["timestamp"]).date().isoformat()
         if latest_date != market_date:
             raise ValueError(f"formula_market_date_missing:{symbol}")
         is_held = symbol in held_symbols
-        exit_now = bool(exit_signal.iloc[-1])
-        entry_now = bool(entry.iloc[-1])
+        exit_now = bool(exits[symbol].iloc[-1])
+        entry_now = bool(entries[symbol].iloc[-1])
         if is_held and exit_now:
             direction = "sell"
             signal_weight = 0.0
-        elif not is_held and entry_now and not exit_now:
+        elif not is_held and entry_now and not exit_now and symbol in eligible_set:
             direction = "buy"
             signal_weight = target_weight
         else:

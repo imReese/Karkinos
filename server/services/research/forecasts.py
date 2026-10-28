@@ -13,7 +13,7 @@ from core.event_bus import EventBus
 from core.events import MarketEvent, SignalEvent
 from core.types import Symbol
 from data.market.model import DailyBarObservation
-from server.ai_runtime.formula_dsl import evaluate_formula
+from server.ai_runtime.formula_dsl import evaluate_formula, evaluate_formula_universe
 from strategy.builtins.dual_ma import DualMAStrategy
 from strategy.builtins.etf_rotation import EtfRotationStrategy
 
@@ -56,6 +56,45 @@ def build_observation_forecasts(
         if source["strategy_kind"] == "etf_rotation"
         else None
     )
+    formula_actions: dict[str, str] = {}
+    if source["strategy_kind"] == "formula":
+        formula_frames = {
+            symbol: pd.DataFrame(
+                [
+                    {
+                        "timestamp": bar.event_time,
+                        **{
+                            name: float(getattr(bar, name))
+                            for name in ("open", "high", "low", "close", "volume")
+                        },
+                    }
+                    for bar in sorted(by_symbol[symbol], key=lambda b: b.session_date)
+                ]
+            )
+            for symbol in symbols
+            if len(by_symbol[symbol]) >= source["minimum_bars"]
+            and sorted(by_symbol[symbol], key=lambda b: b.session_date)[-1].session_date
+            == decision_session
+            and len({b.session_date for b in by_symbol[symbol]})
+            == len(by_symbol[symbol])
+        }
+        if len(formula_frames) == len(symbols):
+            entries, exits, _ = evaluate_formula_universe(
+                source["formula_binding"]["formula_ast"],
+                formula_frames,
+                universe_size=len(symbols),
+            )
+            for symbol in symbols:
+                active = previous_targets[symbol] > 0
+                exit_now = bool(exits[symbol].iloc[-1])
+                entry_now = bool(entries[symbol].iloc[-1])
+                if active and exit_now:
+                    formula_actions[symbol] = "exit"
+                elif not active and entry_now and not exit_now:
+                    formula_actions[symbol] = "enter"
+                else:
+                    formula_actions[symbol] = "hold"
+
     forecasts = []
     for symbol in symbols:
         history = sorted(by_symbol[symbol], key=lambda bar: bar.session_date)
@@ -68,11 +107,14 @@ def build_observation_forecasts(
         if source["strategy_kind"] == "dual_ma":
             action = _dual_ma_action(source["parameters"], history)
         elif source["strategy_kind"] == "formula":
-            action = _formula_action(
-                source["formula_binding"]["formula_ast"],
-                history,
-                universe_size=len(symbols),
-                active=previous_targets[symbol] > 0,
+            action = formula_actions.get(
+                symbol,
+                _formula_action(
+                    source["formula_binding"]["formula_ast"],
+                    history,
+                    universe_size=len(symbols),
+                    active=previous_targets[symbol] > 0,
+                ),
             )
         elif source["strategy_kind"] == "etf_rotation":
             weight = rotation.get(symbol) if rotation is not None else None

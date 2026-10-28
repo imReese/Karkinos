@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 
-from server.ai_runtime.formula_dsl import evaluate_formula
+from server.ai_runtime.formula_dsl import evaluate_formula, evaluate_formula_universe
 from server.contracts.content_identity import content_fingerprint
 
 NORMALIZED_RESEARCH_OPERATION_PREVIEW_SCHEMA = (
@@ -105,6 +105,8 @@ def build_normalized_research_operation_preview(
     entry_symbols: list[tuple[str, str]] = []
     exit_symbols: list[tuple[str, str]] = []
     observed_at: set[str] = set()
+    valid_frames: dict[str, pd.DataFrame] = {}
+    timestamp_texts: dict[str, str] = {}
 
     for symbol, raw_frame in sorted(frames.items()):
         if not isinstance(raw_frame, pd.DataFrame) or raw_frame.empty:
@@ -119,23 +121,32 @@ def build_normalized_research_operation_preview(
             if timestamp.date().isoformat() != research_window_end_date:
                 blockers.append(f"frozen_bar_end_date_mismatch:{symbol}")
                 continue
-            entry, exit_signal, _ = evaluate_formula(
-                formula_ast,
-                frame,
-                universe_size=len(frames),
-            )
+            timestamp_text = timestamp.isoformat()
+            observed_at.add(timestamp_text)
+            valid_frames[symbol] = frame
+            timestamp_texts[symbol] = timestamp_text
         except Exception:
             blockers.append(f"formula_final_bar_evaluation_failed:{symbol}")
             continue
-        timestamp_text = timestamp.isoformat()
-        observed_at.add(timestamp_text)
-        if bool(exit_signal.iloc[-1]):
-            exit_symbols.append((symbol, timestamp_text))
-        elif bool(entry.iloc[-1]):
-            entry_symbols.append((symbol, timestamp_text))
 
     if len(observed_at) > 1:
         blockers.append("frozen_bar_timestamp_mismatch")
+
+    if not blockers and valid_frames:
+        try:
+            entries, exits, _ = evaluate_formula_universe(
+                formula_ast,
+                valid_frames,
+                universe_size=len(frames),
+            )
+            for symbol, timestamp_text in timestamp_texts.items():
+                if bool(exits[symbol].iloc[-1]):
+                    exit_symbols.append((symbol, timestamp_text))
+                elif bool(entries[symbol].iloc[-1]):
+                    entry_symbols.append((symbol, timestamp_text))
+        except Exception:
+            for symbol in valid_frames:
+                blockers.append(f"formula_final_bar_evaluation_failed:{symbol}")
 
     operations: list[dict[str, Any]] = []
     if not blockers:
