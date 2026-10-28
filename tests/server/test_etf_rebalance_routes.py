@@ -55,12 +55,15 @@ def isolated_etf_market_data(tmp_path: Path):
         df.to_csv(data_dir / f"{sym}.csv", index=False)
 
     original_dir = EtfRotationAutomationService.default_data_dir
+    original_cal = EtfRotationAutomationService.default_trading_calendar
     EtfRotationAutomationService.default_data_dir = data_dir
+    EtfRotationAutomationService.default_trading_calendar = tuple(dates)
     EtfRotationAutomationService.reset_state()
 
     yield
 
     EtfRotationAutomationService.default_data_dir = original_dir
+    EtfRotationAutomationService.default_trading_calendar = original_cal
     EtfRotationAutomationService.reset_state()
 
 
@@ -705,6 +708,13 @@ def test_stale_plan_cache_invalidated_when_market_data_advances(
     data_dir = EtfRotationAutomationService.default_data_dir
     assert data_dir is not None
     new_date_str = "2026-05-15"
+    if EtfRotationAutomationService.default_trading_calendar is not None:
+        EtfRotationAutomationService.set_trading_calendar(
+            [
+                *EtfRotationAutomationService.default_trading_calendar,
+                pd.Timestamp(new_date_str),
+            ]
+        )
     for p in data_dir.glob("*.csv"):
         df = pd.read_csv(p)
         last_row = df.iloc[-1].copy()
@@ -1317,3 +1327,168 @@ def test_etf_rotation_missing_single_day_blocks_and_does_not_shift_cadence(
     missing_err = str(exc_info.value)
     assert "512890" in missing_err
     assert dates[2].strftime("%Y-%m-%d") in missing_err
+
+
+def test_etf_rotation_all_etfs_missing_intermediate_day_blocks_and_does_not_shift_cadence(
+    tmp_path: Path,
+):
+    """Regression test: all ETFs missing a common intermediate trading day must fail closed.
+
+    If 8 files exist across 6 trading days, but ALL ETFs simultaneously miss Day 3,
+    the system must not take the union of files and squash 6 days into 5 days
+    (which would falsely make Day 6 a rebalance day and generate orders).
+    It must consult the independent trading calendar and block with missing dates.
+    """
+    data_dir = tmp_path / "all_missing_day_etfs"
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    dates = pd.bdate_range("2026-01-05", periods=6)
+    symbols = [
+        "512890",
+        "513100",
+        "518880",
+        "513500",
+        "510500",
+        "159915",
+        "510300",
+        "511010",
+    ]
+
+    # Every ETF drops Day 3 (dates[2])
+    files_dates = dates.delete(2)
+    for sym in symbols:
+        n = len(files_dates)
+        df = pd.DataFrame(
+            {
+                "timestamp": files_dates,
+                "open": [10.0] * n,
+                "high": [10.5] * n,
+                "low": [9.5] * n,
+                "close": [10.0] * n,
+                "volume": [1000000] * n,
+            }
+        )
+        df.to_csv(data_dir / f"{sym}.csv", index=False)
+
+    svc = EtfRotationAutomationService(data_dir=data_dir, trading_calendar=dates)
+    with pytest.raises(
+        ValueError, match="etf_rotation_universe_dates_incomplete"
+    ) as exc_info:
+        svc.load_aligned_market_data()
+
+    missing_err = str(exc_info.value)
+    missing_day_str = dates[2].strftime("%Y-%m-%d")
+    assert missing_day_str in missing_err
+    # Every ETF should be reported as missing Day 3
+    for sym in symbols:
+        assert sym in missing_err
+
+    # Evaluating rebalance must also block with the same error rather than generating Day 6 orders
+    with pytest.raises(ValueError, match="etf_rotation_universe_dates_incomplete"):
+        svc.evaluate_rebalance()
+
+
+def test_etf_rotation_missing_initial_segment_blocks_and_does_not_shift_start(
+    tmp_path: Path,
+):
+    """File missing its initial segment must block rather than shifting common start."""
+    data_dir = tmp_path / "missing_initial_bars_etfs"
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    dates = pd.bdate_range("2026-01-05", periods=6)
+    symbols = [
+        "512890",
+        "513100",
+        "518880",
+        "513500",
+        "510500",
+        "159915",
+        "510300",
+        "511010",
+    ]
+
+    for sym in symbols:
+        # 510300 (listed in 2012) is missing Day 1 and Day 2 (starts on Day 3)
+        sym_dates = dates[2:] if sym == "510300" else dates
+        n = len(sym_dates)
+        df = pd.DataFrame(
+            {
+                "timestamp": sym_dates,
+                "open": [10.0] * n,
+                "high": [10.5] * n,
+                "low": [9.5] * n,
+                "close": [10.0] * n,
+                "volume": [1000000] * n,
+            }
+        )
+        df.to_csv(data_dir / f"{sym}.csv", index=False)
+
+    svc = EtfRotationAutomationService(data_dir=data_dir, trading_calendar=dates)
+    with pytest.raises(
+        ValueError, match="etf_rotation_universe_dates_incomplete"
+    ) as exc_info:
+        svc.load_aligned_market_data()
+
+    missing_err = str(exc_info.value)
+    assert "initial segment lost" in missing_err
+    assert "510300" in missing_err
+    assert dates[0].strftime("%Y-%m-%d") in missing_err
+    assert dates[1].strftime("%Y-%m-%d") in missing_err
+
+
+def test_dashboard_status_returns_not_rebalance_due_on_non_rebalance_day(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """API execution_status must return not_rebalance_due instead of portfolio_balanced on non-rebalance days."""
+    dates = pd.bdate_range("2026-01-05", periods=6)
+    symbols = [
+        "512890",
+        "513100",
+        "518880",
+        "513500",
+        "510500",
+        "159915",
+        "510300",
+        "511010",
+    ]
+    data_dir = tmp_path / "complete_6d_etfs"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    for sym in symbols:
+        n = len(dates)
+        df = pd.DataFrame(
+            {
+                "timestamp": dates,
+                "open": [10.0] * n,
+                "high": [10.5] * n,
+                "low": [9.5] * n,
+                "close": [10.0] * n,
+                "volume": [1000000] * n,
+            }
+        )
+        df.to_csv(data_dir / f"{sym}.csv", index=False)
+
+    svc = EtfRotationAutomationService(data_dir=data_dir, trading_calendar=dates)
+    # Day 6 is not a rebalance day
+    summary = svc.evaluate_rebalance()
+    assert summary["is_rebalance_due"] is False
+    assert len(summary["orders"]) == 0
+
+    monkeypatch.setattr(EtfRotationAutomationService, "default_data_dir", data_dir)
+    monkeypatch.setattr(
+        EtfRotationAutomationService, "default_trading_calendar", tuple(dates)
+    )
+    monkeypatch.setattr(EtfRotationAutomationService, "_cached_summary", summary)
+    monkeypatch.setattr(
+        EtfRotationAutomationService, "_plan_session_is_stale", lambda s: False
+    )
+
+    dash = svc.get_dashboard_view()
+    assert dash["execution_status"] == "not_rebalance_due"
+
+    # Conversely, if is_rebalance_due was True with 0 orders, it returns portfolio_balanced
+    due_summary = dict(summary)
+    due_summary["is_rebalance_due"] = True
+    due_summary["rebalance_triggered"] = True
+    monkeypatch.setattr(EtfRotationAutomationService, "_cached_summary", due_summary)
+    dash_due = svc.get_dashboard_view()
+    assert dash_due["execution_status"] == "portfolio_balanced"

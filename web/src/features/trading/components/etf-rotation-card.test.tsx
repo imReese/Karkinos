@@ -343,6 +343,7 @@ test('requires explicit plan calculation for a cold dashboard and keeps executio
 
 test('distinguishes between non-rebalance day and balanced target holding for empty orders', () => {
   const nonRebalanceData = makeFixtureData({
+    execution_status: 'not_rebalance_due',
     rebalance: {
       ...makeFixtureData().rebalance!,
       orders_count: 0,
@@ -359,8 +360,10 @@ test('distinguishes between non-rebalance day and balanced target holding for em
   expect(
     screen.getByText('今日非策略调仓日，维持现有持仓，无调仓交易。'),
   ).toBeDefined();
+  expect(screen.getByText('今日非调仓日')).toBeDefined();
 
   const dueBalancedData = makeFixtureData({
+    execution_status: 'portfolio_balanced',
     rebalance: {
       ...makeFixtureData().rebalance!,
       orders_count: 0,
@@ -379,4 +382,5 @@ test('distinguishes between non-rebalance day and balanced target holding for em
   expect(
     screen.getByText('今日已到调仓日，当前持仓结构无需调仓交易。'),
   ).toBeDefined();
+  expect(screen.getByText('持仓已符合目标')).toBeDefined();
 });

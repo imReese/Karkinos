@@ -128,6 +128,7 @@ export type EtfRotationDashboardResponse = {
   execution_status:
     | 'ready_to_trade'
     | 'portfolio_balanced'
+    | 'not_rebalance_due'
     | 'already_executed_today'
     | 'unavailable';
   has_pending_orders: boolean;

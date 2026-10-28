@@ -3,6 +3,7 @@ import {
   ShieldCheck,
   CheckCircle2,
   Clock,
+  Calendar,
   ArrowDownRight,
   ArrowUpRight,
   AlertCircle,
@@ -148,6 +149,11 @@ export function EtfRotationTradingCard({
             <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]/20 px-3 py-1 text-xs font-semibold text-[var(--app-warning-text)]">
               <AlertCircle className="h-3.5 w-3.5" />
               策略数据不可用
+            </span>
+          ) : execution_status === 'not_rebalance_due' ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--app-divider)] bg-[var(--app-surface-overlay)] px-3 py-1 text-xs font-medium text-[var(--app-text-secondary)]">
+              <Calendar className="h-3.5 w-3.5" />
+              今日非调仓日
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--app-divider)] bg-[var(--app-surface-overlay)] px-3 py-1 text-xs font-medium text-[var(--app-text-secondary)]">

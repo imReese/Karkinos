@@ -10,10 +10,11 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from datetime import datetime, timezone
+from collections.abc import Mapping, Sequence
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -40,6 +41,17 @@ ETF_METADATA: dict[Symbol, str] = {
     Symbol("512890"): "红利低波ETF",
     Symbol("518880"): "黄金ETF",
     Symbol("511010"): "国债ETF",
+}
+
+ETF_LISTING_DATES: dict[Symbol, str] = {
+    Symbol("510300"): "2012-05-28",
+    Symbol("510500"): "2013-03-15",
+    Symbol("159915"): "2011-12-09",
+    Symbol("513100"): "2013-05-15",
+    Symbol("513500"): "2014-01-15",
+    Symbol("512890"): "2019-01-18",
+    Symbol("518880"): "2013-07-29",
+    Symbol("511010"): "2013-03-25",
 }
 
 DEFAULT_STRATEGY_PARAMS: dict[str, Any] = {
@@ -100,6 +112,7 @@ class EtfRotationAutomationService:
     """Manages scheduled and automated ETF rotation rebalance evaluation."""
 
     default_data_dir: Path | None = None
+    default_trading_calendar: tuple[pd.Timestamp, ...] | None = None
 
     _cached_plan: RebalancePlan | None = None
     _cached_summary: dict[str, Any] | None = None
@@ -109,9 +122,19 @@ class EtfRotationAutomationService:
     _database_path: Path | None = None
     _cached_market_files: tuple[tuple[str, int, int, int], ...] | None = None
 
-    def __init__(self, data_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        data_dir: Path | None = None,
+        *,
+        trading_calendar: Sequence[str | date | datetime | pd.Timestamp] | None = None,
+    ) -> None:
         self.data_dir = (
             data_dir or self.default_data_dir or Path(resolve_data_dir()) / "real_etfs"
+        )
+        self.trading_calendar = (
+            tuple(sorted(pd.to_datetime(d) for d in trading_calendar))
+            if trading_calendar is not None
+            else None
         )
 
     def _market_file_state(self) -> tuple[tuple[str, int, int, int], ...]:
@@ -168,8 +191,73 @@ class EtfRotationAutomationService:
         """Override database path for resolution and testing."""
         cls._database_path = Path(db_path) if db_path is not None else None
 
+    @classmethod
+    def set_trading_calendar(
+        cls, calendar: Sequence[str | date | datetime | pd.Timestamp] | None
+    ) -> None:
+        """Set an explicit default trading calendar for testing or isolated evaluation."""
+        if calendar is None:
+            cls.default_trading_calendar = None
+        else:
+            cls.default_trading_calendar = tuple(
+                sorted(pd.to_datetime(d) for d in calendar)
+            )
+
+    def _resolve_db_trading_calendar(
+        self, start_date: date, end_date: date
+    ) -> list[pd.Timestamp] | None:
+        try:
+            from server.db import AppDatabase
+            from server.services.market.calendar import _calendar_days
+
+            db = AppDatabase(self._database_path)
+            calendar_dates: list[pd.Timestamp] = []
+            for year in range(start_date.year, end_date.year + 1):
+                row = db.get_market_calendar_snapshot_sync(exchange="SSE", year=year)
+                if row is None:
+                    return None
+                days = _calendar_days(row)
+                if not days:
+                    return None
+                for d in days:
+                    if d.get("is_trading_day"):
+                        dt = pd.to_datetime(d["date"])
+                        if pd.Timestamp(start_date) <= dt <= pd.Timestamp(end_date):
+                            calendar_dates.append(dt)
+            return sorted(calendar_dates) if calendar_dates else None
+        except Exception as exc:
+            logger.debug("Failed to resolve trading calendar from database: %s", exc)
+            return None
+
+    def _resolve_expected_trading_dates(
+        self,
+        start_dt: pd.Timestamp,
+        end_dt: pd.Timestamp,
+        override_calendar: Sequence[str | date | datetime | pd.Timestamp] | None = None,
+    ) -> list[pd.Timestamp]:
+        """Resolve independent verified trading dates in [start_dt, end_dt]."""
+        explicit = (
+            override_calendar or self.trading_calendar or self.default_trading_calendar
+        )
+        if explicit is not None:
+            explicit_stamps = [pd.to_datetime(d) for d in explicit]
+            return sorted(d for d in explicit_stamps if start_dt <= d <= end_dt)
+
+        db_dates = self._resolve_db_trading_calendar(start_dt.date(), end_dt.date())
+        if db_dates is not None:
+            return [d for d in db_dates if start_dt <= d <= end_dt]
+
+        raise ValueError(
+            f"etf_rotation_trading_calendar_unavailable: no verified market calendar "
+            f"or explicit trading calendar available for study range "
+            f"[{start_dt.strftime('%Y-%m-%d')}, {end_dt.strftime('%Y-%m-%d')}]. "
+            f"Cannot verify date completeness."
+        )
+
     def load_aligned_market_data(
         self,
+        *,
+        trading_calendar: Sequence[str | date | datetime | pd.Timestamp] | None = None,
     ) -> tuple[dict[Symbol, pd.DataFrame], tuple[tuple[str, int, int, int], ...]]:
         """Load aligned bars with their input state captured before the first read."""
         from data.store import DataStore
@@ -231,20 +319,39 @@ class EtfRotationAutomationService:
                 f"etf_rotation_universe_incomplete: missing {len(missing_symbols)}/{len(ETF_METADATA)} symbols: {missing_desc}"
             )
 
-        # Common study date range: start when all ETFs have started, up to latest market date
-        common_start = max(df["timestamp"].min() for df in raw_dfs.values())
-        common_end = max(df["timestamp"].max() for df in raw_dfs.values())
+        # 1. Determine earliest and latest dates present across datasets
+        earliest_available = min(df["timestamp"].min() for df in raw_dfs.values())
+        latest_available = max(df["timestamp"].max() for df in raw_dfs.values())
 
-        # Expected trading dates are all dates present in the universe within [common_start, common_end]
-        all_union_dates = set().union(
-            *(set(df["timestamp"]) for df in raw_dfs.values())
+        # 2. Legitimate listing floor: universe cannot rotate before all required ETFs have listed
+        universe_listing_floor = max(
+            pd.to_datetime(ETF_LISTING_DATES.get(sym, "1990-01-01"))
+            for sym in raw_dfs.keys()
         )
-        expected_dates = sorted(
-            d for d in all_union_dates if common_start <= d <= common_end
+        common_start = max(earliest_available, universe_listing_floor)
+        common_end = latest_available
+
+        # 3. Check for initial segment loss (文件丢失首段) vs legitimate late listing:
+        # If an ETF was listed before common_start, its data MUST start on or before common_start.
+        initial_segment_loss: dict[str, str] = {}
+        for sym, df in raw_dfs.items():
+            sym_list_date = pd.to_datetime(ETF_LISTING_DATES.get(sym, "1990-01-01"))
+            if sym_list_date <= common_start and df["timestamp"].min() > common_start:
+                initial_segment_loss[str(sym)] = (
+                    f"starts on {df['timestamp'].min().strftime('%Y-%m-%d')}, "
+                    f"expected on or before {common_start.strftime('%Y-%m-%d')} "
+                    f"(listed on {sym_list_date.strftime('%Y-%m-%d')})"
+                )
+
+        # 4. Resolve independent trading calendar dates in [common_start, common_end]
+        expected_dates = self._resolve_expected_trading_dates(
+            common_start, common_end, override_calendar=trading_calendar
         )
 
         if not expected_dates:
-            raise ValueError("No common trading dates across ETF universe datasets")
+            raise ValueError(
+                f"No trading dates found in study range [{common_start.strftime('%Y-%m-%d')}, {common_end.strftime('%Y-%m-%d')}]"
+            )
 
         missing_date_coverage: dict[str, list[str]] = {}
         for sym, df in raw_dfs.items():
@@ -260,9 +367,14 @@ class EtfRotationAutomationService:
                 f"{sym} missing ({len(dates)} dates: {', '.join(dates[:5])}{'...' if len(dates) > 5 else ''})"
                 for sym, dates in sorted(missing_date_coverage.items())
             )
+            prefix = "etf_rotation_universe_dates_incomplete: bars missing in common study range"
+            if initial_segment_loss:
+                loss_details = "; ".join(
+                    f"{sym}: {msg}" for sym, msg in sorted(initial_segment_loss.items())
+                )
+                prefix += f" (initial segment lost: {loss_details})"
             raise ValueError(
-                f"etf_rotation_universe_dates_incomplete: bars missing in common study range "
-                f"[{common_start.strftime('%Y-%m-%d')}, {common_end.strftime('%Y-%m-%d')}]: {details}"
+                f"{prefix} [{common_start.strftime('%Y-%m-%d')}, {common_end.strftime('%Y-%m-%d')}]: {details}"
             )
 
         aligned_dfs: dict[Symbol, pd.DataFrame] = {}
@@ -303,10 +415,16 @@ class EtfRotationAutomationService:
         total_equity: Decimal | float | int | None = None,
         current_holdings: Mapping[str | Symbol, int] | None = None,
         strategy_params: dict[str, Any] | None = None,
+        trading_calendar: Sequence[str | date | datetime | pd.Timestamp] | None = None,
     ) -> dict[str, Any]:
         """Execute automated evaluation and generate actionable rebalance plan."""
         try:
-            aligned_dfs, market_files = self.load_aligned_market_data()
+            if trading_calendar is not None:
+                aligned_dfs, market_files = self.load_aligned_market_data(
+                    trading_calendar=trading_calendar
+                )
+            else:
+                aligned_dfs, market_files = self.load_aligned_market_data()
             if self._market_file_state() != market_files:
                 raise ValueError("etf_market_data_changed_during_evaluation")
             symbols = list(aligned_dfs.keys())
@@ -833,6 +951,8 @@ class EtfRotationAutomationService:
             status = "already_executed_today"
         elif has_orders:
             status = "ready_to_trade"
+        elif not summary.get("is_rebalance_due", True):
+            status = "not_rebalance_due"
         else:
             status = "portfolio_balanced"
 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   AlertCircle,
+  Calendar,
   CheckCircle2,
   Clock,
   Loader2,
@@ -73,6 +74,11 @@ export function EtfRotationOverviewPanel({
             <span className="inline-flex items-center gap-1 rounded-full border border-[var(--app-warning-border)] bg-[var(--app-warning-bg)]/20 px-2.5 py-0.5 app-type-micro font-semibold text-[var(--app-warning-text)]">
               <AlertCircle className="h-3 w-3" />
               数据不可用
+            </span>
+          ) : execution_status === 'not_rebalance_due' ? (
+            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--app-divider)] bg-[var(--app-surface-overlay)] px-2.5 py-0.5 app-type-micro font-medium text-[var(--app-text-secondary)]">
+              <Calendar className="h-3 w-3" />
+              非调仓日
             </span>
           ) : (
             <span className="inline-flex items-center gap-1 rounded-full border border-[var(--app-divider)] bg-[var(--app-surface-overlay)] px-2.5 py-0.5 app-type-micro font-medium text-[var(--app-text-secondary)]">
