@@ -9,7 +9,7 @@ import math
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, time
-from typing import Any, Protocol
+from typing import Any, Protocol, Sequence
 from zoneinfo import ZoneInfo
 
 from core.types import AssetClass, Symbol
@@ -81,6 +81,7 @@ class VerifiedMarketDailyStore(Protocol):
         *,
         trade_date: str,
         provider_name: str,
+        symbols: Sequence[str] | None = None,
         verify: bool = True,
     ) -> dict[str, object] | None: ...
 
@@ -140,11 +141,19 @@ def publish_post_close_stock_quotes(
     ):
         return _failed(symbols, "verified_closed_trading_date_mismatch")
     try:
-        receipt = data_store.get_market_daily_ingestion_receipt(
-            trade_date=trade_date_text,
-            provider_name=normalized_provider,
-            verify=True,
-        )
+        try:
+            receipt = data_store.get_market_daily_ingestion_receipt(
+                trade_date=trade_date_text,
+                provider_name=normalized_provider,
+                symbols=list(symbols),
+                verify=True,
+            )
+        except TypeError:
+            receipt = data_store.get_market_daily_ingestion_receipt(
+                trade_date=trade_date_text,
+                provider_name=normalized_provider,
+                verify=True,
+            )
     except Exception as exc:
         logger.warning(
             "Verified market-daily receipt rejected: date=%s provider=%s error=%s",
@@ -196,11 +205,19 @@ def publish_post_close_stock_quotes(
             missing_symbols=missing_bars,
         )
     try:
-        receipt_after_read = data_store.get_market_daily_ingestion_receipt(
-            trade_date=trade_date_text,
-            provider_name=normalized_provider,
-            verify=True,
-        )
+        try:
+            receipt_after_read = data_store.get_market_daily_ingestion_receipt(
+                trade_date=trade_date_text,
+                provider_name=normalized_provider,
+                symbols=list(symbols),
+                verify=True,
+            )
+        except TypeError:
+            receipt_after_read = data_store.get_market_daily_ingestion_receipt(
+                trade_date=trade_date_text,
+                provider_name=normalized_provider,
+                verify=True,
+            )
     except Exception:
         return _failed(symbols, "market_daily_ingestion_receipt_changed_during_read")
     if receipt_after_read != receipt:

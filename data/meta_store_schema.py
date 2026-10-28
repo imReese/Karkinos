@@ -399,6 +399,23 @@ def _ensure_canonical_market_tables(connection: sqlite3.Connection) -> None:
         ON market_bars(updated_at)
         """)
 
+    connection.execute("""
+    CREATE TABLE IF NOT EXISTS market_daily_scoped_receipts (
+        trade_date TEXT NOT NULL,
+        provider_name TEXT NOT NULL,
+        scope_fingerprint TEXT NOT NULL,
+        row_count INTEGER NOT NULL,
+        dataset_fingerprint TEXT NOT NULL,
+        receipt_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (trade_date, provider_name, scope_fingerprint)
+    )
+    """)
+    connection.execute("""
+    CREATE INDEX IF NOT EXISTS idx_market_daily_scoped_receipts_date
+    ON market_daily_scoped_receipts(trade_date DESC, provider_name)
+    """)
+
 
 def prepare_meta_database(database_path: str | Path) -> None:
     """Bootstrap or verify ``meta.db`` under one schema owner."""

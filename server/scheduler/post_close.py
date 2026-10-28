@@ -114,7 +114,10 @@ class SchedulerPostCloseMixin:
             return None
         receipt_reader = getattr(data_store, "get_market_daily_ingestion_receipt", None)
         receipt_writer = getattr(data_store, "ingest_market_daily_batch", None)
-        if not callable(receipt_reader) or not callable(receipt_writer):
+        scoped_writer = getattr(data_store, "ingest_scoped_market_daily_batch", None)
+        if not callable(receipt_reader) or (
+            not callable(receipt_writer) and not callable(scoped_writer)
+        ):
             return None
 
         candidates = candidate_providers or self._candidate_daily_providers(
@@ -133,11 +136,19 @@ class SchedulerPostCloseMixin:
         # Stage 1: Check existing verified receipts across candidates
         for candidate in candidates:
             try:
-                existing = receipt_reader(
-                    trade_date=target_trade_date,
-                    provider_name=candidate,
-                    verify=True,
-                )
+                try:
+                    existing = receipt_reader(
+                        trade_date=target_trade_date,
+                        provider_name=candidate,
+                        symbols=stock_symbols if stock_symbols else None,
+                        verify=True,
+                    )
+                except TypeError:
+                    existing = receipt_reader(
+                        trade_date=target_trade_date,
+                        provider_name=candidate,
+                        verify=True,
+                    )
             except Exception:
                 logger.exception(
                     "收盘行情凭证校验失败，跳过已有凭证: date=%s provider=%s",
@@ -261,16 +272,32 @@ class SchedulerPostCloseMixin:
 
             try:
                 combined = pd.concat(collected_bars, ignore_index=True)
-                receipt_writer(
-                    trade_date=target_trade_date,
-                    provider_name=candidate,
-                    bars=combined,
-                )
-                verified = receipt_reader(
-                    trade_date=target_trade_date,
-                    provider_name=candidate,
-                    verify=True,
-                )
+                if callable(scoped_writer):
+                    scoped_writer(
+                        trade_date=target_trade_date,
+                        provider_name=candidate,
+                        bars=combined,
+                        symbols=stock_symbols,
+                    )
+                else:
+                    receipt_writer(
+                        trade_date=target_trade_date,
+                        provider_name=candidate,
+                        bars=combined,
+                    )
+                try:
+                    verified = receipt_reader(
+                        trade_date=target_trade_date,
+                        provider_name=candidate,
+                        symbols=stock_symbols if stock_symbols else None,
+                        verify=True,
+                    )
+                except TypeError:
+                    verified = receipt_reader(
+                        trade_date=target_trade_date,
+                        provider_name=candidate,
+                        verify=True,
+                    )
                 if verified is not None:
                     logger.info(
                         "收盘行情针对持仓标的的作用域凭证恢复完成: date=%s provider=%s symbols=%s",

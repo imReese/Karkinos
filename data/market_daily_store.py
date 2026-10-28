@@ -45,6 +45,11 @@ def is_supported_stock_receipt_identity(receipt: Mapping[str, object]) -> bool:
     )
 
 
+def compute_scope_fingerprint(symbols: Sequence[str]) -> str:
+    cleaned = sorted({str(s).strip() for s in symbols if str(s).strip()})
+    return "sha256:" + hashlib.sha256(",".join(cleaned).encode("utf-8")).hexdigest()
+
+
 def require_frozen_stock_bars_unchanged(
     conn: sqlite3.Connection,
     records: Sequence[tuple[object, ...]],
@@ -70,6 +75,22 @@ def require_frozen_stock_bars_unchanged(
         authorities.setdefault(str(row[0]), []).append(
             (table, {str(symbol) for symbol in receipt.get("symbols") or []})
         )
+    scoped_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='market_daily_scoped_receipts'"
+    ).fetchone()
+    if scoped_exists:
+        for row in conn.execute(
+            """SELECT trade_date, receipt_json FROM market_daily_scoped_receipts
+               WHERE trade_date >= ? AND trade_date <= ?""",
+            (min(dates), max(dates)),
+        ):
+            receipt = json.loads(str(row[1]))
+            if not is_supported_stock_receipt_identity(receipt):
+                continue
+            table = "market_bars"
+            authorities.setdefault(str(row[0]), []).append(
+                (table, {str(symbol) for symbol in receipt.get("symbols") or []})
+            )
     for record in records:
         symbol, timestamp = str(record[0]), str(record[1])
         for table, symbols in authorities.get(timestamp[:10], []):
@@ -266,14 +287,200 @@ class MarketDailyIngestionMixin:
             conn.commit()
         return receipt
 
+    def ingest_scoped_market_daily_batch(
+        self,
+        *,
+        trade_date: str,
+        provider_name: str,
+        bars: pd.DataFrame,
+        symbols: Sequence[str] | None = None,
+    ) -> dict[str, object]:
+        """Atomically freeze one provider-returned scoped daily batch.
+
+        Scoped batches explicitly preserve their symbol scope and do not occupy
+        or overwrite the full-market daily batch identity. Expanding scope
+        (e.g. A -> A+B) creates a new immutable scoped receipt while keeping
+        older scoped receipts intact and replayable.
+        """
+        normalized_date = str(trade_date).strip()
+        normalized_provider = str(provider_name).strip()
+        if not normalized_date or not normalized_provider:
+            raise ValueError("market_daily_batch_identity_invalid")
+        try:
+            expected_date = pd.Timestamp(normalized_date).date()
+        except (TypeError, ValueError) as exc:
+            raise ValueError("market_daily_batch_trade_date_invalid") from exc
+        required = {"symbol", "timestamp", "open", "high", "low", "close", "volume"}
+        if bars is None or bars.empty or not required.issubset(bars.columns):
+            raise ValueError("market_daily_batch_incomplete")
+
+        normalized = bars.copy()
+        normalized["symbol"] = normalized["symbol"].map(
+            lambda value: str(value).strip().split(".", maxsplit=1)[0]
+        )
+        normalized["timestamp"] = pd.to_datetime(normalized["timestamp"])
+        if (
+            normalized["symbol"].eq("").any()
+            or normalized["symbol"].duplicated().any()
+            or any(value.date() != expected_date for value in normalized["timestamp"])
+        ):
+            raise ValueError("market_daily_batch_membership_invalid")
+        normalized = normalized.sort_values("symbol").reset_index(drop=True)
+        records = _normalized_market_daily_records(normalized)
+        if any(record[5] is None or record[5] <= 0 for record in records):
+            raise ValueError("market_daily_batch_close_invalid")
+        dataset_fingerprint = _market_daily_records_fingerprint(
+            trade_date=normalized_date,
+            provider_name=normalized_provider,
+            records=records,
+        )
+        bar_symbols = [record[0] for record in records]
+        scope_fingerprint = compute_scope_fingerprint(bar_symbols)
+        receipt_core: dict[str, object] = {
+            "schema_version": "karkinos.market_daily_ingestion_receipt.v3",
+            "scope_type": "scoped",
+            "scope_fingerprint": scope_fingerprint,
+            "units": CANONICAL_STOCK_BAR_UNITS,
+            "price_basis": "unadjusted",
+            "trade_date": normalized_date,
+            "provider_name": normalized_provider,
+            "row_count": len(records),
+            "symbols": bar_symbols,
+            "dataset_fingerprint": dataset_fingerprint,
+            "storage_authority": "sqlite_market_bars_v2:stock",
+            "parquet_mirror_required_for_decision": False,
+            "provider_contact_performed_during_ingestion": True,
+            "read_endpoints_contact_providers": False,
+            "authorizes_strategy_promotion": False,
+            "authorizes_order_creation": False,
+            "changes_capital_authority": False,
+        }
+        receipt_fingerprint = (
+            "sha256:"
+            + hashlib.sha256(
+                json.dumps(
+                    receipt_core,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+        )
+        receipt = {**receipt_core, "receipt_fingerprint": receipt_fingerprint}
+        receipt_json = json.dumps(
+            receipt,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        now = datetime.now().isoformat()
+
+        with connect_meta_sqlite(self._meta_path) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute("""
+            CREATE TABLE IF NOT EXISTS market_daily_scoped_receipts (
+                trade_date TEXT NOT NULL,
+                provider_name TEXT NOT NULL,
+                scope_fingerprint TEXT NOT NULL,
+                row_count INTEGER NOT NULL,
+                dataset_fingerprint TEXT NOT NULL,
+                receipt_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (trade_date, provider_name, scope_fingerprint)
+            )
+            """)
+            existing = conn.execute(
+                """
+                SELECT receipt_json FROM market_daily_scoped_receipts
+                WHERE trade_date = ? AND provider_name = ? AND scope_fingerprint = ?
+                """,
+                (normalized_date, normalized_provider, scope_fingerprint),
+            ).fetchone()
+            if existing is not None:
+                stored = json.loads(str(existing["receipt_json"]))
+                if stored != receipt or not self._verify_market_daily_receipt(
+                    conn, stored
+                ):
+                    raise ValueError("market_daily_ingestion_receipt_conflict")
+                return stored
+
+            require_frozen_stock_bars_unchanged(conn, records)
+            target_table = _resolve_market_table(conn, "market_bars")
+            conn.executemany(
+                f"""
+                INSERT INTO {target_table} (
+                    symbol, instrument_type, frequency, timestamp,
+                    open, high, low, close, volume, amount,
+                    identity_provenance, created_at, updated_at
+                ) VALUES (?, 'stock', '1d', ?, ?, ?, ?, ?, ?, ?,
+                          'verified_market_daily_ingestion_receipt', ?, ?)
+                ON CONFLICT(symbol, instrument_type, frequency, timestamp)
+                DO UPDATE SET
+                    open = excluded.open,
+                    high = excluded.high,
+                    low = excluded.low,
+                    close = excluded.close,
+                    volume = excluded.volume,
+                    amount = excluded.amount,
+                    updated_at = excluded.updated_at
+                """,
+                [
+                    (
+                        symbol,
+                        timestamp,
+                        open_price,
+                        high_price,
+                        low_price,
+                        close_price,
+                        volume,
+                        amount,
+                        now,
+                        now,
+                    )
+                    for (
+                        symbol,
+                        timestamp,
+                        open_price,
+                        high_price,
+                        low_price,
+                        close_price,
+                        volume,
+                        amount,
+                    ) in records
+                ],
+            )
+            if not self._verify_market_daily_receipt(conn, receipt):
+                raise ValueError("market_daily_batch_persistence_verification_failed")
+            conn.execute(
+                """
+                INSERT INTO market_daily_scoped_receipts (
+                    trade_date, provider_name, scope_fingerprint, row_count,
+                    dataset_fingerprint, receipt_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    normalized_date,
+                    normalized_provider,
+                    scope_fingerprint,
+                    len(records),
+                    dataset_fingerprint,
+                    receipt_json,
+                    now,
+                ),
+            )
+            conn.commit()
+        return receipt
+
     def get_market_daily_ingestion_receipt(
         self,
         *,
         trade_date: str,
         provider_name: str,
+        symbols: Sequence[str] | None = None,
         verify: bool = True,
     ) -> dict[str, object] | None:
-        """Read one frozen full-market batch receipt and optionally replay it."""
+        """Read one frozen full-market batch receipt (or covering scoped receipt) and optionally replay it."""
 
         with connect_meta_sqlite(self._meta_path) as conn:
             conn.row_factory = sqlite3.Row
@@ -284,6 +491,87 @@ class MarketDailyIngestionMixin:
                 """,
                 (str(trade_date), str(provider_name)),
             ).fetchone()
+            if row is not None:
+                payload = json.loads(str(row["receipt_json"]))
+                if isinstance(payload, dict):
+                    if verify and not self._verify_market_daily_receipt(conn, payload):
+                        raise ValueError("market_daily_ingestion_receipt_drift")
+                    return payload
+
+            if symbols is not None:
+                scoped_exists = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='market_daily_scoped_receipts'"
+                ).fetchone()
+                if scoped_exists:
+                    rows = conn.execute(
+                        """
+                        SELECT receipt_json FROM market_daily_scoped_receipts
+                        WHERE trade_date = ? AND provider_name = ?
+                        ORDER BY row_count DESC, created_at DESC
+                        """,
+                        (str(trade_date), str(provider_name)),
+                    ).fetchall()
+                    # First check if any covers all requested symbols
+                    for r in rows:
+                        p = json.loads(str(r["receipt_json"]))
+                        if isinstance(p, dict):
+                            p_symbols = {str(x) for x in p.get("symbols", [])}
+                            if all(str(s) in p_symbols for s in symbols):
+                                if verify and not self._verify_market_daily_receipt(
+                                    conn, p
+                                ):
+                                    raise ValueError(
+                                        "market_daily_ingestion_receipt_drift"
+                                    )
+                                return p
+                    # If none covers all requested symbols, return the most comprehensive scoped receipt
+                    for r in rows:
+                        p = json.loads(str(r["receipt_json"]))
+                        if isinstance(p, dict):
+                            if verify and not self._verify_market_daily_receipt(
+                                conn, p
+                            ):
+                                raise ValueError("market_daily_ingestion_receipt_drift")
+                            return p
+            return None
+
+    def get_market_daily_scoped_receipt(
+        self,
+        *,
+        trade_date: str,
+        provider_name: str,
+        scope_fingerprint: str | None = None,
+        symbols: Sequence[str] | None = None,
+        verify: bool = True,
+    ) -> dict[str, object] | None:
+        """Read one frozen scoped receipt by scope_fingerprint or symbols."""
+        if scope_fingerprint is None and symbols is not None:
+            scope_fingerprint = compute_scope_fingerprint(symbols)
+
+        with connect_meta_sqlite(self._meta_path) as conn:
+            conn.row_factory = sqlite3.Row
+            scoped_exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='market_daily_scoped_receipts'"
+            ).fetchone()
+            if not scoped_exists:
+                return None
+            if scope_fingerprint is not None:
+                row = conn.execute(
+                    """
+                    SELECT receipt_json FROM market_daily_scoped_receipts
+                    WHERE trade_date = ? AND provider_name = ? AND scope_fingerprint = ?
+                    """,
+                    (str(trade_date), str(provider_name), scope_fingerprint),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """
+                    SELECT receipt_json FROM market_daily_scoped_receipts
+                    WHERE trade_date = ? AND provider_name = ?
+                    ORDER BY row_count DESC, created_at DESC LIMIT 1
+                    """,
+                    (str(trade_date), str(provider_name)),
+                ).fetchone()
             if row is None:
                 return None
             payload = json.loads(str(row["receipt_json"]))
@@ -292,6 +580,48 @@ class MarketDailyIngestionMixin:
             if verify and not self._verify_market_daily_receipt(conn, payload):
                 raise ValueError("market_daily_ingestion_receipt_drift")
             return payload
+
+    def list_market_daily_scoped_receipts(
+        self,
+        *,
+        trade_date: str | None = None,
+        provider_name: str | None = None,
+        verify: bool = True,
+    ) -> list[dict[str, object]]:
+        """Read date/provider filtered scoped receipts for deterministic replay."""
+        with connect_meta_sqlite(self._meta_path) as conn:
+            conn.row_factory = sqlite3.Row
+            scoped_exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='market_daily_scoped_receipts'"
+            ).fetchone()
+            if not scoped_exists:
+                return []
+            clauses = []
+            params = []
+            if trade_date is not None:
+                clauses.append("trade_date = ?")
+                params.append(str(trade_date))
+            if provider_name is not None:
+                clauses.append("provider_name = ?")
+                params.append(str(provider_name))
+            where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+            rows = conn.execute(
+                f"""
+                SELECT receipt_json FROM market_daily_scoped_receipts
+                {where}
+                ORDER BY trade_date, provider_name, created_at
+                """,
+                tuple(params),
+            ).fetchall()
+            payloads = [json.loads(str(row["receipt_json"])) for row in rows]
+            if any(not isinstance(payload, dict) for payload in payloads):
+                raise ValueError("market_daily_ingestion_receipt_invalid")
+            if verify and any(
+                not self._verify_market_daily_receipt(conn, payload)
+                for payload in payloads
+            ):
+                raise ValueError("market_daily_ingestion_receipt_drift")
+            return payloads
 
     def list_market_daily_ingestion_receipts(
         self,
