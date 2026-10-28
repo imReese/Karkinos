@@ -231,21 +231,44 @@ class EtfRotationAutomationService:
                 f"etf_rotation_universe_incomplete: missing {len(missing_symbols)}/{len(ETF_METADATA)} symbols: {missing_desc}"
             )
 
-        common_dates = None
-        for df in raw_dfs.values():
-            dates_set = set(df["timestamp"])
-            if common_dates is None:
-                common_dates = dates_set
-            else:
-                common_dates = common_dates.intersection(dates_set)
+        # Common study date range: start when all ETFs have started, up to latest market date
+        common_start = max(df["timestamp"].min() for df in raw_dfs.values())
+        common_end = max(df["timestamp"].max() for df in raw_dfs.values())
 
-        if not common_dates:
+        # Expected trading dates are all dates present in the universe within [common_start, common_end]
+        all_union_dates = set().union(
+            *(set(df["timestamp"]) for df in raw_dfs.values())
+        )
+        expected_dates = sorted(
+            d for d in all_union_dates if common_start <= d <= common_end
+        )
+
+        if not expected_dates:
             raise ValueError("No common trading dates across ETF universe datasets")
+
+        missing_date_coverage: dict[str, list[str]] = {}
+        for sym, df in raw_dfs.items():
+            sym_dates = set(df["timestamp"])
+            missing = [d for d in expected_dates if d not in sym_dates]
+            if missing:
+                missing_date_coverage[str(sym)] = [
+                    d.strftime("%Y-%m-%d") for d in missing
+                ]
+
+        if missing_date_coverage:
+            details = "; ".join(
+                f"{sym} missing ({len(dates)} dates: {', '.join(dates[:5])}{'...' if len(dates) > 5 else ''})"
+                for sym, dates in sorted(missing_date_coverage.items())
+            )
+            raise ValueError(
+                f"etf_rotation_universe_dates_incomplete: bars missing in common study range "
+                f"[{common_start.strftime('%Y-%m-%d')}, {common_end.strftime('%Y-%m-%d')}]: {details}"
+            )
 
         aligned_dfs: dict[Symbol, pd.DataFrame] = {}
         for sym, df in raw_dfs.items():
             sub = (
-                df[df["timestamp"].isin(common_dates)]
+                df[df["timestamp"].isin(expected_dates)]
                 .sort_values("timestamp")
                 .reset_index(drop=True)
             )

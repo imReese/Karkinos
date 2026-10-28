@@ -1266,3 +1266,54 @@ def test_etf_rotation_day_6_does_not_rebalance(tmp_path: Path):
     assert summary_day6["orders_count"] == 0
     assert len(summary_day6["orders"]) == 0
     assert "今日非调仓日" in summary_day6["markdown_table"]
+
+
+def test_etf_rotation_missing_single_day_blocks_and_does_not_shift_cadence(
+    tmp_path: Path,
+):
+    """Regression test: missing a single day in one ETF dataset must fail closed.
+
+    If 8 files exist, but one ETF is missing Day 3 while Day 6 is present,
+    the system must not take intersection and squash 6 days into 5 days
+    (which would falsely make Day 6 a rebalance day). It must block with missing dates.
+    """
+    data_dir = tmp_path / "missing_day_etfs"
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    dates = pd.bdate_range("2026-01-05", periods=6)
+    symbols = [
+        "512890",
+        "513100",
+        "518880",
+        "513500",
+        "510500",
+        "159915",
+        "510300",
+        "511010",
+    ]
+
+    for sym in symbols:
+        # For 512890, drop day 3 (dates[2])
+        sym_dates = dates if sym != "512890" else dates.delete(2)
+        n = len(sym_dates)
+        df = pd.DataFrame(
+            {
+                "timestamp": sym_dates,
+                "open": [10.0] * n,
+                "high": [10.5] * n,
+                "low": [9.5] * n,
+                "close": [10.0] * n,
+                "volume": [1000000] * n,
+            }
+        )
+        df.to_csv(data_dir / f"{sym}.csv", index=False)
+
+    svc = EtfRotationAutomationService(data_dir=data_dir)
+    with pytest.raises(
+        ValueError, match="etf_rotation_universe_dates_incomplete"
+    ) as exc_info:
+        svc.load_aligned_market_data()
+
+    missing_err = str(exc_info.value)
+    assert "512890" in missing_err
+    assert dates[2].strftime("%Y-%m-%d") in missing_err

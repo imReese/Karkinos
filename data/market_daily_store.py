@@ -109,6 +109,21 @@ def require_frozen_stock_bars_unchanged(
                 raise ValueError(f"frozen_market_bar_conflict:{symbol}:{timestamp}")
 
 
+def _receipt_symbols_set(val: object) -> set[str]:
+    if isinstance(val, (list, tuple, set)):
+        return {str(x) for x in val}
+    return set()
+
+
+def _receipt_row_count(val: object) -> int:
+    if isinstance(val, int):
+        return val
+    try:
+        return int(str(val))
+    except (ValueError, TypeError):
+        return 0
+
+
 class MarketDailyIngestionMixin:
     """Own immutable daily-batch receipts on the DataStore SQLite connection."""
 
@@ -484,55 +499,89 @@ class MarketDailyIngestionMixin:
 
         with connect_meta_sqlite(self._meta_path) as conn:
             conn.row_factory = sqlite3.Row
-            row = conn.execute(
+            full_row = conn.execute(
                 """
                 SELECT receipt_json FROM market_daily_ingestion_receipts
                 WHERE trade_date = ? AND provider_name = ?
                 """,
                 (str(trade_date), str(provider_name)),
             ).fetchone()
-            if row is not None:
-                payload = json.loads(str(row["receipt_json"]))
-                if isinstance(payload, dict):
-                    if verify and not self._verify_market_daily_receipt(conn, payload):
-                        raise ValueError("market_daily_ingestion_receipt_drift")
-                    return payload
+            full_payload: dict[str, object] | None = None
+            if full_row is not None:
+                p = json.loads(str(full_row["receipt_json"]))
+                if isinstance(p, dict):
+                    full_payload = p
 
-            if symbols is not None:
-                scoped_exists = conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='market_daily_scoped_receipts'"
-                ).fetchone()
-                if scoped_exists:
-                    rows = conn.execute(
-                        """
-                        SELECT receipt_json FROM market_daily_scoped_receipts
-                        WHERE trade_date = ? AND provider_name = ?
-                        ORDER BY row_count DESC, created_at DESC
-                        """,
-                        (str(trade_date), str(provider_name)),
-                    ).fetchall()
-                    # First check if any covers all requested symbols
-                    for r in rows:
-                        p = json.loads(str(r["receipt_json"]))
-                        if isinstance(p, dict):
-                            p_symbols = {str(x) for x in p.get("symbols", [])}
-                            if all(str(s) in p_symbols for s in symbols):
-                                if verify and not self._verify_market_daily_receipt(
-                                    conn, p
-                                ):
-                                    raise ValueError(
-                                        "market_daily_ingestion_receipt_drift"
-                                    )
-                                return p
-                    # If none covers all requested symbols, return the most comprehensive scoped receipt
-                    for r in rows:
-                        p = json.loads(str(r["receipt_json"]))
-                        if isinstance(p, dict):
-                            if verify and not self._verify_market_daily_receipt(
-                                conn, p
-                            ):
-                                raise ValueError("market_daily_ingestion_receipt_drift")
-                            return p
+            if symbols is None:
+                if full_payload is not None:
+                    if verify and not self._verify_market_daily_receipt(
+                        conn, full_payload
+                    ):
+                        raise ValueError("market_daily_ingestion_receipt_drift")
+                    return full_payload
+                return None
+
+            req_symbols = {str(s) for s in symbols}
+            if full_payload is not None:
+                full_symbols = _receipt_symbols_set(full_payload.get("symbols"))
+                if req_symbols.issubset(full_symbols):
+                    if verify and not self._verify_market_daily_receipt(
+                        conn, full_payload
+                    ):
+                        raise ValueError("market_daily_ingestion_receipt_drift")
+                    return full_payload
+
+            scoped_exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='market_daily_scoped_receipts'"
+            ).fetchone()
+            if scoped_exists:
+                rows = conn.execute(
+                    """
+                    SELECT receipt_json FROM market_daily_scoped_receipts
+                    WHERE trade_date = ? AND provider_name = ?
+                    ORDER BY row_count DESC, created_at DESC
+                    """,
+                    (str(trade_date), str(provider_name)),
+                ).fetchall()
+                scoped_payloads: list[dict[str, object]] = []
+                for r in rows:
+                    p = json.loads(str(r["receipt_json"]))
+                    if isinstance(p, dict):
+                        scoped_payloads.append(p)
+
+                # First check if any scoped receipt covers all requested symbols
+                for p in scoped_payloads:
+                    p_symbols = _receipt_symbols_set(p.get("symbols"))
+                    if req_symbols.issubset(p_symbols):
+                        if verify and not self._verify_market_daily_receipt(conn, p):
+                            raise ValueError("market_daily_ingestion_receipt_drift")
+                        return p
+
+                # If none covers all requested symbols, return the most comprehensive candidate
+                candidates: list[dict[str, object]] = (
+                    [full_payload] if full_payload is not None else []
+                ) + scoped_payloads
+                if candidates:
+                    best = max(
+                        candidates,
+                        key=lambda p: (
+                            len(
+                                req_symbols.intersection(
+                                    _receipt_symbols_set(p.get("symbols"))
+                                )
+                            ),
+                            _receipt_row_count(p.get("row_count")),
+                        ),
+                    )
+                    if verify and not self._verify_market_daily_receipt(conn, best):
+                        raise ValueError("market_daily_ingestion_receipt_drift")
+                    return best
+
+            if full_payload is not None:
+                if verify and not self._verify_market_daily_receipt(conn, full_payload):
+                    raise ValueError("market_daily_ingestion_receipt_drift")
+                return full_payload
+
             return None
 
     def get_market_daily_scoped_receipt(

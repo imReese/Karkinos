@@ -299,13 +299,17 @@ class SchedulerPostCloseMixin:
                         verify=True,
                     )
                 if verified is not None:
-                    logger.info(
-                        "收盘行情针对持仓标的的作用域凭证恢复完成: date=%s provider=%s symbols=%s",
-                        target_trade_date,
-                        candidate,
-                        stock_symbols,
-                    )
-                    return candidate
+                    receipt_symbols = {str(s) for s in verified.get("symbols", [])}
+                    if not stock_symbols or all(
+                        s in receipt_symbols for s in stock_symbols
+                    ):
+                        logger.info(
+                            "收盘行情针对持仓标的的作用域凭证恢复完成: date=%s provider=%s symbols=%s",
+                            target_trade_date,
+                            candidate,
+                            stock_symbols,
+                        )
+                        return candidate
             except Exception:
                 logger.exception(
                     "收盘行情作用域凭证写入失败，尝试下一个候选数据源: date=%s provider=%s",

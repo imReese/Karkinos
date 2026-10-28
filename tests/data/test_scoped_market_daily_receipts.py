@@ -288,3 +288,88 @@ def test_post_close_stock_quotes_publication_with_scoped_receipt(
     assert result2.published is True
     assert result2.error_message is None
     assert result2.symbols == ("600001", "600002")
+
+
+def test_legacy_full_market_receipt_for_partial_universe_upgrades_to_scoped_ab(
+    tmp_path: Path,
+) -> None:
+    """Regression: old version wrote partial A to market_daily_ingestion_receipts.
+
+    When new version writes scoped A+B to market_daily_scoped_receipts,
+    querying for A+B must skip the incomplete full-batch receipt, select the covering
+    scoped receipt, publish successfully, while keeping old receipt A valid and replayable.
+    """
+    store = DataStore(tmp_path / "data")
+    db = _setup_calendar_database(tmp_path / "app.db")
+    resolved = resolve_latest_verified_closed_trading_date(db, _CAPTURED_AT)
+    assert resolved is not None
+    refs = resolved.calendar_evidence_refs
+
+    # 1. Legacy version wrote partial A (600001) into full market table
+    store.ingest_market_daily_batch(
+        trade_date=_TRADE_DATE,
+        provider_name="source1",
+        bars=_create_bars([("600001", 10.0)]),
+    )
+
+    # Old full receipt exists and only has 600001
+    old_receipt = store.get_market_daily_ingestion_receipt(
+        trade_date=_TRADE_DATE,
+        provider_name="source1",
+    )
+    assert old_receipt is not None
+    assert old_receipt["symbols"] == ["600001"]
+
+    # 2. Watchlist requires 600001 and 600002
+    watchlist = [
+        (Symbol("600001"), AssetClass.STOCK),
+        (Symbol("600002"), AssetClass.STOCK),
+    ]
+
+    # Before A+B is ingested, requesting A+B sees missing 600002
+    result_before = publish_post_close_stock_quotes(
+        db,
+        store,
+        watchlist,
+        provider_name="source1",
+        trade_date=date.fromisoformat(_TRADE_DATE),
+        calendar_evidence_refs=refs,
+        captured_at=_CAPTURED_AT,
+    )
+    assert result_before.published is False
+    assert (
+        result_before.error_message == "market_daily_ingestion_receipt_scope_incomplete"
+    )
+    assert result_before.missing_symbols == ("600002",)
+
+    # 3. New version writes scoped A+B into scoped table
+    store.ingest_scoped_market_daily_batch(
+        trade_date=_TRADE_DATE,
+        provider_name="source1",
+        bars=_create_bars([("600001", 10.0), ("600002", 20.0)]),
+    )
+
+    # 4. Publication for A+B now succeeds!
+    result_after = publish_post_close_stock_quotes(
+        db,
+        store,
+        watchlist,
+        provider_name="source1",
+        trade_date=date.fromisoformat(_TRADE_DATE),
+        calendar_evidence_refs=refs,
+        captured_at=_CAPTURED_AT,
+    )
+    assert result_after.published is True
+    assert result_after.error_message is None
+    assert result_after.symbols == ("600001", "600002")
+
+    # 5. Old receipt A is preserved, not overwritten, and still verifiable
+    receipt_a = store.get_market_daily_ingestion_receipt(
+        trade_date=_TRADE_DATE,
+        provider_name="source1",
+        symbols=["600001"],
+        verify=True,
+    )
+    assert receipt_a is not None
+    assert receipt_a["symbols"] == ["600001"]
+    assert receipt_a.get("scope_type") != "scoped"
