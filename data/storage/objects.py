@@ -31,12 +31,14 @@ from __future__ import annotations
 
 import hashlib
 import os
+import stat
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 _SHA256_PREFIX = "sha256:"
 _SHA256_HEX_LENGTH = 64
+_HEX_CHARS = frozenset("0123456789abcdef")
 
 
 class ObjectStoreError(RuntimeError):
@@ -248,30 +250,39 @@ class ContentAddressedObjectStore:
 
         本方法会重新计算 SHA256，因此损坏对象不能被解析成合法 ObjectRef。
         """
-        object_id = _validate_object_id(object_id)
+        data = self.read_bytes_by_id(object_id)
+        return ObjectRef(
+            object_id=object_id,
+            size_bytes=len(data),
+        )
 
+    def read_bytes_by_id(
+        self,
+        object_id: str,
+    ) -> bytes:
+        """根据 content id 读取对象，并验证 size 与 content identity。"""
+        object_id = _validate_object_id(object_id)
         path = self._path_for(object_id)
 
-        if path.is_symlink():
-            raise ObjectIntegrityError(f"object_path_must_not_be_symlink:{object_id}")
-
-        if not path.exists():
+        try:
+            stat_result = os.lstat(path)
+        except FileNotFoundError:
             raise ObjectNotFoundError(f"object_not_found:{object_id}")
 
-        if not path.is_file():
+        mode = stat_result.st_mode
+        if stat.S_ISLNK(mode):
+            raise ObjectIntegrityError(f"object_path_must_not_be_symlink:{object_id}")
+
+        if not stat.S_ISREG(mode):
             raise ObjectIntegrityError(f"object_path_must_be_file:{object_id}")
 
         data = path.read_bytes()
-
         actual_id = object_id_from_bytes(data)
 
         if actual_id != object_id:
             raise ObjectIntegrityError(f"object_integrity_mismatch:{object_id}")
 
-        return ObjectRef(
-            object_id=object_id,
-            size_bytes=len(data),
-        )
+        return data
 
     def verify(
         self,
@@ -318,22 +329,28 @@ class ContentAddressedObjectStore:
         path: Path,
         ref: ObjectRef,
     ) -> bytes:
-        if path.is_symlink():
+        try:
+            stat_result = os.lstat(path)
+        except FileNotFoundError:
+            raise ObjectNotFoundError(f"object_not_found:{ref.object_id}")
+
+        mode = stat_result.st_mode
+        if stat.S_ISLNK(mode):
             raise ObjectIntegrityError(
                 f"object_path_must_not_be_symlink:{ref.object_id}"
             )
 
-        if not path.exists():
-            raise ObjectNotFoundError(f"object_not_found:{ref.object_id}")
-
-        if not path.is_file():
+        if not stat.S_ISREG(mode):
             raise ObjectIntegrityError(f"object_path_must_be_file:{ref.object_id}")
+
+        if stat_result.st_size != ref.size_bytes:
+            raise ObjectIntegrityError(f"object_integrity_mismatch:{ref.object_id}")
 
         data = path.read_bytes()
 
         actual_id = object_id_from_bytes(data)
 
-        if len(data) != ref.size_bytes or actual_id != ref.object_id:
+        if actual_id != ref.object_id:
             raise ObjectIntegrityError(f"object_integrity_mismatch:{ref.object_id}")
 
         return data
@@ -354,10 +371,7 @@ def _validate_object_id(
 
     digest = object_id[len(_SHA256_PREFIX) :]
 
-    if len(digest) != _SHA256_HEX_LENGTH:
-        raise ValueError("object_id_invalid")
-
-    if any(character not in "0123456789abcdef" for character in digest):
+    if len(digest) != _SHA256_HEX_LENGTH or not _HEX_CHARS.issuperset(digest):
         raise ValueError("object_id_invalid")
 
     return object_id

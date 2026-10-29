@@ -1428,9 +1428,7 @@ def _forward_seed_market_membership(
     )
     raw_master = (
         {
-            **json.loads(
-                objects.read_bytes(objects.resolve_ref(origin["master_observation_id"]))
-            ),
+            **json.loads(objects.read_bytes_by_id(origin["master_observation_id"])),
             "snapshot_id": origin["master_observation_id"],
         }
         if origin
@@ -1992,9 +1990,7 @@ def resolve_deployment_evaluation_dataset(
                     valid_memberships = False
                     break
                 observed = json.loads(
-                    objects.read_bytes(
-                        objects.resolve_ref(item.source_observation_ids[0])
-                    )
+                    objects.read_bytes_by_id(item.source_observation_ids[0])
                 )
                 try:
                     expected_members = market_master_buy_instruments(
@@ -2370,7 +2366,7 @@ def resolve_research_simulation_market_inputs(
                 for item in derived.session_memberships
                 for identity in item.source_observation_ids
             }:
-                source = json.loads(objects.read_bytes(objects.resolve_ref(identity)))
+                source = json.loads(objects.read_bytes_by_id(identity))
                 if source.get("schema_version") not in {
                     "karkinos.market_universe_snapshot.v2",
                     "karkinos.market_universe_snapshot.v3",

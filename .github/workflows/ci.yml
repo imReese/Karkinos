@@ -195,7 +195,7 @@ jobs:
           mkdir -p reports/ci
           if [[ "${HAS_BACKEND_CHANGES}" == "true" ]]; then
             echo "Core backend changes detected; running full test suite."
-            uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0 \
+            uv run --locked python -m pytest -n auto --dist loadfile --max-worker-restart=0 \
               -m "not trading_safety and not product_smoke and not database_format" \
               --cov --cov-report= --cov-fail-under=0
           else
@@ -211,15 +211,15 @@ jobs:
       - name: Trading safety invariants
         if: ${{ !cancelled() }}
         run: >-
-          uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0
+          uv run --locked python -m pytest -n auto --dist loadfile --max-worker-restart=0
           -m trading_safety
           --cov --cov-append --cov-report= --cov-fail-under=0
       - name: Python product smoke
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && needs.plan.outputs.has_backend_changes == 'true' }}
         env:
           PYTHONUNBUFFERED: "1"
         run: >-
-          uv run --locked python -m pytest -n 4 --dist loadfile --max-worker-restart=0
+          uv run --locked python -m pytest -n auto --dist loadfile --max-worker-restart=0
           -m product_smoke -vv
           --durations=20
           --cov --cov-append --cov-report= --cov-fail-under=0

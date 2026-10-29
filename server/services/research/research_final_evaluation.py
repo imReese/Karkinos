@@ -1291,7 +1291,7 @@ def _deployment_assessment(
         source_memberships: list[set[InstrumentKey]] = []
         source_count = 0
         for identity in membership.source_observation_ids:
-            master = json.loads(objects.read_bytes(objects.resolve_ref(identity)))
+            master = json.loads(objects.read_bytes_by_id(identity))
             if master.get("schema_version") not in {
                 "karkinos.market_universe_snapshot.v2",
                 "karkinos.market_universe_snapshot.v3",

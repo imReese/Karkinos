@@ -424,7 +424,7 @@ def read_dataset_corporate_action_evidence(
 
         identity = snapshot.corporate_action_observation_ids[0]
         try:
-            raw = json.loads(store.read_bytes(store.resolve_ref(identity)))
+            raw = json.loads(store.read_bytes_by_id(identity))
             if raw.get("schema_version") == WINDOW_SCHEMA:
                 evidence = read_corporate_action_window(
                     store, store.resolve_ref(identity)
