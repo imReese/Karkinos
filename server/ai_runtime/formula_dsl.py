@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
+from datetime import date
 from typing import Any, Mapping
 
 import pandas as pd
@@ -36,6 +37,7 @@ _FIELDS = frozenset({"open", "high", "low", "close", "volume"})
 _WINDOW_OPERATORS = frozenset(
     {
         "rolling_mean",
+        "rolling_sum",
         "rolling_std",
         "rolling_max",
         "rolling_min",
@@ -64,7 +66,23 @@ _BINARY_OPERATORS = frozenset(
     }
 )
 _UNARY_OPERATORS = frozenset({"not"})
-_CROSS_SECTIONAL_OPERATORS = frozenset({"cs_rank", "cs_zscore"})
+_CROSS_SECTIONAL_OPERATOR = "cross_sectional_rank"
+_CROSS_SECTIONAL_MEAN_OPERATOR = "cross_sectional_mean"
+_CROSS_SECTIONAL_ZSCORE_OPERATOR = "cross_sectional_zscore"
+_CROSS_SECTIONAL_OPERATORS = frozenset(
+    {
+        _CROSS_SECTIONAL_OPERATOR,
+        _CROSS_SECTIONAL_MEAN_OPERATOR,
+        _CROSS_SECTIONAL_ZSCORE_OPERATOR,
+    }
+)
+_CROSS_SECTIONAL_ALIASES = {
+    "cs_rank": _CROSS_SECTIONAL_OPERATOR,
+    "cs_zscore": _CROSS_SECTIONAL_ZSCORE_OPERATOR,
+}
+_ALL_CROSS_SECTIONAL_OPERATORS = _CROSS_SECTIONAL_OPERATORS | frozenset(
+    _CROSS_SECTIONAL_ALIASES
+)
 _UNSUPPORTED_REVIEWED_OPERATORS = frozenset({"volatility_target"})
 _MAX_WINDOW = 252
 _MAX_DEPTH = 32
@@ -191,7 +209,7 @@ def formula_operator_catalog() -> JsonObject:
                 "period": "integer 1..252",
             },
             "window_operator": {
-                "op": "rolling_mean|rolling_std|rolling_max|rolling_min|zscore|ema|rsi|rank",
+                "op": "rolling_mean|rolling_sum|rolling_std|rolling_max|rolling_min|zscore|ema|rsi|rank",
                 "input": "expression",
                 "window": "integer 2..252",
             },
@@ -202,8 +220,20 @@ def formula_operator_catalog() -> JsonObject:
                 "right": "expression",
             },
             "not": {"op": "not", "input": "expression"},
+            "cross_sectional_rank": {
+                "op": _CROSS_SECTIONAL_OPERATOR,
+                "input": "finite-history expression without another cross-sectional rank; a resolved cross-sectional mean is allowed",
+            },
+            "cross_sectional_mean": {
+                "op": _CROSS_SECTIONAL_MEAN_OPERATOR,
+                "input": "finite-history local expression; equal-weight same-session mean over the complete defined reference pool",
+            },
+            "cross_sectional_zscore": {
+                "op": _CROSS_SECTIONAL_ZSCORE_OPERATOR,
+                "input": "finite-history local expression; cross-sectional z-score (mean 0, unit variance) over the reference pool",
+            },
             "cross_sectional_operator": {
-                "op": "cs_rank|cs_zscore",
+                "op": f"{_CROSS_SECTIONAL_OPERATOR}|{_CROSS_SECTIONAL_MEAN_OPERATOR}|{_CROSS_SECTIONAL_ZSCORE_OPERATOR}",
                 "input": "expression",
             },
             "equal_weight": {"op": "equal_weight"},
@@ -215,18 +245,24 @@ def formula_operator_catalog() -> JsonObject:
         },
         "window_bounds": {"minimum": 2, "maximum": _MAX_WINDOW},
         "operator_semantics": {
+            "rolling_sum": "sum of the complete trailing window, including the current bar; undefined inputs remain missing",
             "return": "fractional change: current / lagged - 1",
             "roc": "percentage change: 100 * (current / lagged - 1); undefined changes are missing",
             "rolling_max": "maximum of the complete trailing window, including the current bar",
             "rolling_min": "minimum of the complete trailing window, including the current bar",
             "rank": "percentile rank (0.0 to 1.0) of the current value within the trailing window",
-            "cs_rank": (
-                "cross-sectional percentile rank (0.0 to 1.0) of the current value "
-                "across the universe at the matching timestamp"
+            "cross_sectional_rank": (
+                "entry-only ascending average percentile among defined scores in the "
+                "complete dated declared market after the frozen history requirement; "
+                "includes held and non-permitted entry boards, never cash/lot filtering; "
+                "ties receive their average percentile; incomplete inputs block new "
+                "entries while an independent local exit remains available"
             ),
-            "cs_zscore": (
-                "cross-sectional standard score (value - mean) / std across the "
-                "universe at the matching timestamp; missing or zero variance returns NaN"
+            "cross_sectional_mean": (
+                "equal-weight same-session mean over the complete defined reference pool"
+            ),
+            "cross_sectional_zscore": (
+                "cross-sectional z-score (mean 0, unit variance) over the complete defined reference pool"
             ),
         },
         "signal_timing": (
@@ -257,6 +293,16 @@ def validate_formula_ast(
         raise FormulaValidationError("unknown_formula_schema", "schema_version")
     _validate_expression(formula_ast["entry"], "formula_ast.entry", depth=0)
     _validate_expression(formula_ast["exit"], "formula_ast.exit", depth=0)
+    if formula_requires_cross_section(formula_ast["exit"]):
+        raise FormulaValidationError(
+            "cross_sectional_exit_unsupported", "formula_ast.exit"
+        )
+    if formula_requires_cross_section(formula_ast["entry"]) and (
+        expression_lookback_rows(formula_ast["entry"]) is None
+    ):
+        raise FormulaValidationError(
+            "cross_sectional_finite_history_required", "formula_ast.entry"
+        )
     _validate_sizing(
         formula_ast["position_size"],
         "formula_ast.position_size",
@@ -271,68 +317,208 @@ def evaluate_formula(
     frame: pd.DataFrame,
     *,
     universe_size: int,
-    symbol: str = "_primary_",
-    cross_sectional_frames: Mapping[str, pd.DataFrame] | None = None,
-    _cs_cache: dict[str, dict[str, pd.Series]] | None = None,
+    cross_section_values: Mapping[str, pd.Series] | None = None,
+    cross_section_available: Mapping[str, pd.Series] | None = None,
 ) -> tuple[pd.Series, pd.Series, float]:
     """Evaluate validated expressions over history without future references."""
     normalized = validate_formula_ast(formula_ast, universe_size=universe_size)
-    entry = (
-        _evaluate_expression(
-            normalized["entry"],
-            frame,
-            universe_size=universe_size,
-            symbol=symbol,
-            cross_sectional_frames=cross_sectional_frames,
-            _cs_cache=_cs_cache,
+    joint = formula_requires_cross_section(normalized["entry"])
+    if joint and universe_size > 1 and cross_section_values is None:
+        raise FormulaValidationError(
+            "cross_sectional_context_required", "formula_ast.entry"
         )
-        .fillna(False)
-        .astype(bool)
-    )
-    exit_signal = (
-        _evaluate_expression(
-            normalized["exit"],
-            frame,
-            universe_size=universe_size,
-            symbol=symbol,
-            cross_sectional_frames=cross_sectional_frames,
-            _cs_cache=_cs_cache,
+    if joint and not formula_expression_fields(normalized["entry"]) <= set(frame):
+        entry = pd.Series(False, index=frame.index, dtype=bool)
+    else:
+        entry = (
+            _evaluate_expression(
+                normalized["entry"],
+                frame,
+                universe_size=universe_size,
+                cross_section_values=cross_section_values,
+            )
+            .fillna(False)
+            .astype(bool)
         )
-        .fillna(False)
-        .astype(bool)
-    )
+    if joint and (universe_size > 1 or cross_section_available is not None):
+        entry &= cross_section_expression_available(
+            normalized["entry"], frame.index, cross_section_available or {}
+        )
+    if joint and not formula_expression_fields(normalized["exit"]) <= set(frame):
+        exit_signal = pd.Series(False, index=frame.index, dtype=bool)
+    else:
+        exit_signal = (
+            _evaluate_expression(normalized["exit"], frame, universe_size=universe_size)
+            .fillna(False)
+            .astype(bool)
+        )
     target_weight = _evaluate_sizing(
         normalized["position_size"], universe_size=universe_size
     )
     return entry, exit_signal, target_weight
 
 
-def evaluate_formula_universe(
-    formula_ast: Mapping[str, Any],
-    frames: Mapping[str, pd.DataFrame],
+def formula_requires_cross_section(value: Mapping[str, Any]) -> bool:
+    return bool(formula_cross_sectional_inputs(value))
+
+
+def formula_expression_fields(value: Mapping[str, Any]) -> set[str]:
+    """Raw fields needed by an expression, including its section score."""
+    if value.get("op") == "field":
+        return {str(value["name"])}
+    if value.get("op") == "atr":
+        return {"high", "low", "close"}
+    fields: set[str] = set()
+    for child in value.values():
+        if isinstance(child, Mapping):
+            fields.update(formula_expression_fields(child))
+    return fields
+
+
+def formula_cross_sectional_inputs(value: Mapping[str, Any]) -> dict[str, JsonObject]:
+    """Name operations in dependency order, retaining historical rank keys."""
+    inputs: dict[str, JsonObject] = {}
+    for child in value.values():
+        if isinstance(child, Mapping):
+            inputs.update(formula_cross_sectional_inputs(child))
+    if value.get("op") in _ALL_CROSS_SECTIONAL_OPERATORS:
+        inputs[_cross_sectional_key(value)] = dict(value)
+    return inputs
+
+
+def _cross_sectional_key(value: Mapping[str, Any]) -> str:
+    child = canonical_json(value["input"])
+    op = _CROSS_SECTIONAL_ALIASES.get(value["op"], value["op"])
+    # Persisted rank ASTs and their prepared-series callers keep their old key.
+    # A mean or zscore of the same input (or rank(mean(input))) must be a distinct node.
+    return child if op == _CROSS_SECTIONAL_OPERATOR else f"{op}:{child}"
+
+
+def expression_lookback_rows(
+    value: Mapping[str, Any],
     *,
-    universe_size: int | None = None,
-) -> tuple[dict[str, pd.Series], dict[str, pd.Series], float]:
-    """Evaluate validated expressions across an entire universe of frames."""
-    effective_universe_size = (
-        universe_size if universe_size is not None else len(frames)
-    )
-    entries: dict[str, pd.Series] = {}
-    exits: dict[str, pd.Series] = {}
-    weight = 0.0
-    cs_cache: dict[str, dict[str, pd.Series]] = {}
-    for symbol, frame in frames.items():
-        entry, exit_sig, weight = evaluate_formula(
-            formula_ast,
-            frame,
-            universe_size=effective_universe_size,
-            symbol=str(symbol),
-            cross_sectional_frames=frames,
-            _cs_cache=cs_cache,
+    minimum_history_rows: int = 1,
+    common_history_rows: int = 1,
+) -> int | None:
+    """Finite target history, or complete cold initialization when requested.
+
+    A broadcast common series has its own contributor history. Consumers retain
+    actual availability masks rather than imposing that floor again on a young
+    target. Cold Dataset preparation can request the common contributor floor.
+    """
+    op = value["op"]
+    if op in {"field", "constant"}:
+        return 1
+    if op in {"ema", "rsi", "atr"}:
+        return None
+    if "left" in value:
+        left = expression_lookback_rows(
+            value["left"],
+            minimum_history_rows=minimum_history_rows,
+            common_history_rows=common_history_rows,
         )
-        entries[str(symbol)] = entry
-        exits[str(symbol)] = exit_sig
-    return entries, exits, weight
+        right = expression_lookback_rows(
+            value["right"],
+            minimum_history_rows=minimum_history_rows,
+            common_history_rows=common_history_rows,
+        )
+        if left is None or right is None:
+            return None
+        return max(left, right) + (op == "cross")
+    child = expression_lookback_rows(
+        value["input"],
+        minimum_history_rows=minimum_history_rows,
+        common_history_rows=common_history_rows,
+    )
+    if child is None:
+        return None
+    if op in (_CROSS_SECTIONAL_OPERATOR, "cs_rank"):
+        return max(child, minimum_history_rows)
+    if op in (
+        _CROSS_SECTIONAL_MEAN_OPERATOR,
+        _CROSS_SECTIONAL_ZSCORE_OPERATOR,
+        "cs_zscore",
+    ):
+        # Contributor qualification belongs to the joint resolver. A target may
+        # consume an already available common series before its own 60th row;
+        # actual factor availability propagates through every temporal operator.
+        return max(child, common_history_rows)
+    if "period" in value:
+        return child + int(value["period"])
+    if "window" in value:
+        return child + int(value["window"]) - 1
+    return child
+
+
+def evaluate_formula_expression(
+    value: Mapping[str, Any],
+    frame: pd.DataFrame,
+    *,
+    universe_size: int = 1,
+    cross_section_values: Mapping[str, pd.Series] | None = None,
+) -> pd.Series:
+    """Evaluate a score using only already resolved common input series."""
+    _validate_expression(value, "expression", depth=0)
+    dependencies = formula_cross_sectional_inputs(value)
+    if any(node["op"] == _CROSS_SECTIONAL_OPERATOR for node in dependencies.values()):
+        raise FormulaValidationError(
+            "nested_cross_sectional_rank_unsupported", "expression"
+        )
+    if dependencies and cross_section_values is None:
+        raise FormulaValidationError("cross_sectional_context_required", "expression")
+    return _evaluate_expression(
+        value,
+        frame,
+        universe_size=universe_size,
+        cross_section_values=cross_section_values,
+    )
+
+
+def cross_section_expression_available(
+    value: Mapping[str, Any],
+    index: pd.Index,
+    available: Mapping[str, pd.Series],
+    *,
+    known_warmup: bool = False,
+) -> pd.Series:
+    """Propagate actual context gaps through the entry's causal dependencies.
+
+    Score availability uses false for warmup; source completeness uses true for
+    known prehistory. Neither turns an unknown foreign value into a buy signal.
+    """
+    if not formula_requires_cross_section(value):
+        return pd.Series(True, index=index, dtype=bool)
+    op = value["op"]
+    if op in _CROSS_SECTIONAL_OPERATORS:
+        result = available.get(_cross_sectional_key(value))
+        if result is None:
+            return pd.Series(False, index=index, dtype=bool)
+        if not result.index.equals(index):
+            raise FormulaValidationError("cross_sectional_index_mismatch", "evaluation")
+        return result.fillna(False).astype(bool)
+    if "left" in value:
+        result = cross_section_expression_available(
+            value["left"], index, available, known_warmup=known_warmup
+        ) & cross_section_expression_available(
+            value["right"], index, available, known_warmup=known_warmup
+        )
+        if op == "cross":
+            result &= result.shift(1, fill_value=known_warmup)
+        return result
+    result = cross_section_expression_available(
+        value["input"], index, available, known_warmup=known_warmup
+    )
+    if "period" in value:
+        previous = result.shift(int(value["period"]), fill_value=known_warmup)
+        return previous if op == "lag" else result & previous
+    if "window" in value:
+        window = int(value["window"])
+        return (
+            result.rolling(window, min_periods=1 if known_warmup else window)
+            .min()
+            .eq(1)
+        )
+    return result
 
 
 def formula_fingerprint(binding: FormulaBinding) -> str:
@@ -348,6 +534,11 @@ def _validate_expression(value: Any, path: str, *, depth: int) -> None:
     op = value.get("op")
     if not isinstance(op, str) or not op:
         raise FormulaValidationError("operator_missing", f"{path}.op")
+    if op in _CROSS_SECTIONAL_ALIASES:
+        canonical_op = _CROSS_SECTIONAL_ALIASES[op]
+        if isinstance(value, dict):
+            value["op"] = canonical_op
+        op = canonical_op
     if op in _UNSUPPORTED_REVIEWED_OPERATORS:
         raise FormulaValidationError("operator_not_canonically_supported", path)
     if op == "field":
@@ -363,6 +554,26 @@ def _validate_expression(value: Any, path: str, *, depth: int) -> None:
             raise FormulaValidationError("constant_not_numeric", f"{path}.value")
         if not math.isfinite(float(value["value"])):
             raise FormulaValidationError("non_finite_number", f"{path}.value")
+        return
+    if op in _CROSS_SECTIONAL_OPERATORS:
+        _expect_keys(value, required={"op", "input"}, path=path)
+        dependencies = formula_cross_sectional_inputs(value["input"])
+        if dependencies and (
+            op in (_CROSS_SECTIONAL_MEAN_OPERATOR, _CROSS_SECTIONAL_ZSCORE_OPERATOR)
+            or any(
+                _CROSS_SECTIONAL_ALIASES.get(node["op"], node["op"])
+                == _CROSS_SECTIONAL_OPERATOR
+                for node in dependencies.values()
+            )
+        ):
+            raise FormulaValidationError(
+                "nested_cross_sectional_rank_unsupported", path
+            )
+        _validate_expression(value["input"], f"{path}.input", depth=depth + 1)
+        if expression_lookback_rows(value["input"]) is None:
+            raise FormulaValidationError(
+                "cross_sectional_finite_history_required", path
+            )
         return
     if op in _PERIOD_OPERATORS:
         _expect_keys(value, required={"op", "input", "period"}, path=path)
@@ -393,10 +604,6 @@ def _validate_expression(value: Any, path: str, *, depth: int) -> None:
         _validate_expression(value["right"], f"{path}.right", depth=depth + 1)
         return
     if op in _UNARY_OPERATORS:
-        _expect_keys(value, required={"op", "input"}, path=path)
-        _validate_expression(value["input"], f"{path}.input", depth=depth + 1)
-        return
-    if op in _CROSS_SECTIONAL_OPERATORS:
         _expect_keys(value, required={"op", "input"}, path=path)
         _validate_expression(value["input"], f"{path}.input", depth=depth + 1)
         return
@@ -431,24 +638,43 @@ def _evaluate_expression(
     frame: pd.DataFrame,
     *,
     universe_size: int = 1,
-    symbol: str = "_primary_",
-    cross_sectional_frames: Mapping[str, pd.DataFrame] | None = None,
-    _cs_cache: dict[str, dict[str, pd.Series]] | None = None,
+    cross_section_values: Mapping[str, pd.Series] | None = None,
 ) -> pd.Series:
     op = str(value["op"])
+    canonical_op = _CROSS_SECTIONAL_ALIASES.get(op, op)
     index = frame.index
     if op == "field":
         return pd.to_numeric(frame[str(value["name"])], errors="coerce")
     if op == "constant":
         return pd.Series(float(value["value"]), index=index, dtype=float)
+    if canonical_op in _CROSS_SECTIONAL_OPERATORS:
+        resolved = (cross_section_values or {}).get(_cross_sectional_key(value))
+        if resolved is not None:
+            if not resolved.index.equals(index):
+                raise FormulaValidationError(
+                    "cross_sectional_index_mismatch", "evaluation"
+                )
+            return resolved
+        if universe_size == 1:
+            raw = _evaluate_expression(
+                value["input"],
+                frame,
+                universe_size=universe_size,
+                cross_section_values=cross_section_values,
+            )
+            if canonical_op == _CROSS_SECTIONAL_OPERATOR:
+                return raw.where(raw.isna(), 1.0)
+            if canonical_op == _CROSS_SECTIONAL_MEAN_OPERATOR:
+                return raw
+            if canonical_op == _CROSS_SECTIONAL_ZSCORE_OPERATOR:
+                return pd.Series(float("nan"), index=index, dtype=float)
+        return pd.Series(float("nan"), index=index, dtype=float)
     if op in _PERIOD_OPERATORS:
         item = _evaluate_expression(
             value["input"],
             frame,
             universe_size=universe_size,
-            symbol=symbol,
-            cross_sectional_frames=cross_sectional_frames,
-            _cs_cache=_cs_cache,
+            cross_section_values=cross_section_values,
         )
         period = int(value["period"])
         if op == "lag":
@@ -468,13 +694,13 @@ def _evaluate_expression(
             value["input"],
             frame,
             universe_size=universe_size,
-            symbol=symbol,
-            cross_sectional_frames=cross_sectional_frames,
-            _cs_cache=_cs_cache,
+            cross_section_values=cross_section_values,
         )
         scratch = pd.DataFrame({"value": item}, index=index)
         if op == "rolling_mean":
             return FeatureEngine.sma(scratch, column="value", period=window)
+        if op == "rolling_sum":
+            return item.rolling(window=window).sum()
         if op == "rolling_std":
             return item.rolling(window=window).std()
         if op == "rolling_max":
@@ -496,17 +722,13 @@ def _evaluate_expression(
             value["left"],
             frame,
             universe_size=universe_size,
-            symbol=symbol,
-            cross_sectional_frames=cross_sectional_frames,
-            _cs_cache=_cs_cache,
+            cross_section_values=cross_section_values,
         )
         right = _evaluate_expression(
             value["right"],
             frame,
             universe_size=universe_size,
-            symbol=symbol,
-            cross_sectional_frames=cross_sectional_frames,
-            _cs_cache=_cs_cache,
+            cross_section_values=cross_section_values,
         )
         if op == "add":
             return left + right
@@ -537,91 +759,8 @@ def _evaluate_expression(
             value["input"],
             frame,
             universe_size=universe_size,
-            symbol=symbol,
-            cross_sectional_frames=cross_sectional_frames,
-            _cs_cache=_cs_cache,
+            cross_section_values=cross_section_values,
         ).fillna(False).astype(bool)
-    if op in _CROSS_SECTIONAL_OPERATORS:
-        if cross_sectional_frames is None or len(cross_sectional_frames) <= 1:
-            if universe_size > 1:
-                raise FormulaValidationError(
-                    "cross_sectional_context_required", f"formula_ast.{op}"
-                )
-            item = _evaluate_expression(
-                value["input"],
-                frame,
-                universe_size=universe_size,
-                symbol=symbol,
-                cross_sectional_frames=cross_sectional_frames,
-                _cs_cache=_cs_cache,
-            )
-            if op == "cs_rank":
-                return item.where(item.isna(), 1.0)
-            return pd.Series(float("nan"), index=index, dtype=float)
-
-        ast_key = canonical_json(value)
-        if _cs_cache is not None and ast_key in _cs_cache:
-            cached = _cs_cache[ast_key].get(symbol)
-            if cached is not None:
-                return cached
-
-        series_by_sym = {
-            sym: _evaluate_expression(
-                value["input"],
-                s_frame,
-                universe_size=universe_size,
-                symbol=sym,
-                cross_sectional_frames=cross_sectional_frames,
-                _cs_cache=_cs_cache,
-            )
-            for sym, s_frame in cross_sectional_frames.items()
-        }
-
-        has_timestamp = all(
-            "timestamp" in s_frame.columns
-            for s_frame in cross_sectional_frames.values()
-        )
-        if has_timestamp:
-            matrix = pd.DataFrame(
-                {
-                    sym: pd.Series(
-                        s.values,
-                        index=pd.to_datetime(cross_sectional_frames[sym]["timestamp"]),
-                    )
-                    for sym, s in series_by_sym.items()
-                }
-            )
-            if op == "cs_rank":
-                res_matrix = FeatureEngine.cross_sectional_rank(
-                    matrix, ascending=True, pct=True
-                )
-            else:
-                res_matrix = FeatureEngine.cross_sectional_zscore(matrix)
-            result_by_symbol = {
-                sym: pd.Series(
-                    res_matrix[sym]
-                    .reindex(pd.to_datetime(s_frame["timestamp"]))
-                    .values,
-                    index=s_frame.index,
-                    dtype=float,
-                )
-                for sym, s_frame in cross_sectional_frames.items()
-            }
-        else:
-            matrix = pd.DataFrame(series_by_sym)
-            if op == "cs_rank":
-                res_matrix = FeatureEngine.cross_sectional_rank(
-                    matrix, ascending=True, pct=True
-                )
-            else:
-                res_matrix = FeatureEngine.cross_sectional_zscore(matrix)
-            result_by_symbol = {sym: res_matrix[sym] for sym in series_by_sym}
-
-        if _cs_cache is not None:
-            _cs_cache[ast_key] = result_by_symbol
-        return result_by_symbol.get(
-            symbol, pd.Series(float("nan"), index=index, dtype=float)
-        )
     raise FormulaValidationError("unknown_operator", "evaluation")
 
 
@@ -673,3 +812,71 @@ def _json_copy(value: Mapping[str, Any]) -> JsonObject:
     import json
 
     return json.loads(canonical_json(value))
+
+
+def evaluate_formula_universe(
+    formula_ast: Mapping[str, Any],
+    frames: Mapping[str, pd.DataFrame],
+    *,
+    universe_size: int | None = None,
+) -> tuple[dict[str, pd.Series], dict[str, pd.Series], float]:
+    """Evaluate validated expressions across an entire universe of frames."""
+    effective_universe_size = (
+        universe_size if universe_size is not None else len(frames)
+    )
+    if formula_requires_cross_section(formula_ast) and len(frames) > 1:
+        from server.ai_runtime.formula_portfolio import (
+            FormulaCrossSectionInputs,
+            prepare_formula_sessions,
+        )
+
+        members: dict[date, list[str]] = {}
+        for s, f in frames.items():
+            if "timestamp" in f.columns:
+                for ts in pd.to_datetime(f["timestamp"]):
+                    members.setdefault(ts.date(), []).append(str(s))
+            elif isinstance(f.index, pd.DatetimeIndex):
+                for ts in f.index:
+                    members.setdefault(ts.date(), []).append(str(s))
+            else:
+                for d in pd.date_range("2026-01-01", periods=len(f)):
+                    members.setdefault(d.date(), []).append(str(s))
+        cross_section = FormulaCrossSectionInputs(
+            declared_symbols=tuple(frames),
+            session_memberships={d: tuple(names) for d, names in members.items()},
+            minimum_history_rows=1,
+            historical_snapshot=True,
+        )
+        prepared = prepare_formula_sessions(
+            formula_ast,
+            frames,
+            universe_size=effective_universe_size,
+            cross_section=cross_section,
+        )
+        entries = {}
+        exits = {}
+        for s in frames:
+            df = prepared[s]
+            orig_idx = frames[s].index
+            entries[s] = pd.Series(df["entry"].values, index=orig_idx, dtype=bool)
+            exits[s] = pd.Series(df["exit"].values, index=orig_idx, dtype=bool)
+        normalized = validate_formula_ast(
+            formula_ast, universe_size=effective_universe_size
+        )
+        target_weight = _evaluate_sizing(
+            normalized["position_size"], universe_size=effective_universe_size
+        )
+        return entries, exits, target_weight
+
+    entries: dict[str, pd.Series] = {}
+    exits: dict[str, pd.Series] = {}
+    weight = 0.0
+    for symbol, frame in frames.items():
+        entry, exit_sig, weight = evaluate_formula(
+            formula_ast,
+            frame,
+            universe_size=effective_universe_size,
+        )
+        entries[str(symbol)] = entry
+        exits[str(symbol)] = exit_sig
+    return entries, exits, weight

@@ -424,7 +424,7 @@ def read_dataset_corporate_action_evidence(
 
         identity = snapshot.corporate_action_observation_ids[0]
         try:
-            raw = json.loads(store.read_bytes_by_id(identity))
+            raw = json.loads(store.read_bytes(store.resolve_ref(identity)))
             if raw.get("schema_version") == WINDOW_SCHEMA:
                 evidence = read_corporate_action_window(
                     store, store.resolve_ref(identity)
@@ -869,8 +869,157 @@ def dataset_session_nontrading_instruments(
     return _validate_membership_evidence(store, snapshot, session_date=session_date)
 
 
+def dataset_cross_section_memberships(
+    store: ContentAddressedObjectStore,
+    snapshot: DailyBarDatasetSnapshot,
+    *,
+    as_of: datetime | None = None,
+    allow_retrospective: bool = False,
+) -> dict[date, tuple[InstrumentKey, ...]]:
+    """Verify a complete traded reference pool without applying capital filters.
+
+    A selected-row-complete Dataset alone does not prove this denominator. Every
+    declared stock must be either not yet listed, explicitly nontrading, or in
+    that session's traded selection. Backfilled status and listing observations
+    retain their actual availability; retrospective use never upgrades PIT.
+    This projection supplements, rather than replaces, the full bar reader.
+    """
+    try:
+        if type(allow_retrospective) is not bool or (
+            as_of is None and not allow_retrospective
+        ):
+            raise ValueError("cross_section_as_of_required")
+        if as_of is not None and (
+            not isinstance(as_of, datetime) or as_of.utcoffset() is None
+        ):
+            raise ValueError("cross_section_as_of_timezone_required")
+        if type(snapshot) is not DailyBarDatasetSnapshot:
+            raise TypeError("cross_section_snapshot_required")
+        memberships = snapshot.session_memberships
+        declared = set(snapshot.instruments)
+        days = [item.partition_date for item in memberships]
+        if (
+            not declared
+            or len(declared) != len(snapshot.instruments)
+            or any(key.instrument_type is not InstrumentType.STOCK for key in declared)
+            or not days
+            or days != sorted(set(days))
+            or set(days) != {part.partition_date for part in snapshot.partitions}
+            or (days[0], days[-1]) != (snapshot.start_date, snapshot.end_date)
+            or any(type(item) is not DailyBarDatasetMembership for item in memberships)
+            or (as_of is not None and snapshot.cutoff > as_of)
+        ):
+            raise ValueError("cross_section_scope_incomplete")
+        evidence: dict[
+            date, tuple[tuple[dict[str, Any], ...], dict[InstrumentKey, str]]
+        ] = {}
+        nontrading = _validate_membership_evidence(
+            store, snapshot, cross_section_evidence=evidence
+        )
+        result = {}
+        # Source dicts belong to this completed validation call. Reuse only
+        # their listing projection, never a cache across cold requests.
+        master_projections: dict[
+            int, tuple[set[InstrumentKey], dict[InstrumentKey, date]]
+        ] = {}
+        for membership in memberships:
+            day = membership.partition_date
+            refs = membership.source_observation_ids
+            if (
+                not refs
+                or len(refs) != len(set(refs))
+                or day not in evidence
+                or membership.available_at > snapshot.cutoff
+                or (as_of is not None and membership.available_at > as_of)
+            ):
+                raise ValueError("cross_section_source_incomplete")
+            masters, statuses = evidence[day]
+            listing_dates: dict[InstrumentKey, date] = {}
+            source_members: set[InstrumentKey] = set()
+            for master in masters:
+                if id(master) not in master_projections:
+                    master_projections[id(master)] = _cross_section_master_listings(
+                        master, declared
+                    )
+                members, dates = master_projections[id(master)]
+                source_members.update(members)
+                for key, listed in dates.items():
+                    if key in listing_dates and listing_dates[key] != listed:
+                        raise ValueError("cross_section_listing_date_conflict")
+                    listing_dates[key] = listed
+            if not declared <= source_members or set(listing_dates) != declared:
+                raise ValueError("cross_section_declared_master_incomplete")
+            before_listing = {
+                key for key, listed in listing_dates.items() if day < listed
+            }
+            traded = set(membership.instruments)
+            inactive = set(nontrading.get(day, ())) & declared
+            if (
+                len(traded) != len(membership.instruments)
+                or not traded <= declared
+                or traded.intersection(membership.maintenance_instruments)
+                or traded.intersection(before_listing | inactive)
+                or any(
+                    status != "0" and key in before_listing
+                    for key, status in statuses.items()
+                )
+                or traded != declared - before_listing - inactive
+            ):
+                raise ValueError("cross_section_traded_reference_incomplete")
+            result[day] = tuple(
+                sorted(traded, key=lambda key: (key.instrument_type.value, key.symbol))
+            )
+        return result
+    except (
+        DatasetReaderIntegrityError,
+        ObjectStoreError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+    ) as exc:
+        raise DatasetReaderIntegrityError(
+            "dataset_cross_section_membership_invalid"
+        ) from exc
+
+
+def _cross_section_master_listings(master, declared):
+    members = [
+        InstrumentKey(str(row["symbol"]), InstrumentType.STOCK)
+        for row in master["members"]
+    ]
+    member_set = set(members)
+    if len(members) != len(member_set):
+        raise ValueError("cross_section_master_member_duplicate")
+    rows = master.get("member_metadata")
+    if not isinstance(rows, list):
+        raise ValueError("cross_section_listing_metadata_missing")
+    listing_dates = {}
+    for row in rows:
+        key = InstrumentKey(str(row["symbol"]), InstrumentType.STOCK)
+        if key not in declared:
+            continue
+        if key in listing_dates or key not in member_set:
+            raise ValueError("cross_section_listing_metadata_duplicate")
+        raw_date = row["list_date"]
+        if not isinstance(raw_date, str):
+            raise ValueError("cross_section_listing_date_missing")
+        listed = date.fromisoformat(raw_date)
+        if str(listed) != raw_date:
+            raise ValueError("cross_section_listing_date_invalid")
+        listing_dates[key] = listed
+    return member_set, listing_dates
+
+
 def _validate_membership_evidence(
-    store, snapshot: DailyBarDatasetSnapshot, *, session_date: date | None = None
+    store,
+    snapshot: DailyBarDatasetSnapshot,
+    *,
+    session_date: date | None = None,
+    cross_section_evidence: dict[
+        date, tuple[tuple[dict[str, Any], ...], dict[InstrumentKey, str]]
+    ]
+    | None = None,
 ) -> dict[date, tuple[InstrumentKey, ...]]:
     """Verify actual source bytes/times, without inferring historical membership."""
     from data.market.capture import ProviderCaptureError
@@ -906,7 +1055,12 @@ def _validate_membership_evidence(
         )
         else None
     )
-    if verified is not None and cache_key is not None and cache_key in verified:
+    if (
+        cross_section_evidence is None
+        and verified is not None
+        and cache_key is not None
+        and cache_key in verified
+    ):
         # Retaining the immutable snapshot prevents object-id reuse. Only a
         # completed full validation can populate this request-local projection.
         _, previous = verified[cache_key]
@@ -938,6 +1092,7 @@ def _validate_membership_evidence(
         historical_status: dict[InstrumentKey, str] = {}
         historical_requests = []
         availability = []
+        masters = []
         try:
             for identity in membership.source_observation_ids:
                 source_key = identity
@@ -1024,7 +1179,11 @@ def _validate_membership_evidence(
                     else:
                         sources[source_key] = (
                             "master",
-                            _membership_master_evidence(store, source),
+                            _membership_master_evidence(
+                                store,
+                                source,
+                                include_activity=cross_section_evidence is not None,
+                            ),
                         )
                 kind, source = sources[source_key]
                 if kind == "security_identity":
@@ -1056,7 +1215,16 @@ def _validate_membership_evidence(
                         historical_status[key] = status
                     availability.append(capture.completed_at)
                     continue
-                source_members, available, dated_nontrading = source
+                source_members, available, dated_nontrading, master, activity = source
+                masters.append(master)
+                for key, status in activity.get(membership.partition_date, {}).items():
+                    prior_status = historical_status.get(key)
+                    if prior_status is not None and prior_status != status:
+                        if "0" in (prior_status, status):
+                            raise ValueError("historical_status_sources_conflict")
+                        if prior_status == "1":
+                            continue
+                    historical_status[key] = status
                 session_nontrading.update(
                     dated_nontrading.get(membership.partition_date, ())
                 )
@@ -1092,6 +1260,16 @@ def _validate_membership_evidence(
                         key=lambda key: (key.instrument_type.value, key.symbol),
                     )
                 )
+            if cross_section_evidence is not None:
+                if any(
+                    status != "0" and key in session_nontrading
+                    for key, status in historical_status.items()
+                ):
+                    raise ValueError("historical_status_sources_conflict")
+                cross_section_evidence[membership.partition_date] = (
+                    tuple(masters),
+                    dict(historical_status),
+                )
         except (
             ObjectStoreError,
             ProviderCaptureError,
@@ -1109,7 +1287,7 @@ def _validate_membership_evidence(
     return nontrading
 
 
-def _membership_master_evidence(store, source):
+def _membership_master_evidence(store, source, *, include_activity: bool = False):
     """Replay a master once, preserving its actual date and availability."""
     if (
         source["schema_version"]
@@ -1131,6 +1309,7 @@ def _membership_master_evidence(store, source):
     ):
         raise ValueError("invalid_membership_source_time")
     dated_nontrading = {}
+    activity: dict[date, dict[InstrumentKey, str]] = {}
     if "source_capture_ids" in source:
         from data.store import (
             require_stock_master_capture_evidence,
@@ -1142,8 +1321,17 @@ def _membership_master_evidence(store, source):
         dated_nontrading[day] = stock_master_nontrading_instruments(
             source, session_date=day
         )
+        if include_activity:
+            from data.providers.eastmoney import read_official_stock_master_captures
+
+            read_official_stock_master_captures(
+                store,
+                source["source_capture_ids"],
+                trade_date=source["trade_date"],
+                dated_activity=activity,
+            )
     members = {
         InstrumentKey(str(row["symbol"]), InstrumentType.STOCK)
         for row in source["members"]
     }
-    return members, available, dated_nontrading
+    return members, available, dated_nontrading, source, activity

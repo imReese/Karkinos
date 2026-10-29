@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
@@ -51,6 +51,7 @@ from server.ai_runtime.formula_dsl import (
     FormulaBinding,
     FormulaValidationError,
     evaluate_formula,
+    formula_requires_cross_section,
 )
 from server.ai_runtime.formula_parameter_sweep import build_formula_parameter_variants
 from server.ai_runtime.strategy_research_support import strategy_research_json_object
@@ -67,6 +68,9 @@ from server.projections.normalized_research_operation_preview import (
     build_normalized_research_operation_preview,
 )
 from strategy.base import Strategy
+
+if TYPE_CHECKING:
+    from server.ai_runtime.formula_portfolio import FormulaCrossSectionInputs
 
 
 class _FormulaSignalStrategy(Strategy):
@@ -156,22 +160,34 @@ class _FormulaSignalStrategy(Strategy):
         session_nontrading_instruments=None,
         minimum_history_rows=60,
         entry_board_policy=None,
+        cross_section: FormulaCrossSectionInputs | None = None,
     ) -> None:
         """Opt into the new version without changing saved legacy strategy runs."""
         if self._portfolio_policy_id is None:
+            if formula_requires_cross_section(self._formula_ast):
+                raise StrategyResearchRejected(
+                    "formula_cross_section_portfolio_policy_required"
+                )
             return
         if self._portfolio_policy_id != FORMULA_PORTFOLIO_POLICY_ID:
             raise StrategyResearchRejected("formula_portfolio_policy_unsupported")
         from server.ai_runtime.formula_portfolio import (
+            formula_session_input_blockers,
             formula_session_targets,
             prepare_formula_sessions,
         )
 
-        self._prepared_sessions = prepare_formula_sessions(
+        prepared_sessions = prepare_formula_sessions(
             self._formula_ast,
             {str(symbol): handler._df for symbol, handler in handlers.items()},
             universe_size=self._universe_size,
+            cross_section=cross_section,
         )
+        if blockers := formula_session_input_blockers(prepared_sessions):
+            raise StrategyResearchRejected(
+                "formula_cross_section_inputs_blocked:" + ":".join(blockers)
+            )
+        self._prepared_sessions = prepared_sessions
 
         def decide(day):
             # The selected set is resolved before any next-session execution;
@@ -374,9 +390,14 @@ class RestrictedFormulaBacktestAdapter:
                 research_root=self._research_root,
             )
             session_memberships = session_nontrading_instruments = distributions = None
+            cross_section = None
             if selection.portfolio_policy_id and snapshot.get("immutable_dataset_id"):
                 session_memberships, session_nontrading_instruments, distributions = (
                     _bound_formula_portfolio_inputs(self._research_root, snapshot)
+                )
+            if formula_requires_cross_section(formula_ast):
+                cross_section = _bound_formula_cross_section_inputs(
+                    self._research_root, snapshot, selection=selection
                 )
         commission_calc, fee_schedule_evidence = validated_fee_schedule_resolution(
             selection,
@@ -443,6 +464,7 @@ class RestrictedFormulaBacktestAdapter:
             engine,
             handlers,
             entry_board_policy=entry_board_policy,
+            cross_section=cross_section,
             session_memberships=session_memberships,
             session_nontrading_instruments=session_nontrading_instruments,
             minimum_history_rows=(selection.deployment_scope or {})
@@ -480,6 +502,7 @@ class RestrictedFormulaBacktestAdapter:
             allocation_slots=allocation_slots,
             commission_calc=commission_calc,
             entry_board_policy=entry_board_policy,
+            cross_section=cross_section,
             session_memberships=session_memberships,
             session_nontrading_instruments=session_nontrading_instruments,
             distributions=distributions,
@@ -508,6 +531,7 @@ class RestrictedFormulaBacktestAdapter:
                 portfolio_policy_id=selection.portfolio_policy_id,
                 allocation_slots=allocation_slots,
                 entry_board_policy=entry_board_policy,
+                cross_section=cross_section,
                 session_memberships=session_memberships,
                 session_nontrading_instruments=session_nontrading_instruments,
                 distributions=distributions,
@@ -864,6 +888,7 @@ class RestrictedFormulaBacktestAdapter:
         session_memberships = None
         session_nontrading_instruments = None
         distributions = None
+        cross_section = None
         if evaluation_dataset_snapshot is not None:
             session_memberships, session_nontrading_instruments, distributions = (
                 _bound_formula_portfolio_inputs(
@@ -871,6 +896,10 @@ class RestrictedFormulaBacktestAdapter:
                     evaluation_dataset_snapshot,
                     require_distributions=True,
                 )
+            )
+        if formula_requires_cross_section(formula_ast):
+            cross_section = _bound_formula_cross_section_inputs(
+                self._research_root, snapshot, selection=selection
             )
         if selection.portfolio_policy_id:
             from domain.instrument import make_research_stock
@@ -907,6 +936,7 @@ class RestrictedFormulaBacktestAdapter:
             entry_board_policy=entry_board_policy,
             session_memberships=session_memberships,
             session_nontrading_instruments=session_nontrading_instruments,
+            cross_section=cross_section,
             minimum_history_rows=(selection.deployment_scope or {})
             .get("universe_policy", {})
             .get("minimum_history_rows", 60),
@@ -917,6 +947,46 @@ class RestrictedFormulaBacktestAdapter:
         result.dataset_snapshot = snapshot
         result.portfolio_observations = formula_strategy.session_books
         return result
+
+
+def _bound_formula_cross_section_inputs(
+    root: Path,
+    snapshot: Mapping[str, Any],
+    *,
+    selection: StrategyResearchSelection,
+) -> FormulaCrossSectionInputs:
+    """Bind the complete declared feature pool, independently of entry funds."""
+    from data.dataset.model import DatasetRef
+    from data.dataset.reader import (
+        dataset_cross_section_memberships,
+        read_daily_bar_dataset,
+    )
+    from data.storage.objects import ContentAddressedObjectStore
+    from server.ai_runtime.formula_portfolio import FormulaCrossSectionInputs
+
+    if not selection.deployment_scope or not snapshot.get("immutable_dataset_id"):
+        raise StrategyResearchRejected("cross_section_immutable_dataset_required")
+    objects = ContentAddressedObjectStore(root / "objects")
+    restored = read_daily_bar_dataset(
+        objects, DatasetRef(objects.resolve_ref(snapshot["immutable_dataset_id"]))
+    )
+    declared = tuple(sorted(key.symbol for key in restored.snapshot.instruments))
+    if set(declared) != set(selection.universe):
+        raise StrategyResearchRejected("cross_section_declared_scope_mismatch")
+    memberships = dataset_cross_section_memberships(
+        objects, restored.snapshot, allow_retrospective=True
+    )
+    return FormulaCrossSectionInputs(
+        declared_symbols=declared,
+        session_memberships={
+            day: tuple(key.symbol for key in members)
+            for day, members in memberships.items()
+        },
+        minimum_history_rows=selection.deployment_scope["universe_policy"].get(
+            "minimum_history_rows", 60
+        ),
+        historical_snapshot=True,
+    )
 
 
 def _bound_formula_portfolio_inputs(
@@ -981,6 +1051,7 @@ def _run_cost_stress_scenarios(
     session_memberships: Callable[[date], list[str]] | None,
     session_nontrading_instruments: Callable[[date], list[str]] | None,
     distributions: tuple[StockDistribution, ...] | None,
+    cross_section: FormulaCrossSectionInputs | None = None,
 ) -> list[dict[str, Any]]:
     sensitivity: list[dict[str, Any]] = []
     for bps in RESEARCH_COST_STRESS_BPS:
@@ -1011,6 +1082,7 @@ def _run_cost_stress_scenarios(
             slippage_bps=Decimal(str(bps)),
             session_memberships=session_memberships,
             session_nontrading_instruments=session_nontrading_instruments,
+            cross_section=cross_section,
             minimum_history_rows=(selection.deployment_scope or {})
             .get("universe_policy", {})
             .get("minimum_history_rows", 60),
@@ -1047,6 +1119,7 @@ def _formula_parameter_robustness(
     session_nontrading_instruments: Callable[[date], list[str]] | None = None,
     distributions: tuple[StockDistribution, ...] | None = None,
     strict_event_errors: bool = False,
+    cross_section: FormulaCrossSectionInputs | None = None,
 ) -> tuple[dict[str, Any], str | None]:
     try:
         variants = build_formula_parameter_variants(
@@ -1098,6 +1171,7 @@ def _formula_parameter_robustness(
                 entry_board_policy=entry_board_policy,
                 session_memberships=session_memberships,
                 session_nontrading_instruments=session_nontrading_instruments,
+                cross_section=cross_section,
             )
             variant_result = variant_engine.run()
             variant_strategy._prepared_sessions = None

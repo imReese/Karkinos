@@ -581,11 +581,19 @@ _OFFICIAL_MASTER_URLS = {
 }
 
 
-def read_official_stock_master_captures(store, capture_ids, *, trade_date=None):
+def read_official_stock_master_captures(
+    store,
+    capture_ids,
+    *,
+    trade_date=None,
+    dated_activity: dict[date, dict[InstrumentKey, str]] | None = None,
+):
     """Replay the complete official rosters and any explicitly dated halt facts.
 
     Writer and Dataset reader use this same projection. A reference to an
     unrelated successful request cannot justify omitted stocks or false halts.
+    Optional activity preserves verified status 0/1 under the actual query date;
+    the default roster and its legacy halt-only metadata stay unchanged.
     """
     from io import BytesIO
 
@@ -712,6 +720,7 @@ def read_official_stock_master_captures(store, capture_ids, *, trade_date=None):
             }
     if len(statuses) > 1:
         raise ValueError("stock_master_status_observation_duplicate")
+    verified_activity: dict[date, dict[InstrumentKey, str]] = {}
     for source_capture_id, day, rows in statuses:
         seen = set()
         for row in rows:
@@ -720,6 +729,21 @@ def read_official_stock_master_captures(store, capture_ids, *, trade_date=None):
                 raise ValueError("stock_master_status_row_invalid")
             seen.add(code)
             symbol = code.rsplit(".", maxsplit=1)[-1]
+            if dated_activity is not None and symbol in metadata:
+                instrument_identity = a_share_identity(symbol)
+                if (
+                    instrument_identity is None
+                    or code
+                    != {"SSE": "sh.", "SZSE": "sz."}.get(
+                        instrument_identity["exchange"], ""
+                    )
+                    + symbol
+                    or str(date.fromisoformat(day)) != day
+                ):
+                    raise ValueError("stock_master_status_instrument_invalid")
+                verified_activity.setdefault(date.fromisoformat(day), {})[
+                    InstrumentKey(symbol, InstrumentType.STOCK)
+                ] = row["tradeStatus"]
             if symbol in metadata and row["tradeStatus"] == "0":
                 instrument_identity = a_share_identity(symbol)
                 if instrument_identity is None or (
@@ -735,6 +759,8 @@ def read_official_stock_master_captures(store, capture_ids, *, trade_date=None):
                     status_session_date=day,
                     status_capture_id=source_capture_id,
                 )
+    if dated_activity is not None:
+        dated_activity.update(verified_activity)
     return (
         [metadata[symbol] for symbol in sorted(metadata)],
         min(item.started_at for item in captures),

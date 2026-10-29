@@ -10,7 +10,10 @@ from core.event_bus import EventBus
 from core.events import SignalEvent
 from core.types import InstrumentKey, InstrumentType
 from data.market.model import DailyBarObservation
-from server.ai_runtime.formula_dsl import FORMULA_AST_CONTRACT
+from server.ai_runtime.formula_dsl import (
+    FORMULA_AST_CONTRACT,
+    FormulaValidationError,
+)
 from server.db import AppDatabase
 from server.services.research.research_observation_forecasts import (
     build_observation_forecasts,
@@ -250,7 +253,7 @@ def test_cross_sectional_rank_forecast_multi_stock_does_not_eagerly_eval_fallbac
                 "entry": {
                     "op": "gt",
                     "left": {
-                        "op": "cs_rank",
+                        "op": "cross_sectional_rank",
                         "input": {"op": "field", "name": "close"},
                     },
                     "right": {"op": "constant", "value": 0.8},
@@ -265,8 +268,8 @@ def test_cross_sectional_rank_forecast_multi_stock_does_not_eagerly_eval_fallbac
         },
     }
     # 3 stocks with closes on final day: 10, 20, 30.
-    # cs_rank: 600001=1/3 (~0.33), 600002=2/3 (~0.67), 600003=3/3 (1.0).
-    # cs_rank > 0.8: only 600003 enters!
+    # cross_sectional_rank: 600001=1/3 (~0.33), 600002=2/3 (~0.67), 600003=3/3 (1.0).
+    # cross_sectional_rank > 0.8: only 600003 enters!
     bars_1 = _bars([10, 10, 10, 10], symbol="600001")
     bars_2 = _bars([20, 20, 20, 20], symbol="600002")
     bars_3 = _bars([30, 30, 30, 30], symbol="600003")
@@ -292,7 +295,7 @@ def test_cross_sectional_rank_forecast_multi_stock_does_not_eagerly_eval_fallbac
 
 
 def test_cross_sectional_zscore_forecast_multi_stock() -> None:
-    """Multi-stock formula with cs_zscore must select top stock with zscore > 0.5."""
+    """Multi-stock formula with cross_sectional_zscore must select top stock with zscore > 0.5."""
     source = {
         "instruments": [
             {"symbol": "600001", "instrument_type": "stock"},
@@ -307,7 +310,7 @@ def test_cross_sectional_zscore_forecast_multi_stock() -> None:
                 "entry": {
                     "op": "gt",
                     "left": {
-                        "op": "cs_zscore",
+                        "op": "cross_sectional_zscore",
                         "input": {"op": "field", "name": "close"},
                     },
                     "right": {"op": "constant", "value": 0.5},
@@ -349,8 +352,9 @@ def test_cross_sectional_zscore_forecast_multi_stock() -> None:
 
 
 def test_cross_sectional_holding_exit_forecast_multi_stock() -> None:
-    """Holding positions with cs_rank < 0.5 exit, while top holding holds."""
-    source = {
+    """Holding positions exit according to local exit conditions; cross-sectional exit is rejected."""
+    # 1. Attempting cross-sectional operator in exit is rejected
+    source_invalid = {
         "instruments": [
             {"symbol": "600001", "instrument_type": "stock"},
             {"symbol": "600002", "instrument_type": "stock"},
@@ -365,7 +369,7 @@ def test_cross_sectional_holding_exit_forecast_multi_stock() -> None:
                 "exit": {
                     "op": "lt",
                     "left": {
-                        "op": "cs_rank",
+                        "op": "cross_sectional_rank",
                         "input": {"op": "field", "name": "close"},
                     },
                     "right": {"op": "constant", "value": 0.5},
@@ -378,15 +382,64 @@ def test_cross_sectional_holding_exit_forecast_multi_stock() -> None:
             }
         },
     }
-    # All 3 stocks have existing target weight > 0 (active holding).
-    # Closes: 10, 20, 30. cs_rank: 600001=0.33 (<0.5 -> exit), 600002=0.67 (>0.5 -> hold), 600003=1.0 (>0.5 -> hold).
     bars_1 = _bars([10, 10, 10, 10], symbol="600001")
     bars_2 = _bars([20, 20, 20, 20], symbol="600002")
     bars_3 = _bars([30, 30, 30, 30], symbol="600003")
     all_bars = [*bars_1, *bars_2, *bars_3]
 
+    with pytest.raises(FormulaValidationError) as exc:
+        build_observation_forecasts(
+            source_invalid,
+            all_bars,
+            decision_session=bars_1[-1].session_date,
+            previous_targets={
+                "600001": Decimal("0.33"),
+                "600002": Decimal("0.33"),
+                "600003": Decimal("0.33"),
+            },
+        )
+    assert "cross_sectional_exit_unsupported" in exc.value.code
+
+    # 2. Local exit rule on held positions works cleanly in multi-symbol universe
+    source_valid = {
+        "instruments": [
+            {"symbol": "600001", "instrument_type": "stock"},
+            {"symbol": "600002", "instrument_type": "stock"},
+            {"symbol": "600003", "instrument_type": "stock"},
+        ],
+        "strategy_kind": "formula",
+        "minimum_bars": 4,
+        "formula_binding": {
+            "formula_ast": {
+                "schema_version": FORMULA_AST_CONTRACT,
+                "entry": {
+                    "op": "gt",
+                    "left": {
+                        "op": "cross_sectional_rank",
+                        "input": {"op": "field", "name": "close"},
+                    },
+                    "right": {"op": "constant", "value": 0.8},
+                },
+                "exit": {
+                    "op": "lt",
+                    "left": {"op": "field", "name": "close"},
+                    "right": {"op": "constant", "value": 15.0},
+                },
+                "position_size": {
+                    "op": "max_weight",
+                    "input": {"op": "equal_weight"},
+                    "value": 1.0,
+                },
+            }
+        },
+    }
+    # All 3 stocks have existing target weight > 0 (active holding).
+    # Closes: 10, 20, 30. Local exit condition close < 15.0:
+    # 600001 (close=10 < 15.0) -> exit.
+    # 600002 (close=20 >= 15.0) -> hold.
+    # 600003 (close=30 >= 15.0) -> hold.
     result = build_observation_forecasts(
-        source,
+        source_valid,
         all_bars,
         decision_session=bars_1[-1].session_date,
         previous_targets={

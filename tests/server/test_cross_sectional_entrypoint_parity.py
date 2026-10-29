@@ -65,13 +65,13 @@ def _make_formula(entry_op: dict) -> dict:
 
 
 def test_cross_sectional_rank_parity_across_entrypoints() -> None:
-    """cs_rank(close) > 0.8 must select only stock 3 across backtest, scan, and preview."""
+    """cross_sectional_rank(close) > 0.8 must select only stock 3 across backtest, scan, and preview."""
     frames = _build_test_frames("2025-01-05")
     formula = _make_formula(
         {
             "op": "gt",
             "left": {
-                "op": "cs_rank",
+                "op": "cross_sectional_rank",
                 "input": {"op": "field", "name": "close"},
             },
             "right": {"op": "constant", "value": 0.8},
@@ -120,13 +120,13 @@ def test_cross_sectional_rank_parity_across_entrypoints() -> None:
 
 
 def test_cross_sectional_zscore_parity_across_entrypoints() -> None:
-    """cs_zscore(close) > 0.5 must select only stock 3 across backtest, scan, and preview."""
+    """cross_sectional_zscore(close) > 0.5 must select only stock 3 across backtest, scan, and preview."""
     frames = _build_test_frames("2025-01-05")
     formula = _make_formula(
         {
             "op": "gt",
             "left": {
-                "op": "cs_zscore",
+                "op": "cross_sectional_zscore",
                 "input": {"op": "field", "name": "close"},
             },
             "right": {"op": "constant", "value": 0.5},
@@ -181,7 +181,7 @@ def test_multi_symbol_formula_without_context_raises_error() -> None:
         {
             "op": "gt",
             "left": {
-                "op": "cs_rank",
+                "op": "cross_sectional_rank",
                 "input": {"op": "field", "name": "close"},
             },
             "right": {"op": "constant", "value": 0.8},
@@ -200,7 +200,7 @@ def test_ineligible_symbol_does_not_distort_ranking_denominator() -> None:
         {
             "op": "gt",
             "left": {
-                "op": "cs_rank",
+                "op": "cross_sectional_rank",
                 "input": {"op": "field", "name": "close"},
             },
             "right": {"op": "constant", "value": 0.8},

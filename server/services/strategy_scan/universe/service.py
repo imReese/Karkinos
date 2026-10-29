@@ -173,6 +173,7 @@ class PromotedStrategyUniverseScanService:
                 market_date=market_date,
                 market=market,
                 total_equity=evaluation_equity,
+                decision_at=started_at,
             )
         blockers.extend(truth_blockers)
         return self._complete_run(
@@ -316,6 +317,7 @@ class PromotedStrategyUniverseScanService:
                 symbols=sorted(set(members) | set(held_symbols)),
                 start_date=start_date,
                 end_date=market_date,
+                receipts=receipts,
             )
         return {
             "snapshot": snapshot,
@@ -333,6 +335,7 @@ class PromotedStrategyUniverseScanService:
         market_date: str | None,
         market: Mapping[str, Any],
         total_equity: float,
+        decision_at: datetime | None = None,
     ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]], list[str]]:
         start_date = market.get("history_start")
         if market_date is None or not isinstance(start_date, str):
@@ -348,6 +351,7 @@ class PromotedStrategyUniverseScanService:
             total_equity=total_equity,
             held_stock_symbols=market["held_symbols"],
             policy=self._policy,
+            decision_at=decision_at,
         )
 
     def _complete_run(

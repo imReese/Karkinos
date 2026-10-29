@@ -24,7 +24,12 @@ from data.market.verification_evidence import read_market_verification_evidence
 from data.storage.objects import ContentAddressedObjectStore
 from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
 from server.ai_runtime.contracts import content_fingerprint
-from server.ai_runtime.formula_dsl import FORMULA_BINDING_CONTRACT, FormulaBinding
+from server.ai_runtime.formula_dsl import (
+    FORMULA_BINDING_CONTRACT,
+    FormulaBinding,
+    expression_lookback_rows,
+    formula_requires_cross_section,
+)
 from server.contracts.strategy_research import backtest_evidence_blocker
 from server.services.market.calendar import validate_verified_market_calendar
 from server.services.research.datasets import require_supported_snapshot
@@ -592,13 +597,16 @@ def _formula_source(config, metrics, start, end):
             )
         extra["source_selection"] = dict(selection)
         scope = observation_deployment_scope(extra)
+        minimum_history_rows = int(
+            (scope or {}).get("universe_policy", {}).get("minimum_history_rows", 120)
+        )
         extra["minimum_bars"] = max(
-            max(_warmup(binding.formula_ast[k]) for k in ("entry", "exit")),
-            int(
-                (scope or {})
-                .get("universe_policy", {})
-                .get("minimum_history_rows", 120)
+            _warmup(
+                binding.formula_ast["entry"],
+                minimum_history_rows=minimum_history_rows,
             ),
+            _warmup(binding.formula_ast["exit"]),
+            minimum_history_rows,
         )
     return {
         "strategy_kind": "formula",
@@ -619,7 +627,18 @@ def _formula_source(config, metrics, start, end):
     }
 
 
-def _warmup(node: Mapping[str, Any]) -> int:
+def _warmup(node: Mapping[str, Any], *, minimum_history_rows: int = 1) -> int:
+    if formula_requires_cross_section(node):
+        rows = expression_lookback_rows(
+            node,
+            minimum_history_rows=minimum_history_rows,
+            common_history_rows=minimum_history_rows,
+        )
+        if rows is None:
+            raise ResearchObservationInputError(
+                "formula_cross_section_finite_history_required"
+            )
+        return rows
     op = node["op"]
     if op in {"field", "constant"}:
         return 1

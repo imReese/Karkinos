@@ -332,14 +332,18 @@ def test_rank_operator_evaluates_rolling_percentile() -> None:
 
 def test_formula_catalog_exposes_cross_sectional_operators() -> None:
     catalog = formula_operator_catalog()
-    assert "cs_rank" in catalog["enabled_operators"]
-    assert "cs_zscore" in catalog["enabled_operators"]
+    assert "cross_sectional_rank" in catalog["enabled_operators"]
+    assert "cross_sectional_mean" in catalog["enabled_operators"]
+    assert "cross_sectional_zscore" in catalog["enabled_operators"]
     assert "cross_sectional_operator" in catalog["expression_shapes"]
-    assert "cs_rank" in catalog["operator_semantics"]
-    assert "cs_zscore" in catalog["operator_semantics"]
+    assert "cross_sectional_rank" in catalog["operator_semantics"]
+    assert "cross_sectional_mean" in catalog["operator_semantics"]
+    assert "cross_sectional_zscore" in catalog["operator_semantics"]
 
 
-@pytest.mark.parametrize("op", ["cs_rank", "cs_zscore"])
+@pytest.mark.parametrize(
+    "op", ["cross_sectional_rank", "cross_sectional_mean", "cross_sectional_zscore"]
+)
 def test_cross_sectional_ast_validation(op: str) -> None:
     ast = _formula()
     ast["entry"] = {
@@ -358,6 +362,26 @@ def test_cross_sectional_ast_validation(op: str) -> None:
     with pytest.raises(FormulaValidationError) as exc_info:
         validate_formula_ast(ast, universe_size=3)
     assert "expression_keys_mismatch" in exc_info.value.code
+
+
+@pytest.mark.parametrize(
+    "legacy_op,canonical_op",
+    [("cs_rank", "cross_sectional_rank"), ("cs_zscore", "cross_sectional_zscore")],
+)
+def test_cross_sectional_legacy_aliases_normalize(
+    legacy_op: str, canonical_op: str
+) -> None:
+    ast = _formula()
+    ast["entry"] = {
+        "op": "gte",
+        "left": {
+            "op": legacy_op,
+            "input": {"op": "field", "name": "close"},
+        },
+        "right": {"op": "constant", "value": 0.5},
+    }
+    validated = validate_formula_ast(ast, universe_size=3)
+    assert validated["entry"]["left"]["op"] == canonical_op
 
 
 def test_cross_sectional_rank_evaluates_across_universe_correctly() -> None:

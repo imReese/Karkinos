@@ -7,7 +7,7 @@ import math
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -19,12 +19,11 @@ from server.ai_runtime.contracts import content_fingerprint
 from server.ai_runtime.formula_dsl import (
     FORMULA_AST_CONTRACT,
     evaluate_formula,
+    expression_lookback_rows,
+    formula_requires_cross_section,
     validate_formula_ast,
 )
-from server.ai_runtime.formula_portfolio import (
-    formula_session_candidates,
-    prepare_formula_sessions,
-)
+from server.ai_runtime.formula_portfolio import formula_session_candidates
 from server.services.controlled_execution.manual_trade_fees import (
     resolve_manual_trade_fee_breakdown,
 )
@@ -35,6 +34,9 @@ from server.services.market.market_universe_truth import (
     build_full_market_universe_truth,
     normalize_a_share_members,
 )
+
+if TYPE_CHECKING:
+    from server.ai_runtime.formula_portfolio import FormulaCrossSectionInputs
 
 SHANGHAI_TIME_ZONE = ZoneInfo("Asia/Shanghai")
 DECISION_WINDOW_START = time(9, 35)
@@ -79,17 +81,24 @@ def evaluate_strategy_signals(
     maintenance_symbols: list[str],
     held_symbols: set[str],
     market_date: str,
+    cross_section: FormulaCrossSectionInputs | None = None,
     prepared: Mapping[str, pd.DataFrame] | None = None,
+    prepared_sessions: Mapping[str, pd.DataFrame] | None = None,
 ) -> list[dict[str, Any]]:
     signals: list[dict[str, Any]] = []
     if not frames:
         return signals
 
     if prepared is None:
+        prepared = prepared_sessions
+    if prepared is None:
+        from server.ai_runtime.formula_portfolio import prepare_formula_sessions
+
         prepared = prepare_formula_sessions(
             formula_ast,
             frames,
             universe_size=universe_size,
+            cross_section=cross_section,
         )
 
     decision_session = date.fromisoformat(market_date)
@@ -224,6 +233,16 @@ def active_action_blockers(
     for blocker in blockers:
         blocker_str = str(blocker)
         if not blocker_str:
+            continue
+        if blocker_str.startswith("strategy_cross_section_inputs:") and not any(
+            item.get("direction") == "buy"
+            and blocker_str.startswith(
+                "strategy_cross_section_inputs:"
+                + json.dumps(str(item.get("strategy_id")), ensure_ascii=False)
+                + ":"
+            )
+            for item in selected_signals
+        ):
             continue
         # Buy-only blockers do not block an all-sell (exit) action set
         if not has_buys:
@@ -865,7 +884,9 @@ def resolve_daily_bar_receipt_provider(
     return str(getattr(config, "data_source", "") or "").strip()
 
 
-def formula_history_rows(formula_ast: Mapping[str, Any]) -> int:
+def formula_history_rows(
+    formula_ast: Mapping[str, Any], *, minimum_history_rows: int = 1
+) -> int:
     def expression_rows(expression: Any) -> int:
         if not isinstance(expression, Mapping):
             return 1
@@ -912,12 +933,20 @@ def formula_history_rows(formula_ast: Mapping[str, Any]) -> int:
             return rows + (1 if op == "cross" else 0)
         if op == "not":
             return expression_rows(expression.get("input"))
+        if op == "cross_sectional_rank":
+            return expression_rows(expression.get("input"))
         return 1
 
-    return max(
-        expression_rows(formula_ast.get("entry")),
-        expression_rows(formula_ast.get("exit")),
-    )
+    entry = formula_ast.get("entry")
+    if isinstance(entry, Mapping) and formula_requires_cross_section(entry):
+        entry_rows = expression_lookback_rows(
+            entry, minimum_history_rows=minimum_history_rows
+        )
+        if entry_rows is None:
+            raise ValueError("formula_cross_section_finite_history_required")
+    else:
+        entry_rows = expression_rows(entry)
+    return max(entry_rows, expression_rows(formula_ast.get("exit")))
 
 
 def evaluate_promoted_strategy_market(
@@ -932,6 +961,8 @@ def evaluate_promoted_strategy_market(
     total_equity: float,
     held_stock_symbols: Sequence[str],
     policy: MarketUniversePolicy,
+    decision_at: datetime | None = None,
+    cross_sections: Mapping[str, FormulaCrossSectionInputs] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]], list[str]]:
     """Evaluate the one canonical market truth and signal path for every strategy."""
 
@@ -978,7 +1009,9 @@ def evaluate_promoted_strategy_market(
             unavailable_policy_history.append(blocker)
             continue
         try:
-            validate_formula_ast(formula_ast, universe_size=len(selected_universe))
+            formula_ast = validate_formula_ast(
+                formula_ast, universe_size=len(selected_universe)
+            )
             truth = build_full_market_universe_truth(
                 snapshot=snapshot,
                 frames=strategy_frames,
@@ -991,7 +1024,10 @@ def evaluate_promoted_strategy_market(
                 held_symbols=held_stock_symbols,
                 minimum_history_rows=max(
                     policy.minimum_history_rows,
-                    formula_history_rows(formula_ast),
+                    formula_history_rows(
+                        formula_ast,
+                        minimum_history_rows=policy.minimum_history_rows,
+                    ),
                 ),
                 policy=policy,
             )
@@ -1002,6 +1038,37 @@ def evaluate_promoted_strategy_market(
             )
             continue
         truths[strategy_id] = truth
+        prepared_sessions = None
+        if formula_requires_cross_section(formula_ast):
+            from server.ai_runtime.formula_portfolio import (
+                formula_session_input_blockers,
+                prepare_formula_sessions,
+            )
+
+            cross_section = (cross_sections or {}).get(strategy_id)
+            # A caller must supply real, complete immutable facts at this cutoff.
+            # The cash/lot-qualified truth pool cannot establish this context.
+            if cross_section is not None and (
+                decision_at is None
+                or cross_section.as_of != decision_at
+                or cross_section.historical_snapshot
+            ):
+                cross_section = None
+            prepared_sessions = prepare_formula_sessions(
+                formula_ast,
+                strategy_frames,
+                universe_size=len(selected_universe),
+                cross_section=cross_section,
+            )
+            blockers.extend(
+                "strategy_cross_section_inputs:"
+                + json.dumps(strategy_id, ensure_ascii=False)
+                + ":"
+                + blocker
+                for blocker in formula_session_input_blockers(
+                    prepared_sessions, date.fromisoformat(market_date)
+                )
+            )
         has_truth_blockers = truth.get("status") != "complete"
         if has_truth_blockers:
             blockers.extend(
@@ -1022,6 +1089,7 @@ def evaluate_promoted_strategy_market(
             maintenance_symbols=list(truth.get("maintenance_symbols") or []),
             held_symbols=held,
             market_date=market_date,
+            prepared_sessions=prepared_sessions,
         )
         if promoted_strategy.get("portfolio_policy_id"):
             for signal in evaluated_signals:

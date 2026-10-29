@@ -121,14 +121,6 @@ def observation_code_binding() -> dict[str, Any]:
         "server/services/account/reviewed_fee_schedule_commission.py",
         "server/services/account/reviewed_fee_schedule_repository.py",
         "server/services/account/reviewed_fee_schedule_policy.py",
-        "server/services/account/reviewed_fee_schedule_reconciliation.py",
-        "server/contracts/reviewed_fee_schedule.py",
-        "server/services/account/fees/__init__.py",
-        "server/services/account/fees/commission.py",
-        "server/services/account/fees/policy.py",
-        "server/services/account/fees/reconciliation.py",
-        "server/services/account/fees/repository.py",
-        "server/services/account/fees/workflows.py",
         "risk/target_limits.py",
         "analytics/forward_target_outcomes.py",
         "analytics/forward_observation_health.py",
@@ -474,6 +466,7 @@ class ResearchObservationService:
                     reference_session,
                     end_session,
                     result.snapshot,
+                    as_of=now,
                 )
                 publication["payload"]["calculation_started_at"] = now.isoformat()
                 if automation_generation is not None:
@@ -587,6 +580,8 @@ class ResearchObservationService:
         reference_session,
         end_session,
         snapshot=None,
+        *,
+        as_of: datetime | None = None,
     ):
         if observation_deployment_scope(observation["source"]) is not None:
             return self._portfolio_publication(
@@ -597,6 +592,7 @@ class ResearchObservationService:
                 reference_session,
                 end_session,
                 snapshot=snapshot,
+                as_of=as_of,
             )
         policy = observation["policy"]
         previous = {item["symbol"]: Decimal(0) for item in observation["universe"]}
@@ -664,10 +660,18 @@ class ResearchObservationService:
         end_session,
         *,
         snapshot,
+        as_of: datetime | None = None,
     ):
-        from data.dataset.reader import dataset_session_nontrading_instruments
+        from data.dataset.reader import (
+            DatasetReaderError,
+            dataset_cross_section_memberships,
+            dataset_session_nontrading_instruments,
+        )
         from domain.instrument import make_research_stock
+        from server.ai_runtime.formula_dsl import formula_requires_cross_section
         from server.ai_runtime.formula_portfolio import (
+            FormulaCrossSectionInputs,
+            formula_session_input_blockers,
             formula_session_targets,
             prepare_formula_sessions,
         )
@@ -695,6 +699,8 @@ class ResearchObservationService:
             frames.setdefault(bar.instrument.symbol, []).append(
                 {
                     "timestamp": bar.event_time,
+                    "available_at": bar.available_at,
+                    "captured_at": bar.captured_at,
                     "amount": float(
                         bar.amount if bar.amount is not None else bar.close * bar.volume
                     ),
@@ -704,10 +710,38 @@ class ResearchObservationService:
                     },
                 }
             )
+        formula_ast = observation["source"]["formula_binding"]["formula_ast"]
+        cross_section = None
+        context_blocker = None
+        if formula_requires_cross_section(formula_ast):
+            try:
+                memberships = dataset_cross_section_memberships(
+                    self.objects, snapshot, as_of=as_of
+                )
+                cross_section = FormulaCrossSectionInputs(
+                    declared_symbols=tuple(key.symbol for key in snapshot.instruments),
+                    session_memberships={
+                        day: tuple(key.symbol for key in members)
+                        for day, members in memberships.items()
+                    },
+                    minimum_history_rows=int(
+                        universe_policy.get("minimum_history_rows", 120)
+                    ),
+                    as_of=as_of,
+                )
+            except (DatasetReaderError, ValueError):
+                context_blocker = "formula_cross_section_membership_unavailable"
         prepared = prepare_formula_sessions(
-            observation["source"]["formula_binding"]["formula_ast"],
+            formula_ast,
             {symbol: pd.DataFrame(rows) for symbol, rows in frames.items()},
             universe_size=len(observation["source"]["instruments"]),
+            cross_section=cross_section,
+        )
+        input_blockers = tuple(
+            dict.fromkeys(
+                ([context_blocker] if context_blocker else [])
+                + list(formula_session_input_blockers(prepared, decision_session))
+            )
         )
         instruments = {
             Symbol(key.symbol): make_research_stock(key.symbol, key.symbol)
@@ -725,7 +759,7 @@ class ResearchObservationService:
             decision_session=decision_session,
             instruments=instruments,
             commission_calc=costs.commission_calc,
-            eligible_symbols=eligible,
+            eligible_symbols=[] if input_blockers else eligible,
             max_positions=4,
             max_symbol_weight=Decimal("0.25"),
             max_gross_weight=Decimal("0.97"),
@@ -782,7 +816,11 @@ class ResearchObservationService:
             quantities={},
             cash=Decimal(book["initial_cash"]),
             equity=Decimal(book["initial_cash"]),
-            **{**kwargs, "prepared": baseline_prepared},
+            **{
+                **kwargs,
+                "prepared": baseline_prepared,
+                "eligible_symbols": eligible,
+            },
         )
         return {
             "id": str(uuid5(NAMESPACE_URL, f"{observation['id']}:{decision_session}")),
@@ -805,6 +843,11 @@ class ResearchObservationService:
                 "end_session": end_session.isoformat(),
                 "horizon_sessions": observation["policy"]["horizon_sessions"],
                 "scope": "independent_paper_portfolio",
+                **(
+                    {"entry_input_blockers": list(input_blockers)}
+                    if input_blockers
+                    else {}
+                ),
                 "contains_fills": False,
                 "portfolio_policy_id": FORMULA_PORTFOLIO_POLICY_ID,
                 "entry_board_policy": observation["policy"].get("entry_board_policy"),
