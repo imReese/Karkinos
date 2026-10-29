@@ -7,7 +7,8 @@ from typing import Any
 
 import pandas as pd
 
-from server.ai_runtime.formula_dsl import evaluate_formula, evaluate_formula_universe
+from server.ai_runtime.formula_dsl import evaluate_formula
+from server.ai_runtime.formula_portfolio import evaluate_formula_universe
 from server.contracts.content_identity import content_fingerprint
 
 NORMALIZED_RESEARCH_OPERATION_PREVIEW_SCHEMA = (

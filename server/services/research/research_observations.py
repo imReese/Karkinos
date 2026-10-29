@@ -121,6 +121,14 @@ def observation_code_binding() -> dict[str, Any]:
         "server/services/account/reviewed_fee_schedule_commission.py",
         "server/services/account/reviewed_fee_schedule_repository.py",
         "server/services/account/reviewed_fee_schedule_policy.py",
+        "server/services/account/reviewed_fee_schedule_reconciliation.py",
+        "server/contracts/reviewed_fee_schedule.py",
+        "server/services/account/fees/__init__.py",
+        "server/services/account/fees/commission.py",
+        "server/services/account/fees/policy.py",
+        "server/services/account/fees/reconciliation.py",
+        "server/services/account/fees/repository.py",
+        "server/services/account/fees/workflows.py",
         "risk/target_limits.py",
         "analytics/forward_target_outcomes.py",
         "analytics/forward_observation_health.py",
@@ -466,7 +474,7 @@ class ResearchObservationService:
                     reference_session,
                     end_session,
                     result.snapshot,
-                    as_of=now,
+                    now,
                 )
                 publication["payload"]["calculation_started_at"] = now.isoformat()
                 if automation_generation is not None:
@@ -580,7 +588,6 @@ class ResearchObservationService:
         reference_session,
         end_session,
         snapshot=None,
-        *,
         as_of: datetime | None = None,
     ):
         if observation_deployment_scope(observation["source"]) is not None:

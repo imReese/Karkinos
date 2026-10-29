@@ -11,10 +11,10 @@ from server.ai_runtime.formula_dsl import (
     FormulaBinding,
     FormulaValidationError,
     evaluate_formula,
-    evaluate_formula_universe,
     formula_operator_catalog,
     validate_formula_ast,
 )
+from server.ai_runtime.formula_portfolio import evaluate_formula_universe
 
 
 def _formula() -> dict:

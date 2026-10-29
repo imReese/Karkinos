@@ -11,7 +11,6 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
-from datetime import date
 from typing import Any, Mapping
 
 import pandas as pd
@@ -764,6 +763,10 @@ def _evaluate_expression(
     raise FormulaValidationError("unknown_operator", "evaluation")
 
 
+def evaluate_formula_sizing(value: Mapping[str, Any], *, universe_size: int) -> float:
+    return _evaluate_sizing(value, universe_size=universe_size)
+
+
 def _evaluate_sizing(value: Mapping[str, Any], *, universe_size: int) -> float:
     op = str(value["op"])
     if op == "equal_weight":
@@ -812,71 +815,3 @@ def _json_copy(value: Mapping[str, Any]) -> JsonObject:
     import json
 
     return json.loads(canonical_json(value))
-
-
-def evaluate_formula_universe(
-    formula_ast: Mapping[str, Any],
-    frames: Mapping[str, pd.DataFrame],
-    *,
-    universe_size: int | None = None,
-) -> tuple[dict[str, pd.Series], dict[str, pd.Series], float]:
-    """Evaluate validated expressions across an entire universe of frames."""
-    effective_universe_size = (
-        universe_size if universe_size is not None else len(frames)
-    )
-    if formula_requires_cross_section(formula_ast) and len(frames) > 1:
-        from server.ai_runtime.formula_portfolio import (
-            FormulaCrossSectionInputs,
-            prepare_formula_sessions,
-        )
-
-        members: dict[date, list[str]] = {}
-        for s, f in frames.items():
-            if "timestamp" in f.columns:
-                for ts in pd.to_datetime(f["timestamp"]):
-                    members.setdefault(ts.date(), []).append(str(s))
-            elif isinstance(f.index, pd.DatetimeIndex):
-                for ts in f.index:
-                    members.setdefault(ts.date(), []).append(str(s))
-            else:
-                for d in pd.date_range("2026-01-01", periods=len(f)):
-                    members.setdefault(d.date(), []).append(str(s))
-        cross_section = FormulaCrossSectionInputs(
-            declared_symbols=tuple(frames),
-            session_memberships={d: tuple(names) for d, names in members.items()},
-            minimum_history_rows=1,
-            historical_snapshot=True,
-        )
-        prepared = prepare_formula_sessions(
-            formula_ast,
-            frames,
-            universe_size=effective_universe_size,
-            cross_section=cross_section,
-        )
-        entries = {}
-        exits = {}
-        for s in frames:
-            df = prepared[s]
-            orig_idx = frames[s].index
-            entries[s] = pd.Series(df["entry"].values, index=orig_idx, dtype=bool)
-            exits[s] = pd.Series(df["exit"].values, index=orig_idx, dtype=bool)
-        normalized = validate_formula_ast(
-            formula_ast, universe_size=effective_universe_size
-        )
-        target_weight = _evaluate_sizing(
-            normalized["position_size"], universe_size=effective_universe_size
-        )
-        return entries, exits, target_weight
-
-    entries: dict[str, pd.Series] = {}
-    exits: dict[str, pd.Series] = {}
-    weight = 0.0
-    for symbol, frame in frames.items():
-        entry, exit_sig, weight = evaluate_formula(
-            formula_ast,
-            frame,
-            universe_size=effective_universe_size,
-        )
-        entries[str(symbol)] = entry
-        exits[str(symbol)] = exit_sig
-    return entries, exits, weight

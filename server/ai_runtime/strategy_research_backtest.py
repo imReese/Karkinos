@@ -314,6 +314,45 @@ class _NullEventBus:
         return None
 
 
+def _validate_and_bind_formula_draft(
+    selection: StrategyResearchSelection,
+    draft: JsonObject,
+    formula_ast: Mapping[str, Any],
+) -> FormulaBinding:
+    expected_draft_binding = {
+        "selected_universe": list(selection.universe),
+        "dataset_snapshot_id": selection.dataset_snapshot_id,
+        "test_window": {
+            "start_date": selection.start_date,
+            "end_date": selection.end_date,
+        },
+        "frequency": selection.frequency,
+        "cost_model_reference": selection.cost_model_reference,
+    }
+    if any(
+        draft.get(key) != expected for key, expected in expected_draft_binding.items()
+    ):
+        raise StrategyResearchRejected("formula_draft_binding_drift")
+    binding = FormulaBinding(
+        formula_ast=formula_ast,
+        universe=selection.universe,
+        dataset_snapshot_id=selection.dataset_snapshot_id,
+        start_date=selection.start_date,
+        end_date=selection.end_date,
+        frequency=selection.frequency,
+        cost_model_reference=selection.cost_model_reference,
+        anti_lookahead_assumptions=tuple(
+            str(item) for item in draft.get("anti_lookahead_assumptions") or []
+        ),
+        parameter_values=dict(draft.get("parameter_values") or {}),
+        parameter_ranges=dict(draft.get("parameter_ranges") or {}),
+        initial_cash=selection.initial_cash,
+    )
+    if draft.get("formula_fingerprint") != binding.fingerprint:
+        raise StrategyResearchRejected("formula_binding_drift")
+    return binding
+
+
 class RestrictedFormulaBacktestAdapter:
     """Feed validated signals to the canonical engine from persisted bars only."""
 
@@ -349,38 +388,7 @@ class RestrictedFormulaBacktestAdapter:
         formula_ast = draft.get("formula_ast")
         if not isinstance(formula_ast, dict):
             raise StrategyResearchRejected("validated_formula_missing")
-        expected_draft_binding = {
-            "selected_universe": list(selection.universe),
-            "dataset_snapshot_id": selection.dataset_snapshot_id,
-            "test_window": {
-                "start_date": selection.start_date,
-                "end_date": selection.end_date,
-            },
-            "frequency": selection.frequency,
-            "cost_model_reference": selection.cost_model_reference,
-        }
-        if any(
-            draft.get(key) != expected
-            for key, expected in expected_draft_binding.items()
-        ):
-            raise StrategyResearchRejected("formula_draft_binding_drift")
-        binding = FormulaBinding(
-            formula_ast=formula_ast,
-            universe=selection.universe,
-            dataset_snapshot_id=selection.dataset_snapshot_id,
-            start_date=selection.start_date,
-            end_date=selection.end_date,
-            frequency=selection.frequency,
-            cost_model_reference=selection.cost_model_reference,
-            anti_lookahead_assumptions=tuple(
-                str(item) for item in draft.get("anti_lookahead_assumptions") or []
-            ),
-            parameter_values=dict(draft.get("parameter_values") or {}),
-            parameter_ranges=dict(draft.get("parameter_ranges") or {}),
-            initial_cash=selection.initial_cash,
-        )
-        if draft.get("formula_fingerprint") != binding.fingerprint:
-            raise StrategyResearchRejected("formula_binding_drift")
+        binding = _validate_and_bind_formula_draft(selection, draft, formula_ast)
 
         with daily_bar_dataset_read_scope(join_existing=True):
             handlers, instruments, snapshot = _load_bound_inputs(

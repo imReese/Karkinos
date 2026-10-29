@@ -13,7 +13,8 @@ from core.event_bus import EventBus
 from core.events import MarketEvent, SignalEvent
 from core.types import Symbol
 from data.market.model import DailyBarObservation
-from server.ai_runtime.formula_dsl import evaluate_formula, evaluate_formula_universe
+from server.ai_runtime.formula_dsl import evaluate_formula
+from server.ai_runtime.formula_portfolio import evaluate_formula_universe
 from strategy.builtins.dual_ma import DualMAStrategy
 from strategy.builtins.etf_rotation import EtfRotationStrategy
 
