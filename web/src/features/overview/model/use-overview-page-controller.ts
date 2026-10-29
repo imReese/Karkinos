@@ -25,7 +25,7 @@ export function useOverviewPageController() {
   const marketClosed =
     marketSession?.calendar_verified === true &&
     marketSession.status === 'non_trading_day';
-  const equityCurve = useEquityCurveSeriesQuery(equityCurveRange);
+  const equityCurve = useEquityCurveSeriesQuery(equityCurveRange, accountReady);
   const explainability = useExplainabilityQuery(
     undefined,
     accountReady && analysisView === 'calendar',

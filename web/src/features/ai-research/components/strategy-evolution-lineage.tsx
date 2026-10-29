@@ -221,7 +221,7 @@ export function StrategyEvolutionLineage({
               <span className="sr-only">{copy.currentCandidates}</span>
               <select
                 aria-label={copy.currentCandidates}
-                className="h-7 max-w-[180px] sm:max-w-[240px] truncate rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-2 py-0.5 text-xs font-mono font-medium text-[var(--app-text)] shadow-sm transition-colors focus:border-[var(--app-accent)] focus:outline-none"
+                className="min-h-11 max-w-[180px] sm:max-w-[240px] truncate rounded-[var(--app-radius-control)] border border-[var(--app-divider)] bg-[var(--app-surface-raised)] px-2.5 py-2 text-xs font-mono font-medium text-[var(--app-text)] shadow-sm transition-colors focus:border-[var(--app-accent)] focus:outline-none"
                 data-testid="shadow-research-current-registry"
                 onChange={(event) => onSelectCandidate(event.target.value)}
                 value={selectedCandidateId ?? ''}

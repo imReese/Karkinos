@@ -191,7 +191,7 @@ export function CandidateCard({
           <a
             href={`/backtest?strategy=${encodeURIComponent(candidate.draft_id || candidate.candidate_id)}&source=ai_research`}
             data-testid="shadow-research-clone-backtest"
-            className="app-button app-button-secondary inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 rounded-[var(--app-radius-control)] px-3.5 py-1.5 text-xs font-semibold tracking-wide"
+            className="app-button app-button-secondary inline-flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-[var(--app-radius-control)] px-3.5 py-2 text-xs font-semibold tracking-wide"
             title={copy.openInStrategyLabDetail}
           >
             <span>{copy.openInStrategyLab}</span>

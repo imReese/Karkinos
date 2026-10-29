@@ -29,7 +29,7 @@ export function AiResearchPage() {
         title={labels.title}
         actions={
           <a
-            className="app-button app-button-secondary inline-flex min-h-9 items-center gap-1.5 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
+            className="app-button app-button-secondary inline-flex min-h-11 items-center gap-1.5 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
             href="/backtest"
             onClick={(e) => handleClientNavigation(e, '/backtest')}
           >

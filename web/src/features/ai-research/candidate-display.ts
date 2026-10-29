@@ -82,7 +82,7 @@ export function formatCandidateTitle(
   const hypo = (candidate.comparison?.economic_hypothesis || '').trim();
   if (hypo) {
     const titleMatch = hypo.match(
-      /^(?:(?:真实)?(?:研究)?(?:经济)?(?:核心)?假设|第[一二三四五六七八九十\d]+代策略)?(?:\s*[(（][^）)]+[）)])?[：:]?\s*([^。，；\n]{2,30})/,
+      /^(?:(?:真实)?(?:研究)?(?:经济)?(?:核心)?假设|第[一二三四五六七八九十\d]+代策略)?(?:\s*[(（][^）)]+[）)])?[：:]?\s*([^。，；\n]{2,80})/,
     );
     const theme =
       titleMatch && titleMatch[1]

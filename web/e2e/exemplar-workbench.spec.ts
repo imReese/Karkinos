@@ -868,7 +868,7 @@ test('AI research keeps candidates and saved evidence ahead of task drafts acros
       `/backtest?id=${selectedCandidate.candidate_result_id}`,
     );
     await expect(candidateInspector).toContainText(
-      'Forward paper results and account returns are recorded separately.',
+      'Account recommendation and trading permissions are separate.',
     );
     await expect(
       candidateInspector.getByRole('button', {
@@ -887,7 +887,7 @@ test('AI research keeps candidates and saved evidence ahead of task drafts acros
     await expect(sourceDisclosure).toHaveAttribute('open', '');
     await expect(
       sourceDisclosure.getByTestId('research-candidate-definition'),
-    ).toContainText('A development sample is not full-market validation.');
+    ).toContainText('Strategy source and validation scope');
     await sourceSummary.press('Enter');
     await expect(sourceDisclosure).not.toHaveAttribute('open', '');
 
@@ -1457,12 +1457,15 @@ test('overview loads one account projection before history without fabricated fi
   await expect
     .poll(() => requestedPaths.includes('/api/portfolio/equity-curve/series'))
     .toBe(true);
-  expect(requestedPaths).not.toContain('/api/decision/trading-plan');
+  await expect
+    .poll(() => requestedPaths.includes('/api/decision/trading-plan'))
+    .toBe(true);
   for (const path of [
     '/api/portfolio/overview',
     '/api/portfolio',
     '/api/portfolio/explainability',
     '/api/operations/today',
+    '/api/decision/today',
   ]) {
     expect(requestedPaths).not.toContain(path);
   }

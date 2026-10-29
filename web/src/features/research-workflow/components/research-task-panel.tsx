@@ -188,7 +188,7 @@ export function ResearchTaskPanel({
                 </StatusBadge>
                 <button
                   aria-expanded={composerOpen}
-                  className="app-button app-button-secondary min-h-9 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
+                  className="app-button app-button-secondary min-h-11 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
                   onClick={() => setComposerOpen((current) => !current)}
                   type="button"
                 >
@@ -221,7 +221,7 @@ export function ResearchTaskPanel({
                 title={copy.loadErrorTitle}
                 action={
                   <button
-                    className="app-button app-button-secondary min-h-9 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
+                    className="app-button app-button-secondary min-h-11 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
                     disabled={tasks.isFetching}
                     onClick={() => void tasks.refetch()}
                     type="button"
@@ -416,7 +416,7 @@ function ResearchTaskPanelHeader({
         <button
           aria-expanded={open}
           aria-label={open ? copy.close : copy.open}
-          className="app-button app-button-secondary min-h-9 rounded-[var(--app-radius-control)] px-3 py-1.5 text-xs font-semibold"
+          className="app-button app-button-secondary min-h-11 rounded-[var(--app-radius-control)] px-3 py-2 text-xs font-semibold"
           onClick={onToggle}
           type="button"
         >
