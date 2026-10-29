@@ -147,6 +147,7 @@ omit = [
     "server/routes/controlled_*",
     "server/routes/signed_broker_*",
     "server/routes/per_order_confirmation.py",
+    "server/routes/ai_*",
     "account_truth/broker_adapter_*",
     "account_truth/broker_execution_edge_*",
 ]
