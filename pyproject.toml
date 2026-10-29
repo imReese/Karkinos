@@ -20,7 +20,7 @@ dependencies = [
     "python-dotenv>=1.2.4",
     "cryptography>=50.0.2",
     "xlrd>=2.0.2",
-    "ruff>=0.17.0",
+    "ruff>=0.17.1",
     "baostock>=0.9.4,<1",
     "pytdx>=1.72",
     "pypdf>=6.21.0,<7",
@@ -33,11 +33,11 @@ dev = [
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",
     "pip-audit==2.10.1",
-    "pre-commit>=4.6.2",
+    "pre-commit>=4.7.0",
     "mypy>=2.4.0",
 ]
 server = [
-    "fastapi>=0.143.0",
+    "fastapi>=0.148.0",
     "uvicorn[standard]>=0.54.0",
     "aiosqlite>=0.22.1",
     "websockets>=17.2",
