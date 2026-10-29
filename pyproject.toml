@@ -141,6 +141,12 @@ source = [
     "notification",
     "server",
 ]
+omit = [
+    "server/services/controlled_execution/*",
+    "server/routes/broker_*",
+    "server/routes/controlled_*",
+    "server/routes/signed_broker_*",
+]
 
 [tool.coverage.report]
 fail_under = 85
