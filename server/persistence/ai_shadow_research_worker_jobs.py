@@ -351,6 +351,7 @@ class AiShadowResearchWorkerJobStore:
         rescheduled_at: datetime,
         available_at: datetime,
         result: Mapping[str, Any],
+        failure_attempt_count: int | None = None,
     ) -> bool:
         owner = _required_text(lease_owner, "lease_owner")
         rescheduled = _aware_utc(rescheduled_at, field="rescheduled_at")
@@ -382,6 +383,10 @@ class AiShadowResearchWorkerJobStore:
                 "provider_in_flight": None,
                 "last_result": _safe_result(result),
             }
+            if failure_attempt_count is not None:
+                updated_payload["failure_attempt_count"] = max(
+                    0, int(failure_attempt_count)
+                )
             cursor = conn.execute(
                 """
                 UPDATE automation_runs
@@ -394,6 +399,51 @@ class AiShadowResearchWorkerJobStore:
                     _json(updated_payload),
                     rescheduled.isoformat(),
                     job_id,
+                    row["updated_at"],
+                ),
+            )
+            return cursor.rowcount == 1
+
+    def recover_failed_job(
+        self,
+        *,
+        job_id: str,
+        recovered_at: datetime,
+    ) -> bool:
+        """Atomically transition one failed job back to pending before deadline."""
+
+        job = _required_text(job_id, "job_id")
+        recovered = _aware_utc(recovered_at, field="recovered_at")
+        with self._connect(immediate=True) as conn:
+            row = self._load_optional_row(conn, job)
+            if row is None or row["status"] != "failed":
+                return False
+            payload = row["payload"]
+            _validate_job_payload(payload, expected_job_id=job)
+            deadline = _parse_utc(payload["deadline_at"], "deadline_at")
+            if recovered >= deadline:
+                return False
+            updated_payload = {
+                **payload,
+                "available_at": recovered.isoformat(),
+                "lease_owner": None,
+                "lease_expires_at": None,
+                "provider_in_flight": None,
+                "attempt_count": 0,
+                "failure_attempt_count": 0,
+                "recovery_count": int(payload.get("recovery_count") or 0) + 1,
+                "last_recovered_at": recovered.isoformat(),
+            }
+            cursor = conn.execute(
+                """
+                UPDATE automation_runs
+                SET status='pending', finished_at=NULL, payload_json=?, updated_at=?
+                WHERE run_id=? AND status='failed' AND updated_at=?
+                """,
+                (
+                    _json(updated_payload),
+                    recovered.isoformat(),
+                    job,
                     row["updated_at"],
                 ),
             )

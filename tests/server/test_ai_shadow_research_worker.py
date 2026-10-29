@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -502,6 +502,258 @@ async def test_delayed_provider_worker_does_not_block_independent_decision_work(
     release_provider.set()
     outcome = await asyncio.wait_for(worker_task, timeout=1)
     assert outcome is not None and outcome["disposition"] == "completed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_worker_transient_failure_retries_with_backoff_and_bounds(
+    tmp_path: Path,
+) -> None:
+    state, policy = _state(tmp_path)
+    store = AiShadowResearchWorkerJobStore(state.require_database().path)
+    job = _enqueue_direct(
+        state=state,
+        policy=policy,
+        store=store,
+        enqueued_at=datetime(2026, 9, 4, 18, 0, tzinfo=SHANGHAI),
+    )
+    job_id = str(job["run_id"])
+    clock = {"value": datetime(2026, 9, 4, 18, 0, tzinfo=SHANGHAI)}
+
+    class FailingRunner:
+        async def run_once(self) -> dict[str, object]:
+            raise AttributeError("simulated transient hot reload error")
+
+    worker = AiShadowResearchWorker(
+        state=state,
+        store=store,
+        service_builder=lambda _fence: FailingRunner(),
+        lease_owner="failing-worker",
+        now=lambda: clock["value"],
+    )
+
+    # Attempt 1: transient failure -> rescheduled with 60s backoff
+    outcome1 = await worker.run_one()
+    assert outcome1 is not None
+    assert outcome1["disposition"] == "rescheduled"
+    assert outcome1["failure_code"] == "AttributeError"
+    stored1 = store.get(job_id)
+    assert stored1 is not None and stored1["status"] == "pending"
+    assert stored1["payload"]["failure_attempt_count"] == 1
+    assert (
+        stored1["payload"]["available_at"]
+        == (clock["value"] + timedelta(seconds=60)).astimezone(timezone.utc).isoformat()
+    )
+
+    # Advance 60s -> Attempt 2: transient failure -> rescheduled with 120s backoff
+    clock["value"] += timedelta(seconds=60)
+    outcome2 = await worker.run_one()
+    assert outcome2 is not None
+    assert outcome2["disposition"] == "rescheduled"
+    assert outcome2["failure_code"] == "AttributeError"
+    stored2 = store.get(job_id)
+    assert stored2 is not None and stored2["status"] == "pending"
+    assert stored2["payload"]["failure_attempt_count"] == 2
+    assert (
+        stored2["payload"]["available_at"]
+        == (clock["value"] + timedelta(seconds=120))
+        .astimezone(timezone.utc)
+        .isoformat()
+    )
+
+    # Advance 120s -> Attempt 3: retries exhausted -> terminal fail
+    clock["value"] += timedelta(seconds=120)
+    outcome3 = await worker.run_one()
+    assert outcome3 is not None
+    assert outcome3["disposition"] == "failed"
+    assert outcome3["failure_code"] == "AttributeError"
+    stored3 = store.get(job_id)
+    assert stored3 is not None and stored3["status"] == "failed"
+    assert stored3["payload"]["last_result"]["failure_code"] == "AttributeError"
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_worker_fatal_failure_fails_immediately_without_retry(
+    tmp_path: Path,
+) -> None:
+    state, policy = _state(tmp_path)
+    store = AiShadowResearchWorkerJobStore(state.require_database().path)
+    job = _enqueue_direct(
+        state=state,
+        policy=policy,
+        store=store,
+        enqueued_at=datetime(2026, 9, 4, 18, 0, tzinfo=SHANGHAI),
+    )
+    job_id = str(job["run_id"])
+    clock = {"value": datetime(2026, 9, 4, 18, 0, tzinfo=SHANGHAI)}
+
+    # Activate kill switch
+    controls = state.trading_controls
+    assert controls is not None
+    controls.set_kill_switch(True, reason="emergency halt")
+
+    worker = AiShadowResearchWorker(
+        state=state,
+        store=store,
+        lease_owner="fatal-worker",
+        now=lambda: clock["value"],
+    )
+
+    outcome = await worker.run_one()
+    assert outcome is not None
+    assert outcome["disposition"] == "failed"
+    assert outcome["failure_code"] == "blocked_by_kill_switch"
+    stored = store.get(job_id)
+    assert stored is not None and stored["status"] == "failed"
+
+
+@pytest.mark.unit
+def test_scheduler_recovers_failed_job_after_cooldown_with_runway(
+    tmp_path: Path,
+) -> None:
+    state, policy = _state(tmp_path)
+    store = AiShadowResearchWorkerJobStore(state.require_database().path)
+    clock = {"value": datetime(2026, 9, 4, 18, 0, tzinfo=SHANGHAI)}
+    scheduler = AiShadowResearchJobScheduler(
+        state=state,
+        store=store,
+        now=lambda: clock["value"],
+        recovery_cooldown_seconds=900,
+    )
+
+    enqueued = scheduler.enqueue_if_authorized()
+    assert enqueued["status"] == "enqueued"
+    job_id = enqueued["job_id"]
+
+    # Claim and fail the job at 18:00
+    claimed = store.claim_next(
+        lease_owner="failing-worker",
+        claimed_at=clock["value"],
+        lease_seconds=90,
+    )
+    assert claimed is not None
+    assert store.fail(
+        job_id=job_id,
+        lease_owner="failing-worker",
+        lease_generation=1,
+        failed_at=clock["value"],
+        result={"run_status": "failed", "failure_code": "AttributeError"},
+    )
+    stored_failed = store.get(job_id)
+    assert stored_failed is not None and stored_failed["status"] == "failed"
+
+    # 5 minutes later (cooldown 900s not elapsed): scheduler does not recover
+    clock["value"] += timedelta(minutes=5)
+    too_early = scheduler.enqueue_if_authorized()
+    assert too_early["status"] == "already_enqueued"
+    assert store.get(job_id)["status"] == "failed"
+
+    # 16 minutes after failure (cooldown elapsed): scheduler recovers the job
+    clock["value"] += timedelta(minutes=11)
+    recovered = scheduler.enqueue_if_authorized()
+    assert recovered["status"] == "recovered"
+    assert recovered["job_id"] == job_id
+    stored = store.get(job_id)
+    assert stored is not None and stored["status"] == "pending"
+    assert stored["payload"]["attempt_count"] == 0
+    assert stored["payload"]["failure_attempt_count"] == 0
+    assert stored["payload"]["recovery_count"] == 1
+
+    # Worker can immediately claim and run the recovered job
+    claim = store.claim_next(
+        lease_owner="fresh-worker",
+        claimed_at=clock["value"],
+        lease_seconds=90,
+    )
+    assert claim is not None
+    assert claim["run_id"] == job_id
+    assert claim["payload"]["attempt_count"] == 1
+
+
+@pytest.mark.unit
+def test_scheduler_does_not_recover_if_runway_insufficient_or_max_recoveries_exceeded(
+    tmp_path: Path,
+) -> None:
+    state, policy = _state(tmp_path)
+    store = AiShadowResearchWorkerJobStore(state.require_database().path)
+    # Saturday 10:00 (inside weekend off-peak window, deadline is Monday 09:00)
+    clock = {"value": datetime(2026, 9, 5, 10, 0, tzinfo=SHANGHAI)}
+    scheduler = AiShadowResearchJobScheduler(
+        state=state,
+        store=store,
+        now=lambda: clock["value"],
+        recovery_cooldown_seconds=0,
+        max_recovery_attempts=2,
+    )
+
+    # Initial enqueue at Saturday 10:00
+    job = scheduler.enqueue_if_authorized()
+    assert job["status"] == "enqueued"
+    job_id = job["job_id"]
+
+    # Recovery 1: fail and recover
+    store.claim_next(
+        lease_owner="w1",
+        claimed_at=clock["value"],
+        lease_seconds=90,
+    )
+    store.fail(
+        job_id=job_id,
+        lease_owner="w1",
+        lease_generation=1,
+        failed_at=clock["value"],
+        result={"run_status": "failed", "failure_code": "AttributeError"},
+    )
+    rec1 = scheduler.enqueue_if_authorized()
+    assert rec1["status"] == "recovered"
+    assert store.get(job_id)["payload"]["recovery_count"] == 1
+
+    # Recovery 2: fail and recover
+    clock["value"] += timedelta(minutes=5)
+    store.claim_next(
+        lease_owner="w2",
+        claimed_at=clock["value"],
+        lease_seconds=90,
+    )
+    store.fail(
+        job_id=job_id,
+        lease_owner="w2",
+        lease_generation=2,
+        failed_at=clock["value"],
+        result={"run_status": "failed", "failure_code": "AttributeError"},
+    )
+    rec2 = scheduler.enqueue_if_authorized()
+    assert rec2["status"] == "recovered"
+    assert store.get(job_id)["payload"]["recovery_count"] == 2
+
+    # Attempt 3: fail again -> recovery_count (2) >= max_recovery_attempts (2) -> rejected
+    clock["value"] += timedelta(minutes=5)
+    store.claim_next(
+        lease_owner="w3",
+        claimed_at=clock["value"],
+        lease_seconds=90,
+    )
+    store.fail(
+        job_id=job_id,
+        lease_owner="w3",
+        lease_generation=3,
+        failed_at=clock["value"],
+        result={"run_status": "failed", "failure_code": "AttributeError"},
+    )
+    rec3 = scheduler.enqueue_if_authorized()
+    assert rec3["status"] == "already_enqueued"
+    assert store.get(job_id)["status"] == "failed"
+
+    # Verify runway boundary check directly
+    job_short_runway = dict(store.get(job_id))
+    job_short_runway["payload"] = dict(job_short_runway["payload"])
+    job_short_runway["payload"]["deadline_at"] = (
+        clock["value"] + timedelta(hours=1)
+    ).isoformat()
+    assert not scheduler._should_recover_failed_job(
+        job=job_short_runway, observed_at=clock["value"]
+    )
 
 
 @pytest.mark.unit

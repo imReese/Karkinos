@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
@@ -20,9 +20,19 @@ from server.contracts.ai_shadow_research_automation import (
 from server.contracts.strategy_research import STRATEGY_RESEARCH_PROMPT_VERSION
 from server.dependencies import AppState
 
+AI_SHADOW_RESEARCH_RECOVERY_COOLDOWN_SECONDS = 900
+AI_SHADOW_RESEARCH_MAX_RECOVERY_ATTEMPTS = 5
+
 
 class ShadowResearchJobEnqueuer(Protocol):
     def enqueue(self, **kwargs: Any) -> dict[str, Any]: ...
+
+    def recover_failed_job(
+        self,
+        *,
+        job_id: str,
+        recovered_at: datetime,
+    ) -> bool: ...
 
 
 class AiShadowResearchJobScheduler:
@@ -37,12 +47,16 @@ class AiShadowResearchJobScheduler:
         provider_call_window_policy: ProviderCallWindowPolicy = (
             DEEPSEEK_PROVIDER_CALL_WINDOW_POLICY
         ),
+        recovery_cooldown_seconds: int = AI_SHADOW_RESEARCH_RECOVERY_COOLDOWN_SECONDS,
+        max_recovery_attempts: int = AI_SHADOW_RESEARCH_MAX_RECOVERY_ATTEMPTS,
     ) -> None:
         self._state = state
         self._db = state.require_database()
         self._store = store
         self._now = now or (lambda: datetime.now(timezone.utc))
         self._provider_call_window_policy = provider_call_window_policy
+        self._recovery_cooldown_seconds = max(0, int(recovery_cooldown_seconds))
+        self._max_recovery_attempts = max(1, int(max_recovery_attempts))
 
     def enqueue_if_authorized(self) -> dict[str, Any]:
         """Perform cheap local gates and enqueue without constructing a provider."""
@@ -101,6 +115,27 @@ class AiShadowResearchJobScheduler:
             deadline_at=deadline_at,
             enqueued_at=observed_at,
         )
+        if not job["enqueued"]:
+            if self._should_recover_failed_job(job=job, observed_at=observed_at):
+                recovered = self._store.recover_failed_job(
+                    job_id=str(job["run_id"]),
+                    recovered_at=observed_at,
+                )
+                if recovered:
+                    return {
+                        "schema_version": (
+                            "karkinos.ai.shadow_research_job_scheduler.v1"
+                        ),
+                        "status": "recovered",
+                        "failure_code": None,
+                        "job_id": job["run_id"],
+                        "available_at": observed_at.isoformat(),
+                        "deadline_at": job["payload"]["deadline_at"],
+                        "provider_call_performed": False,
+                        "broker_order_created": False,
+                        "execution_authority_granted": False,
+                        "capital_authority_granted": False,
+                    }
         return {
             "schema_version": "karkinos.ai.shadow_research_job_scheduler.v1",
             "status": "enqueued" if job["enqueued"] else "already_enqueued",
@@ -113,6 +148,36 @@ class AiShadowResearchJobScheduler:
             "execution_authority_granted": False,
             "capital_authority_granted": False,
         }
+
+    def _should_recover_failed_job(
+        self,
+        *,
+        job: Mapping[str, Any],
+        observed_at: datetime,
+    ) -> bool:
+        if str(job.get("status") or "") != "failed":
+            return False
+        payload = job.get("payload")
+        if not isinstance(payload, Mapping):
+            return False
+        deadline_text = payload.get("deadline_at")
+        if not deadline_text:
+            return False
+        deadline_at = datetime.fromisoformat(str(deadline_text))
+        remaining_seconds = (deadline_at - observed_at).total_seconds()
+        if remaining_seconds < SHADOW_RESEARCH_MINIMUM_OFF_PEAK_RUNWAY_SECONDS:
+            return False
+        updated_text = job.get("updated_at")
+        if updated_text:
+            updated_at = datetime.fromisoformat(str(updated_text))
+            if (
+                observed_at - updated_at
+            ).total_seconds() < self._recovery_cooldown_seconds:
+                return False
+        recovery_count = int(payload.get("recovery_count") or 0)
+        if recovery_count >= self._max_recovery_attempts:
+            return False
+        return True
 
 
 def _scheduler_result(status: str, failure_code: str) -> dict[str, Any]:

@@ -452,7 +452,8 @@ export function useUpdateShadowResearchPolicyMutation() {
 
 export type ShadowResearchRunReceipt = {
   schema_version: 'karkinos.ai.shadow_research_job_scheduler.v1';
-  status: 'enqueued' | 'already_enqueued' | 'blocked' | 'disabled';
+  status:
+    'enqueued' | 'already_enqueued' | 'recovered' | 'blocked' | 'disabled';
   failure_code: string | null;
   job_id?: string;
   run_id?: string;

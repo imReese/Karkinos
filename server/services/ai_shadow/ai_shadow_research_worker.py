@@ -33,6 +33,22 @@ AI_SHADOW_RESEARCH_WORKER_LEASE_SECONDS = 90
 AI_SHADOW_RESEARCH_WORKER_HEARTBEAT_SECONDS = 30
 AI_SHADOW_RESEARCH_WORKER_POLL_SECONDS = 5
 AI_SHADOW_RESEARCH_WORKER_RETRY_SECONDS = 300
+AI_SHADOW_RESEARCH_WORKER_MAX_RUNTIME_ATTEMPTS = 3
+
+_FATAL_NON_RETRYABLE_FAILURE_CODES = frozenset(
+    {
+        "blocked_by_kill_switch",
+        "shadow_research_policy_paused",
+        "shadow_research_policy_changed",
+        "research_worker_provider_config_changed",
+        "research_worker_provider_window_policy_changed",
+        "research_worker_job_deadline_elapsed",
+        "research_worker_clock_timezone_missing",
+        "research_worker_provider_window_blocked",
+        "deepseek_peak_pricing_window",
+        "deepseek_off_peak_runway_insufficient",
+    }
+)
 
 
 class ShadowResearchRunner(Protocol):
@@ -129,6 +145,7 @@ class AiShadowResearchWorker:
         except ProviderExecutionFenced as exc:
             raise AiShadowResearchWorkerLeaseLost(str(exc)) from exc
         except Exception as exc:
+            logger.exception("AiShadowResearchWorker execution failed: %s", exc)
             result = {
                 "run_status": "failed",
                 "failure_code": _failure_code(exc),
@@ -163,6 +180,7 @@ class AiShadowResearchWorker:
                 rescheduled_at=now,
                 available_at=next_at,
                 result=result,
+                failure_attempt_count=0,
             )
             disposition = "rescheduled"
         else:
@@ -172,15 +190,43 @@ class AiShadowResearchWorker:
                     "run_status": "failed",
                     "failure_code": "research_run_incomplete_requires_reconciliation",
                 }
-            committed = await asyncio.to_thread(
-                self._store.fail,
-                job_id=job_id,
-                lease_owner=self._lease_owner,
-                lease_generation=lease_generation,
-                failed_at=now,
-                result=result,
-            )
-            disposition = "failed"
+            failure_code = str(result.get("failure_code") or "")
+            current_failures = int(payload.get("failure_attempt_count") or 0)
+            next_failure_count = current_failures + 1
+            deadline = datetime.fromisoformat(str(payload["deadline_at"]))
+            runway_ok = (
+                deadline - now
+            ).total_seconds() >= SHADOW_RESEARCH_MINIMUM_OFF_PEAK_RUNWAY_SECONDS
+            is_fatal = failure_code in _FATAL_NON_RETRYABLE_FAILURE_CODES
+
+            if (
+                not is_fatal
+                and next_failure_count < AI_SHADOW_RESEARCH_WORKER_MAX_RUNTIME_ATTEMPTS
+                and runway_ok
+            ):
+                backoff_seconds = min(300, 60 * (2 ** (next_failure_count - 1)))
+                next_at = min(now + timedelta(seconds=backoff_seconds), deadline)
+                committed = await asyncio.to_thread(
+                    self._store.reschedule,
+                    job_id=job_id,
+                    lease_owner=self._lease_owner,
+                    lease_generation=lease_generation,
+                    rescheduled_at=now,
+                    available_at=next_at,
+                    result=result,
+                    failure_attempt_count=next_failure_count,
+                )
+                disposition = "rescheduled"
+            else:
+                committed = await asyncio.to_thread(
+                    self._store.fail,
+                    job_id=job_id,
+                    lease_owner=self._lease_owner,
+                    lease_generation=lease_generation,
+                    failed_at=now,
+                    result=result,
+                )
+                disposition = "failed"
         if not committed:
             raise AiShadowResearchWorkerLeaseLost(
                 "research_worker_lease_lost_before_commit"
