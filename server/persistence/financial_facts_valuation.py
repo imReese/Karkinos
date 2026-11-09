@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from server.persistence.database_serialization import (
 from server.persistence.valuation_publication_recovery import (
     preserve_publication_recovery,
     record_publication_recovery,
+    retry_failed_valuation_publication_on_connection,
 )
 from server.persistence.valuation_transaction import ValuationTransactionWriter
 from server.valuation_snapshot_contract import validate_valuation_snapshot
@@ -232,6 +234,27 @@ class ValuationFactsRepositoryMixin:
     _path: Path
     _now: DateTimeNow
     _valuation_transaction_writer: ValuationTransactionWriter
+
+    def retry_failed_valuation_publication_sync(
+        self,
+        *,
+        incident_ref: str,
+        actor: str,
+        confirmation: str,
+        now: datetime,
+    ) -> dict[str, Any]:
+        """Rebuild committed facts and resolve only an exact standalone failure."""
+        with closing(connect_sqlite(self._path, timeout=2)) as conn, conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN IMMEDIATE")
+            return retry_failed_valuation_publication_on_connection(
+                conn,
+                incident_ref=incident_ref,
+                publisher=self._valuation_transaction_writer,
+                actor=actor,
+                confirmation=confirmation,
+                now=now,
+            )
 
     def save_valuation_snapshot_sync(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Persist one immutable, content-addressed valuation snapshot."""

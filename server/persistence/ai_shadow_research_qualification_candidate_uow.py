@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -9,9 +10,11 @@ from typing import Any
 from server.contracts.ai_shadow_research_qualification import (
     ShadowResearchQualificationRejected,
     build_qualification_candidate_values,
+    manual_qualification_source_id,
     qualification_candidate_record,
     qualification_optional_positive_int,
     qualification_required_text,
+    qualification_source_binding,
 )
 from server.contracts.content_identity import content_fingerprint
 from server.persistence.backtest_results import insert_backtest_result
@@ -180,6 +183,13 @@ def save_qualification_candidate_row(
     if run is None or str(run["status"]) != "running":
         raise ShadowResearchQualificationRejected("qualification_run_not_running")
     require_source_candidate_binding(conn, run=run, values=values)
+    manual = qualification_source_binding(dict(run))
+    if (
+        manual
+        and qualification_source_binding(json.loads(values["comparison_json"]))
+        != manual
+    ):
+        raise ShadowResearchQualificationRejected("qualification_manual_source_drift")
     try:
         conn.execute(
             """
@@ -217,6 +227,17 @@ def require_source_candidate_binding(
     run: sqlite3.Row,
     values: Mapping[str, Any],
 ) -> None:
+    manual = qualification_source_binding(dict(run))
+    if manual is not None:
+        if (
+            values["source_candidate_id"] != manual_qualification_source_id(manual)
+            or values["source_draft_id"] != manual["manual_source_refs"]["draft_id"]
+            or values["rank"] != 1
+        ):
+            raise ShadowResearchQualificationRejected(
+                "qualification_source_candidate_binding_mismatch"
+            )
+        return
     source = conn.execute(
         """
         SELECT candidate_id, run_id, draft_id

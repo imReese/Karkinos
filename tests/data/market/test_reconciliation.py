@@ -132,7 +132,7 @@ def test_bse_whole_hand_precision_replays_actual_raw_and_preserves_exact_primary
         reconciliation_policy=EASTMONEY_TUSHARE_BSE_RECONCILIATION_V1,
         checked_at=when,
     )
-    assert result.eligible_for_verified_dataset is matched
+    assert result.is_matched is matched
     verification = read_market_verification_evidence(objects, result.verification.ref)
     assert verification.policy == EASTMONEY_TUSHARE_BSE_RECONCILIATION_V1
     assert (

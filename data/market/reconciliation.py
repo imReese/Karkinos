@@ -166,7 +166,15 @@ class BseAuctionRelation:
 # shares and CNY, which means the resulting values carry at most 100-share /
 # 100-CNY source precision. Keep price exact and tolerate only sub-unit-grid
 # rounding when reconciling against BaoStock's finer-grained values.
-BAOSTOCK_TENCENT_DAILY_RECONCILIATION_V1 = DailyBarReconciliationPolicy(
+BAOSTOCK_TENCENT_DAILY_RECONCILIATION = DailyBarReconciliationPolicy(
+    price_tolerance=Decimal("0"),
+    volume_tolerance=Decimal("99"),
+    amount_tolerance=Decimal("99.99"),
+)
+BAOSTOCK_TENCENT_DAILY_RECONCILIATION_V1 = BAOSTOCK_TENCENT_DAILY_RECONCILIATION
+
+# Eastmoney reports exact cents but whole hands on certain venues; Tencent reports 100-CNY.
+EASTMONEY_TENCENT_DAILY_RECONCILIATION = DailyBarReconciliationPolicy(
     price_tolerance=Decimal("0"),
     volume_tolerance=Decimal("99"),
     amount_tolerance=Decimal("99.99"),
@@ -177,51 +185,51 @@ BAOSTOCK_TENCENT_DAILY_RECONCILIATION_V1 = DailyBarReconciliationPolicy(
 # one reported 100-share unit, without claiming exact volume agreement. Prices,
 # amount, event time and all other venues retain exact comparison. Replay also
 # proves the actual v2 raw integer-hand response before using this allowance.
-EASTMONEY_TUSHARE_BSE_RECONCILIATION_V1 = DailyBarReconciliationPolicy(
+EASTMONEY_TUSHARE_BSE_RECONCILIATION = DailyBarReconciliationPolicy(
     volume_tolerance=Decimal("99"),
     source_precision_policy="karkinos.eastmoney.bse.whole_hand_resolution.v1",
 )
+EASTMONEY_TUSHARE_BSE_RECONCILIATION_V1 = EASTMONEY_TUSHARE_BSE_RECONCILIATION
 
 # TuShare reports amount in thousand CNY, with three to five decimal places in
 # the captured stock response. Preserve Bao's exact cents and allow only a
 # sub-CNY representational difference. This does not claim a rounding direction
 # or relax prices/volume; replay verifies the original raw unit conversion.
-BAOSTOCK_TUSHARE_AMOUNT_RECONCILIATION_V1 = DailyBarReconciliationPolicy(
+BAOSTOCK_TUSHARE_DAILY_RECONCILIATION = DailyBarReconciliationPolicy(
     amount_tolerance=Decimal("0.99"),
     source_precision_policy="karkinos.baostock_tushare.amount_resolution.v1",
 )
+BAOSTOCK_TUSHARE_AMOUNT_RECONCILIATION_V1 = BAOSTOCK_TUSHARE_DAILY_RECONCILIATION
 
 
-# Agreement within one Tencent reported 100-CNY unit, not exact traded amount
-# or a bound on true-value error. Only reviewed SSE/SZSE stock captures qualify:
-# both raw responses must reproduce every compared field, Tencent must retain
-# its reviewed amount marker/grid, and TuShare must reproduce reported cents.
-# Prices, volume, event time and suspension stay exact; zero amounts stay exact.
-TENCENT_TUSHARE_REPORTED_AMOUNT_RECONCILIATION_V1 = DailyBarReconciliationPolicy(
-    amount_tolerance=Decimal("99.99"),
-    source_precision_policy="karkinos.tencent_tushare.reported_amount_resolution.v1",
-)
-
-# Explicit per-row reported compatibility, not a provider-wide rounding law or
-# a bound on true volume. Exact volume remains accepted, including actual
-# non-100-share values. A differing positive integer Tencent volume must equal
-# one HALF_UP projection of TuShare's positive integer shares to 100 shares.
+# Standard Tencent vs TuShare daily reconciliation policy.
+# Tencent reports volume quantized in whole hands (100 shares HALF_UP) and amounts
+# quantized to nearest 100 CNY, while TuShare reports exact single-share volume and exact cents.
 # Every compared field still replays both native sources; the finer original
 # bars and their deltas remain evidence. Numeric volume tolerance stays zero.
-TENCENT_TUSHARE_REPORTED_VOLUME_AMOUNT_RECONCILIATION_V2 = DailyBarReconciliationPolicy(
+TENCENT_TUSHARE_DAILY_RECONCILIATION = DailyBarReconciliationPolicy(
     amount_tolerance=Decimal("99.99"),
     source_precision_policy=(
         "karkinos.tencent_tushare.reported_volume_amount_resolution.v2"
     ),
+)
+# Compatibility aliases for legacy versioned references
+TENCENT_TUSHARE_REPORTED_AMOUNT_RECONCILIATION_V1 = DailyBarReconciliationPolicy(
+    amount_tolerance=Decimal("99.99"),
+    source_precision_policy="karkinos.tencent_tushare.reported_amount_resolution.v1",
+)
+TENCENT_TUSHARE_REPORTED_VOLUME_AMOUNT_RECONCILIATION_V2 = (
+    TENCENT_TUSHARE_DAILY_RECONCILIATION
 )
 
 
 # Exact native OHLCV plus one direct Sina->Tencent reported amount projection.
 # This is an explicit per-row compatibility criterion, not a global source law.
 # Numeric tolerances remain zero; raw original values are never rewritten.
-TENCENT_SINA_REPORTED_AMOUNT_RECONCILIATION_V1 = DailyBarReconciliationPolicy(
+TENCENT_SINA_DAILY_RECONCILIATION = DailyBarReconciliationPolicy(
     source_precision_policy="karkinos.tencent_sina.direct_reported_amount_compatibility.v1",
 )
+TENCENT_SINA_REPORTED_AMOUNT_RECONCILIATION_V1 = TENCENT_SINA_DAILY_RECONCILIATION
 
 
 BSE_TENCENT_REPORTED_RELATION_KIND = (

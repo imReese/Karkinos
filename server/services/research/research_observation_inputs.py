@@ -20,7 +20,11 @@ from data.dataset.reader import (
 from data.market.capture import read_provider_capture
 from data.market.quality_evidence import read_market_quality_evidence
 from data.market.revision import read_market_revision_materialization
-from data.market.verification_evidence import read_market_verification_evidence
+from data.market.verification_evidence import (
+    MarketVerificationEvidence,
+    MarketVerificationStatus,
+    read_market_verification_evidence,
+)
 from data.storage.objects import ContentAddressedObjectStore
 from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
 from server.ai_runtime.contracts import content_fingerprint
@@ -29,6 +33,8 @@ from server.ai_runtime.formula_dsl import (
     FormulaBinding,
     expression_lookback_rows,
     formula_requires_cross_section,
+    formula_uses_market_weekday,
+    formula_uses_observed_elapsed,
 )
 from server.contracts.strategy_research import backtest_evidence_blocker
 from server.services.market.calendar import validate_verified_market_calendar
@@ -40,6 +46,41 @@ _SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 class ResearchObservationInputError(ValueError):
     """Stable public rejection; provider or filesystem details never escape."""
+
+
+def require_research_dataset_agreement(
+    objects: ContentAddressedObjectStore,
+    snapshot: DailyBarDatasetSnapshot,
+) -> dict[str, MarketVerificationEvidence]:
+    """Research requires source agreement even if a broader reader admits a primary.
+
+    Reopen the existing verification owner and retain its distinct evidence once
+    per call. A primary-source conflict cannot become an independent observation.
+    """
+    if not snapshot.verification_bound:
+        raise ResearchObservationInputError("observation_dataset_unverified")
+    verified: dict[str, MarketVerificationEvidence] = {}
+    try:
+        for partition in snapshot.partitions:
+            identity = partition.verification_id
+            if identity is None:
+                raise ResearchObservationInputError("observation_dataset_unverified")
+            if identity not in verified:
+                evidence = read_market_verification_evidence(
+                    objects, objects.resolve_ref(identity)
+                )
+                if evidence.status is not MarketVerificationStatus.MATCHED:
+                    raise ResearchObservationInputError(
+                        "observation_verification_not_matched"
+                    )
+                verified[identity] = evidence
+    except ResearchObservationInputError:
+        raise
+    except Exception:
+        raise ResearchObservationInputError(
+            "observation_verification_unreadable"
+        ) from None
+    return verified
 
 
 def load_research_observation_source(
@@ -259,10 +300,9 @@ def read_research_observation_dataset(
     ):
         raise ResearchObservationInputError("observation_bar_not_available")
     try:
+        verified = require_research_dataset_agreement(objects, snapshot)
         for partition in snapshot.partitions:
-            verification = read_market_verification_evidence(
-                objects, objects.resolve_ref(partition.verification_id)
-            )
+            verification = verified[partition.verification_id]
             if verification.checked_at > now:
                 raise ResearchObservationInputError(
                     "observation_verification_not_available"
@@ -628,7 +668,11 @@ def _formula_source(config, metrics, start, end):
 
 
 def _warmup(node: Mapping[str, Any], *, minimum_history_rows: int = 1) -> int:
-    if formula_requires_cross_section(node):
+    if (
+        formula_requires_cross_section(node)
+        or formula_uses_observed_elapsed(node)
+        or formula_uses_market_weekday(node)
+    ):
         rows = expression_lookback_rows(
             node,
             minimum_history_rows=minimum_history_rows,
@@ -636,10 +680,15 @@ def _warmup(node: Mapping[str, Any], *, minimum_history_rows: int = 1) -> int:
         )
         if rows is None:
             raise ResearchObservationInputError(
-                "formula_cross_section_finite_history_required"
+                "market_weekday_finite_history_required"
+                if formula_uses_market_weekday(node)
+                and not formula_uses_observed_elapsed(node)
+                else "formula_cross_section_finite_history_required"
             )
         return rows
     op = node["op"]
+    if op == "rolling_max_close_ratio":
+        return int(node["window"]) + 1
     if op in {"field", "constant"}:
         return 1
     if op == "atr":

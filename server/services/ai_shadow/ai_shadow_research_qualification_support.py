@@ -14,10 +14,13 @@ from typing import Any
 from server.ai_runtime.formula_dsl import FormulaBinding
 from server.ai_runtime.strategy_research_privacy import NORMALIZED_RESEARCH_NOTIONAL
 from server.contracts.ai_shadow_research_qualification import (
+    MANUAL_QUALIFICATION_BACKUP,
     SHADOW_RESEARCH_QUALIFICATION_ATTEMPT_RUN_TYPE,
     SHADOW_RESEARCH_QUALIFICATION_ATTEMPT_SCHEMA,
     SHADOW_RESEARCH_QUALIFICATION_SCHEMA,
     ShadowResearchQualificationRejected,
+    manual_qualification_source_id,
+    qualification_source_binding,
 )
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.strategy_research import StrategyResearchSelection
@@ -48,6 +51,91 @@ class FrozenQualificationSource:
     source_critique: dict[str, Any]
     source_backtest: dict[str, Any]
     semantic_fingerprint: str
+
+
+def freeze_manual_qualification_source(*, research_store, source_binding):
+    """Reopen the five real research references and their completed frozen final."""
+    from server.config_types import ResearchSimulationSourceConfig
+    from server.contracts.ai_shadow_research_qualification import (
+        manual_qualification_source_id,
+        qualification_formula_semantic_fingerprint,
+        qualification_source_binding,
+    )
+    from server.contracts.daily_strategy_artifacts import DRAFT_BACKUP_FIELDS
+    from server.services.research.research_final_evaluation import (
+        manual_final_research_source,
+        verify_persisted_final_evaluation,
+    )
+
+    binding = qualification_source_binding({"source_binding": source_binding})
+    if binding is None:
+        raise ShadowResearchQualificationRejected("qualification_manual_source_missing")
+    refs = binding["manual_source_refs"]
+    source = manual_final_research_source(
+        research_store=research_store,
+        source=ResearchSimulationSourceConfig(**refs),
+        reservation_id=binding["final_evaluation_id"],
+    )
+    row = research_store.get_sealed_test(binding["final_evaluation_id"])
+    final = row.get("evidence") or {}
+    if (
+        source.manual_source_fingerprint != binding["manual_source_fingerprint"]
+        or row.get("status") != "completed"
+        or row.get("evidence_fingerprint") != binding["final_evidence_fingerprint"]
+        or final.get("reservation", {}).get("manual_source_refs") != refs
+        or final.get("reservation", {}).get("manual_source_fingerprint")
+        != binding["manual_source_fingerprint"]
+        or final.get("deployment_assessment", {}).get("status") != "pass"
+    ):
+        raise ShadowResearchQualificationRejected(
+            "qualification_manual_final_binding_invalid"
+        )
+    verify_persisted_final_evaluation(
+        research_store=research_store,
+        evidence=final,
+        store_root=research_store._path.parent / "research",
+    )
+    draft = dict(source.source_draft)
+    strategy = {key: draft[key] for key in DRAFT_BACKUP_FIELDS if key in draft}
+    identity = manual_qualification_source_id(binding)
+    source_candidate = {
+        "source_kind": "manual_research",
+        "source_binding": binding,
+        "candidate_id": identity,
+        "run_id": identity,
+        **refs,
+        "candidate_result_id": refs["canonical_backtest_result_id"],
+        "baseline_result_id": source.source_selection.saved_backtest_result_id,
+        "comparison": {
+            "iteration_lineage": {
+                "source_kind": "manual_research",
+                "source_binding": binding,
+                "formula_fingerprint": draft["formula_fingerprint"],
+            }
+        },
+    }
+    verified = {
+        "source_kind": "manual_research",
+        "source_binding": binding,
+        "candidate_id": identity,
+        "run_id": identity,
+        "draft_id": refs["draft_id"],
+        "iteration_number": 1,
+        "strategy": strategy,
+        "strategy_artifact_fingerprint": content_fingerprint(strategy),
+        "formula_fingerprint": draft["formula_fingerprint"],
+        "dataset_snapshot_id": source.source_selection.dataset_snapshot_id,
+        "evidence_fingerprint": content_fingerprint(binding),
+    }
+    return FrozenQualificationSource(
+        verified=verified,
+        source_candidate=source_candidate,
+        source_selection=source.source_selection,
+        source_draft=draft,
+        source_critique=research_store.get_critique(refs["critique_id"]),
+        source_backtest=research_store.get_backtest(refs["backtest_run_id"]),
+        semantic_fingerprint=qualification_formula_semantic_fingerprint(strategy),
+    )
 
 
 class QualificationBaselinePreparer(AiShadowResearchBaselineMixin):
@@ -393,6 +481,7 @@ def qualification_selection(
     market_date: str,
     candidates: Sequence[Mapping[str, Any]],
     replay_failed: bool,
+    source_binding: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     outcomes: list[dict[str, Any]] = []
     ranked: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
@@ -432,7 +521,7 @@ def qualification_selection(
         candidates,
         replay_failed=replay_failed,
     )
-    selection = {
+    selection: dict[str, Any] = {
         "schema_version": SHADOW_RESEARCH_QUALIFICATION_SCHEMA,
         "qualification_run_id": qualification_run_id,
         "source_run_id": source_run_id,
@@ -472,6 +561,51 @@ def qualification_selection(
         "broker_order_created": False,
         "capital_authority_granted": False,
     }
+    if source_binding is not None:
+        from server.contracts.ai_shadow_research_qualification import (
+            qualification_source_binding,
+        )
+
+        manual = qualification_source_binding({"source_binding": source_binding})
+        if len(candidates) != 1:
+            raise ShadowResearchQualificationRejected(
+                "qualification_manual_candidate_count_invalid"
+            )
+        selected = (
+            candidates[0]["qualification_candidate_id"]
+            if candidates[0].get("status") == "qualified" and not replay_failed
+            else None
+        )
+        selection.update(
+            {
+                "source_binding": manual,
+                "status": "failed"
+                if replay_failed
+                else ("specified_candidate_qualified" if selected else "no_selection"),
+                "winner_qualification_candidate_id": None,
+                "selected_qualification_candidate_id": selected,
+                "ranking_method": {
+                    "type": "not_applicable_user_specified_source",
+                    "weighted_average_used": False,
+                    "provider_selects_winner": False,
+                },
+                "ranked_eligible_candidates": [],
+            }
+        )
+        for outcome in selection["candidate_outcomes"]:
+            outcome["ranking_metrics"] = None
+        return {
+            "run_status": "failed"
+            if replay_failed
+            else ("completed" if selected else "blocked"),
+            "selection": selection,
+            "blockers": []
+            if selected or replay_failed
+            else ["no_candidate_passed_account_qualification"],
+            "failure_code": "qualification_candidate_replay_incomplete"
+            if replay_failed
+            else None,
+        }
     if replay_failed:
         return {
             "run_status": "failed",
@@ -610,6 +744,7 @@ def record_blocked_qualification_attempt(
 ) -> dict[str, Any]:
     """Persist one redacted terminal pre-run attempt for an exact source batch."""
 
+    manual = qualification_source_binding(batch)
     source = {
         "source_run_id": str(batch.get("run_id") or "").strip(),
         "market_date": str(batch.get("market_date") or "").strip(),
@@ -624,7 +759,19 @@ def record_blocked_qualification_attempt(
     if (
         not all(source.values())
         or not valid_fingerprint(source["source_selection_fingerprint"])
-        or not valid_fingerprint(source["source_backup_fingerprint"])
+        or (
+            source["source_backup_fingerprint"] != MANUAL_QUALIFICATION_BACKUP
+            if manual
+            else not valid_fingerprint(source["source_backup_fingerprint"])
+        )
+        or (
+            manual is not None
+            and (
+                source["source_run_id"] != manual_qualification_source_id(manual)
+                or source["source_selection_id"]
+                != manual["manual_source_refs"]["session_id"]
+            )
+        )
         or not blocker
         or _FAILURE_CODE.fullmatch(blocker) is None
     ):
@@ -634,6 +781,7 @@ def record_blocked_qualification_attempt(
     payload_core = {
         "schema_version": SHADOW_RESEARCH_QUALIFICATION_ATTEMPT_SCHEMA,
         **source,
+        **({"source_binding": manual} if manual else {}),
         "status": "blocked",
         "failure_code": blocker,
         "blockers": [blocker],
@@ -751,6 +899,10 @@ def public_qualification_attempt(
         return None
     if not isinstance(payload, dict):
         return None
+    try:
+        manual = qualification_source_binding(payload)
+    except ValueError:
+        return None
     evidence_fingerprint = str(payload.get("evidence_fingerprint") or "")
     payload_core = dict(payload)
     payload_core.pop("evidence_fingerprint", None)
@@ -771,7 +923,18 @@ def public_qualification_attempt(
         or not source_run_id
         or not source_selection_id
         or not valid_fingerprint(source_selection_fingerprint)
-        or not valid_fingerprint(source_backup_fingerprint)
+        or (
+            source_backup_fingerprint != MANUAL_QUALIFICATION_BACKUP
+            if manual
+            else not valid_fingerprint(source_backup_fingerprint)
+        )
+        or (
+            manual is not None
+            and (
+                source_run_id != manual_qualification_source_id(manual)
+                or source_selection_id != manual["manual_source_refs"]["session_id"]
+            )
+        )
         or (
             expected_source_run_id is not None
             and source_run_id != expected_source_run_id
@@ -822,6 +985,11 @@ def public_qualification_attempt(
     return {
         "schema_version": SHADOW_RESEARCH_QUALIFICATION_ATTEMPT_SCHEMA,
         "attempt_id": expected_run_id,
+        **(
+            {"source_binding": manual, "source_kind": "manual_research"}
+            if manual
+            else {}
+        ),
         "source_run_id": source_run_id,
         "market_date": market_date,
         "status": "blocked",

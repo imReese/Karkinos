@@ -7,10 +7,15 @@ from dataclasses import dataclass
 from core.types import InstrumentType
 from data.market.contracts import DailyBarProvider, DailyBarRequest
 from data.market.reconciliation import (
+    BAOSTOCK_TENCENT_DAILY_RECONCILIATION,
     BAOSTOCK_TENCENT_DAILY_RECONCILIATION_V1,
     BAOSTOCK_TUSHARE_AMOUNT_RECONCILIATION_V1,
+    BAOSTOCK_TUSHARE_DAILY_RECONCILIATION,
+    EASTMONEY_TENCENT_DAILY_RECONCILIATION,
+    EASTMONEY_TUSHARE_BSE_RECONCILIATION,
     EASTMONEY_TUSHARE_BSE_RECONCILIATION_V1,
     STRICT_DAILY_RECONCILIATION,
+    TENCENT_TUSHARE_DAILY_RECONCILIATION,
     TENCENT_TUSHARE_REPORTED_AMOUNT_RECONCILIATION_V1,
     DailyBarReconciliationPolicy,
 )
@@ -202,7 +207,7 @@ def resolve_daily_bar_verification_pairs(
                     comparison_name=second_name,
                     primary=first,
                     comparison=second,
-                    reconciliation_policy=EASTMONEY_TUSHARE_BSE_RECONCILIATION_V1
+                    reconciliation_policy=EASTMONEY_TUSHARE_BSE_RECONCILIATION
                     if bse_pair
                     else _daily_bar_reconciliation_policy(
                         primary,
@@ -252,9 +257,9 @@ def _daily_bar_reconciliation_policy(
         }
     )
     if upstreams == frozenset({"baostock", "tencent"}):
-        return BAOSTOCK_TENCENT_DAILY_RECONCILIATION_V1
+        return BAOSTOCK_TENCENT_DAILY_RECONCILIATION
     if upstreams == frozenset({"baostock", "tushare"}):
-        return BAOSTOCK_TUSHARE_AMOUNT_RECONCILIATION_V1
+        return BAOSTOCK_TUSHARE_DAILY_RECONCILIATION
     if (
         upstreams == frozenset({"tushare", "tencent"})
         and {primary.descriptor.provider, comparison.descriptor.provider}
@@ -265,5 +270,5 @@ def _daily_bar_reconciliation_policy(
             for key in request.instruments
         )
     ):
-        return TENCENT_TUSHARE_REPORTED_AMOUNT_RECONCILIATION_V1
+        return TENCENT_TUSHARE_DAILY_RECONCILIATION
     return STRICT_DAILY_RECONCILIATION

@@ -81,11 +81,16 @@ class CrossSourceDailyBarResult:
         return self.verification.status.value
 
     @property
-    def eligible_for_verified_dataset(self) -> bool:
+    def is_matched(self) -> bool:
         return (
             self.verification is not None
             and self.verification.status is MarketVerificationStatus.MATCHED
         )
+
+    @property
+    def eligible_for_verified_dataset(self) -> bool:
+        """Return whether the cross-source evidence fully matches."""
+        return self.is_matched
 
     def resolution_candidates(self) -> tuple[DailyBarResolutionCandidate, ...]:
         """Return candidates only when the cross-source evidence fully matches."""
@@ -106,6 +111,68 @@ class CrossSourceDailyBarResult:
                 verification=self.verification,
             ),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class SingleSourceDailyBarResult:
+    """One quality-checked source captured for an explicit single-source dataset.
+
+    This is not verification.  It exists only because a source policy named a
+    single-source fallback; the resulting Dataset carries ``source_class``
+    ``single_source`` so research and publication can refuse it.
+    """
+
+    ingestion: DailyBarIngestionResult
+    quality: MarketQualityEvidence
+
+    @property
+    def eligible_for_single_source_dataset(self) -> bool:
+        return self.ingestion.quality.status is MarketQualityStatus.PASS
+
+    def resolution_candidates(self) -> tuple[DailyBarResolutionCandidate, ...]:
+        if not self.eligible_for_single_source_dataset:
+            return ()
+        return (
+            DailyBarResolutionCandidate(
+                revision=self.ingestion.revision,
+                materialization=self.ingestion.materialization,
+                quality=self.ingestion.quality,
+            ),
+        )
+
+
+def ingest_single_source_daily_bars(
+    provider: DailyBarProvider,
+    store: ContentAddressedObjectStore,
+    *,
+    request: DailyBarRequest,
+    quality_policy: DailyBarQualityPolicy,
+    normalizer_version: str,
+    checked_at: datetime | None = None,
+    before_fetch: Callable[[MarketDataProviderDescriptor], None] | None = None,
+    ingestion_cache: dict[tuple[object, ...], DailyBarIngestionResult] | None = None,
+) -> SingleSourceDailyBarResult:
+    """Capture and quality-check one provider without claiming agreement."""
+    if not isinstance(store, ContentAddressedObjectStore):
+        raise TypeError("cross_source_daily_bar_store_invalid")
+    if not isinstance(request, DailyBarRequest):
+        raise TypeError("cross_source_daily_bar_request_invalid")
+    if not isinstance(quality_policy, DailyBarQualityPolicy):
+        raise TypeError("cross_source_daily_bar_quality_policy_invalid")
+
+    ingestion = _ingest_provider(
+        provider,
+        store,
+        request=request,
+        quality_policy=quality_policy,
+        normalizer_version=normalizer_version,
+        checked_at=_checked_at(checked_at) if checked_at is not None else None,
+        before_fetch=before_fetch,
+        ingestion_cache=ingestion_cache,
+    )
+    _validate_ingestion_identity(ingestion, provider.descriptor)
+    quality = publish_market_quality_evidence(store, ingestion.quality)
+    return SingleSourceDailyBarResult(ingestion=ingestion, quality=quality)
 
 
 def ingest_cross_source_daily_bars(

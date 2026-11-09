@@ -36,6 +36,11 @@ class SourceRoute:
     min_sources: int = 1
     require_independent_upstream: bool = False
     price_basis: str | None = None
+    # Verification remains the default.  This flag only permits an explicit,
+    # labelled single-source fallback when the other required source cannot
+    # produce an observation; disagreement between two live sources still
+    # blocks publication.
+    single_source_allowed: bool = False
 
     def __post_init__(self) -> None:
         normalized = tuple(_provider_name(item) for item in self.candidates)
@@ -49,6 +54,8 @@ class SourceRoute:
             raise ValueError("market_source_route_min_sources_exceeds_candidates")
         if not isinstance(self.require_independent_upstream, bool):
             raise TypeError("market_source_route_independent_flag_invalid")
+        if not isinstance(self.single_source_allowed, bool):
+            raise TypeError("market_source_route_single_source_flag_invalid")
         if self.price_basis is not None and not str(self.price_basis).strip():
             raise ValueError("market_source_route_price_basis_invalid")
         object.__setattr__(self, "candidates", normalized)
@@ -181,6 +188,25 @@ CN_RESEARCH_V1 = MarketSourcePolicy(
     ),
 )
 
+FREE_CN_RESEARCH_SINGLE_SOURCE_V1 = MarketSourcePolicy(
+    policy_id="karkinos.market.source.free_cn_research_single_source.v1",
+    routes=tuple(
+        (
+            use_case,
+            SourceRoute(
+                candidates=route.candidates,
+                min_sources=route.min_sources,
+                require_independent_upstream=route.require_independent_upstream,
+                price_basis=route.price_basis,
+                single_source_allowed=True,
+            )
+            if use_case is MarketDataUseCase.DAILY_BARS
+            else route,
+        )
+        for use_case, route in FREE_CN_RESEARCH_V1.routes
+    ),
+)
+
 TUSHARE_TENCENT_RESEARCH_V1 = MarketSourcePolicy(
     policy_id="karkinos.market.source.tushare_tencent_research.v1",
     routes=tuple(
@@ -219,12 +245,14 @@ TENCENT_EASTMONEY_RESEARCH_V1 = MarketSourcePolicy(
 
 _POLICY_ALIASES = {
     "free_cn_research_v1": FREE_CN_RESEARCH_V1.policy_id,
+    "free_cn_research_single_source_v1": (FREE_CN_RESEARCH_SINGLE_SOURCE_V1.policy_id),
     "cn_research_v1": CN_RESEARCH_V1.policy_id,
     "tushare_tencent_research_v1": TUSHARE_TENCENT_RESEARCH_V1.policy_id,
     "tencent_eastmoney_research_v1": TENCENT_EASTMONEY_RESEARCH_V1.policy_id,
 }
 _POLICIES = {
     FREE_CN_RESEARCH_V1.policy_id: FREE_CN_RESEARCH_V1,
+    FREE_CN_RESEARCH_SINGLE_SOURCE_V1.policy_id: FREE_CN_RESEARCH_SINGLE_SOURCE_V1,
     CN_RESEARCH_V1.policy_id: CN_RESEARCH_V1,
     TUSHARE_TENCENT_RESEARCH_V1.policy_id: TUSHARE_TENCENT_RESEARCH_V1,
     TENCENT_EASTMONEY_RESEARCH_V1.policy_id: TENCENT_EASTMONEY_RESEARCH_V1,

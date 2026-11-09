@@ -520,4 +520,132 @@ MIGRATIONS = (
         name="append_backtest_evidence_invalidations",
         statements=V25_BACKTEST_INVALIDATIONS,
     ),
+    SchemaMigration(
+        version=26,
+        name="support_exact_manual_research_qualification",
+        statements=(
+            """
+            CREATE TABLE IF NOT EXISTS ai_shadow_research_candidates (
+                    candidate_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    draft_id TEXT NOT NULL,
+                    backtest_run_id TEXT,
+                    critique_id TEXT,
+                    baseline_result_id INTEGER NOT NULL,
+                    candidate_result_id INTEGER,
+                    status TEXT NOT NULL,
+                    recommendation TEXT NOT NULL,
+                    comparison_json TEXT NOT NULL,
+                    promotion_status TEXT NOT NULL DEFAULT 'awaiting_human_approval',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(run_id, draft_id)
+                )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS ai_shadow_research_qualification_runs (
+                qualification_run_id TEXT PRIMARY KEY,
+                source_run_id TEXT NOT NULL,
+                market_date TEXT NOT NULL,
+                source_selection_id TEXT NOT NULL,
+                source_selection_fingerprint TEXT NOT NULL,
+                source_backup_fingerprint TEXT NOT NULL,
+                valuation_snapshot_id TEXT NOT NULL,
+                valuation_snapshot_fingerprint TEXT NOT NULL,
+                ledger_cutoff_id INTEGER NOT NULL CHECK(ledger_cutoff_id > 0),
+                ledger_fingerprint TEXT NOT NULL,
+                account_evidence_reference TEXT NOT NULL,
+                account_evidence_fingerprint TEXT NOT NULL,
+                account_truth_source_fingerprint TEXT NOT NULL,
+                account_truth_scope_fingerprint TEXT NOT NULL,
+                reviewed_cost_model_reference TEXT NOT NULL,
+                reviewed_fee_schedule_fingerprint TEXT NOT NULL,
+                initial_cash_text TEXT NOT NULL,
+                baseline_result_id INTEGER NOT NULL CHECK(baseline_result_id > 0),
+                input_fingerprint TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL
+                    CHECK(status IN ('running', 'blocked', 'completed', 'failed')),
+                selection_json TEXT,
+                selection_fingerprint TEXT,
+                blockers_json TEXT NOT NULL DEFAULT '[]',
+                failure_code TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS ai_shadow_research_qualification_candidates (
+                qualification_candidate_id TEXT PRIMARY KEY,
+                qualification_run_id TEXT NOT NULL,
+                source_candidate_id TEXT NOT NULL,
+                source_draft_id TEXT NOT NULL,
+                source_formula_fingerprint TEXT NOT NULL,
+                qualified_formula_fingerprint TEXT NOT NULL,
+                source_formula_semantic_fingerprint TEXT NOT NULL,
+                qualified_formula_semantic_fingerprint TEXT NOT NULL,
+                candidate_result_id INTEGER,
+                comparison_json TEXT NOT NULL,
+                comparison_fingerprint TEXT NOT NULL,
+                status TEXT NOT NULL
+                    CHECK(status IN ('qualified', 'blocked', 'failed')),
+                recommendation TEXT NOT NULL,
+                rank INTEGER NOT NULL CHECK(rank > 0),
+                created_at TEXT NOT NULL,
+                UNIQUE(qualification_run_id, source_candidate_id),
+                UNIQUE(qualification_run_id, rank),
+                UNIQUE(qualification_run_id, candidate_result_id)
+            )
+            """,
+            "DROP TRIGGER IF EXISTS ai_shadow_qualification_candidate_insert_guard",
+            """
+            CREATE TRIGGER ai_shadow_qualification_candidate_insert_guard
+            BEFORE INSERT ON ai_shadow_research_qualification_candidates
+            WHEN NEW.source_formula_semantic_fingerprint <> NEW.qualified_formula_semantic_fingerprint
+              OR NOT (
+                EXISTS (
+                    SELECT 1 FROM ai_shadow_research_qualification_runs AS q
+                    JOIN ai_shadow_research_candidates AS c ON c.run_id=q.source_run_id
+                    WHERE q.qualification_run_id=NEW.qualification_run_id
+                      AND q.status='running'
+                      AND c.candidate_id=NEW.source_candidate_id AND c.draft_id=NEW.source_draft_id
+                      AND json_extract(q.selection_json,'$.source_binding') IS NULL
+                ) OR EXISTS (
+                    SELECT 1 FROM ai_shadow_research_qualification_runs AS q
+                    WHERE q.qualification_run_id=NEW.qualification_run_id
+                      AND q.status='running' AND NEW.rank=1
+                      AND json_extract(q.selection_json,'$.source_binding.source_kind')='manual_research'
+                      AND (SELECT COUNT(*) FROM json_each(q.selection_json,'$.source_binding.manual_source_refs'))=5
+                      AND json_type(q.selection_json,'$.source_binding.manual_source_refs.session_id')='text'
+                      AND json_type(q.selection_json,'$.source_binding.manual_source_refs.draft_id')='text'
+                      AND json_type(q.selection_json,'$.source_binding.manual_source_refs.backtest_run_id')='text'
+                      AND json_type(q.selection_json,'$.source_binding.manual_source_refs.critique_id')='text'
+                      AND json_type(q.selection_json,'$.source_binding.manual_source_refs.canonical_backtest_result_id')='integer'
+                      AND json_extract(q.selection_json,'$.source_binding.manual_source_refs.canonical_backtest_result_id')>0
+                      AND length(json_extract(q.selection_json,'$.source_binding.final_evaluation_id'))>0
+                      AND length(replace(json_extract(q.selection_json,'$.source_binding.final_evidence_fingerprint'),'sha256:',''))=64
+                      AND length(replace(json_extract(q.selection_json,'$.source_binding.manual_source_fingerprint'),'sha256:',''))=64
+                      AND NEW.source_draft_id=json_extract(q.selection_json,'$.source_binding.manual_source_refs.draft_id')
+                      AND NEW.source_candidate_id=q.source_run_id
+                      AND q.source_run_id='manual-research:' || substr(replace(json_extract(q.selection_json,'$.source_binding.manual_source_fingerprint'),'sha256:',''),1,24)
+                      AND q.source_selection_id=json_extract(q.selection_json,'$.source_binding.manual_source_refs.session_id')
+                      AND q.source_backup_fingerprint='not_applicable:manual_research'
+                      AND json_extract(NEW.comparison_json,'$.source_binding')=json_extract(q.selection_json,'$.source_binding')
+                )
+              )
+            BEGIN
+                SELECT RAISE(ABORT, 'qualification candidate binding invalid');
+            END
+            """,
+            """
+            CREATE TRIGGER ai_shadow_qualification_manual_source_update_guard
+            BEFORE UPDATE ON ai_shadow_research_qualification_runs
+            WHEN json_extract(OLD.selection_json,'$.source_binding')
+                 IS NOT json_extract(NEW.selection_json,'$.source_binding')
+            BEGIN
+                SELECT RAISE(ABORT, 'qualification source binding is immutable');
+            END
+            """,
+        ),
+    ),
 )

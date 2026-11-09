@@ -23,6 +23,7 @@ from core.events import FillEvent
 
 SEALED_HOLDOUT_EVIDENCE_SCHEMA_VERSION = "karkinos.sealed_holdout_validation.v1"
 SEALED_PARTITION_CONTRACT = "karkinos.sealed_partition.v1"
+PROSPECTIVE_PARTITION_CONTRACT = "karkinos.sealed_partition.v2"
 SEALED_CONSUMPTION_RECEIPT_CONTRACT = "karkinos.sealed_partition_consumption.v1"
 
 _DEFAULT_HOLDOUT_FRACTION = Decimal("0.20")
@@ -40,6 +41,7 @@ class SealedHoldoutPartition:
     sealed_start: date
     sealed_end: date
     holdout_fraction: Decimal
+    prospective_start: date | None = None
 
     def __post_init__(self) -> None:
         if not (
@@ -49,22 +51,39 @@ class SealedHoldoutPartition:
             <= self.sealed_end
         ):
             raise ValueError("sealed_partition_order_invalid")
-        if (self.sealed_start - self.research_end) != timedelta(days=1):
-            raise ValueError("sealed_partition_not_contiguous")
+        if self.prospective_start is None:
+            if (self.sealed_start - self.research_end) != timedelta(days=1):
+                raise ValueError("sealed_partition_not_contiguous")
+        elif self.prospective_start != self.sealed_start:
+            raise ValueError("sealed_partition_prospective_start_mismatch")
         if not (
             _MIN_HOLDOUT_FRACTION <= self.holdout_fraction <= _MAX_HOLDOUT_FRACTION
         ):
             raise ValueError("sealed_partition_fraction_out_of_bounds")
+        if self.prospective_start is not None:
+            research_days = (self.research_end - self.research_start).days + 1
+            expected = Decimal(self.sealed_days) / Decimal(
+                research_days + self.sealed_days
+            )
+            if float(self.holdout_fraction) != float(expected):
+                raise ValueError("sealed_partition_fraction_mismatch")
 
     def to_json_dict(self) -> dict[str, Any]:
-        return {
-            "schema_version": SEALED_PARTITION_CONTRACT,
+        value = {
+            "schema_version": (
+                PROSPECTIVE_PARTITION_CONTRACT
+                if self.prospective_start is not None
+                else SEALED_PARTITION_CONTRACT
+            ),
             "research_start": self.research_start.isoformat(),
             "research_end": self.research_end.isoformat(),
             "sealed_start": self.sealed_start.isoformat(),
             "sealed_end": self.sealed_end.isoformat(),
             "holdout_fraction": float(self.holdout_fraction),
         }
+        if self.prospective_start is not None:
+            value["prospective_start"] = self.prospective_start.isoformat()
+        return value
 
     @property
     def partition_fingerprint(self) -> str:
@@ -124,6 +143,8 @@ def sealed_return_from_result(
         if _session_day(ts) >= partition.sealed_start
     ]
     fresh = _fresh_sealed_book(result, partition)
+    if partition.prospective_start is not None and not fresh:
+        raise ValueError("sealed_prospective_fresh_book_required")
     if (not boundary and not fresh) or not sealed or (fresh and boundary):
         raise ValueError("sealed_evaluation_insufficient_sealed_bars")
     initial_equity = result.initial_cash if fresh else boundary[-1]
@@ -149,13 +170,16 @@ def build_sealed_partition(
     research_start: str,
     research_end: str,
     sealed_end: str,
+    prospective_start: str | None = None,
 ) -> SealedHoldoutPartition:
     """Build a sealed partition from an explicit research window and holdout end.
 
     The sealed tail is the future window ``[research_end + 1 day, sealed_end]``;
     the research window is ``[research_start, research_end]``.  The holdout
     fraction is derived from the explicit dates and must still satisfy the
-    partition's meaningful-holdout bounds.
+    partition's meaningful-holdout bounds. An explicit prospective start may
+    leave a gap after research; that gap supplies history only and is excluded
+    from both research and test day counts.
     """
 
     rs = _date(research_start, "research_start")
@@ -163,9 +187,18 @@ def build_sealed_partition(
     se = _date(sealed_end, "sealed_end")
     if re_ >= se:
         raise ValueError("sealed_end_must_follow_research_end")
-    sealed_start = re_ + timedelta(days=1)
-    total_days = (se - rs).days + 1
+    prospective = (
+        _date(prospective_start, "prospective_start")
+        if prospective_start is not None
+        else None
+    )
+    if prospective is not None and (
+        prospective.isoformat() != prospective_start or not re_ < prospective <= se
+    ):
+        raise ValueError("sealed_partition_prospective_start_invalid")
+    sealed_start = prospective or re_ + timedelta(days=1)
     sealed_days = (se - sealed_start).days + 1
+    total_days = (re_ - rs).days + 1 + sealed_days
     fraction = Decimal(sealed_days) / Decimal(total_days)
     return SealedHoldoutPartition(
         research_start=rs,
@@ -173,6 +206,7 @@ def build_sealed_partition(
         sealed_start=sealed_start,
         sealed_end=se,
         holdout_fraction=fraction,
+        prospective_start=prospective,
     )
 
 
@@ -349,6 +383,8 @@ def build_sealed_holdout_evaluation(
         if _session_day(ts) < partition.sealed_start
     ]
     fresh = _fresh_sealed_book(result, partition)
+    if partition.prospective_start is not None and not fresh:
+        raise ValueError("sealed_prospective_fresh_book_required")
     if (
         (not boundary_points and not fresh)
         or not sealed_points
@@ -494,6 +530,9 @@ def is_valid_sealed_holdout_evaluation(value: Any) -> bool:
 def _validated_partition(value: Any) -> SealedHoldoutPartition | None:
     if not isinstance(value, Mapping):
         return None
+    prospective = value.get("schema_version") == PROSPECTIVE_PARTITION_CONTRACT
+    if not prospective and "prospective_start" in value:
+        return None
     try:
         partition = SealedHoldoutPartition(
             research_start=_date(value.get("research_start"), "research_start"),
@@ -501,12 +540,17 @@ def _validated_partition(value: Any) -> SealedHoldoutPartition | None:
             sealed_start=_date(value.get("sealed_start"), "sealed_start"),
             sealed_end=_date(value.get("sealed_end"), "sealed_end"),
             holdout_fraction=_decimal(value.get("holdout_fraction")),
+            prospective_start=(
+                _date(value.get("prospective_start"), "prospective_start")
+                if prospective
+                else None
+            ),
         )
     except (ValueError, InvalidOperation, TypeError):
         return None
     if partition.holdout_fraction is None:
         return None
-    if value.get("schema_version") != SEALED_PARTITION_CONTRACT:
+    if value.get("schema_version") != partition.to_json_dict()["schema_version"]:
         return None
     if float(partition.holdout_fraction) != value.get("holdout_fraction"):
         return None
@@ -633,10 +677,167 @@ def final_research_evaluation_blocker(value: Any) -> str | None:
             ) != "sha256:" + _fingerprint(expected.get("formula_ast") or {}):
                 return "independent_final_challenger_evidence_invalid"
         returns = [_decimal(item["sealed_return"]) for item in results]
+        formula_sources = binding.get("formula_comparators", {})
+        formula_results = core.get("formula_comparator_results", [])
+        if (
+            not isinstance(formula_sources, Mapping)
+            or not isinstance(formula_results, list)
+            or len(formula_results) != len(formula_sources)
+            or {item["label"] for item in formula_results} != set(formula_sources)
+        ):
+            return "independent_final_formula_comparator_evidence_invalid"
+        reserved_labels = {
+            "candidate",
+            "frozen_baseline",
+            "incumbent",
+            *(item["label"] for item in family),
+        }
+        executions = set()
+        if formula_sources:
+            executions.update(
+                {
+                    _fingerprint(binding["baseline_formula_ast"]),
+                    binding["champion_formula_fingerprint"].removeprefix("sha256:"),
+                    *(_fingerprint(item["formula_ast"]) for item in family),
+                }
+            )
+            if binding.get("incumbent"):
+                executions.add(_fingerprint(binding["incumbent"]["formula_ast"]))
+        for measured in formula_results:
+            label = measured["label"]
+            expected = formula_sources[label]
+            formula = expected["formula_binding"]
+            execution = _fingerprint(formula["formula_ast"])
+            if (
+                not isinstance(label, str)
+                or not label.strip()
+                or label != label.strip()
+                or label in reserved_labels
+                or execution in executions
+                or expected["formula_fingerprint"] != "sha256:" + _fingerprint(formula)
+                or any(
+                    measured.get(key) != expected[key]
+                    for key in (
+                        "source_result_id",
+                        "source_fingerprint",
+                        "formula_fingerprint",
+                    )
+                )
+            ):
+                return "independent_final_formula_comparator_evidence_invalid"
+            executions.add(execution)
+        formula_returns = [_decimal(item["sealed_return"]) for item in formula_results]
+        validation_policy = binding.get("simulation_policy") or binding.get(
+            "publication_grant", {}
+        )
+        profile = validation_policy.get("statistical_policy", {})
+        from server.contracts.recommendation_publication import (
+            FINAL_STATISTICAL_POLICY_V2_SCHEMA,
+        )
+
+        v2 = profile.get("schema_version") == FINAL_STATISTICAL_POLICY_V2_SCHEMA
+        benchmark = max(
+            _decimal(core["baseline_sealed_return"]), *returns, *formula_returns
+        )
+        benchmark_matches = _decimal(evaluation["benchmark_return"]) == benchmark
+        if v2:
+            from analytics.deployment_validation import compare_session_curves
+
+            curves = core["session_curves"]
+            labels = {
+                "frozen_baseline",
+                *(item["label"] for item in family),
+                *formula_sources,
+            }
+            if binding.get("incumbent"):
+                labels.add("incumbent")
+            if (
+                not binding.get("deployment_scope")
+                or set(curves["comparators"]) != labels
+                or binding["partition"]["sealed_end"] != profile["decision_checkpoint"]
+                or evaluation["benchmark_role"]
+                != "frozen_primary_comparator.v2:" + profile["primary_comparator"]
+            ):
+                return "independent_final_primary_binding_invalid"
+            from server.contracts.recommendation_publication import (
+                FINAL_CALENDAR_AT_EVALUATION,
+            )
+
+            if (
+                profile.get("calendar_verification_timing")
+                == FINAL_CALENDAR_AT_EVALUATION
+            ):
+                if (
+                    binding.get("checkpoint_resolution")
+                    != {
+                        "calendar_verification_timing": FINAL_CALENDAR_AT_EVALUATION,
+                        "last_session_on_or_before": profile["decision_checkpoint"],
+                    }
+                    or "effective_checkpoint" in binding
+                ):
+                    return "independent_final_primary_binding_invalid"
+                checkpoint = core["deployment_assessment"]["effective_checkpoint"]
+                if date.fromisoformat(checkpoint) > date.fromisoformat(
+                    profile["decision_checkpoint"]
+                ):
+                    return "independent_final_primary_binding_invalid"
+            else:
+                if "checkpoint_resolution" in binding:
+                    return "independent_final_primary_binding_invalid"
+                checkpoint = binding["effective_checkpoint"]
+            uncertainty = compare_session_curves(
+                candidate=curves["candidate"],
+                comparators=curves["comparators"],
+                initial_cash=binding["initial_cash"],
+                policy=profile,
+                seed=core["sealed_test_id"],
+                policy_fingerprint=validation_policy["statistical_policy_fingerprint"],
+                comparator_bindings=profile["comparator_bindings"],
+                effective_checkpoint=checkpoint,
+            )
+            if core["deployment_assessment"]["uncertainty"] != uncertainty:
+                return "deployment_uncertainty_drift"
+            cash = _decimal(binding["initial_cash"])
+            primary_terminal = _decimal(
+                curves["comparators"][profile["primary_comparator"]][-1][1]
+            )
+            candidate_terminal = _decimal(curves["candidate"][-1][1])
+            sealed_return = _decimal(evaluation["sealed_return"])
+            saved_benchmark = _decimal(evaluation["benchmark_return"])
+            if (
+                cash is None
+                or cash <= 0
+                or primary_terminal is None
+                or candidate_terminal is None
+                or sealed_return is None
+                or saved_benchmark is None
+            ):
+                return "independent_final_primary_binding_invalid"
+            if not _close_decimal(
+                sealed_return,
+                candidate_terminal / cash - 1,
+            ):
+                return "independent_final_primary_binding_invalid"
+            reported_returns = {
+                "frozen_baseline": core["baseline_sealed_return"],
+                **{item["label"]: item["sealed_return"] for item in results},
+                **{item["label"]: item["sealed_return"] for item in formula_results},
+            }
+            for label, reported in reported_returns.items():
+                reported_return = _decimal(reported)
+                terminal = _decimal(curves["comparators"][label][-1][1])
+                if (
+                    reported_return is None
+                    or terminal is None
+                    or not _close_decimal(reported_return, terminal / cash - 1)
+                ):
+                    return "independent_final_comparator_return_drift"
+            benchmark_matches = _close_decimal(
+                saved_benchmark, primary_terminal / cash - 1
+            )
         if (
             _decimal(comparison["challenger_max_return"]) != max(returns)
-            or _decimal(evaluation["benchmark_return"])
-            != max(_decimal(core["baseline_sealed_return"]), *returns)
+            or not benchmark_matches
             or not binding.get("execution_cost_assumptions")
             or binding.get("sealed_book_policy")
             != "fresh_equal_notional_history_warmup_final_bar_target.v1"

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from server.contracts.ai_shadow_research_qualification import (
+    qualification_source_binding,
+)
 from server.services.account.reviewed_fee_schedule import (
     active_review_matches_fee_evidence,
 )
@@ -77,9 +80,7 @@ class StrategyPromotionPipeline:
             require_new_publication_final_evaluation(
                 self._db,
                 int(readiness.get("backtest_result_id") or 0),
-                expected_candidate_id=strategy_id.removeprefix(
-                    AI_SHADOW_STRATEGY_PREFIX
-                ),
+                **_final_source_arguments(readiness),
             )
         missing = _missing_requirements(readiness)
         promotable = _is_promotable(readiness)
@@ -166,9 +167,7 @@ class StrategyPromotionPipeline:
             require_new_publication_final_evaluation(
                 self._db,
                 int(readiness.get("backtest_result_id") or 0),
-                expected_candidate_id=strategy_id.removeprefix(
-                    AI_SHADOW_STRATEGY_PREFIX
-                ),
+                **_final_source_arguments(readiness),
             )
         missing = _missing_requirements(readiness)
         if missing or not _is_promotable(readiness):
@@ -353,9 +352,7 @@ class StrategyPromotionPipeline:
             require_new_publication_final_evaluation(
                 self._db,
                 int(effective_readiness.get("backtest_result_id") or 0),
-                expected_candidate_id=strategy_id.removeprefix(
-                    AI_SHADOW_STRATEGY_PREFIX
-                ),
+                **_final_source_arguments(effective_readiness),
             )
         missing = _missing_requirements(effective_readiness)
         if missing or not _is_promotable(effective_readiness):
@@ -641,6 +638,19 @@ def resolve_strategy_order_generation_gate(
         "does_not_change_capital_authority": True,
         "broker_submission_enabled": False,
     }, blockers
+
+
+def _final_source_arguments(readiness: dict[str, Any]) -> dict[str, Any]:
+    binding = qualification_source_binding(
+        _json_object(readiness.get("qualification_binding"))
+    )
+    if binding is not None:
+        return {"expected_manual_source": binding}
+    return {
+        "expected_candidate_id": _strategy_id(readiness).removeprefix(
+            AI_SHADOW_STRATEGY_PREFIX
+        )
+    }
 
 
 def _require_ai_shadow_readiness_binding(db: Any, readiness: dict[str, Any]) -> None:

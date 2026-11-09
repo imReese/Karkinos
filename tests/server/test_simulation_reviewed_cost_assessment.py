@@ -326,7 +326,9 @@ synthetic-sell-001,trade_sell,2026-01-06T10:10:00+08:00,2026-01-07,600000.SH,syn
             **_run_args(),
             "initial_cash_text": "80000",
             "reviewed_cost_model_reference": fee["cost_model_reference"],
-            "reviewed_fee_schedule_fingerprint": review.review_fingerprint,
+            "reviewed_fee_schedule_fingerprint": fee["fee_evidence"][
+                "fee_schedule_fingerprint"
+            ],
         }
     )
     values = {
@@ -669,4 +671,49 @@ def test_completed_nonwinner_qualification_cannot_supply_reviewed_curves(
     with pytest.raises(ValueError, match="qualification_binding_drift"):
         _verify_simulation_account_applicability(
             t.h.db, t.h.store, t.result, t.evidence, t.grant
+        )
+
+
+@pytest.mark.parametrize("change", ["schedule_hash", "review_hash"])
+def test_schedule_identity_and_review_identity_are_distinct_and_both_checked(
+    reviewed_replay, change, monkeypatch
+):
+    t = reviewed_replay
+    t.finish()
+    result = deepcopy(t.result)
+    metrics = json.loads(result["metrics_json"])
+    fee = metrics["fee_component_evidence"]["fee_schedule_binding"]
+    assert fee["fee_schedule_fingerprint"] != fee["fee_schedule_review_fingerprint"]
+    assert t.run["reviewed_fee_schedule_fingerprint"] == fee["fee_schedule_fingerprint"]
+    if change == "schedule_hash":
+        with sqlite3.connect(t.h.db.path) as conn:
+            with pytest.raises(
+                sqlite3.IntegrityError, match="qualification run transition invalid"
+            ):
+                conn.execute(
+                    "UPDATE ai_shadow_research_qualification_runs SET reviewed_fee_schedule_fingerprint=? WHERE qualification_run_id=?",
+                    (
+                        fee["fee_schedule_review_fingerprint"],
+                        t.run["qualification_run_id"],
+                    ),
+                )
+        # The writer already refuses drift. Independently exercise the consumer
+        # against a contradicted read projection without bypassing that writer.
+        from server.persistence.ai_shadow_research import ShadowResearchStore
+
+        authority = t.shadow.qualification_for_backtest_result(int(result["id"]))
+        authority["run"]["reviewed_fee_schedule_fingerprint"] = fee[
+            "fee_schedule_review_fingerprint"
+        ]
+        monkeypatch.setattr(
+            ShadowResearchStore,
+            "qualification_for_backtest_result",
+            lambda *_a: authority,
+        )
+    else:
+        fee["fee_schedule_review_fingerprint"] = fee["fee_schedule_fingerprint"]
+        result["metrics_json"] = json.dumps(metrics)
+    with pytest.raises(ValueError):
+        _verify_simulation_account_applicability(
+            t.h.db, t.h.store, result, t.evidence, t.grant
         )

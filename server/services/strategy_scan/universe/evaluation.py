@@ -21,6 +21,10 @@ from server.ai_runtime.formula_dsl import (
     evaluate_formula,
     expression_lookback_rows,
     formula_requires_cross_section,
+    formula_uses_exact_close_ratio,
+    formula_uses_floor,
+    formula_uses_market_weekday,
+    formula_uses_observed_elapsed,
     validate_formula_ast,
 )
 from server.ai_runtime.formula_portfolio import formula_session_candidates
@@ -890,7 +894,24 @@ def formula_history_rows(
     def expression_rows(expression: Any) -> int:
         if not isinstance(expression, Mapping):
             return 1
+        if formula_uses_floor(expression):
+            rows = expression_lookback_rows(expression)
+            if rows is None:
+                raise ValueError("floor_finite_history_required")
+            return rows
+        if formula_uses_observed_elapsed(expression):
+            rows = expression_lookback_rows(expression)
+            if rows is None:
+                raise ValueError("observed_elapsed_finite_history_required")
+            return rows
+        if formula_uses_market_weekday(expression):
+            rows = expression_lookback_rows(expression)
+            if rows is None:
+                raise ValueError("market_weekday_finite_history_required")
+            return rows
         op = str(expression.get("op") or "")
+        if op == "rolling_max_close_ratio":
+            return int(expression["window"]) + 1
         if op in {"field", "constant"}:
             return 1
         if op in {"lag", "delta", "return"}:
@@ -963,6 +984,7 @@ def evaluate_promoted_strategy_market(
     policy: MarketUniversePolicy,
     decision_at: datetime | None = None,
     cross_sections: Mapping[str, FormulaCrossSectionInputs] | None = None,
+    formula_frames: Mapping[str, Mapping[str, pd.DataFrame]] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]], list[str]]:
     """Evaluate the one canonical market truth and signal path for every strategy."""
 
@@ -980,16 +1002,32 @@ def evaluate_promoted_strategy_market(
             str(symbol) for symbol in strategy.get("selected_universe") or []
         )
         strategy_start = str(promoted_strategy.get("history_start") or start_date)
+        if formula_uses_exact_close_ratio(formula_ast or {}) and not (
+            formula_frames or {}
+        ).get(strategy_id):
+            blockers.append(
+                "strategy_cross_section_inputs:"
+                + json.dumps(strategy_id, ensure_ascii=False)
+                + ":exact_dataset_unavailable"
+            )
+            continue
+        source_frames = (formula_frames or {}).get(strategy_id, frames)
+        context = (cross_sections or {}).get(strategy_id)
+        universe_size = (
+            len(context.declared_symbols)
+            if context is not None
+            else len(selected_universe)
+        )
         strategy_frames = (
             {
                 symbol: frame.loc[
                     pd.to_datetime(frame["timestamp"]).dt.date
                     >= date.fromisoformat(strategy_start)
                 ].copy()
-                for symbol, frame in frames.items()
+                for symbol, frame in source_frames.items()
             }
             if promoted_strategy.get("history_start")
-            else frames
+            else source_frames
         )
         strategy_dates = [day for day in trading_dates if day >= strategy_start]
         strategy_receipts = [
@@ -1009,9 +1047,7 @@ def evaluate_promoted_strategy_market(
             unavailable_policy_history.append(blocker)
             continue
         try:
-            formula_ast = validate_formula_ast(
-                formula_ast, universe_size=len(selected_universe)
-            )
+            formula_ast = validate_formula_ast(formula_ast, universe_size=universe_size)
             truth = build_full_market_universe_truth(
                 snapshot=snapshot,
                 frames=strategy_frames,
@@ -1057,7 +1093,7 @@ def evaluate_promoted_strategy_market(
             prepared_sessions = prepare_formula_sessions(
                 formula_ast,
                 strategy_frames,
-                universe_size=len(selected_universe),
+                universe_size=universe_size,
                 cross_section=cross_section,
             )
             blockers.extend(
@@ -1082,7 +1118,7 @@ def evaluate_promoted_strategy_market(
         evaluated_signals = evaluate_strategy_signals(
             strategy_id=strategy_id,
             formula_ast=formula_ast,
-            universe_size=len(selected_universe),
+            universe_size=universe_size,
             target_weight=target_weight,
             frames=strategy_frames,
             eligible_symbols=eligible_symbols,

@@ -59,7 +59,10 @@ from data.market.revision import (
     read_market_revision_materialization,
 )
 from data.market.serving import MarketServingStore
-from data.market.verification_evidence import read_market_verification_evidence
+from data.market.verification_evidence import (
+    MarketVerificationStatus,
+    read_market_verification_evidence,
+)
 from data.providers.tdx import TdxRuntimeSettings, prepare_tdx_runtime
 from data.storage.objects import (
     ContentAddressedObjectStore,
@@ -814,6 +817,8 @@ def _verified_job_daily_snapshots(store, job, planned):
             verification = read_market_verification_evidence(
                 store, store.resolve_ref(part.verification_id)
             )
+            if verification.status is not MarketVerificationStatus.MATCHED:
+                raise ResearchDatasetError("verified_interval_sources_not_matched")
             if verification.checked_at > snapshot.cutoff:
                 raise ResearchDatasetError("verified_interval_daily_dataset_mismatch")
             rows[day] = replace(
@@ -955,8 +960,23 @@ def _source_forward_seed_planning_prefix(
             key=lambda key: (key.instrument_type.value, key.symbol),
         )
     )
+    verified_union = (
+        snapshot.resolver_policy_id == _EXPLICIT_VERIFIED_SOURCE_UNION_POLICY_ID
+    )
+    if verified_union:
+        require_supported_snapshot(snapshot)
     if (
-        snapshot.universe_policy_id != scope["deployment_scope_fingerprint"]
+        (
+            snapshot.universe_policy_id != scope["deployment_scope_fingerprint"]
+            and not verified_union
+        )
+        or (
+            verified_union
+            and (
+                snapshot.start_date.isoformat() != source.get("start_date")
+                or snapshot.end_date.isoformat() != source.get("end_date")
+            )
+        )
         or snapshot.instruments != original
         or snapshot.start_date != date.fromisoformat(dates[0].trade_date)
         or snapshot.end_date > through
@@ -1036,6 +1056,58 @@ def _publish_forward_seed(
             key=lambda key: (key.instrument_type.value, key.symbol),
         )
     )
+    if (
+        prefix is not None
+        and prefix.resolver_policy_id == _EXPLICIT_VERIFIED_SOURCE_UNION_POLICY_ID
+    ):
+        suffix_memberships = tuple(
+            replace(
+                item,
+                source_observation_ids=(identity,),
+                available_at=max(
+                    item.available_at, datetime.fromisoformat(master["available_at"])
+                ),
+            )
+            for item in memberships
+            if item.partition_date > prefix.end_date
+        )
+        suffix_instruments = tuple(
+            sorted(
+                {key for item in suffix_memberships for key in item.instruments},
+                key=lambda key: (key.instrument_type.value, key.symbol),
+            )
+        )
+        if not suffix_memberships:
+            raise ResearchDatasetError("forward_seed_union_suffix_required")
+        suffix_summary = publish_verified_interval_dataset(
+            root,
+            DailyBarRequest(
+                suffix_instruments, suffix_memberships[0].partition_date, through
+            ),
+            db=db,
+            job_ids=tuple(job.job_id for job in jobs),
+            session_memberships=suffix_memberships,
+            universe_policy_id=scope["deployment_scope_fingerprint"],
+        )
+        suffix = read_daily_bar_dataset(
+            objects, DatasetRef(objects.resolve_ref(suffix_summary["dataset_id"]))
+        ).snapshot
+        composed = replace(
+            prefix,
+            end_date=through,
+            cutoff=max(prefix.cutoff, suffix.cutoff),
+            instruments=all_instruments,
+            partitions=prefix.partitions + suffix.partitions,
+            session_memberships=prefix.session_memberships + suffix.session_memberships,
+            universe_policy_id=scope["deployment_scope_fingerprint"],
+        )
+        require_supported_snapshot(composed)
+        ref = publish_daily_bar_dataset_manifest(objects, composed)
+        restored = read_daily_bar_dataset(objects, ref)
+        if restored.snapshot != composed:
+            raise ResearchDatasetError("forward_seed_union_replay_mismatch")
+        DatasetCatalog(root).register(objects, ref)
+        return dataset_summary(root, ref)
     summary = publish_verified_interval_dataset(
         root,
         DailyBarRequest(all_instruments, min(expected), through),
@@ -1064,6 +1136,9 @@ def _existing_forward_seed(
 ):
     from data.market.schema import DAILY_BAR_SCHEMA_VERSION
     from data.source_policy import verification_source_policy_for_config
+    from server.services.research.research_observation_inputs import (
+        require_research_dataset_agreement,
+    )
 
     resolver_policy = verified_daily_resolver_policy_id(
         verification_source_policy_for_config(config).policy_id
@@ -1086,12 +1161,15 @@ def _existing_forward_seed(
         # declared scope cheaply; a matching seed still reopens all proof.
         if (
             candidate.universe_policy_id != scope["deployment_scope_fingerprint"]
-            or candidate.resolver_policy_id != resolver_policy
+            or candidate.resolver_policy_id
+            not in {resolver_policy, _EXPLICIT_VERIFIED_SOURCE_UNION_POLICY_ID}
             or candidate.market_schema_version != DAILY_BAR_SCHEMA_VERSION
         ):
             continue
+        require_supported_snapshot(candidate)
         restored = read_daily_bar_dataset(objects, entry.ref)
         snapshot = restored.snapshot
+        require_research_dataset_agreement(objects, snapshot)
         if (
             snapshot.universe_policy_id == scope["deployment_scope_fingerprint"]
             and snapshot.verification_bound
@@ -1129,6 +1207,7 @@ def _existing_forward_seed(
 def _forward_seed_jobs(db, config, *, expected, prefix, through, now, replacements):
     from server.services.market.verified_daily_market_jobs import (
         enqueue_verified_daily_market_jobs_for_range,
+        verified_daily_instrument_batches,
     )
 
     job_expected = {
@@ -1154,7 +1233,17 @@ def _forward_seed_jobs(db, config, *, expected, prefix, through, now, replacemen
             historical_range=True,
             session_instruments=job_expected,
         )
-        if job_expected and prefix is None
+        if job_expected
+        and (
+            prefix is None
+            or len(
+                verified_daily_instrument_batches(all_members, historical_range=True)
+            )
+            < sum(
+                len(verified_daily_instrument_batches(members))
+                for members in job_expected.values()
+            )
+        )
         else tuple(
             job
             for day, members in job_expected.items()
@@ -1196,6 +1285,7 @@ def forward_seed_origin_id(
     verification_policy_id: str,
     *,
     start_date: str | None = None,
+    source_dataset_id: str | None = None,
 ) -> str:
     """Stable scheduler identity, independent of a changing latest session."""
     from server.contracts.content_identity import content_fingerprint
@@ -1212,6 +1302,7 @@ def forward_seed_origin_id(
                 if start_date is not None
                 else {}
             ),
+            **({"source_dataset_id": source_dataset_id} if source_dataset_id else {}),
         }
     )
 
@@ -1466,12 +1557,18 @@ def _read_forward_seed_supply_prefix(
 ):
     """Reopen exact supply evidence and retain its current-membership checks."""
     from data.market.schema import DAILY_BAR_SCHEMA_VERSION
+    from server.services.research.research_observation_inputs import (
+        require_research_dataset_agreement,
+    )
 
     try:
         require_supported_snapshot(snapshot)
         if (
             snapshot.resolver_policy_id
-            != verified_daily_resolver_policy_id(verification_policy)
+            not in {
+                verified_daily_resolver_policy_id(verification_policy),
+                _EXPLICIT_VERIFIED_SOURCE_UNION_POLICY_ID,
+            }
             or snapshot.market_schema_version != DAILY_BAR_SCHEMA_VERSION
         ):
             raise ResearchDatasetError("forward_seed_source_prefix_policy_unsupported")
@@ -1487,6 +1584,7 @@ def _read_forward_seed_supply_prefix(
         )
         if restored.snapshot != snapshot:
             raise ValueError
+        require_research_dataset_agreement(objects, restored.snapshot)
     except (
         DatasetReaderError,
         DatasetManifestError,
@@ -1535,6 +1633,9 @@ def ensure_forward_seed_for_source(
         MarketUniversePolicy,
         market_deployment_scope,
     )
+    from server.services.research.research_observation_inputs import (
+        require_research_dataset_agreement,
+    )
 
     selection = source.get("source_selection") or source.get("selection") or {}
     scope = selection.get("deployment_scope") or {}
@@ -1574,21 +1675,61 @@ def ensure_forward_seed_for_source(
         if declared_start is not None:
             declared_start = date.fromisoformat(declared_start).isoformat()
         origins = AutomationRunRepository(db.path)
+        root = db.path.resolve().parent / "research"
+        objects = ContentAddressedObjectStore(root / "objects")
+        union_source_id = None
+        if source.get("immutable_dataset_id"):
+            try:
+                source_snapshot = read_daily_bar_dataset_manifest(
+                    objects,
+                    DatasetRef(objects.resolve_ref(source["immutable_dataset_id"])),
+                )
+            except (ObjectStoreError, DatasetManifestError, OSError, ValueError):
+                # A completed legacy preparation supplies its independently
+                # verified prefix; preserve that existing replay contract.
+                legacy = read_forward_seed_origin(
+                    db,
+                    forward_seed_origin_id(
+                        scope, minimum, verification_policy, start_date=declared_start
+                    ),
+                )
+                if (
+                    not legacy
+                    or legacy["status"] != "completed"
+                    or not legacy.get("source_ref")
+                ):
+                    return {
+                        "status": "blocked",
+                        "job_ids": [],
+                        "last_blocker": {
+                            "code": "forward_seed_source_prefix_unreadable"
+                        },
+                    }
+                source_snapshot = None
+            if (
+                source_snapshot is not None
+                and source_snapshot.resolver_policy_id
+                == _EXPLICIT_VERIFIED_SOURCE_UNION_POLICY_ID
+            ):
+                union_source_id = source["immutable_dataset_id"]
         origin_id = forward_seed_origin_id(
-            scope, minimum, verification_policy, start_date=declared_start
+            scope,
+            minimum,
+            verification_policy,
+            start_date=declared_start,
+            source_dataset_id=union_source_id,
         )
         origin_run = read_forward_seed_origin(db, origin_id)
         if origin_run is not None:
             origin_id = origin_run["run_id"]
         origin = json.loads(origin_run["payload_json"]) if origin_run else None
-        root = db.path.resolve().parent / "research"
-        objects = ContentAddressedObjectStore(root / "objects")
         catalog = DatasetCatalog(root)
         prefix = None
         if origin_run and origin_run.get("source_ref"):
             prefix = read_daily_bar_dataset(
                 objects, DatasetRef(objects.resolve_ref(origin_run["source_ref"]))
             ).snapshot
+            require_research_dataset_agreement(objects, prefix)
             if (
                 prefix.universe_policy_id != scope["deployment_scope_fingerprint"]
                 or not prefix.verification_bound
@@ -1815,6 +1956,10 @@ def ensure_forward_seed_for_source(
             scope=scope,
             prefix_dataset_id=supply_prefix_dataset_id,
         )
+        snapshot = read_daily_bar_dataset(
+            objects, DatasetRef(objects.resolve_ref(summary["dataset_id"]))
+        ).snapshot
+        require_research_dataset_agreement(objects, snapshot)
         origins.upsert_automation_run_sync(
             {
                 "run_id": origin_id,
@@ -1837,9 +1982,6 @@ def ensure_forward_seed_for_source(
                 ensure_dataset_corporate_actions,
             )
 
-            snapshot = read_daily_bar_dataset(
-                objects, DatasetRef(objects.resolve_ref(summary["dataset_id"]))
-            ).snapshot
             return ensure_dataset_corporate_actions(
                 db,
                 config,

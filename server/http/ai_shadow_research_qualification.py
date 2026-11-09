@@ -14,6 +14,16 @@ from server.composition.ai_application_services import (
 )
 
 
+class ManualResearchQualificationPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    session_id: str = Field(min_length=1, max_length=160)
+    draft_id: str = Field(min_length=1, max_length=160)
+    backtest_run_id: str = Field(min_length=1, max_length=160)
+    critique_id: str = Field(min_length=1, max_length=160)
+    canonical_backtest_result_id: int = Field(gt=0, strict=True)
+    final_evaluation_id: str = Field(min_length=1, max_length=160)
+
+
 class ForwardPaperReviewPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -49,6 +59,30 @@ def create_router() -> APIRouter:
             return await build_shadow_research_qualification_service(
                 get_app_state()
             ).run_once()
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @router.post("/shadow-qualification/manual-research")
+    async def qualify_manual_research(
+        payload: ManualResearchQualificationPayload,
+    ) -> dict:
+        """Replay one user-specified source; approval remains a separate exact action."""
+        from server.config_types import ResearchSimulationSourceConfig
+        from server.dependencies import get_app_state
+
+        try:
+            return await build_shadow_research_qualification_service(
+                get_app_state()
+            ).run_manual(
+                source=ResearchSimulationSourceConfig(
+                    **payload.model_dump(exclude={"final_evaluation_id"})
+                ),
+                final_evaluation_id=payload.final_evaluation_id,
+            )
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 

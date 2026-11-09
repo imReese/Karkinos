@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from decimal import Decimal, InvalidOperation
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from server.ai_runtime.contracts import JsonObject, canonical_json, content_fingerprint
@@ -17,10 +19,203 @@ from server.contracts.strategy_research import (
 )
 from server.persistence.jobs import SQLiteJobStore, job_id_for, require_job_lease
 
+if TYPE_CHECKING:
+    from contextlib import AbstractContextManager
+    from pathlib import Path
+
 _FINAL_EVALUATION_JOB_KIND = "research_final_evaluation"
 
 
+def final_reservation_id(binding: JsonObject) -> str:
+    """Keep automated IDs stable; manual IDs bind the five real saved references."""
+    if binding.get("source_kind") != "manual_research":
+        return (
+            "ai-sealed-auto-"
+            + content_fingerprint({"run_id": binding["source_run_id"]})[:24]
+        )
+    refs = binding.get("manual_source_refs")
+    if (
+        not isinstance(refs, dict)
+        or set(refs)
+        != {
+            "session_id",
+            "draft_id",
+            "backtest_run_id",
+            "critique_id",
+            "canonical_backtest_result_id",
+        }
+        or any(
+            not isinstance(refs[key], str) or not refs[key]
+            for key in ("session_id", "draft_id", "backtest_run_id", "critique_id")
+        )
+        or type(refs["canonical_backtest_result_id"]) is not int
+        or refs["canonical_backtest_result_id"] < 1
+    ):
+        raise StrategyResearchRejected("manual_research_source_references_invalid")
+    return "ai-sealed-manual-" + content_fingerprint(refs)[:24]
+
+
+def _final_history_object(value: Any) -> JsonObject:
+    """Unreadable legacy evidence has unknown provenance, never zero allocation."""
+    try:
+        decoded = json.loads(value or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return decoded if isinstance(decoded, dict) else {}
+
+
+def _final_budget_links(
+    binding: JsonObject, family_id: str, *, source_universe: Any = None
+) -> dict[str, set[str]]:
+    """Existing frozen research identities, independent of grant generation/date."""
+    grant = binding.get("simulation_policy") or binding.get("publication_grant") or {}
+    family = binding.get("trial_family") or {}
+    scope = binding.get("deployment_scope") or {}
+    family_scope = family.get("scope", {}) if isinstance(family, dict) else {}
+    universe = (
+        binding.get("universe")
+        or (family_scope.get("universe") if isinstance(family_scope, dict) else None)
+        or source_universe
+    )
+    values = {
+        "grant": [grant.get("grant_id")] if isinstance(grant, dict) else [],
+        "family": [family_id],
+        "trials": family.get("trial_fingerprints", [])
+        if isinstance(family, dict)
+        else [],
+        "scope": [
+            scope.get("deployment_scope_fingerprint")
+            or (
+                grant.get("deployment_scope_fingerprint")
+                if isinstance(grant, dict)
+                else None
+            )
+        ]
+        if isinstance(scope, dict)
+        else [],
+        "universe": universe,
+    }
+    return {
+        key: {item for item in value if isinstance(item, str) and item}
+        if isinstance(value, list)
+        else set()
+        for key, value in values.items()
+    }
+
+
+def _related_final_allocations(
+    conn: sqlite3.Connection, binding: JsonObject
+) -> list[Decimal]:
+    """Count the connected frozen research history, never a renewed grant alone."""
+    family_id = binding.get("trial_family", {}).get("research_family_id")
+    if not isinstance(family_id, str) or not family_id:
+        raise StrategyResearchRejected("final_budget_lineage_missing")
+    related = _final_budget_links(binding, family_id)
+    if not related["universe"]:
+        raise StrategyResearchRejected("final_budget_lineage_missing")
+    pending = []
+    for raw in conn.execute(
+        "SELECT t.*,s.request_json AS source_request_json "
+        "FROM ai_strategy_sealed_tests t "
+        "LEFT JOIN ai_strategy_research_sessions s ON s.session_id=t.session_id"
+    ).fetchall():
+        previous = _final_history_object(raw["evidence_json"]).get("reservation", {})
+        previous = previous if isinstance(previous, dict) else {}
+        verified = bool(previous) and raw["request_fingerprint"] == content_fingerprint(
+            previous
+        )
+        source = {}
+        if not verified or not previous.get("universe"):
+            source = _final_history_object(raw["source_request_json"]).get(
+                "selection", {}
+            )
+            source = source if isinstance(source, dict) else {}
+        # A legacy manual test has no reservation envelope. Its original
+        # session can still prove the frozen scope; missing scope is not zero use.
+        links = _final_budget_links(
+            previous,
+            raw["research_family_id"],
+            source_universe=source.get("universe"),
+        )
+        if not verified:
+            # Unverified claims can reveal a conflict, never prove exclusion.
+            links["scope"] = set()
+            links["universe"] = _final_budget_links(
+                {}, raw["research_family_id"], source_universe=source.get("universe")
+            )["universe"]
+        pending.append((raw, previous, verified, links))
+    allocations = []
+    while pending:
+        remaining = []
+        for raw, previous, verified, links in pending:
+            if not any(related[key] & values for key, values in links.items()):
+                remaining.append((raw, previous, verified, links))
+                continue
+            grant = previous.get("simulation_policy") or previous.get(
+                "publication_grant", {}
+            )
+            budget = previous.get("error_budget", {})
+            previous_family = previous.get("trial_family")
+            try:
+                if (
+                    not verified
+                    or not isinstance(grant, dict)
+                    or not isinstance(budget, dict)
+                    or not isinstance(previous_family, dict)
+                    or previous_family.get("research_family_id")
+                    != raw["research_family_id"]
+                    or budget.get("grant_id") != grant["grant_id"]
+                    or budget.get("generation") != grant["generation"]
+                ):
+                    raise ValueError
+                allocated = Decimal(str(budget["allocated_alpha"]))
+                expected = Decimal(
+                    str(grant["statistical_policy"]["significance_level"])
+                )
+                if (
+                    not allocated.is_finite()
+                    or not 0 < allocated < 1
+                    or allocated != expected
+                ):
+                    raise ValueError
+            except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
+                raise StrategyResearchRejected(
+                    "deployment_final_test_budget_binding_missing"
+                ) from exc
+            allocations.append(allocated)
+            for key, values in links.items():
+                related[key].update(values)
+        if len(remaining) == len(pending):
+            # Disjoint known universes are unrelated after all shared family,
+            # trial, grant and scope links have been followed. An orphan with
+            # no recoverable scope cannot safely be declared unrelated.
+            if any(not item[3]["universe"] for item in remaining):
+                raise StrategyResearchRejected("final_budget_lineage_missing")
+            break
+        pending = remaining
+    return allocations
+
+
 class StrategyResearchSealedRepositoryMixin:
+    if TYPE_CHECKING:
+        # Supplied by the existing composed audit store and unit of work.
+        _path: Path
+
+        def _connect(
+            self, *, immediate: bool = False
+        ) -> AbstractContextManager[sqlite3.Connection]: ...
+
+        def _connect_readonly(self) -> AbstractContextManager[sqlite3.Connection]: ...
+
+        def append_event(
+            self,
+            entity_id: str,
+            event_type: str,
+            payload: JsonObject,
+            *,
+            created_at: str,
+        ) -> None: ...
+
     def create_or_get_sealed_test(
         self,
         request: SealedTestRequest,
@@ -231,7 +426,11 @@ class StrategyResearchSealedRepositoryMixin:
         ]
 
     def reserve_research_champion(
-        self, *, binding: JsonObject, created_at: str
+        self,
+        *,
+        binding: JsonObject,
+        created_at: str,
+        clock: Callable[[], datetime] | None = None,
     ) -> dict[str, Any]:
         """Freeze one selected champion before its reserved future bars exist."""
         from datetime import datetime
@@ -240,10 +439,7 @@ class StrategyResearchSealedRepositoryMixin:
         partition = binding["partition"]
         created = datetime.fromisoformat(created_at)
         request_fingerprint = content_fingerprint(binding)
-        sealed_id = (
-            "ai-sealed-auto-"
-            + content_fingerprint({"run_id": binding["source_run_id"]})[:24]
-        )
+        sealed_id = final_reservation_id(binding)
         with self._connect(immediate=True) as conn:
             existing = conn.execute(
                 "SELECT * FROM ai_strategy_sealed_tests WHERE sealed_test_id=?",
@@ -280,9 +476,11 @@ class StrategyResearchSealedRepositoryMixin:
             for raw in conn.execute(
                 "SELECT * FROM ai_strategy_sealed_tests"
             ).fetchall():
-                prior = self._sealed_row(dict(raw)).get("evidence") or {}
+                prior = _final_history_object(raw["evidence_json"])
                 prior_binding = prior.get("reservation", {})
+                prior_binding = prior_binding if isinstance(prior_binding, dict) else {}
                 previous = prior_binding.get("partition", prior.get("partition", {}))
+                previous = previous if isinstance(previous, dict) else {}
                 if not previous:
                     if raw["partition_fingerprint"] == binding["partition_fingerprint"]:
                         raise StrategyResearchRejected(
@@ -301,39 +499,11 @@ class StrategyResearchSealedRepositoryMixin:
                         "sealed_partition_overlap_already_reserved"
                     )
             if "publication_grant" in binding or "simulation_policy" in binding:
-                from decimal import Decimal
-
                 grant = binding.get("simulation_policy") or binding["publication_grant"]
-                attempts = []
-                for raw in conn.execute(
-                    "SELECT evidence_json FROM ai_strategy_sealed_tests"
-                ).fetchall():
-                    previous = json.loads(raw["evidence_json"] or "{}").get(
-                        "reservation", {}
-                    )
-                    if (
-                        previous.get("simulation_policy")
-                        or previous.get("publication_grant", {})
-                    ).get("grant_id") == grant["grant_id"]:
-                        attempts.append(previous)
+                allocations = _related_final_allocations(conn, binding)
                 alpha = Decimal(str(grant["statistical_policy"]["significance_level"]))
-                spent = (
-                    sum(
-                        (
-                            Decimal(
-                                str(
-                                    item.get("error_budget", {}).get(
-                                        "allocated_alpha", "0"
-                                    )
-                                )
-                            )
-                            for item in attempts
-                        ),
-                        Decimal("0"),
-                    )
-                    + alpha
-                )
-                if len(attempts) >= grant["max_final_tests"] or spent > Decimal(
+                spent = sum(allocations, Decimal("0")) + alpha
+                if len(allocations) >= grant["max_final_tests"] or spent > Decimal(
                     str(grant["total_error_budget"])
                 ):
                     raise StrategyResearchRejected(
@@ -344,11 +514,26 @@ class StrategyResearchSealedRepositoryMixin:
                     "error_budget": {
                         "grant_id": grant["grant_id"],
                         "generation": grant["generation"],
-                        "attempt_count": len(attempts) + 1,
+                        "attempt_count": len(allocations) + 1,
                         "allocated_alpha": str(alpha),
                         "error_budget_spent": str(spent),
                     },
                 }
+                request_fingerprint = content_fingerprint(binding)
+            if binding.get("source_kind") == "manual_research":
+                # A write-lock wait or budget scan may cross the first opening.
+                # Bind the real insertion clock inside the same transaction.
+                inserted = (clock or (lambda: datetime.now(timezone.utc)))()
+                if (
+                    inserted.tzinfo is None
+                    or inserted < created
+                    or inserted >= latest_freeze
+                ):
+                    raise StrategyResearchRejected(
+                        "sealed_champion_not_frozen_before_holdout"
+                    )
+                created_at = inserted.isoformat()
+                binding = {**binding, "frozen_at": created_at}
                 request_fingerprint = content_fingerprint(binding)
             evidence = {"reservation": binding}
             conn.execute(
@@ -396,6 +581,17 @@ class StrategyResearchSealedRepositoryMixin:
             "ai-sealed-auto-" + content_fingerprint({"run_id": source_run_id})[:24]
         )
         return self.get_sealed_test(sealed_id)
+
+    def manual_research_champion_reservation(
+        self, source_refs: JsonObject
+    ) -> dict[str, Any] | None:
+        sealed_id = final_reservation_id(
+            {"source_kind": "manual_research", "manual_source_refs": source_refs}
+        )
+        try:
+            return self.get_sealed_test(sealed_id)
+        except LookupError:
+            return None
 
     def claim_reserved_sealed_test(
         self,

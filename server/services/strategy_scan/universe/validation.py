@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from datetime import datetime, timezone
 from typing import Any
 
 from core.types import InstrumentType
@@ -25,6 +26,9 @@ from server.services.strategy_scan.universe.evaluation import (
     promoted_scan_evaluation_policy_fingerprint,
     resolve_daily_bar_receipt_provider,
     resolve_daily_bar_receipts,
+)
+from server.services.strategy_scan.universe.formula_inputs import (
+    load_exact_formula_market_inputs,
 )
 
 
@@ -70,6 +74,7 @@ def current_scan_input_blockers(
     portfolio_reader: Callable[[Mapping[str, Any]], tuple[dict[str, Any], list[str]]],
     promoted_reader: Callable[[str], tuple[list[dict[str, Any]], list[str]]],
     safety_reader: Callable[[], dict[str, Any]],
+    current_time: datetime | None = None,
 ) -> list[str]:
     """Reopen every mutable input before a persisted scan is consumed."""
 
@@ -216,6 +221,23 @@ def current_scan_input_blockers(
             if isinstance(total_equity, (int, float)) and total_equity > 0
             else 100_000.0
         )
+        exact_frames, cross_sections, bindings, exact_blockers = (
+            load_exact_formula_market_inputs(
+                db,
+                promoted,
+                market_date=market_date,
+                decision_at=current_time or datetime.now(timezone.utc),
+                saved_bindings={
+                    key: value["formula_dataset_binding"]
+                    for key, value in stored_by_id.items()
+                    if "formula_dataset_binding" in value
+                },
+            )
+        )
+        blockers.extend(exact_blockers)
+        decision_at = (
+            next(iter(cross_sections.values())).as_of if cross_sections else None
+        )
         truths, raw_signals, truth_blockers = evaluate_promoted_strategy_market(
             promoted=promoted,
             market_date=market_date,
@@ -227,6 +249,9 @@ def current_scan_input_blockers(
             total_equity=evaluation_equity,
             held_stock_symbols=held_symbols,
             policy=policy,
+            decision_at=decision_at,
+            cross_sections=cross_sections,
+            formula_frames=exact_frames,
         )
         relevant_truth_blockers = active_action_blockers(
             truth_blockers, scan.get("selected_signals") or []

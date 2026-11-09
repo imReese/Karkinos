@@ -299,7 +299,7 @@ def harness(tmp_path, monkeypatch):
     return h
 
 
-async def _reserve(h, *, now=FREEZE):
+async def _reserve(h, *, now=FREEZE, formula_comparators=None):
     return await reserve_final_research_evaluation(
         db=h.db,
         research_store=h.store,
@@ -308,9 +308,12 @@ async def _reserve(h, *, now=FREEZE):
         candidates=[h.candidate],
         daily_selection={
             "selection_fingerprint": "selection-1",
-            "research_recommendation": {"research_winner_candidate_id": "candidate-1"},
+            "research_recommendation": {
+                "research_winner_candidate_id": h.candidate["candidate_id"]
+            },
         },
         now=now,
+        formula_comparators=formula_comparators,
     )
 
 
@@ -627,6 +630,8 @@ async def test_freeze_evaluate_replay_and_new_publication_usable_path(harness):
     h = harness
     reserved = await _reserve(h)
     assert reserved["status"] == "reserved"
+    assert "formula_comparators" not in reserved["evidence"]["reservation"]
+    assert "baseline_formula_source" not in reserved["evidence"]["reservation"]
     assert (
         reserved["evidence"]["reservation"]["trial_family"]["nominal_trial_count"] == 3
     )
@@ -1262,3 +1267,473 @@ def test_replacement_reserve_quotes_real_fees_and_slippage_instead_of_fixed_perc
         reserve["quotes"][1]["modeled_fee"]
     )
     assert Decimal("0") < Decimal(reserve["cost_ratio"]) < Decimal("0.02")
+
+
+def _seed_exact_formula_comparator(h, window, *, formula_override=None):
+    from server.ai_runtime.formula_dsl import FormulaBinding
+    from server.persistence.backtest_results import backtest_row_fingerprint
+
+    formula = _formula()
+    formula["entry"]["right"]["window"] = window
+    formula["exit"]["right"]["window"] = window
+    if formula_override is not None:
+        formula = deepcopy(formula_override)
+    bound = FormulaBinding(
+        formula_ast=formula,
+        universe=h.selection.universe,
+        dataset_snapshot_id=h.selection.dataset_snapshot_id,
+        start_date=h.selection.start_date,
+        end_date=h.selection.end_date,
+        frequency=h.selection.frequency,
+        cost_model_reference=h.selection.cost_model_reference,
+        anti_lookahead_assumptions=("completed bars, next close",),
+        parameter_values={"window": window},
+        parameter_ranges={"window": [window]},
+        initial_cash=h.selection.initial_cash,
+    )
+    execution = {
+        "schema_version": "karkinos.ai.formula_signal_execution.v1",
+        "allocation_slots": 1,
+        "canonical_target_weight": 1.0,
+        "model_position_size_ignored": True,
+    }
+    if h.selection.portfolio_policy_id:
+        execution.update(
+            allocation_slots=4,
+            canonical_target_weight=0.25,
+            portfolio_policy_id=h.selection.portfolio_policy_id,
+        )
+    execution["evidence_fingerprint"] = content_fingerprint(execution)
+    config = {
+        "strategy": "ai_formula_research",
+        "start_date": bound.start_date,
+        "end_date": bound.end_date,
+        "initial_cash": bound.initial_cash,
+        "params": {"formula_fingerprint": bound.fingerprint},
+        "assets": [{"symbol": "600000", "asset_class": "stock"}],
+    }
+    metrics = {
+        "formula_binding": bound.to_dict(),
+        "formula_fingerprint": bound.fingerprint,
+        "source_selection": h.selection.to_dict(),
+        "dataset_snapshot": h.snapshot,
+        "signal_execution_evidence": execution,
+        "execution_timing": {"policy_id": "karkinos.backtest.next_bar_close.v2"},
+        "cost_assumptions": {
+            **research_friction_assumptions(),
+            "commission_model_reference": h.selection.cost_model_reference,
+        },
+    }
+    if h.selection.portfolio_policy_id:
+        config["params"].update(
+            portfolio_policy_id=h.selection.portfolio_policy_id,
+            deployment_scope=h.selection.deployment_scope,
+        )
+        metrics["portfolio_policy_id"] = h.selection.portfolio_policy_id
+    if hasattr(h, "entry_board_policy"):
+        metrics["entry_board_policy"] = h.entry_board_policy
+    with sqlite3.connect(h.db.path) as conn:
+        identity = insert_backtest_result(
+            conn,
+            created_at=FREEZE,
+            config_json=json.dumps(config),
+            initial_cash=h.selection.initial_cash,
+            final_equity=h.selection.initial_cash,
+            total_return=0,
+            sharpe=0,
+            max_dd=0,
+            equity_curve_json="[]",
+            metrics_json=json.dumps(metrics),
+        )
+    row = h.store.research_backtest_result(identity)
+    return {
+        "source_result_id": identity,
+        "source_fingerprint": backtest_row_fingerprint(row),
+        "formula_fingerprint": bound.fingerprint,
+    }
+
+
+def _use_formula_baseline(h):
+    reference = _seed_exact_formula_comparator(h, 5)
+    h.selection = replace(
+        h.selection, saved_backtest_result_id=reference["source_result_id"]
+    )
+    h.candidate, h.draft = _seed_trial(h, suffix="formula-baseline")
+    h.source = SimpleNamespace(
+        source_candidate=h.candidate, source_selection=h.selection, source_draft=h.draft
+    )
+    return reference
+
+
+@pytest.mark.asyncio
+async def test_exact_formula_baseline_and_comparators_keep_the_same_replay_scope(
+    harness,
+):
+    h = harness
+    primary = _use_formula_baseline(h)
+    references = {
+        "MA": _seed_exact_formula_comparator(h, 7),
+        "Gen7": _seed_exact_formula_comparator(h, 9),
+    }
+    reserved = await _reserve(h, formula_comparators=references)
+    binding = reserved["evidence"]["reservation"]
+    assert (
+        binding["baseline_formula_source"]["source_result_id"]
+        == primary["source_result_id"]
+    )
+    assert (
+        binding["baseline_formula_ast"]
+        == binding["baseline_formula_source"]["formula_binding"]["formula_ast"]
+    )
+    assert set(binding["formula_comparators"]) == {"MA", "Gen7"}
+    assert len(binding["challenger_family"]) == 8
+    evidence = await _evaluate(h)
+    assert (
+        len(h.calls) == 12
+    )  # candidate, original Formula baseline, original eight, two exact references
+    for call in h.calls:
+        assert call["selection"] == h.selection
+        assert call["expected_dataset_snapshot"] == h.snapshot
+        assert call["expected_trading_dates"] == [
+            f"2026-01-{i:02}" for i in range(1, 21)
+        ]
+        assert call["sealed_end_date"] == "2026-01-20"
+        assert call["selection"].initial_cash == NORMALIZED_RESEARCH_NOTIONAL
+        assert call["selection"].cost_model_reference == CANONICAL_COST_MODEL_REFERENCE
+    for frozen in binding["formula_comparators"].values():
+        assert sum(call["draft"] == frozen["formula_binding"] for call in h.calls) == 1
+    assert {r["label"] for r in evidence["formula_comparator_results"]} == {
+        "MA",
+        "Gen7",
+    }
+    assert len(evidence["challenger_results"]) == 8
+    assert final_research_evaluation_blocker(evidence) is None
+    assert (
+        verify_persisted_final_evaluation(
+            research_store=h.store, evidence=evidence, store_root=h.data._root
+        )
+        == evidence
+    )
+    assert evidence["authority_effect"] == "none"
+
+    for mutate in (
+        lambda e: e["formula_comparator_results"].pop(),
+        lambda e: e["formula_comparator_results"][0].update(label="renamed"),
+        lambda e: e["formula_comparator_results"][0].update(
+            formula_fingerprint="sha256:" + "0" * 64
+        ),
+    ):
+        forged = deepcopy(evidence)
+        mutate(forged)
+        forged.pop("evidence_fingerprint")
+        forged["evidence_fingerprint"] = content_fingerprint(forged)
+        assert (
+            final_research_evaluation_blocker(forged)
+            == "independent_final_formula_comparator_evidence_invalid"
+        )
+
+
+@pytest.mark.asyncio
+async def test_exact_formula_comparator_is_in_v1_benchmark_without_replacing_champion(
+    harness,
+):
+    h = harness
+    reference = _seed_exact_formula_comparator(h, 9)
+    await _reserve(h, formula_comparators={"Gen7": reference})
+    original_replay = h.adapter.run_sealed
+
+    def stronger_comparator(**kwargs):
+        result = original_replay(**kwargs)
+        if kwargs["draft"].get("parameter_values") == {"window": 9}:
+            result.equity_curve = [
+                (stamp, value * Decimal("2")) for stamp, value in result.equity_curve
+            ]
+            result.final_equity = result.equity_curve[-1][1]
+        return result
+
+    h.adapter.run_sealed = stronger_comparator
+    evidence = await _evaluate(h)
+    assert (
+        evidence["sealed_evaluation"]["benchmark_return"]
+        == evidence["formula_comparator_results"][0]["sealed_return"]
+    )
+    assert (
+        final_research_evaluation_blocker(evidence)
+        == "independent_final_excess_not_positive"
+    )
+    assert evidence["reservation"]["candidate_id"] == h.candidate["candidate_id"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["source_fingerprint", "formula_fingerprint"])
+async def test_exact_formula_reference_cannot_change_its_frozen_identity(
+    harness, field
+):
+    reference = _seed_exact_formula_comparator(harness, 7)
+    reference[field] = "sha256:" + "0" * 64
+    with pytest.raises(
+        StrategyResearchRejected, match="sealed_comparator_identity_mismatch"
+    ):
+        await _reserve(harness, formula_comparators={"MA": reference})
+    assert harness.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("section", "field", "value", "failure"),
+    [
+        ("cost_assumptions", "slippage_bps", "0", "execution_cost_mismatch"),
+        ("source_selection", "initial_cash", 200000, "research_scope_mismatch"),
+        ("source_selection", "frequency", "1h", "research_scope_mismatch"),
+        ("execution_timing", "policy_id", "same_close", "execution_clock_mismatch"),
+        (None, "portfolio_policy_id", "wrong", "portfolio_policy_mismatch"),
+        (
+            "formula_binding",
+            "parameter_values",
+            {"window": 99},
+            "formula_fingerprint_mismatch",
+        ),
+    ],
+)
+async def test_formula_comparator_rejects_wrong_fee_capital_clock_or_formula(
+    harness, section, field, value, failure
+):
+    h = harness
+    reference = _seed_exact_formula_comparator(h, 7)
+    row = h.store.research_backtest_result(reference["source_result_id"])
+    metrics = json.loads(row["metrics_json"])
+    (metrics[section] if section else metrics)[field] = value
+    with sqlite3.connect(h.db.path) as conn:
+        conn.execute(
+            "UPDATE backtest_results SET metrics_json=? WHERE id=?",
+            (json.dumps(metrics), row["id"]),
+        )
+    with pytest.raises(StrategyResearchRejected, match=failure):
+        await _reserve(h, formula_comparators={"MA": reference})
+    assert h.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("label", ["candidate", "frozen_baseline", "incumbent", " MA "])
+async def test_formula_comparator_labels_cannot_replace_existing_roles(harness, label):
+    reference = _seed_exact_formula_comparator(harness, 7)
+    with pytest.raises(StrategyResearchRejected, match="comparator_label_invalid"):
+        await _reserve(harness, formula_comparators={label: reference})
+    assert harness.calls == []
+
+
+@pytest.mark.asyncio
+async def test_formula_baseline_and_same_execution_cannot_be_counted_twice(harness):
+    h = harness
+    reference = _use_formula_baseline(h)
+    duplicate = _seed_exact_formula_comparator(h, 5)
+    for refs in ({"Gen5": reference}, {"same-execution-other-row": duplicate}):
+        with pytest.raises(StrategyResearchRejected, match="comparator_duplicate"):
+            await _reserve(h, formula_comparators=refs)
+    assert h.calls == []
+
+
+@pytest.mark.asyncio
+async def test_formula_comparator_saved_source_drift_blocks_before_replay(harness):
+    h = harness
+    reference = _seed_exact_formula_comparator(h, 7)
+    await _reserve(h, formula_comparators={"MA": reference})
+    row = h.store.research_backtest_result(reference["source_result_id"])
+    config = json.loads(row["config_json"])
+    config["metadata_changed"] = True
+    with sqlite3.connect(h.db.path) as conn:
+        conn.execute(
+            "UPDATE backtest_results SET config_json=? WHERE id=?",
+            (json.dumps(config), row["id"]),
+        )
+    with pytest.raises(StrategyResearchRejected, match="comparator_source_drift"):
+        await _evaluate(h)
+    assert h.calls == []
+
+
+@pytest.mark.asyncio
+async def test_invalidated_formula_comparator_blocks_without_restoring_authority(
+    harness,
+):
+    from server.persistence.backtest_results import BacktestResultsRepository
+
+    h = harness
+    reference = _seed_exact_formula_comparator(h, 7)
+    await _reserve(h, formula_comparators={"MA": reference})
+    BacktestResultsRepository(h.db.path).append_invalidation_sync(
+        result_id=reference["source_result_id"],
+        expected_row_fingerprint=reference["source_fingerprint"],
+        actor="fixture-reviewer",
+        reason="Synthetic invalid source evidence",
+        idempotency_key="invalid-formula-comparator",
+    )
+    with pytest.raises(StrategyResearchRejected, match="backtest_evidence_invalidated"):
+        await _evaluate(h)
+    assert h.calls == []
+
+
+@pytest.mark.asyncio
+async def test_reviewed_account_replay_keeps_every_frozen_formula_and_same_cost_override(
+    harness, monkeypatch
+):
+    import server.services.research.research_final_evaluation as owner
+
+    h = harness
+    original_replay = h.adapter.run_sealed
+
+    def portfolio_replay(**kwargs):
+        result = original_replay(**kwargs)
+        result.portfolio_observations = []
+        return result
+
+    h.adapter.run_sealed = portfolio_replay
+    _use_formula_baseline(h)
+    reserved = await _reserve(
+        h,
+        formula_comparators={
+            "MA": _seed_exact_formula_comparator(h, 7),
+            "Gen7": _seed_exact_formula_comparator(h, 9),
+        },
+    )
+    binding = deepcopy(reserved["evidence"]["reservation"])
+    binding.update(
+        initial_cash=str(h.selection.initial_cash),
+        entry_board_policy={"allowed_boards": ["main"]},
+    )
+    evidence = {"reservation": binding, "sealed_dataset_snapshot": h.full_snapshot}
+    commission = object()
+    monkeypatch.setattr(
+        owner,
+        "_simulation_account_replay_inputs",
+        lambda *_args: (
+            SimpleNamespace(commission_calc=commission),
+            {"cost_model_reference": "synthetic-reviewed-cost"},
+        ),
+    )
+    monkeypatch.setattr(
+        owner, "_simulation_reviewed_assessment", lambda *_args: {"status": "fixture"}
+    )
+    monkeypatch.setattr(
+        "server.ai_runtime.strategy_research_backtest.RestrictedFormulaBacktestAdapter",
+        lambda **_kwargs: h.adapter,
+    )
+    result = {
+        "metrics_json": json.dumps(
+            {
+                "fee_component_evidence": {
+                    "fee_schedule_binding": {
+                        "fee_schedule_review_id": "fixture-review",
+                        "fee_schedule_review_fingerprint": "sha256:" + "f" * 64,
+                    }
+                }
+            }
+        )
+    }
+    replay = owner._build_simulation_account_replay(
+        h.db, h.store, result, evidence, {}, data_store=h.data
+    )
+    expected_labels = {
+        "frozen_baseline",
+        "MA",
+        "Gen7",
+        *(x["label"] for x in binding["challenger_family"]),
+    }
+    assert (
+        set(replay["reviewed_replay"]["session_curves"]["comparators"])
+        == expected_labels
+    )
+    assert set(replay["reviewed_replay"]["comparator_accounting"]) == expected_labels
+    assert len(h.calls) == 12
+    for call in h.calls:
+        assert call["commission_calc_override"] is commission
+        assert call["initial_cash_override"] == Decimal(str(h.selection.initial_cash))
+        assert call["evaluation_dataset_snapshot"] == h.full_snapshot
+        assert call["entry_board_policy"] == binding["entry_board_policy"]
+        assert call["expected_trading_dates"] == [
+            f"2026-01-{i:02}" for i in range(1, 21)
+        ]
+    for frozen in binding["formula_comparators"].values():
+        assert sum(call["draft"] == frozen["formula_binding"] for call in h.calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("present", ["absent", None, {}, {"frequency": "1h"}])
+async def test_formula_comparator_source_selection_fallback_is_absent_only(
+    harness, present
+):
+    from server.persistence.backtest_results import backtest_row_fingerprint
+
+    h = harness
+    reference = _seed_exact_formula_comparator(h, 7)
+    row = h.store.research_backtest_result(reference["source_result_id"])
+    metrics = json.loads(row["metrics_json"])
+    metrics["research_selection"] = metrics.pop("source_selection")
+    if present != "absent":
+        metrics["source_selection"] = present
+    with sqlite3.connect(h.db.path) as conn:
+        conn.execute(
+            "UPDATE backtest_results SET metrics_json=? WHERE id=?",
+            (json.dumps(metrics), row["id"]),
+        )
+    reference["source_fingerprint"] = backtest_row_fingerprint(
+        h.store.research_backtest_result(row["id"])
+    )
+    if present == "absent":
+        reserved = await _reserve(h, formula_comparators={"MA": reference})
+        assert "MA" in reserved["evidence"]["reservation"]["formula_comparators"]
+    else:
+        with pytest.raises(StrategyResearchRejected, match="research_scope_mismatch"):
+            await _reserve(h, formula_comparators={"MA": reference})
+    assert h.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("retained", ["candidate", "challenger"])
+async def test_formula_extra_cannot_duplicate_retained_executable_rules(
+    harness, retained
+):
+    from server.ai_runtime.formula_challengers import frozen_research_challengers
+
+    h = harness
+    formula = (
+        h.draft["formula_ast"]
+        if retained == "candidate"
+        else frozen_research_challengers(h.selection.fingerprint)[0]["formula_ast"]
+    )
+    reference = _seed_exact_formula_comparator(h, 7, formula_override=formula)
+    with pytest.raises(StrategyResearchRejected, match="comparator_duplicate"):
+        await _reserve(h, formula_comparators={"renamed-copy": reference})
+    assert h.calls == []
+
+
+@pytest.mark.asyncio
+async def test_formula_extra_duplicate_incumbent_is_rejected_by_replay_and_evidence(
+    harness,
+):
+    from server.services.research.research_final_evaluation import (
+        _require_frozen_formula_sources,
+    )
+
+    h = harness
+    reference = _seed_exact_formula_comparator(h, 7)
+    await _reserve(h, formula_comparators={"MA": reference})
+    evidence = await _evaluate(h)
+    forged = deepcopy(evidence)
+    binding = forged["reservation"]
+    binding["incumbent"] = {
+        "strategy_id": "fixture-incumbent",
+        "source_result_id": reference["source_result_id"],
+        "formula_ast": binding["formula_comparators"]["MA"]["formula_binding"][
+            "formula_ast"
+        ],
+    }
+    with pytest.raises(StrategyResearchRejected, match="comparator_duplicate"):
+        _require_frozen_formula_sources(
+            research_store=h.store, selection=h.selection, binding=binding
+        )
+    forged.pop("evidence_fingerprint")
+    forged["evidence_fingerprint"] = content_fingerprint(forged)
+    assert (
+        final_research_evaluation_blocker(forged)
+        == "independent_final_formula_comparator_evidence_invalid"
+    )

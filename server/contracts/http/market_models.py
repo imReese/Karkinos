@@ -122,6 +122,7 @@ class VerifiedSourceLatestResolution(BaseModel):
     outcome: str
     source_policy_id: str
     selected_pair: dict[str, str] | None = None
+    selected_provider: str | None = None
     unavailable_providers: list[str] = Field(default_factory=list)
     result_ref: str | None = None
     error_type: str | None = None

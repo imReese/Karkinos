@@ -18,6 +18,8 @@ from analytics.research_account_capital_evidence import (
     is_valid_passed_research_account_capital_evidence,
 )
 from analytics.strategy_advancement_gate import (
+    MANUAL_FINAL_V2_ADVANCEMENT_GATE_SCHEMA,
+    build_manual_final_strategy_advancement_gate,
     build_strategy_advancement_gate,
     is_valid_passed_strategy_advancement_gate,
     strategy_advancement_backtest_view,
@@ -32,6 +34,7 @@ from server.contracts.ai_shadow_research_qualification import (
     SHADOW_RESEARCH_QUALIFICATION_TARGET_STAGE,
     qualification_candidate_fingerprint,
     qualification_formula_semantic_fingerprint,
+    qualification_source_binding,
 )
 from server.contracts.daily_strategy_artifacts import (
     DAILY_STRATEGY_PROMOTION_BINDING_SCHEMA,
@@ -114,6 +117,21 @@ def _qualification_source_candidate_matches(
     source_comparison: Mapping[str, Any],
 ) -> bool:
     """Bind the qualified formula back to its immutable normalized research source."""
+    manual_binding = qualification_source_binding(qualification_run)
+    if manual_binding is not None:
+        return (
+            qualification_source_binding(source_candidate) == manual_binding
+            and qualification_source_binding(source_artifact) == manual_binding
+            and qualification_source_binding(
+                qualification_candidate.get("comparison") or {}
+            )
+            == manual_binding
+            and source_candidate.get("run_id") == qualification_run.get("source_run_id")
+            and source_candidate.get("candidate_id")
+            == qualification_candidate.get("source_candidate_id")
+            and source_candidate.get("draft_id")
+            == qualification_candidate.get("source_draft_id")
+        )
     return (
         source_candidate.get("run_id") == qualification_run.get("source_run_id")
         and source_candidate.get("draft_id")
@@ -161,6 +179,7 @@ def _resolve_ai_shadow_qualification_promotion_evidence(
             "ai_shadow_qualification_evidence_unavailable:" + type(exc).__name__
         ]
 
+    manual_binding = qualification_source_binding(qualification_run)
     blockers: list[str] = []
     source_candidate_id = str(qualification_candidate.get("source_candidate_id") or "")
     selection = _json_object(qualification_run.get("selection"))
@@ -241,8 +260,22 @@ def _resolve_ai_shadow_qualification_promotion_evidence(
         blockers.append("ai_shadow_qualification_ledger_identity_drift")
     if (
         qualification_run.get("status") != "completed"
-        or selection.get("status") != "winner_selected"
-        or selection.get("winner_qualification_candidate_id") != normalized_id
+        or selection.get("status")
+        != (
+            "specified_candidate_qualified"
+            if manual_binding is not None
+            else "winner_selected"
+        )
+        or selection.get(
+            "selected_qualification_candidate_id"
+            if manual_binding is not None
+            else "winner_qualification_candidate_id"
+        )
+        != normalized_id
+        or (
+            manual_binding is not None
+            and selection.get("winner_qualification_candidate_id") is not None
+        )
     ):
         blockers.append("ai_shadow_qualification_winner_not_completed")
     if (
@@ -317,9 +350,21 @@ def _resolve_ai_shadow_qualification_promotion_evidence(
     ):
         blockers.append("ai_shadow_qualification_backtest_formula_or_dataset_drift")
 
-    critique = _json_object(source_comparison.get("deepseek_critique"))
+    critique = _json_object(
+        source_artifact.get("critique_artifact")
+        if manual_binding is not None
+        else source_comparison.get("deepseek_critique")
+    )
     try:
-        current_gate = build_strategy_advancement_gate(
+        gate_builder = (
+            build_manual_final_strategy_advancement_gate
+            if manual_binding is not None
+            else build_strategy_advancement_gate
+        )
+        current_gate = gate_builder(
+            **(
+                {"source_binding": manual_binding} if manual_binding is not None else {}
+            ),
             baseline=strategy_advancement_backtest_view(baseline_source),
             candidate=strategy_advancement_backtest_view(candidate_source),
             critique_evidence={
@@ -333,8 +378,8 @@ def _resolve_ai_shadow_qualification_promotion_evidence(
     except (TypeError, ValueError, OverflowError):
         current_gate = {}
     comparison_gate = _json_object(comparison.get("promotion_gate"))
-    if not is_valid_passed_strategy_advancement_gate(
-        current_gate
+    if not _qualification_advancement_gate_valid(
+        current_gate, manual_binding
     ) or content_fingerprint(current_gate) != content_fingerprint(comparison_gate):
         blockers.append("ai_shadow_qualification_advancement_gate_drift")
 
@@ -383,6 +428,7 @@ def _resolve_ai_shadow_qualification_promotion_evidence(
 
     qualification_binding_core = {
         "schema_version": AI_SHADOW_QUALIFICATION_BINDING_SCHEMA,
+        **({"source_binding": manual_binding} if manual_binding is not None else {}),
         "qualification_run_id": qualification_run.get("qualification_run_id"),
         "qualification_candidate_id": normalized_id,
         "qualification_approval_id": (
@@ -471,12 +517,34 @@ def _resolve_ai_shadow_qualification_promotion_evidence(
         "backtest_result_id": qualification_candidate.get("candidate_result_id"),
         "comparison_fingerprint": qualification_candidate.get("comparison_fingerprint"),
         "strategy_advancement_gate": current_gate,
-        "daily_strategy_artifact_binding": daily_binding,
+        "daily_strategy_artifact_binding": {}
+        if manual_binding is not None
+        else daily_binding,
+        **(
+            {"manual_strategy_artifact_binding": daily_binding}
+            if manual_binding is not None
+            else {}
+        ),
         "qualification_binding": qualification_binding,
         "fee_schedule_binding": fee_schedule_binding,
         "dataset_replay": dataset_replay,
         "blockers": blockers,
     }, blockers
+
+
+def _qualification_advancement_gate_valid(
+    gate: Mapping[str, Any], source_binding: Mapping[str, Any] | None
+) -> bool:
+    """A manual profile cannot qualify a legacy daily source or another final."""
+    if source_binding is None:
+        if gate.get("schema_version") == MANUAL_FINAL_V2_ADVANCEMENT_GATE_SCHEMA:
+            return False
+    elif (
+        gate.get("schema_version") != MANUAL_FINAL_V2_ADVANCEMENT_GATE_SCHEMA
+        or gate.get("source_binding") != source_binding
+    ):
+        return False
+    return is_valid_passed_strategy_advancement_gate(gate)
 
 
 def _ai_shadow_qualification_readiness_binding_blockers(
@@ -531,8 +599,11 @@ def _ai_shadow_qualification_readiness_binding_blockers(
         blockers.append("ai_shadow_qualification_backtest_mismatch")
     readiness_gate = _json_object(readiness.get("strategy_advancement_gate"))
     evidence_gate = _json_object(evidence.get("strategy_advancement_gate"))
-    if not is_valid_passed_strategy_advancement_gate(
-        readiness_gate
+    if not _qualification_advancement_gate_valid(
+        readiness_gate,
+        qualification_source_binding(
+            _json_object(evidence.get("qualification_binding"))
+        ),
     ) or content_fingerprint(readiness_gate) != content_fingerprint(evidence_gate):
         blockers.append("ai_shadow_qualification_advancement_gate_mismatch")
     if (
@@ -814,10 +885,13 @@ def resolve_human_ai_shadow_strategy_promotion_binding(
     ).strip()
     qualification_evidence: dict[str, Any] = {}
     if qualification_candidate_id:
-        qualification_evidence, _ = _resolve_ai_shadow_qualification_promotion_evidence(
-            db,
-            qualification_candidate_id,
+        qualification_evidence, current_blockers = (
+            _resolve_ai_shadow_qualification_promotion_evidence(
+                db,
+                qualification_candidate_id,
+            )
         )
+        blockers.extend(current_blockers)
     fee_schedule_binding = (
         _json_object(qualification_evidence.get("fee_schedule_binding"))
         if qualification_candidate_id
@@ -835,8 +909,32 @@ def resolve_human_ai_shadow_strategy_promotion_binding(
         else {}
     )
     reader = getattr(db, "get_ai_shadow_strategy_promotion_binding_sync", None)
-    raw_binding = reader(candidate_id) if callable(reader) and candidate_id else None
-    if human_review.get("forward_review") is not None:
+    manual_binding = qualification_source_binding(
+        _json_object(readiness.get("qualification_binding"))
+    )
+    if manual_binding != qualification_source_binding(
+        _json_object(qualification_evidence.get("qualification_binding"))
+    ):
+        blockers.append("ai_shadow_qualification_source_binding_changed")
+    raw_binding = (
+        reader(candidate_id)
+        if manual_binding is None and callable(reader) and candidate_id
+        else None
+    )
+    if manual_binding is not None:
+        from server.services.research.research_final_evaluation import (
+            require_new_publication_final_evaluation,
+        )
+
+        try:
+            require_new_publication_final_evaluation(
+                db,
+                int(state.get("backtest_result_id") or 0),
+                expected_manual_source=manual_binding,
+            )
+        except (LookupError, TypeError, ValueError) as exc:
+            blockers.append("manual_strategy_final_evaluation_invalid:" + str(exc))
+    if manual_binding is None and human_review.get("forward_review") is not None:
         from server.services.decision.forward_paper_review import (
             verify_forward_paper_review,
         )
@@ -857,6 +955,7 @@ def resolve_human_ai_shadow_strategy_promotion_binding(
         and raw_binding.get("research_run_capital_mode")
         == SHADOW_RESEARCH_CAPITAL_MODE_NORMALIZED_NOTIONAL
     )
+    blockers = list(dict.fromkeys(blockers))
     return {
         "status": "pass" if not blockers else "blocked",
         "decision_source": "human",
@@ -877,6 +976,16 @@ def resolve_human_ai_shadow_strategy_promotion_binding(
         ),
         "strategy_advancement_gate_fingerprint": gate_fingerprint,
         "daily_strategy_artifact_binding": daily_strategy_artifact_binding,
+        **(
+            {
+                "manual_strategy_artifact_binding": qualification_evidence[
+                    "manual_strategy_artifact_binding"
+                ]
+            }
+            if manual_binding is not None
+            and "manual_strategy_artifact_binding" in qualification_evidence
+            else {}
+        ),
         "fee_schedule_binding": fee_schedule_binding,
         "dataset_replay": dataset_replay,
         "live_like_enabled": bool(state.get("live_like_enabled")),
@@ -969,7 +1078,7 @@ def _ai_shadow_readiness_binding_blockers(
         if not is_valid_passed_normalized_research_advancement_gate(comparison_gate):
             blockers.append("ai_shadow_strategy_advancement_gate_invalid")
     else:
-        if not is_valid_passed_strategy_advancement_gate(comparison_gate):
+        if not _qualification_advancement_gate_valid(comparison_gate, None):
             blockers.append("ai_shadow_strategy_advancement_gate_invalid")
     baseline_source = _binding_backtest_source(binding, "baseline")
     candidate_source = _binding_backtest_source(binding, "candidate")

@@ -36,6 +36,23 @@ DEFAULT_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS = 180.0
 DEEPSEEK_STRATEGY_RESEARCH_MODEL_TIMEOUT_SECONDS = 600.0
 
 
+def build_strategy_research_read_service(
+    db: AppDatabase | None,
+) -> StrategyResearchService:
+    """Reopen saved lineage without init, data storage, config, or a provider."""
+    db_path = database_path(db)
+    return StrategyResearchService(
+        db=db,
+        db_path=db_path,
+        settings=None,
+        capture_service=None,  # type: ignore[arg-type]
+        evidence_repository=CanonicalEvidenceRepository(db_path),
+        ai_store=AiAuditStore(db_path),
+        research_store=StrategyResearchAuditStore(db_path),
+        data_store=None,  # type: ignore[arg-type]
+    )
+
+
 def build_strategy_research_write_service(
     state: AppState,
     *,

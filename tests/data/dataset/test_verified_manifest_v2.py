@@ -9,11 +9,7 @@ from pathlib import Path
 import pytest
 
 from core.types import InstrumentKey, InstrumentType
-from data.dataset.manifest import (
-    DATASET_MANIFEST_SCHEMA_VERSION,
-    DATASET_MANIFEST_SCHEMA_VERSION_V2,
-    publish_daily_bar_dataset_manifest,
-)
+from data.dataset.manifest import publish_daily_bar_dataset_manifest
 from data.dataset.model import DailyBarDatasetPartition, DailyBarDatasetSnapshot
 from data.dataset.reader import DatasetReaderIntegrityError, read_daily_bar_dataset
 from data.market.capture import capture_provider_payload, read_provider_capture
@@ -239,7 +235,7 @@ def test_verified_reader_rejects_corruption_in_either_source(
         read_daily_bar_dataset(store, ref)
 
 
-def test_verified_snapshot_publishes_manifest_v2_and_replays(tmp_path: Path) -> None:
+def test_verified_snapshot_publishes_manifest_and_replays(tmp_path: Path) -> None:
     store = ContentAddressedObjectStore(tmp_path / "objects")
     snapshot, verification = _verified_snapshot(store)
 
@@ -247,8 +243,8 @@ def test_verified_snapshot_publishes_manifest_v2_and_replays(tmp_path: Path) -> 
     payload = json.loads(store.read_bytes(ref.manifest_ref))
     replayed = read_daily_bar_dataset(store, ref)
 
-    assert DATASET_MANIFEST_SCHEMA_VERSION == "karkinos.dataset_manifest.v1"
-    assert payload["schema_version"] == DATASET_MANIFEST_SCHEMA_VERSION_V2
+    assert "schema_version" not in payload
+    assert payload["verification_required"] is True
     assert payload["partitions"][0]["verification_id"] == verification.verification_id
     assert replayed.snapshot == snapshot
     assert replayed.bars[0].close == replayed.bars[0].close.__class__("10.48000000")

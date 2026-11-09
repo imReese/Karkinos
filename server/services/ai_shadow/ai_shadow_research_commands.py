@@ -459,11 +459,22 @@ class AiShadowResearchCommandsMixin:
             )
             defaults = simulation_validation_defaults(self._now())
             simulation = {**defaults, **previous, **proposed}
-            simulation["statistical_policy"] = {
-                **defaults["statistical_policy"],
-                **previous.get("statistical_policy", {}),
-                **proposed.get("statistical_policy", {}),
-            }
+            proposed_profile = proposed.get("statistical_policy", {})
+            previous_profile = previous.get("statistical_policy", {})
+            if "schema_version" in proposed_profile:
+                # A versioned frozen profile is complete: v1 rolling-checkpoint
+                # defaults must not leak into a v2 one-shot evaluation.
+                simulation["statistical_policy"] = dict(proposed_profile)
+            else:
+                simulation["statistical_policy"] = {
+                    **(
+                        {}
+                        if "schema_version" in previous_profile
+                        else defaults["statistical_policy"]
+                    ),
+                    **previous_profile,
+                    **proposed_profile,
+                }
             simulation["statistical_policy_fingerprint"] = content_fingerprint(
                 simulation["statistical_policy"]
             )
@@ -991,12 +1002,31 @@ class AiShadowResearchCommandsMixin:
                 + ",".join(blockers or ["unknown"])
             )
         source_candidate_id = str(evidence["source_candidate_id"])
+        from server.contracts.ai_shadow_research_qualification import (
+            qualification_source_binding,
+        )
         from server.services.decision.forward_paper_review import (
             verify_forward_paper_review,
         )
 
+        manual_source = qualification_source_binding(evidence["qualification_binding"])
+        if manual_source is not None:
+            from server.services.research.research_final_evaluation import (
+                require_new_publication_final_evaluation,
+            )
+
+            require_new_publication_final_evaluation(
+                self._db,
+                int(evidence["backtest_result_id"]),
+                expected_manual_source=manual_source,
+                proposed_qualification_approval=approval,
+            )
         source_result_id = (
-            int(self._store.get_candidate(source_candidate_id)["candidate_result_id"])
+            int(manual_source["manual_source_refs"]["canonical_backtest_result_id"])
+            if manual_source is not None
+            else int(
+                self._store.get_candidate(source_candidate_id)["candidate_result_id"]
+            )
             if forward_review is not None
             else 0
         )
@@ -1069,11 +1099,21 @@ class AiShadowResearchCommandsMixin:
                 verify_forward_paper_review(
                     self._db, forward_binding, source_result_id=source_result_id
                 )
-            return resolve_ai_shadow_qualification_promotion_evidence(
-                self._db,
-                qualification_candidate_id,
-                proposed_qualification_approval=approval,
+            current_evidence, current_blockers = (
+                resolve_ai_shadow_qualification_promotion_evidence(
+                    self._db,
+                    qualification_candidate_id,
+                    proposed_qualification_approval=approval,
+                )
             )
+            if manual_source is not None and not current_blockers:
+                require_new_publication_final_evaluation(
+                    self._db,
+                    int(current_evidence["backtest_result_id"]),
+                    expected_manual_source=manual_source,
+                    proposed_qualification_approval=approval,
+                )
+            return current_evidence, current_blockers
 
         committed = self._store.approve_qualification_candidate_for_paper_shadow(
             qualification_candidate_id,
