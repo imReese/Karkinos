@@ -217,11 +217,9 @@ def verify_reserved_forward_book(db, reservation, *, through_session, now):
     )
 
     binding = (reservation.get("evidence") or {}).get("reservation", reservation)
-    sealed_id = (
-        reservation.get("sealed_test_id")
-        or "ai-sealed-auto-"
-        + content_fingerprint({"run_id": binding["source_run_id"]})[:24]
-    )
+    from server.persistence.strategy_research_sealed import final_reservation_id
+
+    sealed_id = reservation.get("sealed_test_id") or final_reservation_id(binding)
     grant = binding.get("simulation_policy") or binding["publication_grant"]
     _, identity = reserved_forward_identity(sealed_id, grant)
     observations = ResearchObservationService(db, clock=lambda: now)

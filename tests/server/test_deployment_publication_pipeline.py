@@ -24,6 +24,9 @@ from analytics.dataset_snapshot import (
 from analytics.strategy_advancement_gate import (
     strategy_advancement_backtest_view,
 )
+from server.ai_runtime.formula_challengers import (
+    frozen_research_challengers,
+)
 from server.ai_runtime.formula_dsl import (
     CANONICAL_COST_MODEL_REFERENCE,
     FORMULA_AST_CONTRACT,
@@ -496,6 +499,16 @@ async def test_verified_final_qualification_policy_publication_and_revocation(
         cost_model_reference=CANONICAL_COST_MODEL_REFERENCE,
         deployment_scope=data["scope"],
         portfolio_policy_id=data["scope"]["portfolio_policy_id"],
+    )
+    # The random challenger family is seeded from the selection fingerprint, so a
+    # dataset-manifest change silently alters this publication-path fixture.  Pin a
+    # fixed eight-member family (the final-evidence contract requires exactly eight);
+    # the fingerprint-sensitive draw itself is covered by
+    # tests/ai_runtime/test_formula_challengers.py.
+    pinned_family = frozen_research_challengers("f" * 64)
+    monkeypatch.setattr(
+        "server.services.research.research_final_evaluation.frozen_research_challengers",
+        lambda _fingerprint: pinned_family,
     )
     adapter = RestrictedFormulaBacktestAdapter(
         data_store=data["data_store"], research_root=data["root"]

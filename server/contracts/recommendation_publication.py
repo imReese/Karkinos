@@ -19,6 +19,19 @@ PUBLICATION_AUTHORIZE = (
     "trade_or_capital_authority"
 )
 PUBLICATION_REVOKE = "revoke_automatic_account_recommendation_publication"
+FINAL_STATISTICAL_POLICY_V2_SCHEMA = "karkinos.research_final_statistical_policy.v2"
+FINAL_CALENDAR_AT_EVALUATION = "actual_sessions_then_complete_at_final.v1"
+_FINAL_V2_OPTIONAL_FIELDS = frozenset({"calendar_verification_timing"})
+_FINAL_V2_FIELDS = frozenset(
+    {
+        "research_policy_fingerprint",
+        "primary_comparator",
+        "comparator_bindings",
+        "minimum_candidate_net_return",
+        "minimum_annualized_relative_wealth",
+        "maximum_drawdown",
+    }
+)
 
 
 def publication_time(value: Any) -> datetime:
@@ -130,7 +143,96 @@ def validate_final_statistical_policy(
     from datetime import date
 
     date.fromisoformat(str(statistical.get("decision_checkpoint") or ""))
+    version = statistical.get("schema_version")
+    if version == FINAL_STATISTICAL_POLICY_V2_SCHEMA:
+        _validate_final_statistical_policy_v2(statistical)
+    elif version is not None or (
+        _FINAL_V2_FIELDS | _FINAL_V2_OPTIONAL_FIELDS
+    ).intersection(statistical):
+        # A primary-role profile must never silently receive v1's all-comparator
+        # interpretation. Existing unversioned v1 profiles retain their identity.
+        raise ValueError("publication_statistical_policy_version_unsupported")
     return dict(statistical)
+
+
+def _validate_final_statistical_policy_v2(statistical: Mapping[str, Any]) -> None:
+    """The accepted research v2 profile; no grant or budget is created here.
+
+    The caller derives each executable identity from verified canonical source,
+    formula, scope and fees before freezing the policy. A syntactically valid
+    fingerprint alone is not evidence that those source checks were performed.
+    """
+    required = _FINAL_V2_FIELDS | {
+        "schema_version",
+        "method",
+        "minimum_observations",
+        "block_length",
+        "minimum_effective_blocks",
+        "bootstrap_samples",
+        "significance_level",
+        "minimum_net_excess",
+        "decision_checkpoint",
+    }
+    if (
+        not required <= statistical.keys()
+        # Existing v1 callers use checkpoint_interval_days to roll deadlines.
+        # V2 freezes one checkpoint and cannot carry that renewal instruction.
+        or statistical.keys() - (required | _FINAL_V2_OPTIONAL_FIELDS)
+        or (
+            "calendar_verification_timing" in statistical
+            and statistical["calendar_verification_timing"]
+            != FINAL_CALENDAR_AT_EVALUATION
+        )
+        or not isinstance(statistical["research_policy_fingerprint"], str)
+        or not statistical["research_policy_fingerprint"].startswith("sha256:")
+        or any(
+            statistical[key] != value
+            for key, value in {
+                "minimum_observations": 60,
+                "block_length": 5,
+                "minimum_effective_blocks": 12,
+                "bootstrap_samples": 100000,
+            }.items()
+        )
+        or publication_number(statistical["significance_level"]) > Decimal("0.05")
+        or any(
+            publication_number(statistical[key]) != value
+            for key, value in {
+                "minimum_net_excess": Decimal("0"),
+                "minimum_candidate_net_return": Decimal("0"),
+                "minimum_annualized_relative_wealth": Decimal("0.03"),
+                "maximum_drawdown": Decimal("0.15"),
+            }.items()
+        )
+    ):
+        raise ValueError("publication_statistical_v2_frozen_profile_mismatch")
+    _fingerprint(statistical["research_policy_fingerprint"])
+    bindings = statistical["comparator_bindings"]
+    primary = statistical["primary_comparator"]
+    if (
+        not isinstance(bindings, Mapping)
+        or not bindings
+        or not isinstance(primary, str)
+        or primary not in bindings
+    ):
+        raise ValueError("publication_statistical_v2_comparator_binding_invalid")
+    identities = set()
+    for label, binding in bindings.items():
+        if (
+            not isinstance(label, str)
+            or not label.strip()
+            or label != label.strip()
+            or not isinstance(binding, Mapping)
+            or set(binding) != {"role", "identity_fingerprint"}
+            or binding["role"] != ("primary" if label == primary else "diagnostic")
+            or not isinstance(binding["identity_fingerprint"], str)
+            or not binding["identity_fingerprint"].startswith("sha256:")
+        ):
+            raise ValueError("publication_statistical_v2_comparator_binding_invalid")
+        identity = _fingerprint(binding["identity_fingerprint"])
+        if identity in identities:
+            raise ValueError("publication_statistical_v2_comparator_identity_duplicate")
+        identities.add(identity)
 
 
 def validate_publication_grant(value: Mapping[str, Any]) -> dict[str, Any]:

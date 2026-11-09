@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime
 from decimal import Decimal
 
@@ -214,3 +216,145 @@ def test_build_sealed_partition_from_explicit_end():
             research_end="2026-01-20",
             sealed_end="2026-01-20",
         )
+
+
+def test_default_partition_preserves_original_serialized_identity():
+    partition = build_sealed_partition(
+        research_start="2026-01-01",
+        research_end="2026-01-16",
+        sealed_end="2026-01-20",
+    )
+    original = (
+        '{"holdout_fraction":0.2,"research_end":"2026-01-16",'
+        '"research_start":"2026-01-01",'
+        '"schema_version":"karkinos.sealed_partition.v1",'
+        '"sealed_end":"2026-01-20","sealed_start":"2026-01-17"}'
+    )
+    assert (
+        json.dumps(partition.to_json_dict(), sort_keys=True, separators=(",", ":"))
+        == original
+    )
+    assert partition.partition_fingerprint == (
+        "sha256:" + hashlib.sha256(original.encode()).hexdigest()
+    )
+
+
+def test_prospective_partition_gap_does_not_become_research_or_test_days():
+    partition = build_sealed_partition(
+        research_start="2026-01-01",
+        research_end="2026-01-16",
+        sealed_end="2026-02-04",
+        prospective_start="2026-02-01",
+    )
+    assert partition.research_end.isoformat() == "2026-01-16"
+    assert partition.sealed_days == 4
+    assert partition.holdout_fraction == Decimal("0.2")  # 4 / (16 + 4)
+    assert partition.to_json_dict() == {
+        "schema_version": "karkinos.sealed_partition.v2",
+        "research_start": "2026-01-01",
+        "research_end": "2026-01-16",
+        "sealed_start": "2026-02-01",
+        "sealed_end": "2026-02-04",
+        "holdout_fraction": 0.2,
+        "prospective_start": "2026-02-01",
+    }
+    result = BacktestResult(
+        equity_curve=[
+            (datetime(2026, 2, day), Decimal(value))
+            for day, value in ((1, "100000"), (2, "101000"), (4, "102000"))
+        ],
+        positions={},
+        initial_cash=Decimal("100000"),
+        final_equity=Decimal("102000"),
+        fills=[_fill(datetime(2026, 2, 2), "6", "2")],
+        execution_timing={
+            "evaluation_start": "2026-02-01",
+            "warmup_basis": "strategy_history_only_fresh_book",
+            "warmup_final_bar_targets": True,
+        },
+    )
+    payload = build_sealed_holdout_evaluation(
+        strategy_id="ai_formula_research",
+        benchmark_role="formula_champion",
+        research_family_id="family-1",
+        formula_fingerprint="sha256:abcd",
+        partition=partition,
+        result=result,
+        benchmark_return=Decimal("0.01"),
+    ).to_json_dict()
+    assert payload["sealed_bar_count"] == 3
+    assert payload["sealed_return"] == pytest.approx(0.02)
+    assert sealed_return_from_result(result, partition) == Decimal("0.02")
+    assert is_valid_sealed_holdout_evaluation(payload)
+
+
+@pytest.mark.parametrize(
+    "start", ["2026-01-15", "2026-01-16", "2026-02-05", "20260201", ""]
+)
+def test_prospective_partition_rejects_invalid_or_noncanonical_start(start):
+    with pytest.raises(ValueError):
+        build_sealed_partition(
+            research_start="2026-01-01",
+            research_end="2026-01-16",
+            sealed_end="2026-02-04",
+            prospective_start=start,
+        )
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"schema_version": "karkinos.sealed_partition.v1"},
+        {"prospective_start": None},
+        {"prospective_start": "2026-02-02"},
+        {"holdout_fraction": 0.4},
+    ],
+)
+def test_prospective_partition_parser_rejects_ignored_or_conflicting_binding(change):
+    partition = build_sealed_partition(
+        research_start="2026-01-01",
+        research_end="2026-01-16",
+        sealed_end="2026-02-04",
+        prospective_start="2026-02-01",
+    )
+    from analytics.sealed_holdout import _validated_partition
+
+    assert _validated_partition(partition.to_json_dict()) == partition
+    assert _validated_partition({**partition.to_json_dict(), **change}) is None
+
+
+@pytest.mark.parametrize("measure", ["return", "evaluation"])
+def test_prospective_measurement_rejects_inherited_gap_equity(measure):
+    partition = build_sealed_partition(
+        research_start="2026-01-01",
+        research_end="2026-01-16",
+        sealed_end="2026-02-04",
+        prospective_start="2026-02-01",
+    )
+    # This full-window book accumulated equity and a fill in the gap. It is
+    # valid legacy evidence, but cannot supply a fresh prospective experiment.
+    result = BacktestResult(
+        equity_curve=[
+            (datetime(2026, 1, 16), Decimal("100000")),
+            (datetime(2026, 1, 31), Decimal("120000")),
+            (datetime(2026, 2, 1), Decimal("121000")),
+            (datetime(2026, 2, 4), Decimal("125000")),
+        ],
+        positions={},
+        initial_cash=Decimal("100000"),
+        final_equity=Decimal("125000"),
+        fills=[_fill(datetime(2026, 1, 25), "6", "2")],
+    )
+    with pytest.raises(ValueError, match="sealed_prospective_fresh_book_required"):
+        if measure == "return":
+            sealed_return_from_result(result, partition)
+        else:
+            build_sealed_holdout_evaluation(
+                strategy_id="ai_formula_research",
+                benchmark_role="formula_champion",
+                research_family_id="family-1",
+                formula_fingerprint="sha256:abcd",
+                partition=partition,
+                result=result,
+                benchmark_return=Decimal("0.01"),
+            )
