@@ -15,7 +15,7 @@ from data.market.verification_evidence import read_market_verification_evidence
 from data.storage.objects import ContentAddressedObjectStore
 from domain.instrument import make_etf, make_stock
 from server.contracts.http.strategy_models import BacktestRequest
-from server.services.research.datasets import (
+from server.services.research.dataset_policy import (
     ResearchDatasetError,
     require_supported_snapshot,
 )

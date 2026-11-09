@@ -11,7 +11,6 @@ import pytest
 
 from core.types import InstrumentKey, InstrumentType
 from data.dataset.manifest import (
-    DATASET_MANIFEST_SCHEMA_VERSION,
     DatasetManifestIntegrityError,
     deserialize_daily_bar_dataset_manifest,
     publish_daily_bar_dataset_manifest,
@@ -389,7 +388,8 @@ def test_manifest_contains_expected_semantic_fields() -> None:
 
     manifest = _decode_manifest(payload)
 
-    assert manifest["schema_version"] == DATASET_MANIFEST_SCHEMA_VERSION
+    assert "schema_version" not in manifest
+    assert manifest["verification_required"] is True
     assert manifest["kind"] == DATASET_KIND_DAILY_BARS
 
     assert manifest["start_date"] == "2026-09-14"
@@ -508,16 +508,25 @@ def test_deserialize_rejects_invalid_json() -> None:
         deserialize_daily_bar_dataset_manifest(b"{not-json")
 
 
-def test_deserialize_rejects_unsupported_schema_version() -> None:
+def test_deserialize_rejects_foreign_schema_marker() -> None:
     manifest = _decode_manifest(serialize_daily_bar_dataset_manifest(_snapshot()))
 
-    manifest["schema_version"] = "karkinos.dataset_manifest.v999"
+    manifest["schema_version"] = "other.dataset_manifest.v1"
 
     with pytest.raises(
         DatasetManifestIntegrityError,
         match=("dataset_manifest_schema_unsupported"),
     ):
         deserialize_daily_bar_dataset_manifest(_encode_json(manifest))
+
+
+def test_deserialize_accepts_legacy_schema_marker() -> None:
+    snapshot = _snapshot()
+    manifest = _decode_manifest(serialize_daily_bar_dataset_manifest(snapshot))
+
+    manifest["schema_version"] = "karkinos.dataset_manifest.v4"
+
+    assert deserialize_daily_bar_dataset_manifest(_encode_json(manifest)) == snapshot
 
 
 def test_deserialize_rejects_unsupported_kind() -> None:
@@ -829,5 +838,46 @@ def test_unknown_valid_instrument_still_fails_snapshot_membership_validation():
     payload["partitions"][0]["instruments"][0]["symbol"] = "999999"
     with pytest.raises(
         DatasetManifestIntegrityError, match="dataset_manifest_semantics_invalid"
+    ):
+        deserialize_daily_bar_dataset_manifest(_encode_json(payload))
+
+
+def test_manifest_round_trips_explicit_single_source() -> None:
+    snapshot = DailyBarDatasetSnapshot(
+        start_date=date(2026, 9, 14),
+        end_date=date(2026, 9, 14),
+        cutoff=_CUTOFF,
+        instruments=(_instrument("600000"),),
+        resolver_policy_id=("karkinos.dataset.pit.single_source.daily.v1:test"),
+        market_schema_version=("karkinos.market.daily_bar.v1"),
+        partitions=(_partition(date(2026, 9, 14)),),
+        verification_required=False,
+    )
+
+    payload = _decode_manifest(serialize_daily_bar_dataset_manifest(snapshot))
+
+    assert "schema_version" not in payload
+    assert payload["verification_required"] is False
+    assert "verification_id" not in payload["partitions"][0]
+    assert deserialize_daily_bar_dataset_manifest(_encode_json(payload)) == snapshot
+
+
+def test_manifest_rejects_single_source_with_verification() -> None:
+    snapshot = DailyBarDatasetSnapshot(
+        start_date=date(2026, 9, 14),
+        end_date=date(2026, 9, 14),
+        cutoff=_CUTOFF,
+        instruments=(_instrument("600000"),),
+        resolver_policy_id=("karkinos.dataset.pit.single_source.daily.v1:test"),
+        market_schema_version=("karkinos.market.daily_bar.v1"),
+        partitions=(_partition(date(2026, 9, 14)),),
+        verification_required=False,
+    )
+    payload = _decode_manifest(serialize_daily_bar_dataset_manifest(snapshot))
+    payload["partitions"][0]["verification_id"] = _content_id("c")
+
+    with pytest.raises(
+        DatasetManifestIntegrityError,
+        match="dataset_manifest_single_source_verification_present",
     ):
         deserialize_daily_bar_dataset_manifest(_encode_json(payload))

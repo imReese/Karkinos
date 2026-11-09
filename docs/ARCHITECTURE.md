@@ -181,13 +181,26 @@ valid evidence from actual captures; it does not repair the historical claim.
 
 Provider batch size and dataset scope are separate. Existing capture, verified
 jobs, object storage and Dataset readers remain the data path. Dataset
-manifest v4 references daily membership and disjoint collection shards;
-previous versions and their frozen budgets retain their original meaning. A
-complete section validates expected membership, duplicate/missing rows, source
-identities, verification and decision availability before publication. Separate
-captures remain separate provenance. Features may be computed by shard, but
-global ranking, portfolio allocation and the financial book are not sharded into
-independent portfolios whose equity curves are later combined.
+manifest references daily membership and disjoint collection shards; older
+manifests retain their original meaning. A complete section validates expected
+membership, duplicate/missing rows, source identities, verification and decision
+availability before publication. Separate captures remain separate provenance.
+Features may be computed by shard, but global ranking, portfolio allocation and
+the financial book are not sharded into independent portfolios whose equity
+curves are later combined.
+
+Dataset manifests do not carry a schema version; readers parse the fields that
+are present, so older manifests remain readable. Source agreement, single-source
+availability and disagreement are distinct states. A verified pair publishes a
+verified Dataset with cross-source evidence. A single-source publication is
+allowed only when the selected versioned source policy explicitly opts in; it
+publishes a Dataset with `verification_required: false` and no verification
+claim or synthetic second source, and readers derive its `source_class` as
+`single_source`. Disagreement between two live sources still blocks publication;
+it never degrades into a single-source Dataset. Research readers require
+verified agreement and reject single-source Datasets. Operational and display
+projections may read them only while preserving the label. Range composition of
+single-source partitions is not implemented and fails closed.
 
 The reader verifies original capture hashes and both source materializations,
 and reuses the canonical bars already decoded during that verification. One

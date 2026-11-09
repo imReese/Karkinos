@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from copy import deepcopy
 from dataclasses import replace
@@ -20,6 +19,7 @@ from analytics.dataset_snapshot import (
 )
 from core.types import InstrumentKey, InstrumentType
 from data.dataset.manifest import (
+    deserialize_daily_bar_dataset_manifest,
     publish_daily_bar_dataset_manifest,
     serialize_daily_bar_dataset_manifest,
 )
@@ -119,17 +119,9 @@ def _fake_external_call(monkeypatch):
     return calls
 
 
-@pytest.mark.parametrize(
-    "verified,expected_digest",
-    [
-        (False, "e736716012b75dc5331dfe61c8277f1131dee36c04237c6914b516c462af92bb"),
-        (True, "9aa7b956eaed68f8695513e5ff528bcb195aff460c5592d1ff248c92029be05f"),
-    ],
-)
-def test_legacy_manifest_bytes_match_pre_corporate_action_serializer(
-    verified, expected_digest
-):
-    # Golden digests were generated from the committed v1/v2 serializer.
+@pytest.mark.parametrize("verified", [False, True])
+def test_legacy_manifest_marker_remains_readable(verified):
+    # Older manifests carried a schema_version and lacked the optional fields.
     snapshot = _snapshot()
     if verified:
         snapshot = replace(
@@ -139,10 +131,19 @@ def test_legacy_manifest_bytes_match_pre_corporate_action_serializer(
                 for item in snapshot.partitions
             ),
         )
-    assert (
-        hashlib.sha256(serialize_daily_bar_dataset_manifest(snapshot)).hexdigest()
-        == expected_digest
-    )
+    payload = json.loads(serialize_daily_bar_dataset_manifest(snapshot))
+    payload["schema_version"] = f"karkinos.dataset_manifest.v{2 if verified else 1}"
+    for key in (
+        "corporate_action_observation_ids",
+        "universe_policy_id",
+        "session_memberships",
+        "verification_required",
+    ):
+        payload.pop(key, None)
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode()
+    assert deserialize_daily_bar_dataset_manifest(encoded) == snapshot
 
 
 @pytest.mark.parametrize("verified", [False, True])
@@ -156,11 +157,8 @@ def test_v3_binding_preserves_original_v1_v2_bytes_and_bar_lineage(tmp_path, ver
     before = read_daily_bar_dataset(store, original)
     original_bytes = store.read_bytes(original.manifest_ref)
     old_manifest = json.loads(original_bytes)
-    assert (
-        old_manifest["schema_version"]
-        == f"karkinos.dataset_manifest.v{2 if verified else 1}"
-    )
-    assert "corporate_action_observation_ids" not in old_manifest
+    assert "schema_version" not in old_manifest
+    assert old_manifest["corporate_action_observation_ids"] == []
     observation = _observe(store)
     updated = replace(
         before.snapshot,
@@ -170,7 +168,8 @@ def test_v3_binding_preserves_original_v1_v2_bytes_and_bar_lineage(tmp_path, ver
     bound = publish_daily_bar_dataset_manifest(store, updated)
     replayed = read_daily_bar_dataset(store, bound)
     manifest = json.loads(store.read_bytes(bound.manifest_ref))
-    assert manifest["schema_version"] == "karkinos.dataset_manifest.v3"
+    assert "schema_version" not in manifest
+    assert manifest["corporate_action_observation_ids"]
     assert manifest["partitions"] == old_manifest["partitions"]
     assert bound != original
     assert replayed.bars == before.bars

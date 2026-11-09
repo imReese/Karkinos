@@ -138,6 +138,10 @@ class DailyBarDatasetResolverPolicy:
 
     allow_degraded_quality: bool = False
 
+    # False builds a Dataset whose source_class is ``single_source``.  The
+    # caller must still pass exactly one quality-passing candidate per day.
+    verification_required: bool = True
+
     def __post_init__(self) -> None:
         policy_id = _require_non_empty_text(
             self.policy_id,
@@ -172,6 +176,12 @@ class DailyBarDatasetResolverPolicy:
             bool,
         ):
             raise TypeError("dataset_resolver_allow_degraded_quality_must_be_bool")
+
+        if not isinstance(
+            self.verification_required,
+            bool,
+        ):
+            raise TypeError("dataset_resolver_verification_required_must_be_bool")
 
         object.__setattr__(
             self,
@@ -354,6 +364,7 @@ def resolve_daily_bar_dataset(
         resolver_policy_id=policy.policy_id,
         market_schema_version=(DAILY_BAR_SCHEMA_VERSION),
         partitions=tuple(selected_partitions),
+        verification_required=policy.verification_required,
     )
 
     providers = sorted({partition.provider for partition in snapshot.partitions})

@@ -247,6 +247,10 @@ class DailyBarDatasetSnapshot:
     corporate_action_observation_ids: tuple[str, ...] = ()
     session_memberships: tuple[DailyBarDatasetMembership, ...] = ()
     universe_policy_id: str | None = None
+    # True keeps the historical meaning: verification was required when this
+    # dataset was built.  False marks an explicitly admitted single-source
+    # dataset; its identity and label travel with the manifest.
+    verification_required: bool = True
 
     def __post_init__(self) -> None:
         start_date = _require_date(
@@ -333,6 +337,12 @@ class DailyBarDatasetSnapshot:
         }
         if len(verification_states) > 1:
             raise ValueError("dataset_partition_verification_mixed")
+        if not isinstance(self.verification_required, bool):
+            raise TypeError("dataset_verification_required_must_be_bool")
+        if not self.verification_required and any(
+            partition.verification_id is not None for partition in partitions
+        ):
+            raise ValueError("dataset_single_source_verification_present")
         observation_ids = tuple(
             _require_content_id(item, field="corporate_action_observation_id")
             for item in self.corporate_action_observation_ids
@@ -402,6 +412,20 @@ class DailyBarDatasetSnapshot:
         return bool(self.partitions) and all(
             partition.verification_id is not None for partition in self.partitions
         )
+
+    @property
+    def source_class(self) -> str:
+        """Label carried by the Dataset itself, never inferred downstream.
+
+        ``verified``     - every partition carries matching cross-source evidence.
+        ``single_source`` - explicitly admitted without a comparison source.
+        ``unverified``   - legacy/unlabelled data; research and publication refuse.
+        """
+        if self.verification_bound:
+            return "verified"
+        if not self.verification_required:
+            return "single_source"
+        return "unverified"
 
     @property
     def membership_evidence_bound(self) -> bool:

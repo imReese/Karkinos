@@ -10,6 +10,7 @@ from data.market.reconciliation import (
     BAOSTOCK_TENCENT_DAILY_RECONCILIATION_V1,
     BAOSTOCK_TUSHARE_AMOUNT_RECONCILIATION_V1,
     STRICT_DAILY_RECONCILIATION,
+    TENCENT_TUSHARE_DAILY_RECONCILIATION,
     TENCENT_TUSHARE_REPORTED_AMOUNT_RECONCILIATION_V1,
 )
 from data.provider_registry import build_provider_registry
@@ -177,9 +178,7 @@ def test_registered_tushare_tencent_policy_has_only_the_exact_independent_pair(s
         pair.comparison.descriptor.upstream_group,
     ) == ("tushare", "tencent")
     assert pair.policy_id == TUSHARE_TENCENT_RESEARCH_V1.policy_id
-    assert (
-        pair.reconciliation_policy is TENCENT_TUSHARE_REPORTED_AMOUNT_RECONCILIATION_V1
-    )
+    assert pair.reconciliation_policy is TENCENT_TUSHARE_DAILY_RECONCILIATION
     assert (
         pair.comparison.descriptor.adapter_version
         == "karkinos.akshare_tencent.daily_bar.v5"
@@ -228,9 +227,7 @@ def test_explicit_tushare_tencent_stock_pair_uses_existing_reported_policy(candi
         _daily_request(),
     )
     assert (pair.primary_name, pair.comparison_name) == candidates
-    assert (
-        pair.reconciliation_policy is TENCENT_TUSHARE_REPORTED_AMOUNT_RECONCILIATION_V1
-    )
+    assert pair.reconciliation_policy is TENCENT_TUSHARE_DAILY_RECONCILIATION
 
 
 def test_tushare_tencent_etf_keeps_strict_policy():
