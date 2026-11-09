@@ -827,6 +827,24 @@ positive net excess over the strongest frozen comparator, without selecting a
 replacement champion from the holdout. This counterfactual test does not prove
 historical PIT availability or actual execution.
 
+The final-evaluation policy is resolved and frozen when the reservation is made.
+It names the decision checkpoint, the minimum observation and effective-block
+counts, the significance level, the comparator set and the uncertainty method.
+When the checkpoint is resolved at evaluation time, it is the last verified
+session on or before the decision date; the evaluator records that resolution,
+rejects a later or missing session, and compares the stored deployment assessment
+against a fresh recomputation. Changing the policy or comparator identity is a
+new reservation, not a retry of the old one.
+
+A human can enter the same qualification machinery with an explicit manual
+source binding: an immutable set of source session, draft, backtest result,
+critique and sealed-test references. The binding is validated and stored when
+the manual research run starts, revalidated when qualification completes, and
+must still traverse the same final reservation, sealed replay, advancement gate
+and publication evidence as an automated candidate. Manual source binding never
+grants capital authority or replaces the financial checks owned by the gate, and
+later edits to the bound artifacts fail closed.
+
 Trial correction uses actual adjacent-period equity returns and distinct recorded
 formula/parameter trials. Its nominal-count DSR estimate assumes independent trials
 and estimates trial dispersion from the candidate's return moments; correlation
