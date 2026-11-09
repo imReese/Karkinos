@@ -35,7 +35,6 @@ LEGACY_V1_REPAIR_TABLE = "controlled_submission_ledger_postings"
 LEGACY_V1_REPAIR_COLUMN = "account_truth_review_fingerprint"
 
 _VERSIONED_SCHEMA_OBJECTS = (
-    *((26, object_type, name) for object_type, name in V26_SCHEMA_OBJECTS),
     *((25, object_type, name) for object_type, name in V25_SCHEMA_OBJECTS),
     *((24, object_type, name) for object_type, name in V24_SCHEMA_OBJECTS),
     *((22, object_type, name) for object_type, name in V22_SCHEMA_OBJECTS),
@@ -63,6 +62,13 @@ _VERSIONED_SCHEMA_OBJECTS = (
     (12, "table", "daily_close_snapshots_v2"),
     (12, "index", "idx_quote_snapshots_typed_identity_instant"),
     (12, "index", "idx_daily_close_v2_identity_trade_date"),
+)
+
+# The optional shadow-research initializer can create these objects while the
+# migration ledger is still at v25. They are not evidence of a missing
+# migration record, but their exact SQL is still compared once v26 is applied.
+_CONTRACT_ONLY_SCHEMA_OBJECTS = (
+    *((26, object_type, name) for object_type, name in V26_SCHEMA_OBJECTS),
 )
 
 
@@ -375,7 +381,10 @@ def read_versioned_object_contracts(
     through_version: int,
 ) -> dict[tuple[str, str], str]:
     contracts: dict[tuple[str, str], str] = {}
-    for version, object_type, name in _VERSIONED_SCHEMA_OBJECTS:
+    for version, object_type, name in (
+        *_VERSIONED_SCHEMA_OBJECTS,
+        *_CONTRACT_ONLY_SCHEMA_OBJECTS,
+    ):
         if version > through_version:
             continue
         row = conn.execute(

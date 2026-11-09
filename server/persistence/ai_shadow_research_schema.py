@@ -362,10 +362,29 @@ class ShadowResearchSchemaRepositoryMixin:
 
     @staticmethod
     def _init_qualification_guards(conn) -> None:
-        conn.execute(
-            "DROP TRIGGER IF EXISTS ai_shadow_qualification_manual_source_update_guard"
+        managed = (
+            conn.execute(
+                """
+                SELECT 1 FROM sqlite_master
+                WHERE type = 'table' AND name = 'schema_migrations'
+                """
+            ).fetchone()
+            is not None
         )
+        if not managed:
+            # A database without a migration ledger has no migration to own the
+            # binding guard, so the initializer must create it idempotently.
+            conn.execute(
+                "DROP TRIGGER IF EXISTS ai_shadow_qualification_manual_source_update_guard"
+            )
         for statement in QUALIFICATION_GUARD_STATEMENTS:
+            if (
+                managed
+                and "ai_shadow_qualification_manual_source_update_guard" in statement
+            ):
+                # Migration 26 owns this guard. Creating it while the ledger is
+                # still at v25 makes the later migration collide on the trigger.
+                continue
             conn.execute(statement)
         conn.executescript("""
             CREATE TRIGGER IF NOT EXISTS ai_shadow_qualification_run_update_guard
