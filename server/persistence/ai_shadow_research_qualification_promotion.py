@@ -334,11 +334,15 @@ class ShadowResearchQualificationPromotionRepositoryMixin:
                 )
             run = qualification_run_record(dict(run_row))
             self._require_current_source_artifact_binding(conn, run_row)
+            from server.contracts.ai_shadow_research_qualification import (
+                selected_qualification_candidate_id,
+            )
+
             selection = run.get("selection")
             if (
                 run.get("status") != "completed"
                 or not isinstance(selection, Mapping)
-                or selection.get("winner_qualification_candidate_id")
+                or selected_qualification_candidate_id(run)
                 != qualification_candidate_id
                 or candidate.get("status") != "qualified"
                 or candidate.get("recommendation") != "paper_shadow_review"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -12,6 +13,7 @@ from server.contracts.ai_shadow_research_qualification import (
     SHADOW_RESEARCH_QUALIFICATION_TERMINAL_STATUSES,
     ShadowResearchQualificationRejected,
     build_qualification_candidate_values,
+    manual_qualification_source_id,
     normalize_qualification_blockers,
     public_qualification_approval_projection,
     public_qualification_candidate_projection,
@@ -24,7 +26,9 @@ from server.contracts.ai_shadow_research_qualification import (
     qualification_run_identity,
     qualification_run_input_fingerprint,
     qualification_run_record,
+    qualification_source_binding,
     require_qualification_terminal_payload,
+    selected_qualification_candidate_id,
 )
 from server.contracts.content_identity import canonical_json, content_fingerprint
 from server.persistence.ai_shadow_research_qualification_candidate_uow import (
@@ -58,6 +62,7 @@ class ShadowResearchQualificationRepositoryMixin:
         baseline_result_id: int,
         now: str,
         input_fingerprint: str | None = None,
+        source_binding: Mapping[str, Any] | None = None,
     ) -> tuple[dict[str, Any], bool]:
         identity = qualification_run_identity(
             source_run_id=source_run_id,
@@ -77,6 +82,7 @@ class ShadowResearchQualificationRepositoryMixin:
             reviewed_fee_schedule_fingerprint=reviewed_fee_schedule_fingerprint,
             initial_cash_text=initial_cash_text,
             baseline_result_id=baseline_result_id,
+            source_binding=source_binding,
         )
         expected_fingerprint = qualification_run_input_fingerprint(identity)
         if input_fingerprint not in (None, "", expected_fingerprint):
@@ -88,6 +94,11 @@ class ShadowResearchQualificationRepositoryMixin:
         stored_identity = {
             key: value for key, value in identity.items() if key != "schema_version"
         }
+        initial_selection = (
+            {"source_binding": identity["source_binding"], "status": "running"}
+            if source_binding is not None
+            else None
+        )
         with self._connect(immediate=True) as conn:
             self._require_current_source_artifact_binding(conn, stored_identity)
             existing = conn.execute(
@@ -122,7 +133,7 @@ class ShadowResearchQualificationRepositoryMixin:
                  selection_fingerprint, blockers_json, failure_code, created_at,
                  updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        'running', NULL, NULL, '[]', NULL, ?, ?)
+                        'running', ?, ?, '[]', NULL, ?, ?)
                 """,
                 (
                     qualification_run_id,
@@ -144,6 +155,10 @@ class ShadowResearchQualificationRepositoryMixin:
                     stored_identity["initial_cash_text"],
                     stored_identity["baseline_result_id"],
                     expected_fingerprint,
+                    canonical_json(initial_selection) if initial_selection else None,
+                    content_fingerprint(initial_selection)
+                    if initial_selection
+                    else None,
                     timestamp,
                     timestamp,
                 ),
@@ -661,6 +676,12 @@ def _require_source_artifact_binding(
     *,
     backup_root: Any,
 ) -> None:
+    manual = qualification_source_binding(identity)
+    if manual is not None:
+        _require_manual_source_binding_on_connection(conn, identity, manual)
+        return
+    if str(identity["source_run_id"]).startswith("manual-research:"):
+        raise ShadowResearchQualificationRejected("qualification_manual_source_missing")
     source_run = conn.execute(
         "SELECT * FROM ai_shadow_research_runs WHERE run_id=?",
         (identity["source_run_id"],),
@@ -783,8 +804,7 @@ def _require_candidate_approval_eligible(
     if (
         run.get("status") != "completed"
         or not isinstance(selection, Mapping)
-        or selection.get("status") != "winner_selected"
-        or selection.get("winner_qualification_candidate_id")
+        or selected_qualification_candidate_id(run)
         != candidate.get("qualification_candidate_id")
         or candidate.get("status") != "qualified"
         or candidate.get("recommendation") != "paper_shadow_review"
@@ -794,6 +814,107 @@ def _require_candidate_approval_eligible(
         )
 
 
+def _require_manual_source_binding_on_connection(conn, identity, binding):
+    """Reopen committed lineage inside the existing qualification write transaction."""
+    from server.ai_runtime.formula_dsl import FormulaBinding
+    from server.contracts.strategy_research import backtest_evidence_blocker
+    from server.persistence.backtest_results import with_backtest_invalidation
+
+    refs = binding["manual_source_refs"]
+    try:
+        session = conn.execute(
+            "SELECT * FROM ai_strategy_research_sessions WHERE session_id=?",
+            (refs["session_id"],),
+        ).fetchone()
+        draft = conn.execute(
+            "SELECT * FROM ai_strategy_hypothesis_drafts WHERE draft_id=? AND session_id=?",
+            (refs["draft_id"], refs["session_id"]),
+        ).fetchone()
+        backtest = conn.execute(
+            "SELECT * FROM ai_strategy_formula_backtests WHERE backtest_run_id=?",
+            (refs["backtest_run_id"],),
+        ).fetchone()
+        critique = conn.execute(
+            "SELECT * FROM ai_strategy_backtest_critiques WHERE critique_id=?",
+            (refs["critique_id"],),
+        ).fetchone()
+        final = conn.execute(
+            "SELECT * FROM ai_strategy_sealed_tests WHERE sealed_test_id=?",
+            (binding["final_evaluation_id"],),
+        ).fetchone()
+        saved = conn.execute(
+            "SELECT * FROM backtest_results WHERE id=?",
+            (refs["canonical_backtest_result_id"],),
+        ).fetchone()
+        if any(
+            row is None for row in (session, draft, backtest, critique, final, saved)
+        ):
+            raise ValueError("missing")
+        evidence = json.loads(final["evidence_json"])
+        reservation = evidence["reservation"]
+        contract = json.loads(draft["contract_json"])
+        artifact = json.loads(critique["normalized_artifact_json"])
+        metrics = json.loads(saved["metrics_json"])
+        formula = FormulaBinding(**metrics["formula_binding"])
+        ast_fingerprint = "sha256:" + content_fingerprint(contract["formula_ast"])
+        if (
+            identity["source_run_id"] != manual_qualification_source_id(binding)
+            or identity["source_selection_id"] != refs["session_id"]
+            or identity["source_backup_fingerprint"] != "not_applicable:manual_research"
+            or identity["source_selection_fingerprint"]
+            != session["selection_fingerprint"]
+            or session["status"] != "completed"
+            or draft["validation_status"] != "valid"
+            or content_fingerprint(contract) != draft["artifact_fingerprint"]
+            or content_fingerprint(artifact) != critique["artifact_fingerprint"]
+            or backtest_evidence_blocker(with_backtest_invalidation(conn, dict(saved)))
+            is not None
+            or formula.fingerprint != draft["formula_fingerprint"]
+            or formula.fingerprint != contract["formula_fingerprint"]
+            or formula.fingerprint != backtest["formula_fingerprint"]
+            or formula.formula_ast != contract["formula_ast"]
+            or formula.dataset_snapshot_id != backtest["dataset_snapshot_id"]
+            or formula.cost_model_reference != backtest["cost_model_reference"]
+            or final["champion_formula_fingerprint"] != ast_fingerprint
+            or reservation.get("champion_formula_fingerprint") != ast_fingerprint
+            or evidence.get("deployment_assessment", {}).get("status") != "pass"
+            or backtest["status"] != "completed"
+            or critique["status"] != "completed"
+            or backtest["canonical_backtest_result_id"]
+            != refs["canonical_backtest_result_id"]
+            or final["status"] != "completed"
+            or final["evidence_fingerprint"] != binding["final_evidence_fingerprint"]
+            or evidence.get("evidence_fingerprint") != final["evidence_fingerprint"]
+            or content_fingerprint(
+                {k: v for k, v in evidence.items() if k != "evidence_fingerprint"}
+            )
+            != final["evidence_fingerprint"]
+            or reservation.get("manual_source_refs") != refs
+            or reservation.get("manual_source_fingerprint")
+            != binding["manual_source_fingerprint"]
+            or any(
+                reservation.get(key) is not None
+                for key in (
+                    "source_run_id",
+                    "candidate_id",
+                    "selection_evidence_fingerprint",
+                )
+            )
+            or any(
+                row["session_id"] != refs["session_id"]
+                or row["draft_id"] != refs["draft_id"]
+                for row in (backtest, critique, final)
+            )
+            or critique["backtest_run_id"] != refs["backtest_run_id"]
+            or final["backtest_run_id"] != refs["backtest_run_id"]
+        ):
+            raise ValueError("drift")
+    except (KeyError, TypeError, ValueError, sqlite3.Error) as exc:
+        raise ShadowResearchQualificationRejected(
+            "qualification_manual_source_binding_invalid"
+        ) from exc
+
+
 def _run_identity_matches(
     row: sqlite3.Row,
     *,
@@ -801,7 +922,12 @@ def _run_identity_matches(
     input_fingerprint: str,
 ) -> bool:
     return row["input_fingerprint"] == input_fingerprint and all(
-        row[key] == value for key, value in identity.items()
+        (
+            qualification_source_binding(dict(row)) == value
+            if key == "source_binding"
+            else row[key] == value
+        )
+        for key, value in identity.items()
     )
 
 

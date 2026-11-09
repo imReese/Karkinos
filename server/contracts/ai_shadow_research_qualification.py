@@ -54,6 +54,92 @@ class ShadowResearchQualificationRejected(ValueError):
     """Fail-closed account-qualification evidence rejection."""
 
 
+MANUAL_QUALIFICATION_SOURCE_KIND = "manual_research"
+MANUAL_QUALIFICATION_BACKUP = "not_applicable:manual_research"
+
+
+def qualification_source_binding(value: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Read the explicit manual lineage, never infer it from a missing daily row."""
+    row = dict(value)
+    binding = row.get("source_binding")
+    if binding is None:
+        selection = row.get("selection")
+        if selection is None and row.get("selection_json") is not None:
+            try:
+                selection = json.loads(str(row["selection_json"]))
+            except (TypeError, ValueError) as exc:
+                raise ShadowResearchQualificationRejected(
+                    "qualification_manual_source_invalid"
+                ) from exc
+        if isinstance(selection, Mapping):
+            binding = selection.get("source_binding")
+    if binding is None:
+        return None
+    if (
+        not isinstance(binding, Mapping)
+        or set(binding)
+        != {
+            "source_kind",
+            "manual_source_refs",
+            "manual_source_fingerprint",
+            "final_evaluation_id",
+            "final_evidence_fingerprint",
+        }
+        or binding.get("source_kind") != MANUAL_QUALIFICATION_SOURCE_KIND
+    ):
+        raise ShadowResearchQualificationRejected("qualification_manual_source_invalid")
+    refs = binding.get("manual_source_refs")
+    if not isinstance(refs, Mapping) or set(refs) != {
+        "session_id",
+        "draft_id",
+        "backtest_run_id",
+        "critique_id",
+        "canonical_backtest_result_id",
+    }:
+        raise ShadowResearchQualificationRejected("qualification_manual_source_invalid")
+    normalized_refs: dict[str, Any] = {
+        key: _required_text(refs[key], key)
+        for key in ("session_id", "draft_id", "backtest_run_id", "critique_id")
+    }
+    normalized_refs["canonical_backtest_result_id"] = _positive_int(
+        refs["canonical_backtest_result_id"], field="manual_source_result"
+    )
+    result = dict(binding)
+    result["manual_source_refs"] = normalized_refs
+    for key in ("manual_source_fingerprint", "final_evidence_fingerprint"):
+        fingerprint = _required_text(binding[key], key)
+        bare = fingerprint.removeprefix("sha256:")
+        if len(bare) != 64 or any(c not in "0123456789abcdef" for c in bare):
+            raise ShadowResearchQualificationRejected(
+                "qualification_manual_source_invalid"
+            )
+        result[key] = fingerprint
+    result["final_evaluation_id"] = _required_text(
+        binding["final_evaluation_id"], "final_evaluation_id"
+    )
+    return result
+
+
+def manual_qualification_source_id(binding: Mapping[str, Any]) -> str:
+    source = qualification_source_binding({"source_binding": binding})
+    assert source is not None
+    return (
+        "manual-research:"
+        + source["manual_source_fingerprint"].removeprefix("sha256:")[:24]
+    )
+
+
+def selected_qualification_candidate_id(run: Mapping[str, Any]) -> str | None:
+    selection = run.get("selection") or {}
+    if qualification_source_binding(run) is not None:
+        if selection.get("status") != "specified_candidate_qualified":
+            return None
+        return selection.get("selected_qualification_candidate_id")
+    if selection.get("status") != "winner_selected":
+        return None
+    return selection.get("winner_qualification_candidate_id")
+
+
 def qualification_formula_semantic_fingerprint(
     strategy: Mapping[str, Any],
 ) -> str:
@@ -136,6 +222,7 @@ def qualification_run_identity(
     reviewed_fee_schedule_fingerprint: str,
     initial_cash_text: str,
     baseline_result_id: int,
+    source_binding: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Validate and return the complete immutable qualification input binding."""
 
@@ -165,12 +252,23 @@ def qualification_run_identity(
         field="baseline_result",
     )
     normalized_initial_cash = _private_positive_money_text(initial_cash_text)
+    manual = qualification_source_binding({"source_binding": source_binding})
+    if manual and (
+        normalized["source_run_id"] != manual_qualification_source_id(manual)
+        or normalized["source_selection_id"]
+        != manual["manual_source_refs"]["session_id"]
+        or normalized["source_backup_fingerprint"] != MANUAL_QUALIFICATION_BACKUP
+    ):
+        raise ShadowResearchQualificationRejected(
+            "qualification_manual_projection_invalid"
+        )
     return {
         "schema_version": SHADOW_RESEARCH_QUALIFICATION_SCHEMA,
         **normalized,
         "ledger_cutoff_id": normalized_ledger_cutoff,
         "initial_cash_text": normalized_initial_cash,
         "baseline_result_id": normalized_baseline_result,
+        **({"source_binding": manual} if manual else {}),
     }
 
 
@@ -330,13 +428,23 @@ def require_qualification_terminal_payload(
         raise ShadowResearchQualificationRejected(
             "qualification_selection_binding_invalid"
         )
+    if qualification_source_binding(run) != qualification_source_binding(selection):
+        raise ShadowResearchQualificationRejected("qualification_manual_source_drift")
     selection_status = selection.get("status")
-    winner_id = selection.get("winner_qualification_candidate_id")
+    manual = qualification_source_binding(run)
+    winner_id = (
+        selection.get("selected_qualification_candidate_id")
+        if manual
+        else selection.get("winner_qualification_candidate_id")
+    )
+    if manual and selection.get("winner_qualification_candidate_id") is not None:
+        raise ShadowResearchQualificationRejected("qualification_manual_winner_invalid")
     if status == "completed":
         if (
             blockers
             or failure_code
-            or selection_status != "winner_selected"
+            or selection_status
+            != ("specified_candidate_qualified" if manual else "winner_selected")
             or not str(winner_id or "").strip()
         ):
             raise ShadowResearchQualificationRejected(
@@ -409,6 +517,7 @@ def qualification_run_record(row: Mapping[str, Any]) -> dict[str, Any]:
     """Rehydrate and verify one private persisted qualification run."""
 
     result = dict(row)
+    source_binding = qualification_source_binding(result)
     identity = qualification_run_identity(
         source_run_id=result["source_run_id"],
         market_date=result["market_date"],
@@ -427,6 +536,7 @@ def qualification_run_record(row: Mapping[str, Any]) -> dict[str, Any]:
         reviewed_fee_schedule_fingerprint=result["reviewed_fee_schedule_fingerprint"],
         initial_cash_text=result["initial_cash_text"],
         baseline_result_id=result["baseline_result_id"],
+        source_binding=source_binding,
     )
     if qualification_run_input_fingerprint(identity) != result["input_fingerprint"]:
         raise ShadowResearchQualificationRejected(
@@ -459,6 +569,8 @@ def qualification_run_record(row: Mapping[str, Any]) -> dict[str, Any]:
             "qualification_persisted_blockers_invalid"
         )
     result["blockers"] = blockers
+    if source_binding:
+        result["source_binding"] = source_binding
     return result
 
 
@@ -512,9 +624,8 @@ def qualification_outcome_projection(run: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(selection, Mapping):
         selection = {}
     run_status = str(run.get("status") or "")
-    selection_status = str(selection.get("status") or "")
-    selected_candidate_id = selection.get("winner_qualification_candidate_id")
-    if run_status == "completed" and selection_status == "winner_selected":
+    selected_candidate_id = selected_qualification_candidate_id(run)
+    if run_status == "completed" and selected_candidate_id:
         outcome_status = "passed"
     elif run_status == "blocked":
         outcome_status = "blocked"
@@ -623,6 +734,17 @@ def public_qualification_run_projection(
         "input_fingerprint": run.get("input_fingerprint"),
         "status": run.get("status"),
         "selection_status": selection.get("status"),
+        **(
+            {
+                "source_kind": "manual_research",
+                "source_binding": qualification_source_binding(run),
+                "selected_qualification_candidate_id": selected_qualification_candidate_id(
+                    run
+                ),
+            }
+            if qualification_source_binding(run)
+            else {}
+        ),
         "winner_qualification_candidate_id": selection.get(
             "winner_qualification_candidate_id"
         ),

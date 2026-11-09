@@ -162,6 +162,7 @@ def test_known_mutated_v14_preserves_provenance_and_upgrades_forward(
         (23, "preserve_market_calendar_capture_time"),
         (24, "persist_independent_research_paper_books"),
         (25, "append_backtest_evidence_invalidations"),
+        (26, "support_exact_manual_research_qualification"),
     ]
     assert after[-1][2] == migrations._MIGRATIONS[-1].checksum
     assert migration_lifecycle.inspect_database(path).state == "current"
