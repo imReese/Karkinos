@@ -675,7 +675,10 @@ class ResearchObservationService:
             dataset_session_nontrading_instruments,
         )
         from domain.instrument import make_research_stock
-        from server.ai_runtime.formula_dsl import formula_requires_cross_section
+        from server.ai_runtime.formula_dsl import (
+            formula_requires_cross_section,
+            formula_uses_exact_close_ratio,
+        )
         from server.ai_runtime.formula_portfolio import (
             FormulaCrossSectionInputs,
             formula_session_input_blockers,
@@ -701,6 +704,8 @@ class ResearchObservationService:
         eligible = [
             key.symbol for key in snapshot.instruments_for_session(decision_session)
         ]
+        formula_ast = observation["source"]["formula_binding"]["formula_ast"]
+        exact_close = formula_uses_exact_close_ratio(formula_ast)
         frames = {}
         for bar in bars:
             frames.setdefault(bar.instrument.symbol, []).append(
@@ -712,12 +717,15 @@ class ResearchObservationService:
                         bar.amount if bar.amount is not None else bar.close * bar.volume
                     ),
                     **{
-                        name: float(getattr(bar, name))
+                        name: (
+                            bar.close
+                            if name == "close" and exact_close
+                            else float(getattr(bar, name))
+                        )
                         for name in ("open", "high", "low", "close", "volume")
                     },
                 }
             )
-        formula_ast = observation["source"]["formula_binding"]["formula_ast"]
         cross_section = None
         context_blocker = None
         if formula_requires_cross_section(formula_ast):
