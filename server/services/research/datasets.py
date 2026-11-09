@@ -1114,6 +1114,7 @@ def _existing_forward_seed(
     from data.market.schema import DAILY_BAR_SCHEMA_VERSION
     from data.source_policy import verification_source_policy_for_config
     from server.services.research.research_observation_inputs import (
+        ResearchObservationInputError,
         require_research_dataset_agreement,
     )
 
@@ -1146,7 +1147,13 @@ def _existing_forward_seed(
         require_supported_snapshot(candidate)
         restored = read_daily_bar_dataset(objects, entry.ref)
         snapshot = restored.snapshot
-        require_research_dataset_agreement(objects, snapshot)
+        try:
+            require_research_dataset_agreement(objects, snapshot)
+        except ResearchObservationInputError:
+            # A sibling that cannot prove source agreement is not a usable
+            # seed. Skip it so preparation can still publish a fresh one
+            # instead of aborting the whole forward-seed workflow.
+            continue
         if (
             snapshot.universe_policy_id == scope["deployment_scope_fingerprint"]
             and snapshot.verification_bound

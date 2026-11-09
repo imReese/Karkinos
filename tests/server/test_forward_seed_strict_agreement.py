@@ -24,9 +24,6 @@ from server.services.market.verified_daily_market_data import (
     verified_daily_resolver_policy_id,
 )
 from server.services.research import datasets
-from server.services.research.research_observation_inputs import (
-    ResearchObservationInputError,
-)
 from tests.data.market.test_verification_evidence import (
     CHECKED_AT,
     DAY,
@@ -144,13 +141,9 @@ def test_existing_seed_cannot_become_ready_from_primary_only_reader(
         ):
             run()
     else:
-        expected = {
-            "conflict": "observation_verification_not_matched",
-            "missing": "observation_dataset_unverified",
-            "unreadable": "observation_verification_unreadable",
-        }[mode]
-        with pytest.raises(ResearchObservationInputError, match=expected):
-            run()
+        # A sibling that cannot prove agreement is skipped, never promoted to
+        # a ready seed and never allowed to abort the caller's workflow.
+        assert run() is None
     assert reads == ([] if mode == "missing" else [ref.dataset_id])
     assert not tuple(tmp_path.rglob("*.db"))
 
