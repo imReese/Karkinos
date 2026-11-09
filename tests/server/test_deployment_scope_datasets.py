@@ -90,10 +90,9 @@ def test_dated_shards_replay_exact_membership_and_order(tmp_path):
     assert result.snapshot.instruments_for_session(DAYS[0]) == (STOCK,)
     assert result.snapshot.instruments_for_session(DAYS[1]) == (STOCK, SECOND)
     assert result.snapshot.membership_evidence_bound is False
-    assert (
-        json.loads(store.read_bytes(result.ref.manifest_ref))["schema_version"]
-        == "karkinos.dataset_manifest.v4"
-    )
+    manifest = json.loads(store.read_bytes(result.ref.manifest_ref))
+    assert "schema_version" not in manifest
+    assert manifest["verification_required"] is True
 
 
 def test_shards_reject_missing_or_duplicate_members(tmp_path):

@@ -84,14 +84,14 @@ async def start_reserved_champion_observation(
         )
         if manual:
             from server.services.research.research_final_evaluation import (
-                _require_manual_source_binding,
-                _require_manual_start_clock,
+                require_manual_source_binding,
+                require_manual_start_clock,
             )
 
             if not simulation:
                 raise ValueError("manual_research_simulation_policy_required")
             now = fresh_clock()
-            _require_manual_source_binding(research_store, binding, now=now)
+            require_manual_source_binding(research_store, binding, now=now)
         current = (
             read_simulation_validation_policy(db, now=now)
             if simulation
@@ -155,7 +155,7 @@ async def start_reserved_champion_observation(
         ):
 
             def startup_clock():
-                return _require_manual_start_clock(db, binding, fresh_clock())
+                return require_manual_start_clock(db, binding, fresh_clock())
 
             startup_clock()
             service = ResearchObservationService(db, clock=startup_clock)

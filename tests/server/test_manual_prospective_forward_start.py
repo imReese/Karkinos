@@ -68,7 +68,7 @@ def test_manual_start_keeps_real_fresh_cash_and_published_first_session(
 
     monkeypatch.setattr(original, "start_reserved_champion_observation", manual_start)
     monkeypatch.setattr(
-        "server.services.research.research_final_evaluation._require_manual_source_binding",
+        "server.services.research.research_final_evaluation.require_manual_source_binding",
         lambda *_a, **_k: None,
     )
     if scenario == "normal":

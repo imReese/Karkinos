@@ -62,7 +62,7 @@ async def requirements(v2, monkeypatch):
     original = deepcopy(evidence)
     validated = []
     monkeypatch.setattr(owner, "require_valid_final_evaluation", validated.append)
-    monkeypatch.setattr(owner, "_require_manual_source_binding", lambda *_: None)
+    monkeypatch.setattr(owner, "require_manual_source_binding", lambda *_: None)
     monkeypatch.setattr(
         StrategyResearchAuditStore,
         "get_sealed_test",
@@ -232,7 +232,7 @@ def test_manual_final_publication_route_has_no_daily_candidate_or_grant_fallback
         StrategyResearchAuditStore, "research_backtest_result", lambda *_: result
     )
     monkeypatch.setattr(
-        "server.services.research.strategy_promotion_support.strategy_dataset_store_root",
+        "server.services.research.dataset_store_root.strategy_dataset_store_root",
         lambda _: tmp_path,
     )
     calls = []

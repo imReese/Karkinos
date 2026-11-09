@@ -38,7 +38,7 @@ from server.ai_runtime.formula_dsl import (
 )
 from server.contracts.strategy_research import backtest_evidence_blocker
 from server.services.market.calendar import validate_verified_market_calendar
-from server.services.research.datasets import require_supported_snapshot
+from server.services.research.dataset_policy import require_supported_snapshot
 from strategy.schema import STRATEGY_PARAMETER_SCHEMAS, validate_strategy_params
 
 _SHANGHAI = ZoneInfo("Asia/Shanghai")

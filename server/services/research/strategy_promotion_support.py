@@ -50,6 +50,7 @@ from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactStore,
     build_daily_strategy_promotion_binding,
 )
+from server.services.research.dataset_store_root import strategy_dataset_store_root
 from server.services.research.strategy_promotion_qualification_source import (
     build_normalized_source_daily_strategy_artifact_binding as _build_normalized_source_daily_strategy_artifact_binding,
 )
@@ -145,50 +146,12 @@ def _qualification_source_candidate_matches(
     )
 
 
-def _resolve_ai_shadow_qualification_promotion_evidence(
+def _qualification_account_evidence_blockers(
     db: Any,
-    qualification_candidate_id: str,
-    *,
-    proposed_qualification_approval: Mapping[str, Any] | None = None,
-    require_human_approval: bool = True,
-) -> tuple[dict[str, Any], list[str]]:
-    """Re-open every persisted source behind one qualified paper/shadow winner."""
-
-    database_path = getattr(db, "_path", None)
-    normalized_id = str(qualification_candidate_id or "").strip()
-    if database_path is None or not normalized_id:
-        return {}, ["ai_shadow_qualification_candidate_identity_missing"]
-    path = Path(database_path)
-    try:
-        (
-            qualification_candidate,
-            qualification_run,
-            qualification_approval,
-            source_candidate,
-            source_artifact,
-            baseline_source,
-            candidate_source,
-            daily_binding,
-        ) = load_qualification_sources(
-            path,
-            normalized_id,
-            proposed_qualification_approval=proposed_qualification_approval,
-        )
-    except (LookupError, OSError, TypeError, ValueError) as exc:
-        return {}, [
-            "ai_shadow_qualification_evidence_unavailable:" + type(exc).__name__
-        ]
-
-    manual_binding = qualification_source_binding(qualification_run)
+    path: Path,
+    qualification_run: Mapping[str, Any],
+) -> list[str]:
     blockers: list[str] = []
-    source_candidate_id = str(qualification_candidate.get("source_candidate_id") or "")
-    selection = _json_object(qualification_run.get("selection"))
-    comparison = _json_object(qualification_candidate.get("comparison"))
-    source_comparison = _json_object(source_candidate.get("comparison"))
-    source_strategy = _json_object(source_artifact.get("strategy"))
-    qualification_fingerprint = qualification_candidate_fingerprint(
-        qualification_candidate
-    )
     try:
         account_record = CanonicalEvidenceRepository(path).get(
             str(qualification_run.get("account_evidence_reference") or "")
@@ -258,6 +221,56 @@ def _resolve_ai_shadow_qualification_promotion_evidence(
         "ledger_fingerprint"
     ):
         blockers.append("ai_shadow_qualification_ledger_identity_drift")
+    return blockers
+
+
+def _resolve_ai_shadow_qualification_promotion_evidence(
+    db: Any,
+    qualification_candidate_id: str,
+    *,
+    proposed_qualification_approval: Mapping[str, Any] | None = None,
+    require_human_approval: bool = True,
+) -> tuple[dict[str, Any], list[str]]:
+    """Re-open every persisted source behind one qualified paper/shadow winner."""
+
+    database_path = getattr(db, "_path", None)
+    normalized_id = str(qualification_candidate_id or "").strip()
+    if database_path is None or not normalized_id:
+        return {}, ["ai_shadow_qualification_candidate_identity_missing"]
+    path = Path(database_path)
+    try:
+        (
+            qualification_candidate,
+            qualification_run,
+            qualification_approval,
+            source_candidate,
+            source_artifact,
+            baseline_source,
+            candidate_source,
+            daily_binding,
+        ) = load_qualification_sources(
+            path,
+            normalized_id,
+            proposed_qualification_approval=proposed_qualification_approval,
+        )
+    except (LookupError, OSError, TypeError, ValueError) as exc:
+        return {}, [
+            "ai_shadow_qualification_evidence_unavailable:" + type(exc).__name__
+        ]
+
+    manual_binding = qualification_source_binding(qualification_run)
+    blockers: list[str] = []
+    blockers.extend(
+        _qualification_account_evidence_blockers(db, path, qualification_run)
+    )
+    source_candidate_id = str(qualification_candidate.get("source_candidate_id") or "")
+    selection = _json_object(qualification_run.get("selection"))
+    comparison = _json_object(qualification_candidate.get("comparison"))
+    source_comparison = _json_object(source_candidate.get("comparison"))
+    source_strategy = _json_object(source_artifact.get("strategy"))
+    qualification_fingerprint = qualification_candidate_fingerprint(
+        qualification_candidate
+    )
     if (
         qualification_run.get("status") != "completed"
         or selection.get("status")
@@ -656,7 +669,7 @@ def _dataset_replay_evidence_from_binding(
     candidate_metrics = _json_object(binding.get("candidate_metrics_json"))
     baseline_snapshot = _json_object(baseline_metrics.get("dataset_snapshot"))
     candidate_snapshot = _json_object(candidate_metrics.get("dataset_snapshot"))
-    root = _strategy_dataset_store_root(db)
+    root = strategy_dataset_store_root(db)
     if root is None:
         return _missing_dataset_replay_evidence("dataset_replay_store_root_missing")
     replay = verify_backtest_dataset_snapshot_replay(
@@ -689,16 +702,6 @@ def _dataset_replay_evidence_from_binding(
         **replay_core,
         "evidence_fingerprint": content_fingerprint(replay_core),
     }
-
-
-def _strategy_dataset_store_root(db: Any) -> Path | None:
-    configured = str(os.environ.get("KARKINOS_DATA_DIR") or "").strip()
-    if configured:
-        return Path(configured)
-    database_path = getattr(db, "_path", None)
-    if database_path is None:
-        return None
-    return Path(database_path).parent
 
 
 def _missing_dataset_replay_evidence(blocker: str) -> dict[str, Any]:
@@ -1276,7 +1279,6 @@ ai_shadow_qualification_readiness_binding_blockers = (
 ai_shadow_fee_schedule_binding = _ai_shadow_fee_schedule_binding
 ai_shadow_dataset_replay_evidence = _ai_shadow_dataset_replay_evidence
 dataset_replay_evidence_from_binding = _dataset_replay_evidence_from_binding
-strategy_dataset_store_root = _strategy_dataset_store_root
 missing_dataset_replay_evidence = _missing_dataset_replay_evidence
 binding_backtest_source = _binding_backtest_source
 missing_requirements = _missing_requirements

@@ -687,7 +687,7 @@ def manual_final_research_source(*, research_store, source, reservation_id=None)
     )
 
 
-def _require_manual_source_binding(research_store, binding, *, now=None):
+def require_manual_source_binding(research_store, binding, *, now=None):
     from server.config_types import ResearchSimulationSourceConfig
 
     try:
@@ -779,7 +779,7 @@ async def reserve_manual_research_evaluation(
     )
     if existing is not None:
         original = existing["evidence"]["reservation"]
-        _require_manual_source_binding(research_store, original, now=fresh_clock())
+        require_manual_source_binding(research_store, original, now=fresh_clock())
         if (
             original["partition"].get("prospective_start") != prospective_start
             or original["partition"]["sealed_end"] != prospective_end
@@ -862,7 +862,7 @@ async def reserve_manual_research_evaluation(
     )
 
 
-def _require_manual_start_clock(db, binding, now):
+def require_manual_start_clock(db, binding, now):
     from datetime import date, time, timedelta
 
     from server.services.market.market_universe_automation import verified_trading_dates
@@ -935,6 +935,31 @@ async def reserve_final_research_evaluation(
         account_config=account_config,
         formula_comparators=formula_comparators,
     )
+
+
+def _deployment_opening_sessions(
+    db: Any,
+    partition: Any,
+    statistical_policy: dict[str, Any],
+) -> list[str]:
+    from datetime import timedelta
+
+    from server.services.market.market_universe_automation import verified_trading_dates
+
+    opening_end = min(partition.sealed_start + timedelta(days=14), partition.sealed_end)
+    if (
+        statistical_policy.get("calendar_verification_timing")
+        == FINAL_CALENDAR_AT_EVALUATION
+    ):
+        opening_end = min(opening_end, partition.sealed_start.replace(month=12, day=31))
+    opening_days = verified_trading_dates(
+        db,
+        start_date=partition.sealed_start.isoformat(),
+        end_date=opening_end.isoformat(),
+    )
+    if not opening_days:
+        raise StrategyResearchRejected("deployment_future_opening_unverified")
+    return opening_days
 
 
 async def _reserve_final_research_evaluation(
@@ -1102,12 +1127,7 @@ async def _reserve_final_research_evaluation(
             else:
                 grant = validation_policy
     if simulation:
-        from datetime import timedelta
-
         from server.contracts.http.strategy_models import BacktestCostAssumptions
-        from server.services.market.market_universe_automation import (
-            verified_trading_dates,
-        )
 
         if (
             selection.deployment_scope != simulation["deployment_scope"]
@@ -1131,23 +1151,9 @@ async def _reserve_final_research_evaluation(
             for item in (baseline, candidate)
         ):
             raise StrategyResearchRejected("simulation_frozen_entry_policy_mismatch")
-        opening_end = min(
-            partition.sealed_start + timedelta(days=14), partition.sealed_end
+        opening_days = _deployment_opening_sessions(
+            db, partition, simulation["statistical_policy"]
         )
-        if (
-            simulation["statistical_policy"].get("calendar_verification_timing")
-            == FINAL_CALENDAR_AT_EVALUATION
-        ):
-            opening_end = min(
-                opening_end, partition.sealed_start.replace(month=12, day=31)
-            )
-        opening_days = verified_trading_dates(
-            db,
-            start_date=partition.sealed_start.isoformat(),
-            end_date=opening_end.isoformat(),
-        )
-        if not opening_days:
-            raise StrategyResearchRejected("deployment_future_opening_unverified")
         binding.update(
             simulation_policy=simulation,
             deployment_scope=selection.deployment_scope,
@@ -1211,29 +1217,9 @@ async def _reserve_final_research_evaluation(
         frozen_fees = freeze_deployment_fee_schedule(
             reviewed_fee_schedule_resolver, selection, selection.sealed_end_date, grant
         )
-        from datetime import timedelta
-
-        from server.services.market.market_universe_automation import (
-            verified_trading_dates,
+        opening_days = _deployment_opening_sessions(
+            db, partition, grant["statistical_policy"]
         )
-
-        opening_end = min(
-            partition.sealed_start + timedelta(days=14), partition.sealed_end
-        )
-        if (
-            grant["statistical_policy"].get("calendar_verification_timing")
-            == FINAL_CALENDAR_AT_EVALUATION
-        ):
-            opening_end = min(
-                opening_end, partition.sealed_start.replace(month=12, day=31)
-            )
-        opening_days = verified_trading_dates(
-            db,
-            start_date=partition.sealed_start.isoformat(),
-            end_date=opening_end.isoformat(),
-        )
-        if not opening_days:
-            raise StrategyResearchRejected("deployment_future_opening_unverified")
         binding["first_evaluation_session"] = opening_days[0]
         binding["fee_schedule"] = frozen_fees
         binding.update(
@@ -1292,6 +1278,10 @@ async def _reserve_final_research_evaluation(
                     "last_session_on_or_before": profile["decision_checkpoint"],
                 }
             else:
+                from server.services.market.market_universe_automation import (
+                    verified_trading_dates,
+                )
+
                 sessions = verified_trading_dates(
                     db,
                     start_date=partition.sealed_start.isoformat(),
@@ -1304,8 +1294,8 @@ async def _reserve_final_research_evaluation(
                 binding["effective_checkpoint"] = sessions[-1]
             _verified_statistical_inputs(binding, selection, research_store)
     if source_binding.get("source_kind") == "manual_research":
-        _require_manual_source_binding(research_store, binding)
-        now = _require_manual_start_clock(db, binding, clock()).isoformat()
+        require_manual_source_binding(research_store, binding)
+        now = require_manual_start_clock(db, binding, clock()).isoformat()
         binding["frozen_at"] = now
     return research_store.reserve_research_champion(
         binding=binding,
@@ -1337,7 +1327,7 @@ def require_final_reservation(
     envelope = row.get("evidence") or {}
     binding = envelope.get("reservation", {})
     if binding.get("source_kind") == "manual_research":
-        actual = _require_manual_source_binding(research_store, binding, now=now)
+        actual = require_manual_source_binding(research_store, binding, now=now)
         if (
             getattr(source, "manual_source_refs", None) != actual.manual_source_refs
             or source.source_selection.to_dict() != actual.source_selection.to_dict()
@@ -1510,6 +1500,55 @@ async def _run_final_replay(adapter, *, require_current, **kwargs):
         raise
 
 
+def _deployment_replay_inputs(
+    *,
+    binding: dict[str, Any],
+    adapter: Any,
+    calendar_db: Any,
+    row: dict[str, Any],
+    now: datetime,
+    partition: Any,
+    trading_dates: list[str],
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, Any]:
+    if not binding.get("deployment_scope"):
+        return None, None, None
+    if (
+        _is_statistical_v2(_validation_policy(binding)["statistical_policy"])
+        and trading_dates[-1] != _verified_final_sessions(binding, calendar_db)[-1]
+    ):
+        raise StrategyResearchRejected("deployment_frozen_checkpoint_mismatch")
+    _next_verified_session_opens(
+        calendar_db,
+        [d for d in trading_dates if d >= partition.sealed_start.isoformat()],
+    )
+    from server.services.research.datasets import resolve_deployment_evaluation_dataset
+    from server.services.research.research_paper_books import (
+        verify_reserved_forward_book,
+    )
+
+    forward_book = verify_reserved_forward_book(
+        calendar_db, row, through_session=trading_dates[-1], now=now
+    )
+    resolved = resolve_deployment_evaluation_dataset(
+        calendar_db,
+        source_result_id=int(binding["candidate_result_id"]),
+        scope=binding["deployment_scope"],
+        start_date=partition.sealed_start.isoformat(),
+        end_date=trading_dates[-1],
+        cutoff=now,
+        data_store=adapter._data_store,
+    )
+    if resolved.get("status") != "ready":
+        raise StrategyResearchRejected("deployment_evaluation_dataset_pending")
+    snapshot = resolved["dataset_snapshot"]
+    resolution = _reserved_execution_costs(
+        calendar_db,
+        binding,
+        tuple(item["symbol"] for item in snapshot["symbol_universe"]),
+    )
+    return snapshot, forward_book, resolution
+
+
 async def _evaluate_claimed_champion(
     *,
     research_store: Any,
@@ -1561,55 +1600,15 @@ async def _evaluate_claimed_champion(
         )
         if not any(day >= partition.sealed_start.isoformat() for day in trading_dates):
             raise StrategyResearchRejected("independent_final_no_trading_observations")
-        evaluation_snapshot = None
-        forward_book = None
-        if binding.get("deployment_scope"):
-            if _is_statistical_v2(
-                _validation_policy(binding)["statistical_policy"]
-            ) and (
-                trading_dates[-1] != _verified_final_sessions(binding, calendar_db)[-1]
-            ):
-                raise StrategyResearchRejected("deployment_frozen_checkpoint_mismatch")
-            _next_verified_session_opens(
-                calendar_db,
-                [d for d in trading_dates if d >= partition.sealed_start.isoformat()],
-            )
-            from server.services.research.datasets import (
-                resolve_deployment_evaluation_dataset,
-            )
-            from server.services.research.research_paper_books import (
-                verify_reserved_forward_book,
-            )
-
-            forward_book = verify_reserved_forward_book(
-                calendar_db, row, through_session=trading_dates[-1], now=now
-            )
-            resolved_dataset = resolve_deployment_evaluation_dataset(
-                calendar_db,
-                source_result_id=int(binding["candidate_result_id"]),
-                scope=binding["deployment_scope"],
-                start_date=partition.sealed_start.isoformat(),
-                end_date=trading_dates[-1],
-                cutoff=now,
-                data_store=adapter._data_store,
-            )
-            if resolved_dataset.get("status") != "ready":
-                raise StrategyResearchRejected("deployment_evaluation_dataset_pending")
-            evaluation_snapshot = resolved_dataset["dataset_snapshot"]
-            from server.services.research.research_paper_books import (
-                verify_reserved_forward_book,
-            )
-
-            forward_book = verify_reserved_forward_book(
-                calendar_db, row, through_session=trading_dates[-1], now=now
-            )
-            resolution = _reserved_execution_costs(
-                calendar_db,
-                binding,
-                tuple(
-                    item["symbol"] for item in evaluation_snapshot["symbol_universe"]
-                ),
-            )
+        evaluation_snapshot, forward_book, resolution = _deployment_replay_inputs(
+            binding=binding,
+            adapter=adapter,
+            calendar_db=calendar_db,
+            row=row,
+            now=now,
+            partition=partition,
+            trading_dates=trading_dates,
+        )
         common = {
             "expected_trading_dates": trading_dates,
             "selection": selection,
@@ -1921,7 +1920,7 @@ def verify_persisted_final_evaluation(
 
     binding = evidence["reservation"]
     if binding.get("source_kind") == "manual_research":
-        _require_manual_source_binding(research_store, binding)
+        require_manual_source_binding(research_store, binding)
     session = research_store.get_session(binding["session_id"])
     selection = selection_from_session(session)
     family = research_store.research_trial_family(
@@ -2016,9 +2015,7 @@ def require_new_publication_final_evaluation(
 ) -> None:
     """New AI publications require final evidence; existing scopes stay unchanged."""
     from server.persistence.strategy_research import StrategyResearchAuditStore
-    from server.services.research.strategy_promotion_support import (
-        strategy_dataset_store_root,
-    )
+    from server.services.research.dataset_store_root import strategy_dataset_store_root
 
     path = getattr(db, "_path", None)
     root = strategy_dataset_store_root(db)
@@ -2432,7 +2429,7 @@ def manual_account_applicability_requirements(
     final = store.get_sealed_test(evidence["sealed_test_id"])
     if final["status"] != "completed" or final.get("evidence") != dict(evidence):
         raise StrategyResearchRejected("independent_final_persisted_evidence_drift")
-    _require_manual_source_binding(store, binding)
+    require_manual_source_binding(store, binding)
     fee = deepcopy(dict(fee_schedule_binding))
     if (
         fee.get("fee_evidence", {}).get("account_truth_scope_fingerprint")
@@ -2925,9 +2922,7 @@ def verify_deployment_validation(
     """Canonical authority consumer: reopen final, code, dataset and trial source."""
     from server.contracts.recommendation_publication import read_publication_grant
     from server.persistence.strategy_research import StrategyResearchAuditStore
-    from server.services.research.strategy_promotion_support import (
-        strategy_dataset_store_root,
-    )
+    from server.services.research.dataset_store_root import strategy_dataset_store_root
 
     store = StrategyResearchAuditStore(db._path)
     result = store.research_backtest_result(result_id)

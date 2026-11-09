@@ -91,7 +91,7 @@ def test_v24_to_v25_keeps_original_rows_and_migration_history(tmp_path, monkeypa
         )
         assert (
             conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
-            == 25
+            == 26
         )
         assert (
             conn.execute(
