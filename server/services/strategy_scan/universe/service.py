@@ -13,7 +13,12 @@ import pandas as pd
 from data.dataset.reader import daily_bar_dataset_read_scope
 from data.store import DataStore
 from server.ai_runtime.contracts import content_fingerprint
+from server.ai_runtime.formula_dsl import formula_uses_exact_close_ratio
 from server.bootstrap import resolve_data_dir
+from server.contracts.ai_shadow_research_qualification import (
+    manual_qualification_source_id,
+    qualification_source_binding,
+)
 from server.contracts.recommendation_publication import publication_source_blocker
 from server.services.account.valuation_snapshot import is_asset_class_valuation_healthy
 from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
@@ -47,6 +52,9 @@ from server.services.strategy_scan.universe.evaluation import (
     resolve_daily_bar_receipt_provider,
     resolve_daily_bar_receipts,
     truth_projection,
+)
+from server.services.strategy_scan.universe.formula_inputs import (
+    load_exact_formula_market_inputs,
 )
 from server.services.strategy_scan.universe.persistence import (
     persist_recommendation_tasks,
@@ -211,6 +219,7 @@ class PromotedStrategyUniverseScanService:
                 portfolio_reader=self._portfolio_context,
                 promoted_reader=self._resolve_promoted_strategies,
                 safety_reader=self._read_safety_gate,
+                current_time=self._clock(),
             )
 
     def _portfolio_context(
@@ -333,14 +342,23 @@ class PromotedStrategyUniverseScanService:
         *,
         promoted: list[dict[str, Any]],
         market_date: str | None,
-        market: Mapping[str, Any],
+        market: dict[str, Any],
         total_equity: float,
         decision_at: datetime | None = None,
     ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]], list[str]]:
         start_date = market.get("history_start")
         if market_date is None or not isinstance(start_date, str):
             return {}, [], []
-        return evaluate_promoted_strategy_market(
+        exact_frames, cross_sections, bindings, blockers = (
+            load_exact_formula_market_inputs(
+                self._db,
+                promoted,
+                market_date=market_date,
+                decision_at=decision_at,
+            )
+        )
+        market["formula_dataset_bindings"] = bindings
+        truths, signals, evaluated_blockers = evaluate_promoted_strategy_market(
             promoted=promoted,
             market_date=market_date,
             snapshot=market["snapshot"],
@@ -352,7 +370,10 @@ class PromotedStrategyUniverseScanService:
             held_stock_symbols=market["held_symbols"],
             policy=self._policy,
             decision_at=decision_at,
+            cross_sections=cross_sections,
+            formula_frames=exact_frames,
         )
+        return truths, signals, [*blockers, *evaluated_blockers]
 
     def _complete_run(
         self,
@@ -419,6 +440,16 @@ class PromotedStrategyUniverseScanService:
                         "order_generation_gate_fingerprint"
                     ),
                     "qualification_fingerprint": item.get("qualification_fingerprint"),
+                    **(
+                        {
+                            "formula_dataset_binding": market[
+                                "formula_dataset_bindings"
+                            ][str(item["strategy_id"])]
+                        }
+                        if str(item["strategy_id"])
+                        in market.get("formula_dataset_bindings", {})
+                        else {}
+                    ),
                     "universe_truth_fingerprint": truth_by_strategy.get(
                         str(item["strategy_id"]), {}
                     ).get("evidence_fingerprint"),
@@ -577,6 +608,17 @@ class PromotedStrategyUniverseScanService:
                     ValueError,
                 ):
                     changed.append("current_account_or_market_evidence_unavailable")
+                if market.get("formula_dataset_bindings"):
+                    _, _, reopened, exact_blockers = load_exact_formula_market_inputs(
+                        self._db,
+                        current,
+                        market_date=market_date,
+                        decision_at=self._clock(),
+                        saved_bindings=market["formula_dataset_bindings"],
+                    )
+                    changed.extend(exact_blockers)
+                    if reopened != market["formula_dataset_bindings"]:
+                        changed.append("current_formula_dataset_binding_changed")
                 if changed or current != promoted or current_safety != safety_gate:
                     raise ValueError(
                         "promoted_strategy_scan_authority_changed_before_persist"
@@ -712,13 +754,56 @@ class PromotedStrategyUniverseScanService:
                     "qualification_binding_missing"
                 )
                 continue
+            manual_binding = None
             candidate_id = str(artifact.get("winner_candidate_id") or "")
             run_id = str(artifact.get("run_id") or "")
             try:
-                loaded = self._strategy_loader(
-                    candidate_id=candidate_id,
-                    run_id=run_id,
-                )
+                manual_binding = qualification_source_binding(qualification_binding)
+                if manual_binding is not None:
+                    from server.persistence.strategy_research import (
+                        StrategyResearchAuditStore,
+                    )
+                    from server.services.ai_shadow.ai_shadow_research_qualification_support import (
+                        freeze_manual_qualification_source,
+                    )
+
+                    candidate_id = manual_qualification_source_id(manual_binding)
+                    run_id = candidate_id
+                    if (
+                        strategy_id != AI_SHADOW_STRATEGY_PREFIX + candidate_id
+                        or not qualification_fingerprint
+                    ):
+                        raise ValueError(
+                            "manual_strategy_qualification_identity_changed"
+                        )
+                    loaded = freeze_manual_qualification_source(
+                        research_store=StrategyResearchAuditStore(self._db.path),
+                        source_binding=manual_binding,
+                    ).verified
+                    expected_artifact = {
+                        "source_kind": "manual_research",
+                        "source_binding": manual_binding,
+                        "strategy_artifact_fingerprint": loaded[
+                            "strategy_artifact_fingerprint"
+                        ],
+                    }
+                    if (
+                        artifact
+                        or promotion.get("manual_strategy_artifact_binding")
+                        != expected_artifact
+                    ):
+                        raise ValueError("manual_strategy_source_binding_changed")
+                    expected_strategy_fingerprint = loaded[
+                        "strategy_artifact_fingerprint"
+                    ]
+                else:
+                    loaded = self._strategy_loader(
+                        candidate_id=candidate_id,
+                        run_id=run_id,
+                    )
+                    expected_strategy_fingerprint = dict(
+                        artifact.get("operating_constraints") or {}
+                    ).get("strategy_artifact_fingerprint")
             except Exception as exc:
                 blockers.append(
                     f"promoted_strategy_snapshot:{strategy_id}:"
@@ -729,13 +814,13 @@ class PromotedStrategyUniverseScanService:
                 loaded.get("candidate_id") != candidate_id
                 or loaded.get("run_id") != run_id
                 or loaded.get("strategy_artifact_fingerprint")
-                != dict(artifact.get("operating_constraints") or {}).get(
-                    "strategy_artifact_fingerprint"
-                )
+                != expected_strategy_fingerprint
             ):
                 blockers.append(f"promoted_strategy_snapshot:{strategy_id}:drift")
                 continue
             policy_history = None
+            formula_dataset_anchor = None
+            final = None
             if promotion.get("decision_source") == "policy":
                 from server.persistence.strategy_research import (
                     StrategyResearchAuditStore,
@@ -757,13 +842,79 @@ class PromotedStrategyUniverseScanService:
                         f"promoted_strategy_snapshot:{strategy_id}:frozen_history_unavailable"
                     )
                     continue
+            if formula_uses_exact_close_ratio(
+                loaded.get("strategy", {}).get("formula_ast") or {}
+            ):
+                from server.persistence.strategy_research import (
+                    StrategyResearchAuditStore,
+                )
+                from server.services.research.research_final_evaluation import (
+                    require_new_publication_final_evaluation,
+                )
+
+                try:
+                    store = StrategyResearchAuditStore(self._db.path)
+                    if final is None:
+                        result_id = int(promotion["backtest_result_id"])
+                        if manual_binding is not None:
+                            require_new_publication_final_evaluation(
+                                self._db,
+                                result_id,
+                                expected_manual_source=manual_binding,
+                            )
+                            final = store.get_sealed_test(
+                                manual_binding["final_evaluation_id"]
+                            )
+                        else:
+                            require_new_publication_final_evaluation(
+                                self._db, result_id, expected_candidate_id=candidate_id
+                            )
+                            result = store.research_backtest_result(result_id)
+                            evidence = json_object(result["metrics_json"])[
+                                "independent_evaluation"
+                            ]
+                            final = store.get_sealed_test(evidence["sealed_test_id"])
+                    evidence = final["evidence"]
+                    reservation = evidence["reservation"]
+                    snapshot_binding = evidence["sealed_dataset_snapshot"]
+                    formula_dataset_anchor = {
+                        "dataset_id": snapshot_binding["immutable_dataset_id"],
+                        "final_evaluation_id": evidence["sealed_test_id"],
+                        "final_evidence_fingerprint": evidence["evidence_fingerprint"],
+                        "deployment_scope": reservation["deployment_scope"],
+                        "formula_fingerprint": reservation[
+                            "champion_formula_fingerprint"
+                        ],
+                    }
+                    if formula_dataset_anchor[
+                        "formula_fingerprint"
+                    ] != "sha256:" + content_fingerprint(
+                        loaded["strategy"]["formula_ast"]
+                    ):
+                        raise ValueError("exact_formula_final_binding_changed")
+                    policy_history = date.fromisoformat(
+                        snapshot_binding["date_range"]["start"]
+                    ).isoformat()
+                    if policy_history >= decision_date:
+                        raise ValueError("frozen_history_not_before_decision")
+                except (KeyError, LookupError, TypeError, ValueError) as exc:
+                    blockers.append(
+                        f"promoted_strategy_snapshot:{strategy_id}:exact_final_anchor_unavailable:{exc}"
+                    )
+                    continue
             resolved.append(
                 {
                     "strategy_id": strategy_id,
                     "strategy": dict(loaded.get("strategy") or {}),
+                    **(
+                        {"formula_dataset_anchor": formula_dataset_anchor}
+                        if formula_dataset_anchor
+                        else {}
+                    ),
                     "portfolio_policy_id": (
                         "karkinos.research.session_portfolio.liquidity_slots.v1"
                         if promotion.get("decision_source") == "policy"
+                        or formula_dataset_anchor
                         else None
                     ),
                     "strategy_artifact_fingerprint": loaded.get(

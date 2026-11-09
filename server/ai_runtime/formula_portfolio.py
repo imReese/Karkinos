@@ -8,6 +8,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
+from fractions import Fraction
+from itertools import groupby
 from typing import Any, cast
 
 import pandas as pd
@@ -21,10 +23,15 @@ from server.ai_runtime.formula_dsl import (
     evaluate_formula,
     evaluate_formula_expression,
     evaluate_formula_sizing,
+    exact_close_ratio_inputs_available,
+    expression_is_exact_close_ratio,
     expression_lookback_rows,
     formula_cross_sectional_inputs,
     formula_expression_fields,
     formula_requires_cross_section,
+    formula_uses_exact_close_ratio,
+    formula_uses_market_weekday,
+    formula_uses_observed_elapsed,
     validate_formula_ast,
 )
 
@@ -44,7 +51,11 @@ class FormulaCrossSectionInputs:
     historical_snapshot: bool = False
 
 
-def _order_frame(frame: pd.DataFrame) -> pd.DataFrame:
+def _order_frame(
+    frame: pd.DataFrame, *, preserve_observed_time: bool = False
+) -> pd.DataFrame:
+    if preserve_observed_time:
+        return frame.sort_values("timestamp").reset_index(drop=True)
     ordered = frame.copy()
     if "timestamp" in ordered.columns:
         ordered = ordered.sort_values("timestamp").reset_index(drop=True)
@@ -90,14 +101,25 @@ def prepare_formula_sessions(
     validate_formula_ast(formula_ast, universe_size=universe_size)
     prepared = {}
     joint = formula_requires_cross_section(formula_ast)
+    preserve_observed_time = (
+        formula_uses_observed_elapsed(formula_ast)
+        or formula_uses_market_weekday(formula_ast)
+        or formula_uses_exact_close_ratio(formula_ast)
+    )
     ordered_frames = (
-        {str(symbol): _order_frame(frame) for symbol, frame in frames.items()}
+        {
+            str(symbol): _order_frame(
+                frame, preserve_observed_time=preserve_observed_time
+            )
+            for symbol, frame in frames.items()
+        }
         if joint
         else {}
     )
     if (
         joint
         and cross_section is None
+        and not preserve_observed_time
         and len(frames) == universe_size
         and universe_size > 1
     ):
@@ -119,7 +141,11 @@ def prepare_formula_sessions(
         else ({}, {}, {})
     )
     for symbol, frame in frames.items():
-        ordered = ordered_frames[str(symbol)] if joint else _order_frame(frame)
+        ordered = (
+            ordered_frames[str(symbol)]
+            if joint
+            else _order_frame(frame, preserve_observed_time=preserve_observed_time)
+        )
         entry, exit_signal, _ = evaluate_formula(
             formula_ast,
             ordered,
@@ -149,6 +175,9 @@ def prepare_formula_sessions(
                         ordered,
                         formula_expression_fields(formula_ast["entry"]),
                         cross_section,
+                        exact_close=formula_uses_exact_close_ratio(
+                            formula_ast["entry"]
+                        ),
                     )
                     .rolling(entry_rows, min_periods=1)
                     .min()
@@ -229,13 +258,22 @@ def _aware_instant(value: Any) -> bool:
 
 
 def _rank_known_rows(
-    frame: pd.DataFrame, fields: set[str], context: FormulaCrossSectionInputs
+    frame: pd.DataFrame,
+    fields: set[str],
+    context: FormulaCrossSectionInputs,
+    *,
+    exact_close: bool = False,
 ) -> pd.Series:
     """Check each raw observation once, without filling missing financial data."""
     known = pd.Series(_context_clock_valid(context), index=frame.index, dtype=bool)
     for name in fields:
         if name not in frame:
             return pd.Series(False, index=frame.index, dtype=bool)
+        if name == "timestamp":
+            continue
+        if name == "close" and exact_close:
+            known &= exact_close_ratio_inputs_available(frame)
+            continue
         numbers = pd.to_numeric(frame[name], errors="coerce")
         known &= numbers.notna() & ~numbers.isin([float("inf"), float("-inf")])
         if name in {"open", "high", "low", "close"}:
@@ -303,6 +341,7 @@ def _cross_sectional_series(
     days = sorted({day for rows in positions.values() for day in rows})
     for key, operation in expressions.items():
         expression = operation["input"]
+        exact_score = expression_is_exact_close_ratio(expression)
         required_rows = expression_lookback_rows(expression)
         if required_rows is None:
             raise ValueError("cross_sectional_finite_history_required")
@@ -320,7 +359,7 @@ def _cross_sectional_series(
         window_rows = max(required_rows, context.minimum_history_rows)
         known_windows = {
             symbol: (
-                _rank_known_rows(frame, fields, context)
+                _rank_known_rows(frame, fields, context, exact_close=exact_score)
                 .rolling(window_rows, min_periods=1)
                 .min()
                 .eq(1)
@@ -348,7 +387,7 @@ def _cross_sectional_series(
             ):
                 continue
             known = True
-            defined_scores: dict[str, float] = {}
+            defined_scores: dict[str, float | Fraction] = {}
             for symbol in members:
                 position = positions.get(symbol, {}).get(day)
                 if position is None or not known_windows[symbol].iloc[position]:
@@ -362,7 +401,10 @@ def _cross_sectional_series(
                 # With complete finite raw history, an undefined mathematical
                 # score (e.g. zero variance) has no rank. It is not a missing
                 # member and cannot turn a NOT comparison into a new entry.
-                if math.isfinite(float(score)):
+                if exact_score:
+                    if isinstance(score, Fraction):
+                        defined_scores[symbol] = score
+                elif math.isfinite(float(score)):
                     defined_scores[symbol] = float(score)
             if not known:
                 continue
@@ -392,9 +434,25 @@ def _cross_sectional_series(
                             values[name][key].iloc[position] = float(z)
                             available[name][key].iloc[position] = True
                 continue
-            ranks = pd.Series(defined_scores, dtype=float).rank(
-                method="average", ascending=True, pct=True
-            )
+            if exact_score:
+                ranks = {}
+                offset = 0
+                for _, group in groupby(
+                    sorted(defined_scores.items(), key=lambda item: item[1]),
+                    key=lambda item: item[1],
+                ):
+                    tied = list(group)
+                    percentile = float(
+                        Fraction(2 * offset + len(tied) + 1, 2 * len(defined_scores))
+                    )
+                    ranks.update({symbol: percentile for symbol, _ in tied})
+                    offset += len(tied)
+            else:
+                ranks = (
+                    pd.Series(defined_scores, dtype=float)
+                    .rank(method="average", ascending=True, pct=True)
+                    .to_dict()
+                )
             for symbol, rank in ranks.items():
                 name = str(symbol)
                 position = positions[name][day]

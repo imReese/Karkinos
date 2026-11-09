@@ -9,8 +9,12 @@ capital-authority, automatic execution, or broker-submission boundaries.
 from __future__ import annotations
 
 import math
+import operator
 import re
+from collections import deque
 from dataclasses import dataclass
+from decimal import Decimal
+from fractions import Fraction
 from typing import Any, Mapping
 
 import pandas as pd
@@ -33,6 +37,10 @@ _REVIEWED_ACCOUNT_COST_MODEL_REFERENCE = re.compile(
 )
 
 _FIELDS = frozenset({"open", "high", "low", "close", "volume"})
+_OBSERVED_ELAPSED_OPERATOR = "observed_elapsed_seconds"
+_MARKET_WEEKDAY_OPERATOR = "market_weekday_shanghai"
+_EXACT_CLOSE_RATIO_OPERATOR = "rolling_max_close_ratio"
+_COMPARISON_OPERATORS = frozenset({"gt", "gte", "lt", "lte", "equal"})
 _WINDOW_OPERATORS = frozenset(
     {
         "rolling_mean",
@@ -64,7 +72,7 @@ _BINARY_OPERATORS = frozenset(
         "cross",
     }
 )
-_UNARY_OPERATORS = frozenset({"not"})
+_UNARY_OPERATORS = frozenset({"not", "floor"})
 _CROSS_SECTIONAL_OPERATOR = "cross_sectional_rank"
 _CROSS_SECTIONAL_MEAN_OPERATOR = "cross_sectional_mean"
 _CROSS_SECTIONAL_ZSCORE_OPERATOR = "cross_sectional_zscore"
@@ -187,6 +195,9 @@ def formula_operator_catalog() -> JsonObject:
             {
                 "field",
                 "constant",
+                _EXACT_CLOSE_RATIO_OPERATOR,
+                _OBSERVED_ELAPSED_OPERATOR,
+                _MARKET_WEEKDAY_OPERATOR,
                 "equal_weight",
                 "max_weight",
                 *_WINDOW_OPERATORS,
@@ -219,6 +230,13 @@ def formula_operator_catalog() -> JsonObject:
                 "right": "expression",
             },
             "not": {"op": "not", "input": "expression"},
+            "floor": {"op": "floor", "input": "finite-history expression"},
+            _OBSERVED_ELAPSED_OPERATOR: {"op": _OBSERVED_ELAPSED_OPERATOR},
+            _MARKET_WEEKDAY_OPERATOR: {"op": _MARKET_WEEKDAY_OPERATOR},
+            "rolling_max_close_ratio": {
+                "op": "rolling_max_close_ratio",
+                "window": "integer 1..252",
+            },
             "cross_sectional_rank": {
                 "op": _CROSS_SECTIONAL_OPERATOR,
                 "input": "finite-history expression without another cross-sectional rank; a resolved cross-sectional mean is allowed",
@@ -244,6 +262,31 @@ def formula_operator_catalog() -> JsonObject:
         },
         "window_bounds": {"minimum": 2, "maximum": _MAX_WINDOW},
         "operator_semantics": {
+            "rolling_max_close_ratio": (
+                "maximum of W adjacent exact close/previous_close ratios from W+1 original finite positive Decimal closes; "
+                "undefined for any unavailable or non-Decimal close; exact values support only lag, "
+                "comparisons against another exact ratio or constant 1, and cross-sectional rank; "
+                "the containing entry/exit predicate remains unavailable through NOT when an exact input is missing"
+            ),
+            "floor": (
+                "greatest integer less than or equal to each finite numeric input; "
+                "missing, nonnumeric and infinite inputs remain undefined; "
+                "finite-history expressions only; no rounding tolerance or "
+                "currency/tick conversion"
+            ),
+            _MARKET_WEEKDAY_OPERATOR: (
+                "current aware market timestamp converted to Asia/Shanghai; "
+                "Monday=0 through Sunday=6; one actual row required; missing or "
+                "naive timestamps are undefined; not a trading-day calendar; "
+                "finite-history expressions only; combinations with rolling_std "
+                "or zscore are unsupported"
+            ),
+            _OBSERVED_ELAPSED_OPERATOR: (
+                "positive elapsed seconds between consecutive actual timezone-aware "
+                "market timestamps; two rows required; missing, naive or nonpositive "
+                "intervals are undefined; finite-history expressions only; "
+                "combinations with rolling_std or zscore are unsupported"
+            ),
             "rolling_sum": "sum of the complete trailing window, including the current bar; undefined inputs remain missing",
             "return": "fractional change: current / lagged - 1",
             "roc": "percentage change: 100 * (current / lagged - 1); undefined changes are missing",
@@ -292,6 +335,15 @@ def validate_formula_ast(
         raise FormulaValidationError("unknown_formula_schema", "schema_version")
     _validate_expression(formula_ast["entry"], "formula_ast.entry", depth=0)
     _validate_expression(formula_ast["exit"], "formula_ast.exit", depth=0)
+    for side in ("entry", "exit"):
+        _require_elapsed_finite_history(formula_ast[side], f"formula_ast.{side}")
+        _require_weekday_finite_history(formula_ast[side], f"formula_ast.{side}")
+        _require_floor_finite_history(formula_ast[side], f"formula_ast.{side}")
+        _validate_exact_close_ratio_use(formula_ast[side], f"formula_ast.{side}")
+        if formula_uses_exact_close_ratio(formula_ast[side]) and formula_ast[side][
+            "op"
+        ] not in _COMPARISON_OPERATORS | {"and", "or", "not"}:
+            raise FormulaValidationError("exact_close_ratio_predicate_required", side)
     if formula_requires_cross_section(formula_ast["exit"]):
         raise FormulaValidationError(
             "cross_sectional_exit_unsupported", "formula_ast.exit"
@@ -339,7 +391,11 @@ def evaluate_formula(
             .fillna(False)
             .astype(bool)
         )
-    if joint and (universe_size > 1 or cross_section_available is not None):
+    if joint and (
+        universe_size > 1
+        or cross_section_available is not None
+        or formula_uses_exact_close_ratio(normalized)
+    ):
         entry &= cross_section_expression_available(
             normalized["entry"], frame.index, cross_section_available or {}
         )
@@ -351,9 +407,33 @@ def evaluate_formula(
             .fillna(False)
             .astype(bool)
         )
+    if formula_uses_observed_elapsed(normalized) or formula_uses_market_weekday(
+        normalized
+    ):
+        time_availability = {
+            "elapsed_available": _observed_elapsed_seconds(frame).notna()
+            if formula_uses_observed_elapsed(normalized)
+            else None,
+            "weekday_available": _market_weekday_shanghai(frame).notna()
+            if formula_uses_market_weekday(normalized)
+            else None,
+        }
+        entry &= cross_section_expression_available(
+            normalized["entry"],
+            frame.index,
+            cross_section_available or {},
+            **time_availability,
+        )
+        exit_signal &= cross_section_expression_available(
+            normalized["exit"], frame.index, {}, **time_availability
+        )
     target_weight = _evaluate_sizing(
         normalized["position_size"], universe_size=universe_size
     )
+    if formula_uses_exact_close_ratio(normalized["entry"]):
+        entry &= _exact_close_ratio_available(normalized["entry"], frame)
+    if formula_uses_exact_close_ratio(normalized["exit"]):
+        exit_signal &= _exact_close_ratio_available(normalized["exit"], frame)
     return entry, exit_signal, target_weight
 
 
@@ -361,10 +441,122 @@ def formula_requires_cross_section(value: Mapping[str, Any]) -> bool:
     return bool(formula_cross_sectional_inputs(value))
 
 
+def formula_uses_exact_close_ratio(value: Mapping[str, Any]) -> bool:
+    return value.get("op") == _EXACT_CLOSE_RATIO_OPERATOR or any(
+        formula_uses_exact_close_ratio(child)
+        for child in value.values()
+        if isinstance(child, Mapping)
+    )
+
+
+def expression_is_exact_close_ratio(value: Mapping[str, Any]) -> bool:
+    """Only these numeric series retain exact ratios; rank produces a percentile."""
+    return value.get("op") == _EXACT_CLOSE_RATIO_OPERATOR or (
+        value.get("op") == "lag" and expression_is_exact_close_ratio(value["input"])
+    )
+
+
+def _validate_exact_close_ratio_use(value: Mapping[str, Any], path: str) -> None:
+    if not formula_uses_exact_close_ratio(value):
+        return
+    if expression_lookback_rows(value) is None:
+        raise FormulaValidationError("exact_close_ratio_finite_history_required", path)
+    for name, child in value.items():
+        if isinstance(child, Mapping):
+            _validate_exact_close_ratio_use(child, f"{path}.{name}")
+    op = value["op"]
+    if expression_is_exact_close_ratio(value):
+        return
+    if op == _CROSS_SECTIONAL_OPERATOR and expression_is_exact_close_ratio(
+        value["input"]
+    ):
+        return
+    if op in _COMPARISON_OPERATORS:
+        children = (value["left"], value["right"])
+        if any(
+            expression_is_exact_close_ratio(child) for child in children
+        ) and not all(
+            expression_is_exact_close_ratio(child)
+            or (child.get("op") == "constant" and child.get("value") == 1)
+            for child in children
+        ):
+            raise FormulaValidationError(
+                "exact_close_ratio_comparison_unsupported", path
+            )
+        return
+    if op in {"and", "or", "not"} and not any(
+        expression_is_exact_close_ratio(child)
+        or (
+            child.get("op") == _CROSS_SECTIONAL_OPERATOR
+            and formula_uses_exact_close_ratio(child)
+        )
+        for child in value.values()
+        if isinstance(child, Mapping)
+    ):
+        return
+    raise FormulaValidationError("exact_close_ratio_consumer_unsupported", path)
+
+
+def exact_close_ratio_inputs_available(frame: pd.DataFrame) -> pd.Series:
+    """Accept the original finite positive Decimal, never reconstruct a float."""
+    if "close" not in frame:
+        return pd.Series(False, index=frame.index, dtype=bool)
+    return frame["close"].map(
+        lambda value: isinstance(value, Decimal) and value.is_finite() and value > 0
+    )
+
+
+def _exact_close_ratio_available(
+    value: Mapping[str, Any], frame: pd.DataFrame
+) -> pd.Series:
+    if not formula_uses_exact_close_ratio(value):
+        return pd.Series(True, index=frame.index, dtype=bool)
+    if value["op"] == _EXACT_CLOSE_RATIO_OPERATOR:
+        rows = int(value["window"]) + 1
+        return exact_close_ratio_inputs_available(frame).rolling(rows).min().eq(1)
+    children = [child for child in value.values() if isinstance(child, Mapping)]
+    result = pd.Series(True, index=frame.index, dtype=bool)
+    for child in children:
+        result &= _exact_close_ratio_available(child, frame)
+    return (
+        result.shift(int(value["period"]), fill_value=False)
+        if value["op"] == "lag"
+        else result
+    )
+
+
+def _rolling_max_close_ratio(frame: pd.DataFrame, window: int) -> pd.Series:
+    observed = exact_close_ratio_inputs_available(frame).tolist()
+    close = frame["close"].tolist() if "close" in frame else [None] * len(frame)
+    maxima: deque[tuple[int, Fraction]] = deque()
+    last_missing = 0
+    result: list[Fraction | None] = []
+    for index in range(len(close)):
+        while maxima and maxima[0][0] <= index - window:
+            maxima.popleft()
+        if index == 0 or not observed[index] or not observed[index - 1]:
+            last_missing = index
+        else:
+            ratio = Fraction(close[index]) / Fraction(close[index - 1])
+            while maxima and maxima[-1][1] <= ratio:
+                maxima.pop()
+            maxima.append((index, ratio))
+        result.append(
+            maxima[0][1]
+            if index >= window and last_missing <= index - window and maxima
+            else None
+        )
+    return pd.Series(result, index=frame.index, dtype=object)
+
+
 def formula_expression_fields(value: Mapping[str, Any]) -> set[str]:
     """Raw fields needed by an expression, including its section score."""
     if value.get("op") == "field":
         return {str(value["name"])}
+    if value.get("op") == _EXACT_CLOSE_RATIO_OPERATOR:
+        return {"close"}
+    if value.get("op") in {_OBSERVED_ELAPSED_OPERATOR, _MARKET_WEEKDAY_OPERATOR}:
+        return {"timestamp"}
     if value.get("op") == "atr":
         return {"high", "low", "close"}
     fields: set[str] = set()
@@ -406,8 +598,12 @@ def expression_lookback_rows(
     target. Cold Dataset preparation can request the common contributor floor.
     """
     op = value["op"]
-    if op in {"field", "constant"}:
+    if op == _OBSERVED_ELAPSED_OPERATOR:
+        return 2
+    if op in {"field", "constant", _MARKET_WEEKDAY_OPERATOR}:
         return 1
+    if op == _EXACT_CLOSE_RATIO_OPERATOR:
+        return int(value["window"]) + 1
     if op in {"ema", "rsi", "atr"}:
         return None
     if "left" in value:
@@ -458,6 +654,10 @@ def evaluate_formula_expression(
 ) -> pd.Series:
     """Evaluate a score using only already resolved common input series."""
     _validate_expression(value, "expression", depth=0)
+    _require_elapsed_finite_history(value, "expression")
+    _require_weekday_finite_history(value, "expression")
+    _require_floor_finite_history(value, "expression")
+    _validate_exact_close_ratio_use(value, "expression")
     dependencies = formula_cross_sectional_inputs(value)
     if any(node["op"] == _CROSS_SECTIONAL_OPERATOR for node in dependencies.values()):
         raise FormulaValidationError(
@@ -465,12 +665,36 @@ def evaluate_formula_expression(
         )
     if dependencies and cross_section_values is None:
         raise FormulaValidationError("cross_sectional_context_required", "expression")
-    return _evaluate_expression(
+    result = _evaluate_expression(
         value,
         frame,
         universe_size=universe_size,
         cross_section_values=cross_section_values,
     )
+    if formula_uses_observed_elapsed(value) or formula_uses_market_weekday(value):
+        result = result.where(
+            cross_section_expression_available(
+                value,
+                frame.index,
+                {
+                    key: series.notna()
+                    for key, series in (cross_section_values or {}).items()
+                },
+                elapsed_available=(
+                    _observed_elapsed_seconds(frame).notna()
+                    if formula_uses_observed_elapsed(value)
+                    else None
+                ),
+                weekday_available=(
+                    _market_weekday_shanghai(frame).notna()
+                    if formula_uses_market_weekday(value)
+                    else None
+                ),
+            )
+        )
+    if formula_uses_exact_close_ratio(value):
+        result = result.where(_exact_close_ratio_available(value, frame))
+    return result
 
 
 def cross_section_expression_available(
@@ -479,16 +703,32 @@ def cross_section_expression_available(
     available: Mapping[str, pd.Series],
     *,
     known_warmup: bool = False,
+    elapsed_available: pd.Series | None = None,
+    weekday_available: pd.Series | None = None,
 ) -> pd.Series:
     """Propagate actual context gaps through the entry's causal dependencies.
 
     Score availability uses false for warmup; source completeness uses true for
     known prehistory. Neither turns an unknown foreign value into a buy signal.
     """
-    if not formula_requires_cross_section(value):
+    if (
+        not formula_requires_cross_section(value)
+        and (elapsed_available is None or not formula_uses_observed_elapsed(value))
+        and (weekday_available is None or not formula_uses_market_weekday(value))
+    ):
         return pd.Series(True, index=index, dtype=bool)
     op = value["op"]
-    if op in _CROSS_SECTIONAL_OPERATORS:
+    if op == _MARKET_WEEKDAY_OPERATOR:
+        if weekday_available is None or not weekday_available.index.equals(index):
+            raise FormulaValidationError("market_weekday_index_mismatch", "evaluation")
+        return weekday_available.fillna(False).astype(bool)
+    if op == _OBSERVED_ELAPSED_OPERATOR:
+        if elapsed_available is None or not elapsed_available.index.equals(index):
+            raise FormulaValidationError(
+                "observed_elapsed_index_mismatch", "evaluation"
+            )
+        return elapsed_available.fillna(False).astype(bool)
+    if op in _ALL_CROSS_SECTIONAL_OPERATORS:
         result = available.get(_cross_sectional_key(value))
         if result is None:
             return pd.Series(False, index=index, dtype=bool)
@@ -497,15 +737,30 @@ def cross_section_expression_available(
         return result.fillna(False).astype(bool)
     if "left" in value:
         result = cross_section_expression_available(
-            value["left"], index, available, known_warmup=known_warmup
+            value["left"],
+            index,
+            available,
+            known_warmup=known_warmup,
+            elapsed_available=elapsed_available,
+            weekday_available=weekday_available,
         ) & cross_section_expression_available(
-            value["right"], index, available, known_warmup=known_warmup
+            value["right"],
+            index,
+            available,
+            known_warmup=known_warmup,
+            elapsed_available=elapsed_available,
+            weekday_available=weekday_available,
         )
         if op == "cross":
             result &= result.shift(1, fill_value=known_warmup)
         return result
     result = cross_section_expression_available(
-        value["input"], index, available, known_warmup=known_warmup
+        value["input"],
+        index,
+        available,
+        known_warmup=known_warmup,
+        elapsed_available=elapsed_available,
+        weekday_available=weekday_available,
     )
     if "period" in value:
         previous = result.shift(int(value["period"]), fill_value=known_warmup)
@@ -540,6 +795,17 @@ def _validate_expression(value: Any, path: str, *, depth: int) -> None:
         op = canonical_op
     if op in _UNSUPPORTED_REVIEWED_OPERATORS:
         raise FormulaValidationError("operator_not_canonically_supported", path)
+    if op in {_OBSERVED_ELAPSED_OPERATOR, _MARKET_WEEKDAY_OPERATOR}:
+        _expect_keys(value, required={"op"}, path=path)
+        return
+    if op == _EXACT_CLOSE_RATIO_OPERATOR:
+        _expect_keys(value, required={"op", "window"}, path=path)
+        if (
+            type(value.get("window")) is not int
+            or not 1 <= value["window"] <= _MAX_WINDOW
+        ):
+            raise FormulaValidationError("window_out_of_bounds", f"{path}.window")
+        return
     if op == "field":
         _expect_keys(value, required={"op", "name"}, path=path)
         if value.get("name") not in _FIELDS:
@@ -642,6 +908,12 @@ def _evaluate_expression(
     op = str(value["op"])
     canonical_op = _CROSS_SECTIONAL_ALIASES.get(op, op)
     index = frame.index
+    if op == _OBSERVED_ELAPSED_OPERATOR:
+        return _observed_elapsed_seconds(frame)
+    if op == _MARKET_WEEKDAY_OPERATOR:
+        return _market_weekday_shanghai(frame)
+    if op == _EXACT_CLOSE_RATIO_OPERATOR:
+        return _rolling_max_close_ratio(frame, int(value["window"]))
     if op == "field":
         return pd.to_numeric(frame[str(value["name"])], errors="coerce")
     if op == "constant":
@@ -729,6 +1001,31 @@ def _evaluate_expression(
             universe_size=universe_size,
             cross_section_values=cross_section_values,
         )
+        if op in _COMPARISON_OPERATORS and (
+            expression_is_exact_close_ratio(value["left"])
+            or expression_is_exact_close_ratio(value["right"])
+        ):
+            if value["left"]["op"] == "constant":
+                left = pd.Series([Fraction(1)] * len(frame), index=index, dtype=object)
+            if value["right"]["op"] == "constant":
+                right = pd.Series([Fraction(1)] * len(frame), index=index, dtype=object)
+            compare = {
+                "gt": operator.gt,
+                "gte": operator.ge,
+                "lt": operator.lt,
+                "lte": operator.le,
+                "equal": operator.eq,
+            }[op]
+            return pd.Series(
+                [
+                    compare(a, b)
+                    if isinstance(a, Fraction) and isinstance(b, Fraction)
+                    else False
+                    for a, b in zip(left, right, strict=True)
+                ],
+                index=index,
+                dtype=bool,
+            )
         if op == "add":
             return left + right
         if op == "subtract":
@@ -753,6 +1050,20 @@ def _evaluate_expression(
             return left.fillna(False).astype(bool) | right.fillna(False).astype(bool)
         if op == "cross":
             return (left > right) & (left.shift(1) <= right.shift(1))
+    if op == "floor":
+        item = _evaluate_expression(
+            value["input"],
+            frame,
+            universe_size=universe_size,
+            cross_section_values=cross_section_values,
+        )
+        return item.map(
+            lambda number: (
+                float(math.floor(number))
+                if pd.notna(number) and math.isfinite(number)
+                else float("nan")
+            )
+        )
     if op == "not":
         return ~_evaluate_expression(
             value["input"],
@@ -815,3 +1126,94 @@ def _json_copy(value: Mapping[str, Any]) -> JsonObject:
     import json
 
     return json.loads(canonical_json(value))
+
+
+def formula_uses_observed_elapsed(value: Mapping[str, Any]) -> bool:
+    return value.get("op") == _OBSERVED_ELAPSED_OPERATOR or any(
+        formula_uses_observed_elapsed(child)
+        for child in value.values()
+        if isinstance(child, Mapping)
+    )
+
+
+def formula_uses_market_weekday(value: Mapping[str, Any]) -> bool:
+    return value.get("op") == _MARKET_WEEKDAY_OPERATOR or any(
+        formula_uses_market_weekday(child)
+        for child in value.values()
+        if isinstance(child, Mapping)
+    )
+
+
+def formula_uses_floor(value: Mapping[str, Any]) -> bool:
+    return value.get("op") == "floor" or any(
+        formula_uses_floor(child)
+        for child in value.values()
+        if isinstance(child, Mapping)
+    )
+
+
+def _require_floor_finite_history(value: Mapping[str, Any], path: str) -> None:
+    if formula_uses_floor(value) and expression_lookback_rows(value) is None:
+        raise FormulaValidationError("floor_finite_history_required", path)
+
+
+def _require_elapsed_finite_history(value: Mapping[str, Any], path: str) -> None:
+    if not formula_uses_observed_elapsed(value):
+        return
+    if expression_lookback_rows(value) is None:
+        raise FormulaValidationError("observed_elapsed_finite_history_required", path)
+    pending = [value]
+    while pending:
+        node = pending.pop()
+        if node.get("op") in {"rolling_std", "zscore"}:
+            # The existing pandas variance accumulator can differ after a
+            # finite-prefix restart. Preserve old ASTs, but do not claim this
+            # new combination has reproducible comparison boundaries.
+            raise FormulaValidationError("observed_elapsed_window_unsupported", path)
+        pending.extend(child for child in node.values() if isinstance(child, Mapping))
+
+
+def _require_weekday_finite_history(value: Mapping[str, Any], path: str) -> None:
+    if not formula_uses_market_weekday(value):
+        return
+    if expression_lookback_rows(value) is None:
+        raise FormulaValidationError("market_weekday_finite_history_required", path)
+    pending = [value]
+    while pending:
+        node = pending.pop()
+        if node.get("op") in {"rolling_std", "zscore"}:
+            raise FormulaValidationError("market_weekday_window_unsupported", path)
+        pending.extend(child for child in node.values() if isinstance(child, Mapping))
+
+
+def _aware_market_timestamps(frame: pd.DataFrame) -> pd.Series:
+    """Keep actual instants and reject, rather than localize, naive timestamps."""
+    if "timestamp" not in frame:
+        return pd.Series(pd.NaT, index=frame.index, dtype="datetime64[ns, UTC]")
+
+    def aware_stamp(value: Any) -> pd.Timestamp:
+        try:
+            stamp = pd.Timestamp(value)
+            if not pd.isna(stamp) and stamp.tzinfo is not None:
+                return stamp.tz_convert("UTC")
+        except (TypeError, ValueError, OverflowError):
+            pass
+        return pd.NaT
+
+    column = frame["timestamp"]
+    return (
+        column.dt.tz_convert("UTC")
+        if isinstance(column.dtype, pd.DatetimeTZDtype)
+        else pd.to_datetime(column.map(aware_stamp), utc=True, errors="coerce")
+    )
+
+
+def _observed_elapsed_seconds(frame: pd.DataFrame) -> pd.Series:
+    """Use actual instants; never infer missing rows or a naive timestamp's zone."""
+    seconds = _aware_market_timestamps(frame).diff().dt.total_seconds()
+    return seconds.where(seconds.gt(0) & ~seconds.isin([float("inf")]))
+
+
+def _market_weekday_shanghai(frame: pd.DataFrame) -> pd.Series:
+    """One observed endpoint's weekday, not an exchange trading-day assertion."""
+    return _aware_market_timestamps(frame).dt.tz_convert("Asia/Shanghai").dt.dayofweek

@@ -555,11 +555,7 @@ class RestrictedFormulaBacktestAdapter:
                 "dataset_snapshot": snapshot,
                 "oos_validation": oos_validation,
                 "formula_binding": binding.to_dict(),
-                **(
-                    {"source_selection": selection.to_dict()}
-                    if selection.portfolio_policy_id
-                    else {}
-                ),
+                "source_selection": selection.to_dict(),
                 "formula_fingerprint": binding.fingerprint,
                 **(
                     {"entry_board_policy": dict(entry_board_policy)}
