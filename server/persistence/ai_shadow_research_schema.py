@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from server.persistence.ai_shadow_qualification_schema import (
+    QUALIFICATION_GUARD_STATEMENTS,
+    QUALIFICATION_TABLE_STATEMENTS,
+)
+
 
 class ShadowResearchSchemaRepositoryMixin:
     def init(self) -> None:
@@ -324,57 +329,9 @@ class ShadowResearchSchemaRepositoryMixin:
 
     @staticmethod
     def _init_qualification_schema(conn) -> None:
+        for statement in QUALIFICATION_TABLE_STATEMENTS:
+            conn.execute(statement)
         conn.executescript("""
-            CREATE TABLE IF NOT EXISTS ai_shadow_research_qualification_runs (
-                qualification_run_id TEXT PRIMARY KEY,
-                source_run_id TEXT NOT NULL,
-                market_date TEXT NOT NULL,
-                source_selection_id TEXT NOT NULL,
-                source_selection_fingerprint TEXT NOT NULL,
-                source_backup_fingerprint TEXT NOT NULL,
-                valuation_snapshot_id TEXT NOT NULL,
-                valuation_snapshot_fingerprint TEXT NOT NULL,
-                ledger_cutoff_id INTEGER NOT NULL CHECK(ledger_cutoff_id > 0),
-                ledger_fingerprint TEXT NOT NULL,
-                account_evidence_reference TEXT NOT NULL,
-                account_evidence_fingerprint TEXT NOT NULL,
-                account_truth_source_fingerprint TEXT NOT NULL,
-                account_truth_scope_fingerprint TEXT NOT NULL,
-                reviewed_cost_model_reference TEXT NOT NULL,
-                reviewed_fee_schedule_fingerprint TEXT NOT NULL,
-                initial_cash_text TEXT NOT NULL,
-                baseline_result_id INTEGER NOT NULL CHECK(baseline_result_id > 0),
-                input_fingerprint TEXT NOT NULL UNIQUE,
-                status TEXT NOT NULL
-                    CHECK(status IN ('running', 'blocked', 'completed', 'failed')),
-                selection_json TEXT,
-                selection_fingerprint TEXT,
-                blockers_json TEXT NOT NULL DEFAULT '[]',
-                failure_code TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS ai_shadow_research_qualification_candidates (
-                qualification_candidate_id TEXT PRIMARY KEY,
-                qualification_run_id TEXT NOT NULL,
-                source_candidate_id TEXT NOT NULL,
-                source_draft_id TEXT NOT NULL,
-                source_formula_fingerprint TEXT NOT NULL,
-                qualified_formula_fingerprint TEXT NOT NULL,
-                source_formula_semantic_fingerprint TEXT NOT NULL,
-                qualified_formula_semantic_fingerprint TEXT NOT NULL,
-                candidate_result_id INTEGER,
-                comparison_json TEXT NOT NULL,
-                comparison_fingerprint TEXT NOT NULL,
-                status TEXT NOT NULL
-                    CHECK(status IN ('qualified', 'blocked', 'failed')),
-                recommendation TEXT NOT NULL,
-                rank INTEGER NOT NULL CHECK(rank > 0),
-                created_at TEXT NOT NULL,
-                UNIQUE(qualification_run_id, source_candidate_id),
-                UNIQUE(qualification_run_id, rank),
-                UNIQUE(qualification_run_id, candidate_result_id)
-            );
             CREATE TABLE IF NOT EXISTS ai_shadow_research_qualification_approvals (
                 qualification_approval_id TEXT PRIMARY KEY,
                 qualification_run_id TEXT NOT NULL,
@@ -405,6 +362,11 @@ class ShadowResearchSchemaRepositoryMixin:
 
     @staticmethod
     def _init_qualification_guards(conn) -> None:
+        conn.execute(
+            "DROP TRIGGER IF EXISTS ai_shadow_qualification_manual_source_update_guard"
+        )
+        for statement in QUALIFICATION_GUARD_STATEMENTS:
+            conn.execute(statement)
         conn.executescript("""
             CREATE TRIGGER IF NOT EXISTS ai_shadow_qualification_run_update_guard
             BEFORE UPDATE ON ai_shadow_research_qualification_runs
@@ -453,23 +415,6 @@ class ShadowResearchSchemaRepositoryMixin:
             BEFORE DELETE ON ai_shadow_research_qualification_runs
             BEGIN
                 SELECT RAISE(ABORT, 'qualification run is append-only');
-            END;
-            CREATE TRIGGER IF NOT EXISTS ai_shadow_qualification_candidate_insert_guard
-            BEFORE INSERT ON ai_shadow_research_qualification_candidates
-            WHEN NEW.source_formula_semantic_fingerprint
-                     <> NEW.qualified_formula_semantic_fingerprint
-              OR NOT EXISTS (
-                    SELECT 1
-                    FROM ai_shadow_research_qualification_runs AS q
-                    JOIN ai_shadow_research_candidates AS c
-                      ON c.run_id = q.source_run_id
-                    WHERE q.qualification_run_id = NEW.qualification_run_id
-                      AND q.status = 'running'
-                      AND c.candidate_id = NEW.source_candidate_id
-                      AND c.draft_id = NEW.source_draft_id
-              )
-            BEGIN
-                SELECT RAISE(ABORT, 'qualification candidate binding invalid');
             END;
             CREATE TRIGGER IF NOT EXISTS ai_shadow_qualification_candidate_update_guard
             BEFORE UPDATE ON ai_shadow_research_qualification_candidates
