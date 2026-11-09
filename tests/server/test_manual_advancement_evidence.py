@@ -13,7 +13,7 @@ from analytics.research_account_capital_evidence import (
 )
 from analytics.sealed_holdout import final_research_evaluation_blocker
 from analytics.strategy_advancement_gate import (
-    MANUAL_FINAL_V2_ADVANCEMENT_GATE_SCHEMA,
+    MANUAL_FINAL_ADVANCEMENT_GATE_SCHEMA,
     build_manual_final_strategy_advancement_gate,
     build_strategy_advancement_gate,
     is_valid_passed_strategy_advancement_gate,
@@ -216,17 +216,24 @@ def manual_gate_inputs(late_calendar_final, v2):
     )
 
 
-def test_manual_profile_consumes_real_v2_evidence_retains_legacy_failures(
+def test_manual_profile_blocks_when_legacy_robustness_evidence_is_missing(
     manual_gate_inputs,
 ):
+    """The manual profile replaces legacy statistics, not financial evidence.
+
+    A candidate whose legacy robustness evidence is missing must stay blocked;
+    otherwise manual research would bypass the checks that own that evidence.
+    """
     inputs = manual_gate_inputs
     inputs["candidate"].pop("parameter_robustness")
     inputs["candidate"].pop("market_regime_robustness")
     before = deepcopy(inputs)
     payload = build_manual_final_strategy_advancement_gate(**inputs).to_json_dict()
-    assert payload["status"] == "pass", payload["blockers"]
-    assert payload["schema_version"] == MANUAL_FINAL_V2_ADVANCEMENT_GATE_SCHEMA
-    assert is_valid_passed_strategy_advancement_gate(payload)
+    assert payload["schema_version"] == MANUAL_FINAL_ADVANCEMENT_GATE_SCHEMA
+    assert payload["status"] == "blocked"
+    assert "candidate_parameter_robustness_not_passing" in payload["blockers"]
+    assert "candidate_market_regime_robustness_not_passing" in payload["blockers"]
+    assert not is_valid_passed_strategy_advancement_gate(payload)
     legacy = build_strategy_advancement_gate(
         **{k: v for k, v in inputs.items() if k != "source_binding"},
         require_independent_evaluation=True,

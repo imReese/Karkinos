@@ -53,18 +53,20 @@ from analytics.strategy_advancement_evidence import (
 )
 
 STRATEGY_ADVANCEMENT_GATE_SCHEMA_VERSION = "karkinos.strategy_advancement_gate.v2"
-MANUAL_FINAL_V2_ADVANCEMENT_GATE_SCHEMA = (
-    "karkinos.strategy_advancement_gate.manual_final_v2.v1"
-)
-MANUAL_FINAL_V2_REQUIRED_CHECK_NAMES = (
+MANUAL_FINAL_ADVANCEMENT_GATE_SCHEMA = "karkinos.strategy_advancement_gate.manual_final"
+MANUAL_FINAL_REQUIRED_CHECK_NAMES = (
     "frozen_dataset_identity",
     "rolling_out_of_sample",
+    "after_cost_oos_excess",
+    "parameter_robustness",
+    "market_regime_robustness",
     "drawdown_accounting",
     "turnover_accounting",
     "real_account_capital_constraint",
     "capacity_and_liquidity",
     "baseline_realistic_cost_and_tax_evidence",
     "candidate_realistic_cost_and_tax_evidence",
+    "after_tax_excess_return",
     "independent_critique",
     "independent_final_v2_evaluation",
     "reviewed_account_v2_evaluation",
@@ -114,7 +116,7 @@ class StrategyAdvancementGate:
         }
         if self.manual_profile is not None:
             payload.update(
-                schema_version=MANUAL_FINAL_V2_ADVANCEMENT_GATE_SCHEMA,
+                schema_version=MANUAL_FINAL_ADVANCEMENT_GATE_SCHEMA,
                 **dict(self.manual_profile),
             )
         return {
@@ -134,7 +136,7 @@ def is_valid_passed_strategy_advancement_gate(value: Any) -> bool:
     blockers = payload.get("blockers")
     if not isinstance(checks, list) or not isinstance(blockers, list):
         return False
-    manual = payload.get("schema_version") == MANUAL_FINAL_V2_ADVANCEMENT_GATE_SCHEMA
+    manual = payload.get("schema_version") == MANUAL_FINAL_ADVANCEMENT_GATE_SCHEMA
     normalized_checks = [dict(check) for check in checks if isinstance(check, Mapping)]
     check_names = tuple(check.get("name") for check in normalized_checks)
     required_names = STRATEGY_ADVANCEMENT_REQUIRED_CHECK_NAMES
@@ -146,7 +148,7 @@ def is_valid_passed_strategy_advancement_gate(value: Any) -> bool:
         required_names + optional_names + ("independent_final_evaluation",),
     }
     if manual:
-        names_valid = check_names == MANUAL_FINAL_V2_REQUIRED_CHECK_NAMES
+        names_valid = check_names == MANUAL_FINAL_REQUIRED_CHECK_NAMES
         try:
             from server.contracts.ai_shadow_research_qualification import (
                 qualification_source_binding,
@@ -187,7 +189,7 @@ def is_valid_passed_strategy_advancement_gate(value: Any) -> bool:
         )
         and payload.get("schema_version")
         == (
-            MANUAL_FINAL_V2_ADVANCEMENT_GATE_SCHEMA
+            MANUAL_FINAL_ADVANCEMENT_GATE_SCHEMA
             if manual
             else STRATEGY_ADVANCEMENT_GATE_SCHEMA_VERSION
         )
@@ -698,7 +700,7 @@ def _self_hashed(value: Any) -> bool:
         return False
 
 
-def _manual_final_v2_binding(candidate, source_binding):
+def _manual_final_binding(candidate, source_binding):
     """Check full frozen evidence and identities, never a caller's pass flag."""
     from decimal import Decimal
 
@@ -749,7 +751,7 @@ def _manual_final_v2_binding(candidate, source_binding):
         or Decimal(binding["error_budget"]["allocated_alpha"]) != Decimal("0.05")
         or Decimal(binding["error_budget"]["error_budget_spent"]) != Decimal("0.05")
     ):
-        raise ValueError("manual_final_v2_binding_invalid")
+        raise ValueError("manual_final_binding_invalid")
     return source, final, binding, sim, profile
 
 
@@ -852,7 +854,7 @@ def build_manual_final_strategy_advancement_gate(
     critique_evidence: Mapping[str, Any],
     source_binding: Mapping[str, Any],
 ) -> StrategyAdvancementGate:
-    """Apply the frozen manual v2 final policy, retaining all legacy diagnostics.
+    """Apply the frozen manual final policy, retaining all legacy diagnostics.
 
     Financial evidence is checked by its existing owners. Original rolling,
     drawdown and turnover preferences remain recorded under their original gate.
@@ -883,7 +885,13 @@ def build_manual_final_strategy_advancement_gate(
             }
         )
 
-    for name in ("frozen_dataset_identity", "rolling_out_of_sample"):
+    for name in (
+        "frozen_dataset_identity",
+        "rolling_out_of_sample",
+        "after_cost_oos_excess",
+        "parameter_robustness",
+        "market_regime_robustness",
+    ):
         checks.append(by_name[name])
     dd_complete = all(
         is_valid_complete_backtest_drawdown_evidence(
@@ -921,6 +929,7 @@ def build_manual_final_strategy_advancement_gate(
         "capacity_and_liquidity",
         "baseline_realistic_cost_and_tax_evidence",
         "candidate_realistic_cost_and_tax_evidence",
+        "after_tax_excess_return",
     ):
         checks.append(by_name[name])
     source = dict(source_binding) if isinstance(source_binding, Mapping) else {}
@@ -936,9 +945,7 @@ def build_manual_final_strategy_advancement_gate(
     final_ok = reviewed_ok = False
     policy_fingerprint = replay_fingerprint = None
     try:
-        source, final, binding, sim, profile = _manual_final_v2_binding(
-            candidate, source
-        )
+        source, final, binding, sim, profile = _manual_final_binding(candidate, source)
         policy_fingerprint = profile["research_policy_fingerprint"]
         final_ok = True
         replay = _manual_reviewed_v2_binding(
@@ -951,7 +958,7 @@ def build_manual_final_strategy_advancement_gate(
     record(
         "independent_final_v2_evaluation",
         final_ok,
-        "manual_final_v2_evidence_invalid",
+        "manual_final_evidence_invalid",
         {"source_binding": source, "research_policy_fingerprint": policy_fingerprint},
     )
     record(

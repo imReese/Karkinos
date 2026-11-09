@@ -18,7 +18,7 @@ from analytics.research_account_capital_evidence import (
     is_valid_passed_research_account_capital_evidence,
 )
 from analytics.strategy_advancement_gate import (
-    MANUAL_FINAL_V2_ADVANCEMENT_GATE_SCHEMA,
+    MANUAL_FINAL_ADVANCEMENT_GATE_SCHEMA,
     build_manual_final_strategy_advancement_gate,
     build_strategy_advancement_gate,
     is_valid_passed_strategy_advancement_gate,
@@ -550,10 +550,10 @@ def _qualification_advancement_gate_valid(
 ) -> bool:
     """A manual profile cannot qualify a legacy daily source or another final."""
     if source_binding is None:
-        if gate.get("schema_version") == MANUAL_FINAL_V2_ADVANCEMENT_GATE_SCHEMA:
+        if gate.get("schema_version") == MANUAL_FINAL_ADVANCEMENT_GATE_SCHEMA:
             return False
     elif (
-        gate.get("schema_version") != MANUAL_FINAL_V2_ADVANCEMENT_GATE_SCHEMA
+        gate.get("schema_version") != MANUAL_FINAL_ADVANCEMENT_GATE_SCHEMA
         or gate.get("source_binding") != source_binding
     ):
         return False

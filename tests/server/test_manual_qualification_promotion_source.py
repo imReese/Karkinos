@@ -319,7 +319,7 @@ def test_manual_evidence_requires_specified_candidate_not_daily_winner(
         }
     }
     gate = {
-        "schema_version": support.MANUAL_FINAL_V2_ADVANCEMENT_GATE_SCHEMA,
+        "schema_version": support.MANUAL_FINAL_ADVANCEMENT_GATE_SCHEMA,
         "source_binding": manual,
         "status": "pass",
         "evidence_fingerprint": "gate",
@@ -517,7 +517,7 @@ def test_manual_profile_cannot_leak_into_legacy_or_another_final(monkeypatch):
     )
     manual = binding()
     gate = {
-        "schema_version": support.MANUAL_FINAL_V2_ADVANCEMENT_GATE_SCHEMA,
+        "schema_version": support.MANUAL_FINAL_ADVANCEMENT_GATE_SCHEMA,
         "source_binding": manual,
     }
     assert support._qualification_advancement_gate_valid(gate, manual)
