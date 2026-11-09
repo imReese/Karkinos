@@ -40,10 +40,15 @@ async def capture_qualification_account_state(
                 }
             )
         ),
-        requested_by="automation:account-qualification",
+        requested_by=(
+            "manual:account-qualification"
+            if batch.get("source_binding")
+            else "automation:account-qualification"
+        ),
         research_question=(
-            "Provider-free account qualification of the latest verified "
-            "normalized Formula candidate batch."
+            "Provider-free account qualification of the exact user-specified manual research source."
+            if batch.get("source_binding")
+            else "Provider-free account qualification of the latest verified normalized Formula candidate batch."
         ),
         account_alias="current-canonical-account",
         evidence_types=(CaptureEvidenceType.ACCOUNT_STATE,),

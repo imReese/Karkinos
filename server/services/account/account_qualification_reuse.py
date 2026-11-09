@@ -20,6 +20,7 @@ from server.ai_runtime.strategy_research_privacy import (
 from server.contracts.ai_shadow_research_qualification import (
     SHADOW_RESEARCH_QUALIFICATION_TERMINAL_STATUSES,
     ShadowResearchQualificationRejected,
+    qualification_source_binding,
 )
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.daily_strategy_artifacts import DailyStrategyArtifactRejected
@@ -388,10 +389,12 @@ async def _terminal_candidate_set_matches(
     baseline: Mapping[str, Any],
     advancement_gate_builder: Callable[..., Any],
 ) -> bool:
+    manual = qualification_source_binding(batch)
+    expected_count = 1 if manual else 5
     if (
-        len(sources) != 5
+        len(sources) != expected_count
         or not isinstance(candidates, list)
-        or len(candidates) != 5
+        or len(candidates) != expected_count
         or run.get("status") not in {"completed", "blocked"}
     ):
         return False
@@ -436,8 +439,16 @@ async def _terminal_candidate_set_matches(
             deployment_scope=source.source_selection.deployment_scope,
             portfolio_policy_id=source.source_selection.portfolio_policy_id,
         )
-        expected_gate = advancement_gate_builder(
+        gate_builder = advancement_gate_builder
+        if manual:
+            from analytics.strategy_advancement_gate import (
+                build_manual_final_strategy_advancement_gate,
+            )
+
+            gate_builder = build_manual_final_strategy_advancement_gate
+        expected_gate = gate_builder(
             baseline=baseline_view,
+            **({"source_binding": manual} if manual else {}),
             candidate=candidate_view,
             critique_evidence={
                 "status": "completed",
@@ -482,6 +493,7 @@ async def _terminal_candidate_set_matches(
         account_capital = comparison.get("account_capital_constraint")
         expected_comparison = {
             "schema_version": QUALIFICATION_COMPARISON_SCHEMA,
+            **({"source_binding": manual} if manual else {}),
             "baseline_source_fingerprint": baseline_fingerprint,
             "candidate_source_fingerprint": (
                 shadow_research_backtest_source_fingerprint(result)
@@ -518,7 +530,11 @@ async def _terminal_candidate_set_matches(
                     else NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID
                 ),
                 "rule": (
-                    "exact_frozen_simulation_notional_within_reconciled_equity_and_publication_grant"
+                    (
+                        "exact_frozen_simulation_notional_within_reconciled_equity_manual_approval_required"
+                        if manual
+                        else "exact_frozen_simulation_notional_within_reconciled_equity_and_publication_grant"
+                    )
                     if source.source_selection.simulation_validation_binding is not None
                     else "minimum_of_normalized_notional_and_reconciled_total_equity"
                 ),
@@ -571,6 +587,7 @@ async def _terminal_candidate_set_matches(
         market_date=str(batch["market_date"]),
         candidates=validated,
         replay_failed=False,
+        source_binding=manual,
     )
     return bool(
         terminal["run_status"] == run.get("status")
@@ -587,7 +604,8 @@ def _run_source_and_valuation_match(
     valuation: Mapping[str, Any],
 ) -> bool:
     return bool(
-        run.get("source_run_id") == batch.get("run_id")
+        qualification_source_binding(run) == qualification_source_binding(batch)
+        and run.get("source_run_id") == batch.get("run_id")
         and run.get("market_date") == batch.get("market_date")
         and run.get("source_selection_id") == batch.get("selection_id")
         and run.get("source_selection_fingerprint")

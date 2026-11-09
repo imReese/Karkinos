@@ -54,7 +54,7 @@ OBSERVATION_AUTOMATION_INTERVAL_SECONDS = 300.0
 
 
 async def start_reserved_champion_observation(
-    db, store, *, source_result_id, grant, now, config, reservation_id=None
+    db, store, *, source_result_id, grant, now, config, reservation_id=None, clock=None
 ):
     """Resume one reservation's grant-authorized isolated forward book."""
     from server.contracts.http.strategy_models import BacktestCostAssumptions
@@ -73,6 +73,25 @@ async def start_reserved_champion_observation(
             read_simulation_validation_policy,
         )
 
+        if not reservation_id:
+            raise ValueError("observation_deployment_reservation_required")
+        research_store = StrategyResearchAuditStore(db.path)
+        reserved = research_store.get_sealed_test(reservation_id)
+        binding = (reserved.get("evidence") or {}).get("reservation", {})
+        manual = binding.get("source_kind") == "manual_research"
+        fresh_clock = (
+            (clock or (lambda: datetime.now(timezone.utc))) if manual else (lambda: now)
+        )
+        if manual:
+            from server.services.research.research_final_evaluation import (
+                require_manual_source_binding,
+                require_manual_start_clock,
+            )
+
+            if not simulation:
+                raise ValueError("manual_research_simulation_policy_required")
+            now = fresh_clock()
+            require_manual_source_binding(research_store, binding, now=now)
         current = (
             read_simulation_validation_policy(db, now=now)
             if simulation
@@ -80,10 +99,6 @@ async def start_reserved_champion_observation(
         )
         if any(current[key] != grant.get(key) for key in ("grant_id", "generation")):
             raise ValueError("observation_publication_grant_changed")
-        if not reservation_id:
-            raise ValueError("observation_deployment_reservation_required")
-        reserved = StrategyResearchAuditStore(db.path).get_sealed_test(reservation_id)
-        binding = (reserved.get("evidence") or {}).get("reservation", {})
         frozen_grant = (
             binding.get("simulation_policy")
             if simulation
@@ -126,8 +141,26 @@ async def start_reserved_champion_observation(
             raise ValueError("observation_deployment_grant_scope_mismatch")
         key, identity = reserved_forward_identity(reservation_id, current)
         request_id = key + ":observation"
-        service = ResearchObservationService(db, clock=lambda: now)
+        service = ResearchObservationService(db, clock=fresh_clock)
         observation = service.repository.get(identity)
+        initial_book = (
+            ResearchPaperBookService(db, clock=fresh_clock).get(identity)
+            if manual and observation is not None
+            else None
+        )
+        if manual and (
+            observation is None
+            or not observation["publications"]
+            or initial_book is None
+        ):
+
+            def startup_clock():
+                return require_manual_start_clock(db, binding, fresh_clock())
+
+            startup_clock()
+            service = ResearchObservationService(db, clock=startup_clock)
+        else:
+            startup_clock = fresh_clock
         if observation is None:
             from server.services.account.account_board_permissions import (
                 entry_board_policy_blocker,
@@ -150,7 +183,11 @@ async def start_reserved_champion_observation(
             source["forward_minimum_observations"] = current["statistical_policy"][
                 "minimum_observations"
             ]
-            seed = ensure_forward_seed_for_source(db, config, source=source, now=now)
+            seed = (
+                {"status": "ready", "dataset_id": binding["forward_seed_dataset_id"]}
+                if manual
+                else ensure_forward_seed_for_source(db, config, source=source, now=now)
+            )
             if seed["status"] != "ready":
                 return {**seed, "observation_id": None}
             await service.start(
@@ -169,7 +206,7 @@ async def start_reserved_champion_observation(
                 entry_board_policy=current["entry_board_policy"],
             )
             observation = service.repository.get(identity)
-        paper = ResearchPaperBookService(db, clock=lambda: now)
+        paper = ResearchPaperBookService(db, clock=startup_clock)
         book = paper.get(identity)
         if book is None:
             settings = json.loads(row["config_json"])
@@ -191,6 +228,11 @@ async def start_reserved_champion_observation(
                 },
             )
             book = paper.get(identity)
+        if manual and (
+            book is None
+            or book["evaluation_start"] != binding["first_evaluation_session"]
+        ):
+            raise ValueError("manual_research_first_session_mismatch")
         observation = service.repository.get(identity)
         initial = None
         if (

@@ -8,6 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from server.ai_runtime.contracts import content_fingerprint
+from server.contracts.ai_shadow_research_qualification import (
+    MANUAL_QUALIFICATION_BACKUP,
+    manual_qualification_source_id,
+    qualification_source_binding,
+)
 from server.contracts.daily_strategy_artifacts import (
     DAILY_STRATEGY_OPERATING_CONSTRAINTS_SCHEMA,
     DAILY_STRATEGY_PROMOTION_BINDING_SCHEMA,
@@ -95,10 +100,6 @@ def load_qualification_sources(
     """Reopen the exact persisted source rows behind one qualified candidate."""
 
     store = ShadowResearchStore(path)
-    artifacts = DailyStrategyArtifactStore(
-        db_path=path,
-        backup_root=path.parent / "strategy-research-backups",
-    )
     qualification_candidate = store.get_qualification_candidate(normalized_id)
     qualification_run = store.get_qualification_run(
         str(qualification_candidate.get("qualification_run_id") or "")
@@ -109,21 +110,65 @@ def load_qualification_sources(
         else store.get_qualification_approval(normalized_id)
     )
     source_candidate_id = str(qualification_candidate.get("source_candidate_id") or "")
-    source_candidate = store.get_candidate(source_candidate_id)
-    for key in ("baseline_result_id", "candidate_result_id"):
-        store.get_qualification_backtest_source(int(source_candidate.get(key) or 0))
-    source_artifact = artifacts.require_verified_research_candidate(
-        candidate_id=source_candidate_id,
-        run_id=str(qualification_run.get("source_run_id") or ""),
-    )
+    manual_binding = qualification_source_binding(qualification_run)
+    if manual_binding is not None:
+        from server.persistence.strategy_research import StrategyResearchAuditStore
+        from server.services.ai_shadow.ai_shadow_research_qualification_support import (
+            freeze_manual_qualification_source,
+        )
+
+        frozen = freeze_manual_qualification_source(
+            research_store=StrategyResearchAuditStore(path),
+            source_binding=manual_binding,
+        )
+        source_candidate = frozen.source_candidate
+        source_artifact = {
+            **frozen.verified,
+            "critique_artifact": frozen.source_critique["artifact"],
+        }
+        identity = manual_qualification_source_id(manual_binding)
+        if (
+            source_candidate_id != identity
+            or qualification_run.get("source_run_id") != identity
+            or qualification_run.get("source_selection_id")
+            != manual_binding["manual_source_refs"]["session_id"]
+            or qualification_run.get("source_selection_fingerprint")
+            != frozen.source_selection.fingerprint
+            or qualification_run.get("source_backup_fingerprint")
+            != MANUAL_QUALIFICATION_BACKUP
+            or qualification_source_binding(
+                qualification_candidate.get("comparison") or {}
+            )
+            != manual_binding
+        ):
+            raise ValueError("qualification_manual_source_binding_changed")
+        source_binding = {
+            "source_kind": "manual_research",
+            "source_binding": manual_binding,
+            "strategy_artifact_fingerprint": source_artifact[
+                "strategy_artifact_fingerprint"
+            ],
+        }
+    else:
+        artifacts = DailyStrategyArtifactStore(
+            db_path=path,
+            backup_root=path.parent / "strategy-research-backups",
+        )
+        source_candidate = store.get_candidate(source_candidate_id)
+        for key in ("baseline_result_id", "candidate_result_id"):
+            store.get_qualification_backtest_source(int(source_candidate.get(key) or 0))
+        source_artifact = artifacts.require_verified_research_candidate(
+            candidate_id=source_candidate_id,
+            run_id=str(qualification_run.get("source_run_id") or ""),
+        )
+        source_binding = build_normalized_source_daily_strategy_artifact_binding(
+            source_artifact
+        )
     baseline_source = store.get_qualification_backtest_source(
         int(qualification_run.get("baseline_result_id") or 0)
     )
     candidate_source = store.get_qualification_backtest_source(
         int(qualification_candidate.get("candidate_result_id") or 0)
-    )
-    daily_binding = build_normalized_source_daily_strategy_artifact_binding(
-        source_artifact
     )
     return (
         qualification_candidate,
@@ -133,7 +178,7 @@ def load_qualification_sources(
         source_artifact,
         baseline_source,
         candidate_source,
-        daily_binding,
+        source_binding,
     )
 
 

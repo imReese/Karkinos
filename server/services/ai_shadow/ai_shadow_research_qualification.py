@@ -30,9 +30,12 @@ from server.contracts.ai_shadow_research_automation import (
     ShadowResearchPolicy,
 )
 from server.contracts.ai_shadow_research_qualification import (
+    MANUAL_QUALIFICATION_BACKUP,
     SHADOW_RESEARCH_QUALIFICATION_CONFIRMATION,
     ShadowResearchQualificationRejected,
+    manual_qualification_source_id,
     qualification_formula_semantic_fingerprint,
+    qualification_source_binding,
 )
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.daily_strategy_artifacts import DRAFT_BACKUP_FIELDS
@@ -70,6 +73,7 @@ from server.services.ai_shadow.ai_shadow_research_qualification_support import (
     deferred_result,
     failure_code,
     formula_binding,
+    freeze_manual_qualification_source,
     money_text,
     public_result,
     qualification_backtest_values,
@@ -153,56 +157,122 @@ class AiShadowResearchQualificationService:
         )
         self._advancement_gate_builder = advancement_gate_builder
 
-    async def run_once(self, *, source_run_id: str | None = None) -> dict[str, Any]:
+    async def run_manual(self, *, source, final_evaluation_id: str) -> dict[str, Any]:
+        """Qualify one exact manual research source; this never publishes automatically."""
+        from server.services.research.research_final_evaluation import (
+            manual_final_research_source,
+        )
+
+        resolved = await asyncio.to_thread(
+            manual_final_research_source,
+            research_store=self._research_store,
+            source=source,
+            reservation_id=final_evaluation_id,
+        )
+        final = self._research_store.get_sealed_test(final_evaluation_id)
+        return await self.run_once(
+            manual_source_binding={
+                "source_kind": "manual_research",
+                "manual_source_refs": resolved.manual_source_refs,
+                "manual_source_fingerprint": resolved.manual_source_fingerprint,
+                "final_evaluation_id": final_evaluation_id,
+                "final_evidence_fingerprint": final.get("evidence_fingerprint"),
+            }
+        )
+
+    async def run_once(
+        self,
+        *,
+        source_run_id: str | None = None,
+        manual_source_binding: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Qualify the oldest retryable or one explicitly selected source batch."""
         batch: dict[str, Any] | None = None
         qualification_run: dict[str, Any] | None = None
         try:
             admission = QualificationAdmission.admit(self._now)
-            batch, frozen = await asyncio.to_thread(
-                self._freeze_batch,
-                source_run_id,
-                final_evaluation_as_of=admission.require_open(),
+            manual = qualification_source_binding(
+                {"source_binding": manual_source_binding}
             )
-            from server.services.research.research_final_evaluation import (
-                evaluate_reserved_champion,
-            )
+            if manual is not None:
+                if source_run_id is not None:
+                    raise ShadowResearchQualificationRejected(
+                        "qualification_source_kind_conflict"
+                    )
+                champion = await asyncio.to_thread(
+                    freeze_manual_qualification_source,
+                    research_store=self._research_store,
+                    source_binding=manual,
+                )
+                frozen = [champion]
+                batch = {
+                    "run_id": manual_qualification_source_id(manual),
+                    "market_date": champion.source_selection.end_date,
+                    "selection_id": manual["manual_source_refs"]["session_id"],
+                    "selection_fingerprint": champion.source_selection.fingerprint,
+                    "backup_artifact_fingerprint": MANUAL_QUALIFICATION_BACKUP,
+                    "source_binding": manual,
+                }
+                final_evaluation = self._research_store.get_sealed_test(
+                    manual["final_evaluation_id"]
+                )["evidence"]
+                from server.services.account.permissions import (
+                    entry_board_policy_blocker,
+                )
 
-            try:
-                reservation = self._research_store.research_champion_reservation(
-                    str(batch["run_id"])
+                if blocker := entry_board_policy_blocker(
+                    final_evaluation["reservation"]["entry_board_policy"],
+                    None,
+                    decision_date=admission.require_open().date().isoformat(),
+                ):
+                    raise ShadowResearchQualificationRejected(blocker)
+            else:
+                batch, frozen = await asyncio.to_thread(
+                    self._freeze_batch,
+                    source_run_id,
+                    final_evaluation_as_of=admission.require_open(),
                 )
-            except LookupError as exc:
-                raise ShadowResearchQualificationRejected(
-                    "independent_final_evaluation_missing"
-                ) from exc
-            champion_id = (
-                (reservation.get("evidence") or {})
-                .get("reservation", {})
-                .get("candidate_id")
-            )
-            champion = next(
-                (
-                    item
-                    for item in frozen
-                    if item.source_candidate["candidate_id"] == champion_id
-                ),
-                None,
-            )
-            if champion is None:
-                raise ShadowResearchQualificationRejected(
-                    "independent_final_champion_not_in_batch"
+                assert batch is not None
+                from server.services.research.research_final_evaluation import (
+                    evaluate_reserved_champion,
                 )
-            current_time = self._now()
-            if isinstance(current_time, str):
-                current_time = datetime.fromisoformat(current_time)
-            final_evaluation = await evaluate_reserved_champion(
-                research_store=self._research_store,
-                source=champion,
-                adapter=self._backtest_adapter,
-                now=current_time,
-                calendar_db=self._db,
-            )
+
+                try:
+                    reservation = self._research_store.research_champion_reservation(
+                        str(batch["run_id"])
+                    )
+                except LookupError as exc:
+                    raise ShadowResearchQualificationRejected(
+                        "independent_final_evaluation_missing"
+                    ) from exc
+                champion_id = (
+                    (reservation.get("evidence") or {})
+                    .get("reservation", {})
+                    .get("candidate_id")
+                )
+                champion = next(
+                    (
+                        item
+                        for item in frozen
+                        if item.source_candidate["candidate_id"] == champion_id
+                    ),
+                    None,
+                )
+                if champion is None:
+                    raise ShadowResearchQualificationRejected(
+                        "independent_final_champion_not_in_batch"
+                    )
+                current_time = self._now()
+                if isinstance(current_time, str):
+                    current_time = datetime.fromisoformat(current_time)
+                final_evaluation = await evaluate_reserved_champion(
+                    research_store=self._research_store,
+                    source=champion,
+                    adapter=self._backtest_adapter,
+                    now=current_time,
+                    calendar_db=self._db,
+                )
+            assert batch is not None
             simulation_cash = (
                 Decimal(final_evaluation["reservation"]["initial_cash"])
                 if final_evaluation["reservation"].get("simulation_policy")
@@ -235,7 +305,11 @@ class AiShadowResearchQualificationService:
             )
 
             try:
-                publication_grant = read_publication_grant(self._db, now=self._now())
+                publication_grant = (
+                    None
+                    if manual
+                    else read_publication_grant(self._db, now=self._now())
+                )
             except ValueError:
                 publication_grant = None
             if terminal is not None and publication_grant:
@@ -307,7 +381,11 @@ class AiShadowResearchQualificationService:
             )
 
             try:
-                grant = read_publication_grant(self._db, now=self._now())
+                grant = (
+                    None
+                    if manual
+                    else read_publication_grant(self._db, now=self._now())
+                )
             except ValueError:
                 grant = None
             if grant and grant[
@@ -341,6 +419,11 @@ class AiShadowResearchQualificationService:
                 initial_cash=initial_cash,
                 fee_resolution=fee_resolution,
                 admission=admission,
+                manual_entry_policy=(
+                    final_evaluation["reservation"]["entry_board_policy"]
+                    if manual
+                    else None
+                ),
             )
             admission.require_open()
             run, reused = await asyncio.to_thread(
@@ -573,6 +656,7 @@ class AiShadowResearchQualificationService:
         initial_cash: Decimal,
         fee_resolution: Any,
         admission: QualificationAdmission,
+        manual_entry_policy: Mapping[str, Any] | None = None,
     ) -> tuple[Any, int]:
         policy = ShadowResearchPolicy(
             enabled=False,
@@ -581,8 +665,8 @@ class AiShadowResearchQualificationService:
             require_complete_account_evidence=True,
         )
         admission.require_open()
-        entry_policy = None
-        if source.source_selection.deployment_scope:
+        entry_policy = manual_entry_policy
+        if source.source_selection.deployment_scope and entry_policy is None:
             from server.contracts.recommendation_publication import (
                 read_publication_grant,
             )
@@ -636,7 +720,13 @@ class AiShadowResearchQualificationService:
     ) -> tuple[dict[str, Any], bool]:
         evidence = fee_resolution.fee_evidence
         admission.require_open()
+        if batch.get("source_binding"):
+            freeze_manual_qualification_source(
+                research_store=self._research_store,
+                source_binding=batch["source_binding"],
+            )
         return self._store.create_or_get_qualification_run(
+            source_binding=batch.get("source_binding"),
             source_run_id=str(batch["run_id"]),
             market_date=str(batch["market_date"]),
             source_selection_id=str(batch["selection_id"]),
@@ -723,6 +813,11 @@ class AiShadowResearchQualificationService:
                     candidate_result_id=None,
                     comparison={
                         "schema_version": QUALIFICATION_COMPARISON_SCHEMA,
+                        **(
+                            {"source_binding": item.verified["source_binding"]}
+                            if item.verified.get("source_binding")
+                            else {}
+                        ),
                         "research_capital_mode": "account_bound",
                         "account_qualification_status": "failed",
                         "failure_code": failure_code(exc),
@@ -759,6 +854,7 @@ class AiShadowResearchQualificationService:
             market_date=str(batch["market_date"]),
             candidates=candidates,
             replay_failed=replay_failed,
+            source_binding=batch.get("source_binding"),
         )
         admission.require_open()
         finished = await asyncio.to_thread(
@@ -772,7 +868,8 @@ class AiShadowResearchQualificationService:
         )
         publication_attempt = None
         if (
-            terminal.get("run_status") == "completed"
+            not batch.get("source_binding")
+            and terminal.get("run_status") == "completed"
             and terminal.get("selection", {}).get("status") == "winner_selected"
         ):
             winner_id = terminal["selection"].get("winner_qualification_candidate_id")
@@ -784,6 +881,10 @@ class AiShadowResearchQualificationService:
         result = await asyncio.to_thread(public_result, self._store, finished, reused)
         if publication_attempt is not None:
             result["publication_attempt"] = publication_attempt
+        if batch.get("source_binding"):
+            result["automatic_strategy_replacement_enabled"] = False
+            result["human_paper_shadow_approval_required"] = True
+            return result
         from server.contracts.recommendation_publication import read_publication_grant
 
         try:
@@ -876,25 +977,46 @@ class AiShadowResearchQualificationService:
                 else {}
             ),
         )
-        result["metrics_json"]["independent_evaluation"] = (
-            dict(final_evaluation)
-            if final_evaluation["reservation"]["candidate_id"]
+        manual = qualification_source_binding(source.verified)
+        same_source = (
+            final_evaluation["reservation"].get("manual_source_refs")
+            == manual["manual_source_refs"]
+            if manual
+            else final_evaluation["reservation"].get("candidate_id")
             == source.source_candidate["candidate_id"]
-            else {}
         )
-        if (
-            final_evaluation["reservation"].get("simulation_policy")
-            and final_evaluation["reservation"]["candidate_id"]
-            == source.source_candidate["candidate_id"]
-        ):
-            from server.contracts.recommendation_publication import (
-                read_publication_grant,
-            )
+        result["metrics_json"]["independent_evaluation"] = (
+            dict(final_evaluation) if same_source else {}
+        )
+        if final_evaluation["reservation"].get("simulation_policy") and same_source:
             from server.services.research.research_final_evaluation import (
                 build_simulation_account_replay,
+                manual_account_applicability_requirements,
             )
 
-            grant = read_publication_grant(self._db, now=self._now())
+            if manual:
+                fee = fee_resolution.fee_evidence
+                grant = manual_account_applicability_requirements(
+                    self._db,
+                    final_evaluation,
+                    account_scope_fingerprint=fee["account_truth_scope_fingerprint"],
+                    initial_cash=initial_cash,
+                    entry_board_policy=final_evaluation["reservation"][
+                        "entry_board_policy"
+                    ],
+                    fee_schedule_binding={
+                        "review_id": fee["fee_schedule_review_id"],
+                        "review_fingerprint": fee["fee_schedule_review_fingerprint"],
+                        "cost_model_reference": fee_resolution.cost_model_reference,
+                        "fee_evidence": fee,
+                    },
+                )
+            else:
+                from server.contracts.recommendation_publication import (
+                    read_publication_grant,
+                )
+
+                grant = read_publication_grant(self._db, now=self._now())
             result["metrics_json"][
                 "simulation_account_replay"
             ] = await asyncio.to_thread(
@@ -919,10 +1041,21 @@ class AiShadowResearchQualificationService:
             if blocker := backtest_evidence_blocker(candidate_row):
                 raise ShadowResearchQualificationRejected(blocker)
             candidate_view = strategy_advancement_backtest_view(candidate_row)
-            gate = self._advancement_gate_builder(
+            gate_builder = self._advancement_gate_builder
+            if manual:
+                from analytics.strategy_advancement_gate import (
+                    build_manual_final_strategy_advancement_gate,
+                )
+
+                gate_builder = build_manual_final_strategy_advancement_gate
+            gate = gate_builder(
                 baseline=baseline_view,
                 candidate=candidate_view,
-                require_independent_evaluation=True,
+                **(
+                    {"source_binding": manual}
+                    if manual
+                    else {"require_independent_evaluation": True}
+                ),
                 critique_evidence={
                     "status": "completed",
                     "critique_id": source.source_critique["critique_id"],
@@ -955,6 +1088,7 @@ class AiShadowResearchQualificationService:
             recommendation = "paper_shadow_review" if passed else "keep_researching"
             comparison = {
                 "schema_version": QUALIFICATION_COMPARISON_SCHEMA,
+                **({"source_binding": manual} if manual else {}),
                 "baseline_source_fingerprint": (
                     shadow_research_backtest_source_fingerprint(baseline_row)
                 ),
@@ -1001,7 +1135,11 @@ class AiShadowResearchQualificationService:
                         else NORMALIZED_RESEARCH_NOTIONAL_POLICY_ID
                     ),
                     "rule": (
-                        "exact_frozen_simulation_notional_within_reconciled_equity_and_publication_grant"
+                        (
+                            "exact_frozen_simulation_notional_within_reconciled_equity_manual_approval_required"
+                            if manual
+                            else "exact_frozen_simulation_notional_within_reconciled_equity_and_publication_grant"
+                        )
                         if source.source_selection.simulation_validation_binding
                         else "minimum_of_normalized_notional_and_reconciled_total_equity"
                     ),
