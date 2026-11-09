@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.routing import APIRoute
 
+from server.contracts.http.market_models import VerifiedSourceHealthResponse
 from server.db import AppDatabase
 from server.routes import market
 from server.services.market.verified_daily_market_data import (
@@ -95,6 +96,9 @@ def test_verified_source_health_aggregates_observed_routing_without_invented_rat
     assert health["outcome_counts"] == {
         "matched": 1,
         "conflict": 1,
+        "single_source": 0,
+        "single_source_blocked": 0,
+        "single_source_unsupported": 0,
         "unavailable": 0,
         "quality_blocked": 0,
     }
@@ -135,6 +139,7 @@ def test_verified_source_health_aggregates_observed_routing_without_invented_rat
             "primary": "akshare_tencent",
             "comparison": "akshare",
         },
+        "selected_provider": None,
         "unavailable_providers": ["baostock"],
         "result_ref": "dataset:sha256:" + "a" * 64,
         "error_type": None,
@@ -220,3 +225,29 @@ def test_verified_source_health_ignores_non_object_or_malformed_payloads(
 
     assert health["sample_count"] == 0
     assert health["invalid_event_count"] == 1
+
+
+def test_verified_source_health_counts_labelled_single_source(tmp_path) -> None:
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _append(
+        db,
+        timestamp="2026-09-22T09:00:00+00:00",
+        resolution=VerifiedDailySourceResolution(
+            source_policy_id="karkinos.market.source.free_cn_research_single_source.v1",
+            outcome="single_source",
+            attempted_pairs=(("baostock", "akshare_tencent"),),
+            unavailable_providers=("baostock",),
+            selected_provider="akshare_tencent",
+        ),
+        result_ref="dataset:sha256:" + "b" * 64,
+    )
+
+    health = build_verified_source_health_response(db, limit=100)
+
+    assert health["outcome_counts"]["single_source"] == 1
+    assert health["latest"]["outcome"] == "single_source"
+    assert health["latest"]["selected_provider"] == "akshare_tencent"
+    response = VerifiedSourceHealthResponse.model_validate(health)
+    assert response.latest is not None
+    assert response.latest.selected_provider == "akshare_tencent"

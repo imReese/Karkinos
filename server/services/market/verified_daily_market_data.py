@@ -24,6 +24,7 @@ from data.dataset.resolver import (
 from data.market.contracts import (
     MAX_DAILY_BAR_JOB_INSTRUMENTS,
     MAX_DAILY_BAR_RANGE_JOB_INSTRUMENTS,
+    DailyBarProvider,
     DailyBarRequest,
     MarketDataProviderDescriptor,
 )
@@ -32,12 +33,18 @@ from data.market.cross_source import (
     CrossSourceDailyBarUnavailableError,
     ingest_cross_source_daily_bars,
     ingest_cross_source_daily_bars_range,
+    ingest_single_source_daily_bars,
 )
 from data.market.ingestion import DailyBarIngestionResult
 from data.market.quality import RESEARCH_STRICT_DAILY
 from data.market.serving import MarketServingStore
-from data.source_policy import resolve_market_source_policy
+from data.source_policy import (
+    MarketDataUseCase,
+    MarketSourcePolicy,
+    resolve_market_source_policy,
+)
 from data.source_routing import (
+    DailyBarVerificationPair,
     provider_registry_for_config,
     resolve_daily_bar_verification_pairs,
 )
@@ -48,6 +55,7 @@ VERIFIED_DAILY_MARKET_RANGE_JOB_SCHEMA_VERSION = "karkinos.market_daily_verified
 VERIFIED_DAILY_SOURCE_RESOLUTION_EVENT = "market.daily.source_resolution"
 _NORMALIZER_VERSION = "karkinos.market.normalize.v1"
 _RESOLVER_POLICY_PREFIX = "karkinos.dataset.pit.verified.daily.v1:"
+_SINGLE_SOURCE_RESOLVER_POLICY_PREFIX = "karkinos.dataset.pit.single_source.daily.v1:"
 
 
 class VerifiedDailyMarketDataError(RuntimeError):
@@ -67,6 +75,7 @@ class VerifiedDailySourceResolution:
     attempted_pairs: tuple[tuple[str, str], ...]
     unavailable_providers: tuple[str, ...] = ()
     selected_pair: tuple[str, str] | None = None
+    selected_provider: str | None = None
 
     def to_payload(self) -> dict[str, object]:
         return {
@@ -86,6 +95,7 @@ class VerifiedDailySourceResolution:
                     "comparison": self.selected_pair[1],
                 }
             ),
+            "selected_provider": self.selected_provider,
         }
 
 
@@ -120,12 +130,19 @@ class VerifiedDailyMarketDataUnavailable(VerifiedDailyMarketDataError):
 @dataclass(frozen=True, slots=True)
 class VerifiedDailyMarketPublication:
     dataset_ref: DatasetRef
-    verification_id: str
+    verification_id: str | None
     trade_date: date
     source_policy_id: str
     primary_provider: str
-    comparison_provider: str
+    comparison_provider: str | None
     source_resolution: VerifiedDailySourceResolution
+    source_class: str = "verified"
+
+    def __post_init__(self) -> None:
+        if self.source_class not in {"verified", "single_source"}:
+            raise ValueError("verified_daily_market_publication_source_class_invalid")
+        if (self.source_class == "verified") != (self.verification_id is not None):
+            raise ValueError("verified_daily_market_publication_verification_mismatch")
 
     @property
     def dataset_id(self) -> str:
@@ -504,6 +521,22 @@ class VerifiedDailyMarketDataService:
             break
 
         if evidence is None or selected_pair is None:
+            single_source = self._publish_single_source(
+                request,
+                daily_request=daily_request,
+                policy=policy,
+                pairs=pairs,
+                store=store,
+                checked_at=checked_at,
+                unavailable_providers=unavailable_providers,
+                attempted_pairs=attempted_pairs,
+                ingestion_cache=ingestion_cache,
+                before_publish=before_publish,
+                before_provider_fetch=before_provider_fetch,
+                publication_guard=publication_guard,
+            )
+            if single_source is not None:
+                return single_source
             unavailable = ",".join(sorted(unavailable_providers)) or "unknown"
             raise VerifiedDailyMarketDataUnavailable(
                 f"verified_daily_market_sources_unavailable:{unavailable}",
@@ -587,6 +620,133 @@ class VerifiedDailyMarketDataService:
             ),
         )
 
+    def _publish_single_source(
+        self,
+        request: VerifiedDailyMarketJobRequest,
+        *,
+        daily_request: DailyBarRequest,
+        policy: MarketSourcePolicy,
+        pairs: tuple[DailyBarVerificationPair, ...],
+        store: ContentAddressedObjectStore,
+        checked_at: datetime | None,
+        unavailable_providers: set[str],
+        attempted_pairs: list[tuple[str, str]],
+        ingestion_cache: dict[tuple[object, ...], DailyBarIngestionResult],
+        before_publish: Callable[[], None] | None,
+        before_provider_fetch: Callable[[MarketDataProviderDescriptor], None] | None,
+        publication_guard: Callable[[Callable[[], None]], None] | None,
+    ) -> VerifiedDailyMarketPublication | None:
+        """Publish the labelled single-source class when policy explicitly allows it.
+
+        Disagreement between two live sources has already raised before this
+        point: this path only covers sources that could not produce an
+        observation at all, and it records no agreement claim.
+        """
+        route = policy.route(MarketDataUseCase.DAILY_BARS)
+        if not route.single_source_allowed:
+            return None
+        providers: dict[str, DailyBarProvider] = {}
+        for pair in pairs:
+            providers.setdefault(pair.primary_name, pair.primary)
+            providers.setdefault(pair.comparison_name, pair.comparison)
+        selected = None
+        selected_provider = None
+        for name in route.candidates:
+            provider = providers.get(name)
+            if provider is None or name in unavailable_providers:
+                continue
+            try:
+                selected = ingest_single_source_daily_bars(
+                    provider,
+                    store,
+                    request=daily_request,
+                    quality_policy=RESEARCH_STRICT_DAILY,
+                    normalizer_version=_NORMALIZER_VERSION,
+                    checked_at=checked_at,
+                    before_fetch=before_provider_fetch,
+                    ingestion_cache=ingestion_cache,
+                )
+            except CrossSourceDailyBarUnavailableError as exc:
+                unavailable_providers.add(exc.provider)
+                continue
+            selected_provider = name
+            break
+        if selected is None or selected_provider is None:
+            return None
+        if not selected.eligible_for_single_source_dataset:
+            raise VerifiedDailyMarketDataNotPublishable(
+                "verified_daily_market_single_source_quality_blocked",
+                failure_evidence_ref=f"quality:{selected.quality.quality_id}",
+                source_resolution=VerifiedDailySourceResolution(
+                    source_policy_id=policy.policy_id,
+                    outcome="single_source_blocked",
+                    attempted_pairs=tuple(attempted_pairs),
+                    unavailable_providers=tuple(sorted(unavailable_providers)),
+                    selected_provider=selected_provider,
+                ),
+            )
+        cutoff = selected.ingestion.capture.completed_at
+        if checked_at is not None and checked_at > cutoff:
+            cutoff = checked_at
+        resolver_policy = DailyBarDatasetResolverPolicy(
+            policy_id=single_source_daily_resolver_policy_id(policy.policy_id),
+            provider_priority=(selected_provider,),
+            required_quality_policy_id=RESEARCH_STRICT_DAILY.policy_id,
+            verification_required=False,
+        )
+        snapshot = resolve_daily_bar_dataset(
+            store,
+            candidates=selected.resolution_candidates(),
+            start_date=request.trade_date,
+            end_date=request.trade_date,
+            cutoff=cutoff,
+            instruments=request.instruments,
+            expected_partition_dates=(request.trade_date,),
+            policy=resolver_policy,
+        )
+        if snapshot.source_class != "single_source":
+            raise VerifiedDailyMarketDataError(
+                "verified_daily_market_single_source_class_mismatch"
+            )
+
+        dataset_ref = publish_daily_bar_dataset_manifest(store, snapshot)
+        replayed = read_daily_bar_dataset(store, dataset_ref)
+        if replayed.snapshot != snapshot:
+            raise VerifiedDailyMarketDataError(
+                "verified_daily_market_dataset_replay_mismatch"
+            )
+        if before_publish is not None:
+            before_publish()
+
+        def publish() -> None:
+            DatasetCatalog(self.root).register(store, dataset_ref, registered_at=cutoff)
+            MarketServingStore(self.root).apply_daily_bar_revision(
+                store,
+                revision=selected.ingestion.revision,
+                materialization=selected.ingestion.materialization,
+            )
+
+        if publication_guard is None:
+            publish()
+        else:
+            publication_guard(publish)
+        return VerifiedDailyMarketPublication(
+            dataset_ref=dataset_ref,
+            verification_id=None,
+            trade_date=request.trade_date,
+            source_policy_id=policy.policy_id,
+            primary_provider=selected_provider,
+            comparison_provider=None,
+            source_resolution=VerifiedDailySourceResolution(
+                source_policy_id=policy.policy_id,
+                outcome="single_source",
+                attempted_pairs=tuple(attempted_pairs),
+                unavailable_providers=tuple(sorted(unavailable_providers)),
+                selected_provider=selected_provider,
+            ),
+            source_class="single_source",
+        )
+
     def _run_range(
         self,
         request: VerifiedDailyMarketJobRequest,
@@ -663,6 +823,18 @@ class VerifiedDailyMarketDataService:
             evidence_rows, selected_pair = rows, pair
             break
         if not evidence_rows or selected_pair is None:
+            if policy.route(MarketDataUseCase.DAILY_BARS).single_source_allowed:
+                # Single-source composition for ranges is a deliberate phase-2
+                # gap: publish nothing rather than a partially labelled range.
+                raise VerifiedDailyMarketDataUnavailable(
+                    "verified_daily_market_single_source_range_unsupported",
+                    source_resolution=VerifiedDailySourceResolution(
+                        policy.policy_id,
+                        "single_source_unsupported",
+                        tuple(attempted),
+                        tuple(sorted(unavailable)),
+                    ),
+                )
             raise VerifiedDailyMarketDataUnavailable(
                 "verified_daily_market_sources_unavailable:"
                 + (",".join(sorted(unavailable)) or "unknown"),
@@ -899,6 +1071,14 @@ def is_verified_daily_resolver_policy(policy_id: str) -> bool:
     return str(policy_id).startswith(_RESOLVER_POLICY_PREFIX)
 
 
+def single_source_daily_resolver_policy_id(source_policy_id: str) -> str:
+    return _SINGLE_SOURCE_RESOLVER_POLICY_PREFIX + source_policy_id
+
+
+def is_single_source_daily_resolver_policy(policy_id: str) -> bool:
+    return str(policy_id).startswith(_SINGLE_SOURCE_RESOLVER_POLICY_PREFIX)
+
+
 def _not_publishable_code(result: CrossSourceDailyBarResult) -> str:
     if result.verification is None:
         return "verified_daily_market_quality_blocked"
@@ -938,6 +1118,8 @@ __all__ = [
     "VerifiedDailyMarketJobRequest",
     "VerifiedDailyMarketPublication",
     "VerifiedDailySourceResolution",
+    "is_single_source_daily_resolver_policy",
     "is_verified_daily_resolver_policy",
+    "single_source_daily_resolver_policy_id",
     "verified_daily_resolver_policy_id",
 ]

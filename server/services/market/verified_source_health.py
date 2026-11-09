@@ -12,7 +12,15 @@ from server.services.market.verified_daily_market_data import (
 
 VERIFIED_SOURCE_HEALTH_SCHEMA_VERSION = "karkinos.market_source_health.v1"
 _SOURCE_RESOLUTION_SCHEMA_VERSION = "karkinos.market_daily_source_resolution.v1"
-_OUTCOMES = ("matched", "conflict", "unavailable", "quality_blocked")
+_OUTCOMES = (
+    "matched",
+    "conflict",
+    "single_source",
+    "single_source_blocked",
+    "single_source_unsupported",
+    "unavailable",
+    "quality_blocked",
+)
 
 
 def build_verified_source_health_response(
@@ -85,6 +93,7 @@ def summarize_verified_source_resolution_events(
                 "outcome": normalized["outcome"],
                 "source_policy_id": normalized["source_policy_id"],
                 "selected_pair": _pair_payload(selected_pair),
+                "selected_provider": normalized["selected_provider"],
                 "unavailable_providers": list(normalized["unavailable_providers"]),
                 "result_ref": normalized["result_ref"],
                 "error_type": normalized["error_type"],
@@ -146,6 +155,10 @@ def _normalize_resolution(payload: dict[str, Any]) -> dict[str, Any]:
     raw_selected = payload.get("selected_pair")
     selected_pair = None if raw_selected is None else _pair(raw_selected)
 
+    selected_provider = payload.get("selected_provider")
+    if selected_provider is not None:
+        selected_provider = _text(selected_provider)
+
     result_ref = payload.get("result_ref")
     if result_ref is not None:
         result_ref = _text(result_ref)
@@ -159,6 +172,7 @@ def _normalize_resolution(payload: dict[str, Any]) -> dict[str, Any]:
         "attempted_pairs": attempted_pairs,
         "unavailable_providers": unavailable_providers,
         "selected_pair": selected_pair,
+        "selected_provider": selected_provider,
         "result_ref": result_ref,
         "error_type": error_type,
     }
