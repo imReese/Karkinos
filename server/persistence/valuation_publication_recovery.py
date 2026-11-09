@@ -28,6 +28,7 @@ from server.persistence.database_identity import require_database_path
 from server.persistence.database_normalization import stable_json_fingerprint
 from server.persistence.event_log import insert_event_sync
 from server.persistence.financial_fact_event_payloads import quote_instant_storage_key
+from server.persistence.valuation_transaction import ValuationTransactionWriter
 
 RECOVERY_KEY = "valuation_publication_recovery"
 ATTEMPT_KEY = "valuation_snapshot_publication_attempt"
@@ -35,6 +36,10 @@ UNPUBLISHED_RECOVERY_CONFIRMATION = (
     "discard_proven_unpublished_failed_quote_refresh_without_changing_financial_facts"
 )
 _RECOVERY_EVENT = "market.quote.unpublished_refresh.discarded"
+VALUATION_RETRY_CONFIRMATION = (
+    "retry_failed_valuation_publication_from_current_committed_facts"
+)
+_VALUATION_RETRY_EVENT = "valuation.snapshot.failed_publication.retried"
 
 
 def _instrument_scope(scope) -> set[tuple[str, str]]:
@@ -1028,6 +1033,133 @@ def discard_proven_unpublished_quote_refreshes(
         )
         conn.commit()
         return {**result, "reused": False}
+
+
+def retry_failed_valuation_publication_on_connection(
+    conn: sqlite3.Connection,
+    *,
+    incident_ref: str,
+    publisher: ValuationTransactionWriter,
+    actor: str,
+    confirmation: str,
+    now: datetime,
+) -> dict[str, Any]:
+    """Retry one standalone writer failure, never adjudicate a financial fact.
+
+    The repository owns the write transaction and supplies its canonical writer.
+    A fresh, complete publication and the recovery receipt commit together; an
+    exception leaves both the original incident and last-good pointer unchanged.
+    """
+    from server.projections.valuation_snapshot import valuation_snapshot_from_row
+    from server.valuation_snapshot_contract import validate_valuation_snapshot
+
+    if (
+        confirmation != VALUATION_RETRY_CONFIRMATION
+        or not isinstance(actor, str)
+        or not actor.strip()
+        or not isinstance(incident_ref, str)
+        or not incident_ref
+        or not isinstance(now, datetime)
+        or now.utcoffset() is None
+        or not conn.in_transaction
+    ):
+        raise ValueError("valuation_recovery_retry_command_invalid")
+    request = {
+        "incident_ref": incident_ref,
+        "actor": actor,
+        "confirmation": confirmation,
+    }
+    command_id = stable_json_fingerprint(request)
+    failures = unresolved_publications(conn)
+    previous = conn.execute(
+        "SELECT payload_json FROM event_log WHERE event_type=? AND source_ref=?",
+        (_VALUATION_RETRY_EVENT, command_id),
+    ).fetchall()
+    if previous:
+        if len(previous) != 1 or failures:
+            raise ValueError("valuation_recovery_retry_receipt_not_current")
+        receipt = json.loads(previous[0][0])
+        if not isinstance(receipt, dict) or receipt.get("request") != request:
+            raise ValueError("valuation_recovery_retry_receipt_changed")
+        return {**receipt, "reused": True}
+    if len(failures) != 1:
+        raise ValueError("valuation_recovery_retry_requires_single_incident")
+    incident = failures[0]
+    if (
+        set(incident)
+        != {"status", "reason", "error_type", "failed_at", "scope", "incident_ref"}
+        or incident.get("incident_ref") != incident_ref
+        or publication_incident_ref(incident) != incident_ref
+        or incident.get("status") != "failed"
+        or incident.get("reason") != "valuation_snapshot_publication_failed"
+        or incident.get("error_type") != "OperationalError"
+        or incident.get("scope") is not None
+    ):
+        raise ValueError("valuation_recovery_retry_incident_not_supported")
+    failed_at = datetime.fromisoformat(incident["failed_at"])
+    if failed_at.utcoffset() is None or failed_at > now:
+        raise ValueError("valuation_recovery_retry_time_invalid")
+
+    changes_before = conn.total_changes
+    snapshot = publisher(conn, now=now)
+    validate_valuation_snapshot(snapshot)
+    if snapshot.get("status") != "complete":
+        raise ValueError("valuation_recovery_retry_valuation_incomplete")
+    expected = {
+        "status": "ready",
+        "snapshot_id": snapshot["snapshot_id"],
+        "valuation_snapshot_status": "complete",
+        "as_of": snapshot["as_of"],
+        "quote_fetch_run_id": None,
+    }
+    if (
+        conn.total_changes <= changes_before
+        or _control(conn, "valuation_snapshot_publication") != expected
+        or _control(conn, ATTEMPT_KEY) != {**expected, "status": "success"}
+        or unresolved_publications(conn) != [incident]
+    ):
+        raise ValueError("valuation_recovery_retry_publication_not_bound")
+    persisted = conn.execute(
+        "SELECT * FROM valuation_snapshots WHERE snapshot_id=?",
+        (snapshot["snapshot_id"],),
+    ).fetchone()
+    if persisted is None:
+        raise ValueError("valuation_recovery_retry_snapshot_missing")
+    validate_valuation_snapshot(valuation_snapshot_from_row(dict(persisted)))
+    stamp = now.astimezone(timezone.utc).isoformat()
+    result = {
+        "schema_version": "karkinos.valuation_publication_retry.v1",
+        "request": request,
+        "resolved_incident": incident,
+        "valuation": {
+            key: snapshot[key]
+            for key in (
+                "snapshot_id",
+                "status",
+                "as_of",
+                "trade_date",
+                "valuation_policy",
+                "ledger_cutoff_id",
+                "ledger_fingerprint",
+                "quote_set_fingerprint",
+            )
+        },
+        "completed_at": stamp,
+        "changes_financial_facts": False,
+        "authorizes_execution": False,
+    }
+    insert_event_sync(
+        conn,
+        event_type=_VALUATION_RETRY_EVENT,
+        timestamp=stamp,
+        entity_type="valuation_publication_recovery",
+        entity_id=command_id,
+        source="valuation_publication_recovery",
+        source_ref=command_id,
+        payload=result,
+    )
+    _save(conn, [], stamp)
+    return {**result, "reused": False}
 
 
 def record_publication_recovery(

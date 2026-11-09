@@ -194,6 +194,92 @@ class SQLiteJobStore:
                 ).fetchone()
             )
 
+    def resume_queued(
+        self,
+        job_id: str,
+        *,
+        expected_input_fingerprint: str,
+        expected_error: str,
+        now: datetime,
+    ) -> JobRun | None:
+        """Make one exact deferred retry available without altering its history."""
+        if (
+            not isinstance(job_id, str)
+            or len(job_id) != 64
+            or any(character not in "0123456789abcdef" for character in job_id)
+        ):
+            raise ValueError("job_id_invalid")
+        if (
+            not isinstance(expected_input_fingerprint, str)
+            or len(expected_input_fingerprint) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in expected_input_fingerprint
+            )
+        ):
+            raise ValueError("job_input_fingerprint_invalid")
+        if (
+            not isinstance(now, datetime)
+            or now.tzinfo is None
+            or now.utcoffset() is None
+        ):
+            raise ValueError("job clock must include a timezone")
+        if not isinstance(expected_error, str) or not expected_error.strip():
+            raise ValueError("job_expected_error_invalid")
+        at = job_time(now)
+        with self._transaction() as conn:
+            row = conn.execute(
+                "SELECT * FROM job_runs WHERE job_id=?", (job_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            try:
+                job = _job(row)
+                identity = _job_identity(job.kind, job.payload)
+                if (
+                    identity
+                    != (
+                        job_id,
+                        expected_input_fingerprint,
+                        row["payload_json"],
+                    )
+                    or job.input_fingerprint != expected_input_fingerprint
+                ):
+                    raise ValueError("job_identity_conflict")
+            except (KeyError, TypeError, ValueError) as exc:
+                raise JobIdentityConflictError("job_identity_conflict") from exc
+            if (
+                job.status != "queued"
+                or job.lease_owner is not None
+                or job.lease_expires_at is not None
+            ):
+                raise ValueError("job_not_unleased_queued")
+            if job.error != expected_error:
+                raise ValueError("job_error_changed")
+            for name in ("available_at", "created_at", "updated_at"):
+                try:
+                    value = row[name]
+                    parsed = datetime.fromisoformat(value)
+                    if parsed.utcoffset() is None or job_time(parsed) != value:
+                        raise ValueError("job_time_invalid")
+                except (TypeError, ValueError, OverflowError) as exc:
+                    raise ValueError("job_time_invalid") from exc
+            if at < row["updated_at"] or at < row["created_at"]:
+                raise ValueError("job_clock_regressed")
+            if row["available_at"] <= at:
+                return job
+            conn.execute(
+                "UPDATE job_runs SET available_at=?, updated_at=? "
+                "WHERE job_id=? AND input_fingerprint=? AND status='queued' "
+                "AND error=? AND lease_owner IS NULL AND lease_expires_at IS NULL",
+                (at, at, job_id, expected_input_fingerprint, expected_error),
+            )
+            return _job(
+                conn.execute(
+                    "SELECT * FROM job_runs WHERE job_id=?", (job_id,)
+                ).fetchone()
+            )
+
     def enqueue_many(
         self,
         kind: str,

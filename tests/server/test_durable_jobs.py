@@ -347,6 +347,7 @@ def test_stop_queued_terminal_is_idempotent_after_identity_check(
     assert _raw_job(store, queued.job_id) == before
 
 
+@pytest.mark.parametrize("operation", ["stop_queued", "resume_queued"])
 @pytest.mark.parametrize(
     "drift",
     [
@@ -359,7 +360,9 @@ def test_stop_queued_terminal_is_idempotent_after_identity_check(
         "invalid_kind",
     ],
 )
-def test_stop_queued_rejects_wrong_or_corrupt_identity(unleased_queued_job, drift):
+def test_queued_controls_reject_wrong_or_corrupt_identity(
+    unleased_queued_job, drift, operation
+):
     store, queued, now = unleased_queued_job
     job_id, fingerprint = queued.job_id, queued.input_fingerprint
     with sqlite3.connect(store.path) as conn:
@@ -392,13 +395,17 @@ def test_stop_queued_rejects_wrong_or_corrupt_identity(unleased_queued_job, drif
             job_id = replacement_id
     before = _raw_job(store, job_id)
     with pytest.raises(JobIdentityConflictError, match="job_identity_conflict"):
-        store.stop_queued(
+        getattr(store, operation)(
             job_id,
             expected_input_fingerprint="f" * 64
             if drift == "expected_fingerprint"
             else fingerprint,
             now=now,
-            reason="obsolete_short_range",
+            **(
+                {"reason": "obsolete_short_range"}
+                if operation == "stop_queued"
+                else {"expected_error": "deferred"}
+            ),
         )
     assert _raw_job(store, job_id) == before
 
@@ -479,3 +486,223 @@ def test_stop_queued_serializes_with_worker_claim(unleased_queued_job, monkeypat
             release.set()
         assert stopped.result(timeout=3).status == "failed"
         assert claimed.result(timeout=3) is None
+
+
+@pytest.fixture
+def deferred_queued_job(unleased_queued_job):
+    store, queued, now = unleased_queued_job
+    claimed = store.claim("verified", "worker", now=now, job_id=queued.job_id)
+    store.fail(
+        claimed.lease,
+        now=now,
+        error="temporary_provider_deferral",
+        retry_seconds=86400,
+        failure_evidence_ref="capture:sha256:" + "b" * 64,
+        preserve_retry_allowance=True,
+    )
+    return store, store.get(queued.job_id), now
+
+
+def test_resume_queued_advances_only_schedule_then_uses_normal_claim(
+    deferred_queued_job,
+):
+    store, queued, now = deferred_queued_job
+    other = store.enqueue("verified", {"fixture": "unrelated"}, now=now)
+    with sqlite3.connect(store.path) as conn:
+        conn.execute(
+            "UPDATE job_runs SET result_ref=? WHERE job_id=?",
+            ("retained-partial-result", queued.job_id),
+        )
+        conn.execute(
+            "INSERT INTO market_daily_provider_call_reservations "
+            "(shanghai_date, upstream_group, job_id, job_attempt, reserved_at) "
+            "VALUES (?,?,?,?,?)",
+            ("2026-10-23", "tushare", queued.job_id, queued.attempt, job_time(now)),
+        )
+        reservations = conn.execute(
+            "SELECT * FROM market_daily_provider_call_reservations"
+        ).fetchall()
+    before = _raw_job(store, queued.job_id)
+    unrelated = _raw_job(store, other.job_id)
+    resumed_at = (now + timedelta(seconds=1)).astimezone(timezone(timedelta(hours=8)))
+    assert (
+        store.claim("verified", "worker", now=resumed_at, job_id=queued.job_id) is None
+    )
+    resumed = store.resume_queued(
+        queued.job_id,
+        expected_input_fingerprint=queued.input_fingerprint,
+        expected_error=queued.error,
+        now=resumed_at,
+    )
+    after = _raw_job(store, queued.job_id)
+    assert after == {
+        **before,
+        "available_at": job_time(resumed_at),
+        "updated_at": job_time(resumed_at),
+    }
+    assert resumed.status == "queued"
+    assert after["attempt"] == 1 and after["max_attempts"] == 4
+    assert _raw_job(store, other.job_id) == unrelated
+    restarted = SQLiteJobStore(store.path)
+    for at in (resumed_at, resumed_at + timedelta(seconds=1)):
+        assert (
+            restarted.resume_queued(
+                queued.job_id,
+                expected_input_fingerprint=queued.input_fingerprint,
+                expected_error=queued.error,
+                now=at,
+            )
+            == resumed
+        )
+        assert _raw_job(store, queued.job_id) == after
+    claimed = restarted.claim(
+        "verified", "new-worker", now=resumed_at, job_id=queued.job_id
+    )
+    assert claimed.status == "running" and claimed.attempt == 2
+    assert claimed.error == queued.error
+    assert claimed.result_ref == "retained-partial-result"
+    assert claimed.failure_evidence_ref == queued.failure_evidence_ref
+    assert _raw_job(store, queued.job_id)["max_attempts"] == 4
+    with sqlite3.connect(store.path) as conn:
+        assert (
+            conn.execute(
+                "SELECT * FROM market_daily_provider_call_reservations"
+            ).fetchall()
+            == reservations
+        )
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        "failed",
+        "succeeded",
+        "running",
+        "expired_running",
+        "queued_owner",
+        "queued_expiry",
+    ],
+)
+def test_resume_queued_refuses_terminal_or_leased_job(deferred_queued_job, state):
+    store, queued, now = deferred_queued_job
+    with sqlite3.connect(store.path) as conn:
+        conn.execute(
+            "UPDATE job_runs SET status=?, lease_owner=?, lease_expires_at=? "
+            "WHERE job_id=?",
+            (
+                "queued"
+                if state.startswith("queued_")
+                else state.replace("expired_", ""),
+                "worker"
+                if state in {"running", "expired_running", "queued_owner"}
+                else None,
+                job_time(now - timedelta(seconds=1))
+                if state in {"expired_running", "queued_expiry"}
+                else None,
+                queued.job_id,
+            ),
+        )
+    before = _raw_job(store, queued.job_id)
+    with pytest.raises(ValueError, match="job_not_unleased_queued"):
+        store.resume_queued(
+            queued.job_id,
+            expected_input_fingerprint=queued.input_fingerprint,
+            expected_error=queued.error,
+            now=now,
+        )
+    assert _raw_job(store, queued.job_id) == before
+
+
+@pytest.mark.parametrize(
+    "actual_error", [None, "other_failure", "temporary_provider_deferral "]
+)
+def test_resume_queued_requires_exact_original_error(deferred_queued_job, actual_error):
+    store, queued, now = deferred_queued_job
+    with sqlite3.connect(store.path) as conn:
+        conn.execute(
+            "UPDATE job_runs SET error=? WHERE job_id=?", (actual_error, queued.job_id)
+        )
+    before = _raw_job(store, queued.job_id)
+    with pytest.raises(ValueError, match="job_error_changed"):
+        store.resume_queued(
+            queued.job_id,
+            expected_input_fingerprint=queued.input_fingerprint,
+            expected_error=queued.error,
+            now=now,
+        )
+    assert _raw_job(store, queued.job_id) == before
+
+
+@pytest.mark.parametrize(
+    "column,value",
+    [
+        ("available_at", "invalid"),
+        ("available_at", "2026-10-24T04:00:00"),
+        ("available_at", "2026-10-24T12:00:00.000000+08:00"),
+        ("created_at", "invalid"),
+        ("updated_at", "invalid"),
+        ("updated_at", "2026-10-23T04:00:01.000000+00:00"),
+    ],
+)
+def test_resume_queued_rejects_invalid_persisted_time_or_regressed_clock(
+    deferred_queued_job, column, value
+):
+    store, queued, now = deferred_queued_job
+    with sqlite3.connect(store.path) as conn:
+        conn.execute(
+            f"UPDATE job_runs SET {column}=? WHERE job_id=?", (value, queued.job_id)
+        )
+    before = _raw_job(store, queued.job_id)
+    with pytest.raises(ValueError, match="job_time_invalid|job_clock_regressed"):
+        store.resume_queued(
+            queued.job_id,
+            expected_input_fingerprint=queued.input_fingerprint,
+            expected_error=queued.error,
+            now=now,
+        )
+    assert _raw_job(store, queued.job_id) == before
+
+
+@pytest.mark.parametrize(
+    "field,value,error",
+    [
+        ("job_id", "short", "job_id_invalid"),
+        ("job_id", "A" * 64, "job_id_invalid"),
+        ("expected_input_fingerprint", "short", "job_input_fingerprint_invalid"),
+        ("expected_input_fingerprint", "A" * 64, "job_input_fingerprint_invalid"),
+        ("now", datetime(2026, 10, 23), "job clock must include a timezone"),
+        ("now", "2026-10-23", "job clock must include a timezone"),
+        ("expected_error", " ", "job_expected_error_invalid"),
+        ("expected_error", None, "job_expected_error_invalid"),
+    ],
+)
+def test_resume_queued_invalid_arguments_do_not_mutate(
+    deferred_queued_job, field, value, error
+):
+    store, queued, now = deferred_queued_job
+    arguments = {
+        "job_id": queued.job_id,
+        "expected_input_fingerprint": queued.input_fingerprint,
+        "expected_error": queued.error,
+        "now": now,
+    }
+    arguments[field] = value
+    before = _raw_job(store, queued.job_id)
+    with pytest.raises(ValueError, match=error):
+        store.resume_queued(**arguments)
+    assert _raw_job(store, queued.job_id) == before
+
+
+def test_resume_queued_missing_identity_does_not_modify_other_job(deferred_queued_job):
+    store, queued, now = deferred_queued_job
+    before = _raw_job(store, queued.job_id)
+    assert (
+        store.resume_queued(
+            "0" * 64,
+            expected_input_fingerprint=queued.input_fingerprint,
+            expected_error=queued.error,
+            now=now,
+        )
+        is None
+    )
+    assert _raw_job(store, queued.job_id) == before
