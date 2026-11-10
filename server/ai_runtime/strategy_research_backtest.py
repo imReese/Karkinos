@@ -28,6 +28,7 @@ from analytics.research_account_capital_evidence import (
     build_research_account_capital_evidence,
     is_valid_passed_research_account_capital_evidence,
 )
+from analytics.sealed_holdout import build_sealed_partition
 from analytics.sweep_robustness import build_sweep_robustness_evidence
 from backtest.costs import (
     RESEARCH_COST_STRESS_BPS,
@@ -719,6 +720,7 @@ class RestrictedFormulaBacktestAdapter:
         selection: StrategyResearchSelection,
         draft: JsonObject,
         sealed_end_date: str,
+        prospective_start: str | None = None,
         reviewed_fee_schedule_resolution: Any | None = None,
         expected_dataset_snapshot: Mapping[str, Any] | None = None,
         expected_trading_dates: list[str] | None = None,
@@ -733,7 +735,24 @@ class RestrictedFormulaBacktestAdapter:
         snapshot identity: the full window reaches past the research end into
         unseen future data, so the snapshot is derived and recorded by the
         caller rather than compared against the research-window snapshot.
+        Bars before the frozen evaluation start supply history to the fresh book.
         """
+        if prospective_start is None:
+            evaluation_start = date.fromisoformat(selection.end_date) + timedelta(
+                days=1
+            )
+        else:
+            try:
+                evaluation_start = build_sealed_partition(
+                    research_start=selection.start_date,
+                    research_end=selection.end_date,
+                    sealed_end=sealed_end_date,
+                    prospective_start=prospective_start,
+                ).sealed_start
+            except ValueError as exc:
+                raise StrategyResearchRejected(
+                    "sealed_prospective_start_invalid"
+                ) from exc
         formula_ast = draft.get("formula_ast")
         if not isinstance(formula_ast, dict):
             raise StrategyResearchRejected("validated_formula_missing")
@@ -928,7 +947,7 @@ class RestrictedFormulaBacktestAdapter:
                 stream_sorted_data_handlers=bool(selection.deployment_scope),
             ),
             db=None,
-            evaluation_start=date.fromisoformat(selection.end_date) + timedelta(days=1),
+            evaluation_start=evaluation_start,
             warmup_final_bar_targets=True,
             cash_dividends=distributions,
             include_share_distributions=distributions is not None,

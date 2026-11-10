@@ -574,6 +574,84 @@ def test_sealed_replay_binds_complete_input_without_rewriting_research_prefix(tm
         )
 
 
+@pytest.mark.parametrize("comparison,fill_count", [("lt", 1), ("gt", 0)])
+def test_prospective_replay_uses_gap_as_history_with_fresh_cash_only(
+    tmp_path, comparison, fill_count
+):
+    store, selection, snapshot = _receipt_inputs(tmp_path)
+    start = _DATES[-1]
+    formula = {
+        "schema_version": FORMULA_AST_CONTRACT,
+        # The last research close rises; the gap close falls. The target must
+        # use that gap close, without carrying any earlier cash or positions.
+        "entry": {
+            "op": comparison,
+            "left": {"op": "field", "name": "close"},
+            "right": {
+                "op": "lag",
+                "input": {"op": "field", "name": "close"},
+                "period": 1,
+            },
+        },
+        "exit": {
+            "op": "lt",
+            "left": {"op": "field", "name": "close"},
+            "right": {"op": "constant", "value": 0},
+        },
+        "position_size": {"op": "equal_weight"},
+    }
+    result = RestrictedFormulaBacktestAdapter(data_store=store).run_sealed(
+        selection=selection,
+        draft={"formula_ast": formula},
+        sealed_end_date=selection.sealed_end_date,
+        prospective_start=start,
+        expected_dataset_snapshot=snapshot,
+        expected_trading_dates=_DATES,
+    )
+    assert selection.end_date == _RESEARCH_END
+    assert [stamp.date().isoformat() for stamp, _ in result.equity_curve] == [start]
+    assert result.initial_cash == Decimal(str(selection.initial_cash))
+    assert result.execution_timing["evaluation_start"] == start
+    assert result.execution_timing["warmup_basis"] == "strategy_history_only_fresh_book"
+    assert result.execution_timing["warmup_final_bar_targets"] is True
+    assert len(result.fills) == fill_count
+    assert all(fill.timestamp.date().isoformat() == start for fill in result.fills)
+    if not fill_count:
+        assert result.final_equity == result.initial_cash
+    assert result.dataset_snapshot["date_range"] == {
+        "start": _DATES[0],
+        "end": _DATES[-1],
+    }
+
+
+@pytest.mark.parametrize(
+    "start", [_DATES[0], _RESEARCH_END, "2026-01-15", "20260114", "", "not-a-date"]
+)
+def test_prospective_start_is_rejected_before_loading_replay_inputs(
+    tmp_path, monkeypatch, start
+):
+    store, selection, snapshot = _receipt_inputs(tmp_path)
+
+    def unexpected_load(*args, **kwargs):
+        pytest.fail("invalid prospective boundary must not load replay inputs")
+
+    monkeypatch.setattr(
+        "server.ai_runtime.strategy_research_backtest._load_bound_inputs",
+        unexpected_load,
+    )
+    with pytest.raises(
+        StrategyResearchRejected, match="sealed_prospective_start_invalid"
+    ):
+        RestrictedFormulaBacktestAdapter(data_store=store).run_sealed(
+            selection=selection,
+            draft=_DRAFT,
+            sealed_end_date=selection.sealed_end_date,
+            prospective_start=start,
+            expected_dataset_snapshot=snapshot,
+            expected_trading_dates=_DATES,
+        )
+
+
 def test_final_comparison_has_same_fresh_cash_despite_different_research_entries(
     tmp_path,
 ):
