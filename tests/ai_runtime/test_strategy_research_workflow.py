@@ -2707,6 +2707,12 @@ async def test_malformed_or_truncated_provider_output_is_terminal_and_not_retrie
         response["choices"][0]["message"]["content"] = "{not-json"
     elif failure == "truncated":
         response["choices"][0]["finish_reason"] = "length"
+        response["usage"] = {
+            "prompt_tokens": 80,
+            "completion_tokens": 12_288,
+            "total_tokens": 12_368,
+            "private_provider_detail": "must not persist",
+        }
     else:
         response["choices"][0]["message"]["content"] = json.dumps({"unexpected": []})
     request = HypothesisGenerationRequest(
@@ -2726,6 +2732,29 @@ async def test_malformed_or_truncated_provider_output_is_terminal_and_not_retrie
     assert replay["status"] == "failed"
     assert replay["reused"] is True
     assert len(transport.calls) == 1
+
+    if failure == "truncated":
+        workflow_id = service._research_store.get_session(result["session_id"])[
+            "workflow_id"
+        ]
+        events = service._ai_store.list_events(workflow_id)
+        outcome = next(
+            event["payload"]
+            for event in events
+            if event["event_type"] == "provider.transport_outcome"
+        )
+        assert outcome["finish_reason"] == "length"
+        assert (
+            outcome["requested_max_tokens"]
+            == transport.calls[0]["payload"]["max_tokens"]
+        )
+        assert outcome["usage"] == {
+            "prompt_tokens": 80,
+            "completion_tokens": 12_288,
+            "total_tokens": 12_368,
+        }
+        assert "must not persist" not in json.dumps(events)
+        assert service._ai_store.verify_replay(workflow_id).valid
 
 
 @pytest.mark.unit

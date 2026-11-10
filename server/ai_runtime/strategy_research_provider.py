@@ -337,11 +337,31 @@ class StrategyResearchModelProvider(ProviderAdapter):
                     },
                 )
                 raise
+            body = http_response.payload
             outcome: JsonObject = {
                 "http_status": http_response.status_code,
-                "response_fingerprint": content_fingerprint(http_response.payload),
+                "response_fingerprint": content_fingerprint(body),
                 "transport_kind": self._settings.adapter_kind,
             }
+            if isinstance(body, dict):
+                # Record the provider's token counts before decoding can reject
+                # a truncated response.
+                outcome["usage"] = safe_provider_usage(body.get("usage"))
+                outcome["requested_max_tokens"] = payload["max_tokens"]
+                choices = body.get("choices")
+                if (
+                    isinstance(choices, list)
+                    and choices
+                    and isinstance(choices[0], dict)
+                ):
+                    finish_reason = choices[0].get("finish_reason")
+                    if finish_reason in (
+                        "stop",
+                        "length",
+                        "content_filter",
+                        "tool_calls",
+                    ):
+                        outcome["finish_reason"] = finish_reason
             self._emit_transport_event(
                 "provider.transport_outcome",
                 {
