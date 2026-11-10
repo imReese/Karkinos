@@ -56,6 +56,7 @@ from data.market.reconciliation import (
     reconcile_daily_bar_revisions_with_bars,
     tencent_tushare_native_read_scope,
 )
+from data.market.reported_activity import TushareEastmoneyActivity
 from data.market.revision import (
     MARKET_DATA_KIND_DAILY_BARS,
     MarketRevision,
@@ -697,6 +698,10 @@ def _validate_partition_lineage(
             verification.report.primary_revision_id,
             verification.primary_materialization_id,
         ):
+            if isinstance(verification.component_relation, TushareEastmoneyActivity):
+                raise DatasetReaderIntegrityError(
+                    "dataset_reader_reported_activity_requires_tushare_bar"
+                )
             raise DatasetReaderIntegrityError(
                 "dataset_reader_tencent_relation_requires_official_bar"
                 if type(verification.component_relation) is BseTencentReportedRelation

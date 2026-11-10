@@ -29,10 +29,13 @@ from data.market.quality_evidence import (
     publish_market_quality_evidence,
 )
 from data.market.reconciliation import (
+    EASTMONEY_TUSHARE_BSE_RECONCILIATION,
     STRICT_DAILY_RECONCILIATION,
+    TENCENT_EASTMONEY_STOCK_RECONCILIATION,
     DailyBarReconciliationPolicy,
     reconcile_daily_bar_revisions,
 )
+from data.market.reported_activity import TushareEastmoneyActivity
 from data.market.verification_evidence import (
     MarketVerificationEvidence,
     MarketVerificationStatus,
@@ -500,6 +503,7 @@ def reverify_captured_daily_bar_evidence(
     comparison_descriptor: MarketDataProviderDescriptor,
     reconciliation_policy: DailyBarReconciliationPolicy,
     checked_at: datetime,
+    reported_activity: Mapping[date, TushareEastmoneyActivity] | None = None,
 ) -> tuple[CrossSourceDailyBarResult, ...]:
     """Reprocess actual immutable captures without claiming a fresh fetch.
 
@@ -530,10 +534,27 @@ def reverify_captured_daily_bar_evidence(
     now = _checked_at(checked_at)
     if not verification_ids or len(set(verification_ids)) != len(verification_ids):
         raise ValueError("captured_reverification_evidence_invalid")
+    activity = reported_activity or {}
+    if activity and (
+        not set(activity) <= expected_sessions.keys()
+        or (primary_descriptor.provider, comparison_descriptor.provider)
+        != ("tushare", "akshare")
+        or reconciliation_policy != EASTMONEY_TUSHARE_BSE_RECONCILIATION
+    ):
+        raise ValueError("captured_reverification_activity_scope_invalid")
     results = {}
     for identity in verification_ids:
         original = read_market_verification_evidence(store, store.resolve_ref(identity))
-        if original.policy != STRICT_DAILY_RECONCILIATION or original.checked_at > now:
+        permitted = (
+            EASTMONEY_TUSHARE_BSE_RECONCILIATION
+            if activity
+            else STRICT_DAILY_RECONCILIATION
+        )
+        if (
+            original.policy != permitted
+            or original.component_relation is not None
+            or original.checked_at > now
+        ):
             raise ValueError("captured_reverification_original_policy_or_time_invalid")
         sides, qualities, descriptors = [], [], []
         for prefix, descriptor in (
@@ -551,6 +572,15 @@ def reverify_captured_daily_bar_evidence(
             capture = read_provider_capture(store, materialization.capture_ref)
             adapter = getattr(original, prefix + "_adapter_version")
             reviewed = {
+                "akshare": {"karkinos.akshare.daily_bar.v2"}
+                if activity
+                or reconciliation_policy == TENCENT_EASTMONEY_STOCK_RECONCILIATION
+                else set(),
+                "akshare_tencent": {
+                    f"karkinos.akshare_tencent.daily_bar.v{n}" for n in (3, 4, 5)
+                }
+                if reconciliation_policy == TENCENT_EASTMONEY_STOCK_RECONCILIATION
+                else set(),
                 "baostock": {
                     "karkinos.baostock.daily_bar.v1",
                     "karkinos.baostock.daily_bar.v2",
@@ -583,6 +613,7 @@ def reverify_captured_daily_bar_evidence(
             qualities.append(quality)
             descriptors.append(replace(descriptor, adapter_version=adapter))
         primary, comparison = sides
+        day = primary.revision.partition_date
         report, primary_bars, comparison_bars = reconcile_daily_bar_revisions_with_bars(
             store,
             primary_revision=primary.revision,
@@ -590,6 +621,8 @@ def reverify_captured_daily_bar_evidence(
             comparison_revision=comparison.revision,
             comparison_materialization=comparison.materialization,
             policy=reconciliation_policy,
+            component_relation=activity.get(day),
+            component_checked_at=now,
         )
         replayed_original = reconcile_daily_bars(
             primary_bars,
@@ -600,7 +633,6 @@ def reverify_captured_daily_bar_evidence(
             comparison_provider=comparison.revision.provider,
             policy=original.policy,
         )
-        day = primary.revision.partition_date
         if (
             replayed_original != original.report
             or day in results
@@ -619,6 +651,7 @@ def reverify_captured_daily_bar_evidence(
             comparison_descriptor=descriptors[1],
             policy=reconciliation_policy,
             checked_at=now,
+            component_relation=activity.get(day),
         )
         results[day] = CrossSourceDailyBarResult(
             primary, comparison, qualities[0], qualities[1], verification

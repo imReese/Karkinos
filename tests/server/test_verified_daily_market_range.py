@@ -433,23 +433,31 @@ def test_range_capture_replays_daily_verification_and_composes_declared_members(
     assert composed.snapshot.universe_policy_id == "fixture.full.scope"
 
 
-@pytest.mark.parametrize("case", ["missing", "conflict"])
-def test_range_never_promotes_partial_or_conflicting_days(tmp_path, monkeypatch, case):
+@pytest.mark.parametrize(
+    ("case", "reason", "evidence_kind"),
+    [
+        ("missing", "quality_blocked", "quality:"),
+        ("conflict", "cross_source_conflict", "verification:"),
+        ("trade_after_gap", "trade_coverage_conflict", "quality:"),
+    ],
+)
+def test_range_never_promotes_partial_or_conflicting_days(
+    tmp_path, monkeypatch, case, reason, evidence_kind
+):
     db = _db(tmp_path, trading_days=DAYS)
     (job,) = _plan(db)
     service, primary, comparison = _service(
         tmp_path,
         monkeypatch,
-        missing=(DAYS[1], STOCKS[1]) if case == "missing" else None,
+        missing=(DAYS[1], STOCKS[1]) if case != "conflict" else None,
         conflict=case == "conflict",
     )
-    with pytest.raises(
-        VerifiedDailyMarketDataNotPublishable,
-        match="quality_blocked" if case == "missing" else "cross_source_conflict",
-    ) as caught:
+    if case == "trade_after_gap":
+        primary.missing = (DAYS[-1], STOCKS[0])
+    with pytest.raises(VerifiedDailyMarketDataNotPublishable, match=reason) as caught:
         service.run(job.payload, checked_at=NOW + timedelta(seconds=1))
     evidence_ref = caught.value.failure_evidence_ref
-    assert evidence_ref.startswith("quality:" if case == "missing" else "verification:")
+    assert evidence_ref.startswith(evidence_kind)
     assert ContentAddressedObjectStore(tmp_path / "research" / "objects").resolve_ref(
         evidence_ref.split(":", 1)[1]
     )

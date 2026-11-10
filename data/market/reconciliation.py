@@ -33,10 +33,16 @@ from types import MappingProxyType
 from core.types import InstrumentKey, InstrumentType
 from data.market.capture import read_provider_capture, read_provider_raw_payload
 from data.market.model import DailyBarObservation
+from data.market.normalize import reported_whole_hand_volume_matches
 from data.market.quality import (
     MarketQualityDiagnostic,
     MarketQualitySeverity,
     provider_difference_diagnostic,
+)
+from data.market.reported_activity import (
+    TushareEastmoneyActivity,
+    reconcile_reported_activity,
+    require_native_reported_activity,
 )
 from data.market.revision import (
     MARKET_DATA_KIND_DAILY_BARS,
@@ -49,6 +55,7 @@ from data.storage.objects import (
 )
 
 logger = logging.getLogger(__name__)
+TENCENT_EASTMONEY_REPORTED_AMOUNT = "karkinos.tencent_eastmoney.reported_amount"
 
 
 class ReconciliationDifferenceKind(str, Enum):
@@ -100,6 +107,11 @@ class DailyBarReconciliationPolicy:
                     Decimal(0),
                     Decimal(0),
                     Decimal("0.99"),
+                ),
+                TENCENT_EASTMONEY_REPORTED_AMOUNT: (
+                    Decimal(0),
+                    Decimal(0),
+                    Decimal(0),
                 ),
                 "karkinos.tencent_sina.direct_reported_amount_compatibility.v1": (
                     Decimal(0),
@@ -223,9 +235,11 @@ TENCENT_TUSHARE_REPORTED_VOLUME_AMOUNT_RECONCILIATION_V2 = (
 )
 
 
-# Exact native OHLCV plus one direct Sina->Tencent reported amount projection.
-# This is an explicit per-row compatibility criterion, not a global source law.
-# Numeric tolerances remain zero; raw original values are never rewritten.
+# Each policy requires original OHLCV and one exact 100-CNY amount projection.
+TENCENT_EASTMONEY_STOCK_RECONCILIATION = DailyBarReconciliationPolicy(
+    source_precision_policy=TENCENT_EASTMONEY_REPORTED_AMOUNT
+)
+
 TENCENT_SINA_DAILY_RECONCILIATION = DailyBarReconciliationPolicy(
     source_precision_policy="karkinos.tencent_sina.direct_reported_amount_compatibility.v1",
 )
@@ -331,7 +345,10 @@ def reconcile_daily_bar_revisions(
     comparison_revision: MarketRevision,
     comparison_materialization: MarketRevisionMaterialization,
     policy: DailyBarReconciliationPolicy = (STRICT_DAILY_RECONCILIATION),
-    component_relation: BseAuctionRelation | BseTencentReportedRelation | None = None,
+    component_relation: BseAuctionRelation
+    | BseTencentReportedRelation
+    | TushareEastmoneyActivity
+    | None = None,
     component_checked_at: datetime | None = None,
 ) -> MarketReconciliationReport:
     """完整验证两份 lineage 并返回稳定的跨 Provider 对账报告。"""
@@ -356,7 +373,10 @@ def reconcile_daily_bar_revisions_with_bars(
     comparison_revision: MarketRevision,
     comparison_materialization: MarketRevisionMaterialization,
     policy: DailyBarReconciliationPolicy = (STRICT_DAILY_RECONCILIATION),
-    component_relation: BseAuctionRelation | BseTencentReportedRelation | None = None,
+    component_relation: BseAuctionRelation
+    | BseTencentReportedRelation
+    | TushareEastmoneyActivity
+    | None = None,
     component_checked_at: datetime | None = None,
 ) -> tuple[
     MarketReconciliationReport,
@@ -391,12 +411,15 @@ def reconcile_daily_bar_revisions_with_bars(
         materialization=comparison_materialization,
     )
     if component_relation is not None:
+        reconciler = (
+            reconcile_reported_activity
+            if isinstance(component_relation, TushareEastmoneyActivity)
+            else _reconcile_bse_tencent_reported
+            if isinstance(component_relation, BseTencentReportedRelation)
+            else _reconcile_bse_auction
+        )
         return (
-            (
-                _reconcile_bse_tencent_reported
-                if isinstance(component_relation, BseTencentReportedRelation)
-                else _reconcile_bse_auction
-            )(
+            reconciler(
                 store,
                 primary_revision=primary_revision,
                 primary_materialization=primary_materialization,
@@ -439,13 +462,18 @@ def reconcile_daily_bar_revisions_with_bars(
             comparison_provider=comparison_revision.provider,
         )
 
-    elif (
-        policy.source_precision_policy
-        == "karkinos.tencent_sina.direct_reported_amount_compatibility.v1"
-    ):
+    elif policy.source_precision_policy in {
+        "karkinos.tencent_sina.direct_reported_amount_compatibility.v1",
+        TENCENT_EASTMONEY_REPORTED_AMOUNT,
+    }:
+        precise_provider = (
+            "akshare"
+            if policy == TENCENT_EASTMONEY_STOCK_RECONCILIATION
+            else "sina_native_public_probe"
+        )
         if {primary_revision.provider, comparison_revision.provider} != {
             "akshare_tencent",
-            "sina_native_public_probe",
+            precise_provider,
         }:
             raise ValueError("market_reconciliation_source_precision_pair_invalid")
         for revision, materialization, bars in (
@@ -454,6 +482,14 @@ def reconcile_daily_bar_revisions_with_bars(
         ):
             if revision.provider == "akshare_tencent":
                 _validate_tencent_tushare_reported_amount(store, materialization, bars)
+            elif revision.provider == "akshare":
+                if not bars:
+                    raise ValueError(
+                        "market_reconciliation_source_precision_evidence_invalid"
+                    )
+                require_native_reported_activity(
+                    store, materialization, bars, max(bar.captured_at for bar in bars)
+                )
             else:
                 _validate_sina_reported_amount(store, materialization, bars)
 
@@ -742,15 +778,20 @@ def reconcile_daily_bars(
     ):
         raise ValueError("market_reconciliation_source_precision_pair_invalid")
 
-    elif (
-        policy.source_precision_policy
-        == "karkinos.tencent_sina.direct_reported_amount_compatibility.v1"
-    ):
+    elif policy.source_precision_policy in {
+        "karkinos.tencent_sina.direct_reported_amount_compatibility.v1",
+        TENCENT_EASTMONEY_REPORTED_AMOUNT,
+    }:
         from data.providers.bse_sina_history import _sina_a_share_symbol
 
+        precise_provider = (
+            "akshare"
+            if policy == TENCENT_EASTMONEY_STOCK_RECONCILIATION
+            else "sina_native_public_probe"
+        )
         if {primary_provider, comparison_provider} != {
             "akshare_tencent",
-            "sina_native_public_probe",
+            precise_provider,
         }:
             raise ValueError("market_reconciliation_source_precision_pair_invalid")
         for provider, rows in (
@@ -849,10 +890,13 @@ def reconcile_daily_bars(
                 policy=policy,
                 reported_amount_compatible=(
                     policy.source_precision_policy
-                    == "karkinos.tencent_sina.direct_reported_amount_compatibility.v1"
+                    in {
+                        "karkinos.tencent_sina.direct_reported_amount_compatibility.v1",
+                        TENCENT_EASTMONEY_REPORTED_AMOUNT,
+                    }
                     and _tencent_sina_reported_amount_compatible(
                         primary[instrument].amount
-                        if primary_provider == "sina_native_public_probe"
+                        if primary_provider != "akshare_tencent"
                         else comparison[instrument].amount,
                         primary[instrument].amount
                         if primary_provider == "akshare_tencent"
@@ -862,7 +906,7 @@ def reconcile_daily_bars(
                 reported_volume_compatible=(
                     policy.source_precision_policy
                     == "karkinos.tencent_tushare.reported_volume_amount_resolution.v2"
-                    and _tencent_tushare_reported_volume_compatible(
+                    and reported_whole_hand_volume_matches(
                         primary[instrument].volume
                         if primary_provider == "tushare"
                         else comparison[instrument].volume,
@@ -1427,40 +1471,6 @@ def _tencent_sina_reported_amount_compatible(
         return False
     units, remainder = divmod(numerator, denominator * 100)
     return (units + (2 * remainder >= denominator * 100)) * 100 == tc_numerator
-
-
-def _tencent_tushare_reported_volume_compatible(
-    tushare_volume: Decimal, tencent_volume: Decimal
-) -> bool:
-    """One exact integer HALF_UP projection, after accepting exact equality.
-
-    Integer divmod avoids ambient Decimal precision and intermediate rounding.
-    Differing values outside the bounded 80-digit integer domain fail closed;
-    this implementation bound is not a financial error allowance.
-    """
-    if any(
-        not isinstance(value, Decimal) or not value.is_finite()
-        for value in (tushare_volume, tencent_volume)
-    ):
-        return False
-    if tushare_volume == tencent_volume:
-        return True
-    for value in (tushare_volume, tencent_volume):
-        parts = value.as_tuple()
-        if (
-            value <= 0
-            or len(parts.digits) > 80
-            or not isinstance(parts.exponent, int)
-            or parts.exponent < -80
-            or value.adjusted() > 79
-            or value != value.to_integral_value()
-        ):
-            return False
-    tu, tx = int(tushare_volume), int(tencent_volume)
-    if tx % 100:
-        return False
-    units, remainder = divmod(tu, 100)
-    return (units + (remainder >= 50)) * 100 == tx
 
 
 def _compare_daily_bar(

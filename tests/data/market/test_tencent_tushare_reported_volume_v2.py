@@ -10,10 +10,10 @@ from pathlib import Path
 import pytest
 
 from core.types import InstrumentKey, InstrumentType
+from data.market.normalize import reported_whole_hand_volume_matches
 from data.market.reconciliation import (
     STRICT_DAILY_RECONCILIATION,
     DailyBarReconciliationPolicy,
-    _tencent_tushare_reported_volume_compatible,
     reconcile_daily_bars,
 )
 from data.market.reconciliation import (
@@ -57,23 +57,20 @@ spec.loader.exec_module(legacy)
     ],
 )
 def test_exact_or_one_integer_half_up_projection(tu, tx, compatible):
-    assert (
-        _tencent_tushare_reported_volume_compatible(Decimal(tu), Decimal(tx))
-        is compatible
-    )
+    assert reported_whole_hand_volume_matches(Decimal(tu), Decimal(tx)) is compatible
 
 
 def test_integer_arithmetic_does_not_round_intermediate_values():
     base = 10**79
     with localcontext() as ctx:
         ctx.prec = 3
-        assert _tencent_tushare_reported_volume_compatible(
+        assert reported_whole_hand_volume_matches(
             Decimal(base + 50), Decimal(base + 100)
         )
-        assert not _tencent_tushare_reported_volume_compatible(
+        assert not reported_whole_hand_volume_matches(
             Decimal(base + 49), Decimal(base + 100)
         )
-        assert not _tencent_tushare_reported_volume_compatible(
+        assert not reported_whole_hand_volume_matches(
             Decimal(10**80 + 50), Decimal(10**80 + 100)
         )
 

@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from enum import Enum
+from pathlib import Path
 
 from core.types import InstrumentKey, InstrumentType
 from data.market.contracts import MarketDataProviderDescriptor
@@ -22,13 +25,19 @@ from data.market.reconciliation import (
     BSE_AUCTION_RELATION_KIND,
     BSE_TENCENT_AMOUNT_COMPARISON,
     BSE_TENCENT_REPORTED_RELATION_KIND,
+    EASTMONEY_TUSHARE_BSE_RECONCILIATION,
     STRICT_DAILY_RECONCILIATION,
+    TENCENT_EASTMONEY_REPORTED_AMOUNT,
     BseAuctionRelation,
     BseTencentReportedRelation,
     DailyBarReconciliationPolicy,
     MarketReconciliationDifference,
     MarketReconciliationReport,
     ReconciliationDifferenceKind,
+)
+from data.market.reported_activity import (
+    REPORTED_ACTIVITY_KIND,
+    TushareEastmoneyActivity,
 )
 from data.providers.bse_sina_history import (
     TENCENT_BSE_NATIVE_ADAPTERS,
@@ -74,7 +83,12 @@ class MarketVerificationEvidence:
     comparison_adapter_version: str
     policy: DailyBarReconciliationPolicy
     checked_at: datetime
-    component_relation: BseAuctionRelation | BseTencentReportedRelation | None = None
+    component_relation: (
+        BseAuctionRelation
+        | BseTencentReportedRelation
+        | TushareEastmoneyActivity
+        | None
+    ) = None
 
     @property
     def verification_id(self) -> str:
@@ -89,6 +103,24 @@ class MarketVerificationEvidence:
         )
 
 
+_READ_EVIDENCE: ContextVar[
+    dict[tuple[Path, ObjectRef], MarketVerificationEvidence] | None
+] = ContextVar("market_verification_read_evidence", default=None)
+
+
+@contextmanager
+def market_verification_read_scope():
+    """Share completed immutable checks within one seed preparation."""
+    if _READ_EVIDENCE.get() is not None:
+        yield
+        return
+    token = _READ_EVIDENCE.set({})
+    try:
+        yield
+    finally:
+        _READ_EVIDENCE.reset(token)
+
+
 def publish_market_verification_evidence(
     store: ContentAddressedObjectStore,
     *,
@@ -99,7 +131,10 @@ def publish_market_verification_evidence(
     comparison_descriptor: MarketDataProviderDescriptor,
     policy: DailyBarReconciliationPolicy,
     checked_at: datetime,
-    component_relation: BseAuctionRelation | BseTencentReportedRelation | None = None,
+    component_relation: BseAuctionRelation
+    | BseTencentReportedRelation
+    | TushareEastmoneyActivity
+    | None = None,
 ) -> MarketVerificationEvidence:
     if not isinstance(store, ContentAddressedObjectStore):
         raise TypeError("market_verification_evidence_store_invalid")
@@ -190,6 +225,15 @@ def read_market_verification_evidence(
     store: ContentAddressedObjectStore,
     ref: ObjectRef,
 ) -> MarketVerificationEvidence:
+    verified = _READ_EVIDENCE.get()
+    if (
+        verified is not None
+        and isinstance(store, ContentAddressedObjectStore)
+        and isinstance(ref, ObjectRef)
+    ):
+        prior = verified.get((store.root.resolve(), ref))
+        if prior is not None:
+            return prior
     evidence, _ = read_market_verification_evidence_with_component_bars(store, ref)
     return evidence
 
@@ -219,8 +263,9 @@ def read_market_verification_evidence_with_component_bars(
             "market_verification_evidence_json_invalid"
         ) from exc
 
+    canonical = _current_evidence_bytes(payload, raw)
     evidence = _from_payload(ref, payload)
-    if _serialize(evidence) != raw:
+    if _serialize(evidence) != canonical:
         raise MarketVerificationEvidenceIntegrityError(
             "market_verification_evidence_not_canonical"
         )
@@ -229,10 +274,19 @@ def read_market_verification_evidence_with_component_bars(
     if evidence.component_relation is not None:
         try:
             component_bars = _replay_component_evidence(store, evidence)
-        except (ObjectStoreError, TypeError, ValueError) as exc:
+        except (
+            ObjectStoreError,
+            KeyError,
+            ArithmeticError,
+            TypeError,
+            ValueError,
+        ) as exc:
             raise MarketVerificationEvidenceIntegrityError(
                 "market_verification_component_replay_failed"
             ) from exc
+    verified = _READ_EVIDENCE.get()
+    if verified is not None:
+        verified[(store.root.resolve(), ref)] = evidence
     return evidence, component_bars
 
 
@@ -373,8 +427,17 @@ def _serialize(evidence: MarketVerificationEvidence) -> bytes:
                 "kind": _component_kind(relation),
                 "block_page_capture_ids": list(relation.block_page_capture_ids),
                 "mapping_capture_id": relation.mapping_capture_id,
+                **(
+                    {"official_history_ids": dict(relation.official_history_ids)}
+                    if isinstance(relation, TushareEastmoneyActivity)
+                    else {}
+                ),
             }
         )
+    return _evidence_json(payload)
+
+
+def _evidence_json(payload) -> bytes:
     return json.dumps(
         payload,
         sort_keys=True,
@@ -382,6 +445,37 @@ def _serialize(evidence: MarketVerificationEvidence) -> bytes:
         ensure_ascii=False,
         allow_nan=False,
     ).encode("utf-8")
+
+
+def _current_evidence_bytes(payload, raw: bytes) -> bytes:
+    """Decode two historical spellings only after verifying the original encoding."""
+    if not isinstance(payload, dict):
+        return raw
+    relation = payload.get("component_relation")
+    policy = payload.get("policy")
+    old_relation = "karkinos.tushare_eastmoney.reported_activity.v1"
+    old_amount = "karkinos.tencent_eastmoney.reported_amount.v1"
+    legacy_relation = (
+        isinstance(relation, dict) and relation.get("kind") == old_relation
+    )
+    legacy_amount = (
+        isinstance(policy, dict) and policy.get("source_precision_policy") == old_amount
+    )
+    if not legacy_relation and not legacy_amount:
+        return raw
+    if _evidence_json(payload) != raw:
+        raise MarketVerificationEvidenceIntegrityError(
+            "market_verification_evidence_not_canonical"
+        )
+    if legacy_relation:
+        if payload.get("policy_id") != old_relation:
+            raise MarketVerificationEvidenceIntegrityError(
+                "market_verification_policy_unsupported"
+            )
+        relation["kind"] = payload["policy_id"] = REPORTED_ACTIVITY_KIND
+    if legacy_amount:
+        policy["source_precision_policy"] = TENCENT_EASTMONEY_REPORTED_AMOUNT
+    return _evidence_json(payload)
 
 
 def _from_payload(ref: ObjectRef, value: object) -> MarketVerificationEvidence:
@@ -499,6 +593,8 @@ def _from_payload(ref: ObjectRef, value: object) -> MarketVerificationEvidence:
 
 
 def _component_kind(relation) -> str:
+    if type(relation) is TushareEastmoneyActivity:
+        return REPORTED_ACTIVITY_KIND
     if type(relation) is BseAuctionRelation:
         return BSE_AUCTION_RELATION_KIND
     if type(relation) is BseTencentReportedRelation:
@@ -526,8 +622,33 @@ def _tencent_component_payload(relation: BseTencentReportedRelation) -> dict:
 
 def _component_from_payload(
     value: object,
-) -> BseAuctionRelation | BseTencentReportedRelation:
+) -> BseAuctionRelation | BseTencentReportedRelation | TushareEastmoneyActivity:
     payload = _object(value, field="component_relation")
+    if payload.get("kind") == REPORTED_ACTIVITY_KIND:
+        _exact_keys(
+            payload,
+            {
+                "kind",
+                "block_page_capture_ids",
+                "mapping_capture_id",
+                "official_history_ids",
+            },
+            field="component_relation",
+        )
+        mapping = payload["mapping_capture_id"]
+        if (
+            not isinstance(payload["block_page_capture_ids"], list)
+            or not isinstance(payload["official_history_ids"], dict)
+            or (mapping is not None and not isinstance(mapping, str))
+        ):
+            raise MarketVerificationEvidenceIntegrityError(
+                "market_reported_activity_disclosures_invalid"
+            )
+        return TushareEastmoneyActivity(
+            tuple(payload["block_page_capture_ids"]),
+            mapping,
+            tuple(sorted(payload["official_history_ids"].items())),
+        )
     if payload.get("kind") == BSE_TENCENT_REPORTED_RELATION_KIND:
         if not isinstance(payload.get("block_page_capture_ids"), list):
             raise MarketVerificationEvidenceIntegrityError(
@@ -564,6 +685,26 @@ def _component_from_payload(
 
 
 def _validate_component_metadata(evidence: MarketVerificationEvidence) -> None:
+    if isinstance(evidence.component_relation, TushareEastmoneyActivity):
+        if (
+            evidence.policy != EASTMONEY_TUSHARE_BSE_RECONCILIATION
+            or (
+                evidence.report.primary_provider,
+                evidence.primary_upstream_group,
+                evidence.primary_adapter_version,
+            )
+            != ("tushare", "tushare", "karkinos.tushare.daily_bar.v2")
+            or (
+                evidence.report.comparison_provider,
+                evidence.comparison_upstream_group,
+                evidence.comparison_adapter_version,
+            )
+            != ("akshare", "eastmoney", "karkinos.akshare.daily_bar.v2")
+        ):
+            raise MarketVerificationEvidenceIntegrityError(
+                "market_reported_activity_source_pair_invalid"
+            )
+        return
     if type(evidence.component_relation) is BseTencentReportedRelation:
         if (
             evidence.policy != STRICT_DAILY_RECONCILIATION

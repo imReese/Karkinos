@@ -18,6 +18,40 @@ from core.types import InstrumentKey
 from data.market.model import DailyBarObservation
 
 
+def reported_whole_hand_volume_matches(
+    precise_shares: Decimal, whole_hand_shares: Decimal
+) -> bool:
+    """One exact integer HALF_UP projection, after accepting exact equality.
+
+    Integer divmod avoids ambient Decimal precision and intermediate rounding.
+    Differing values outside the bounded 80-digit integer domain fail closed;
+    this implementation bound is not a financial error allowance.
+    """
+    if any(
+        not isinstance(value, Decimal) or not value.is_finite()
+        for value in (precise_shares, whole_hand_shares)
+    ):
+        return False
+    if precise_shares == whole_hand_shares:
+        return True
+    for value in (precise_shares, whole_hand_shares):
+        parts = value.as_tuple()
+        if (
+            value <= 0
+            or len(parts.digits) > 80
+            or not isinstance(parts.exponent, int)
+            or parts.exponent < -80
+            or value.adjusted() > 79
+            or value != value.to_integral_value()
+        ):
+            return False
+    precise, reported = int(precise_shares), int(whole_hand_shares)
+    if reported % 100:
+        return False
+    units, remainder = divmod(precise, 100)
+    return (units + (remainder >= 50)) * 100 == reported
+
+
 def normalize_daily_bar(
     *,
     instrument: InstrumentKey,

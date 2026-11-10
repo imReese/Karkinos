@@ -226,8 +226,22 @@ def test_verification_requires_passing_quality_on_both_sides(tmp_path: Path) -> 
 def test_verification_replay_fails_if_referenced_quality_is_corrupted(
     tmp_path: Path,
 ) -> None:
+    from data.market.verification_evidence import (
+        market_verification_read_scope,
+        read_market_verification_evidence_with_component_bars,
+    )
+
     store = ContentAddressedObjectStore(tmp_path / "objects")
     evidence, _, comparison_quality = _verification(store)
+    with market_verification_read_scope():
+        checked, _ = read_market_verification_evidence_with_component_bars(
+            store, evidence.ref
+        )
+        assert read_market_verification_evidence(store, evidence.ref) is checked
+        with pytest.raises(MarketVerificationEvidenceIntegrityError):
+            read_market_verification_evidence(
+                ContentAddressedObjectStore(tmp_path / "other"), evidence.ref
+            )
     quality_path = (
         store.root
         / "sha256"

@@ -36,7 +36,10 @@ from data.market.cross_source import (
     ingest_single_source_daily_bars,
 )
 from data.market.ingestion import DailyBarIngestionResult
-from data.market.quality import RESEARCH_STRICT_DAILY
+from data.market.quality import RESEARCH_STRICT_DAILY, MarketQualityDiagnosticKind
+from data.market.reconciliation import TENCENT_EASTMONEY_STOCK_RECONCILIATION
+from data.market.reported_activity import TushareEastmoneyActivity
+from data.market.revision import validate_daily_bar_materialization
 from data.market.serving import MarketServingStore
 from data.source_policy import (
     MarketDataUseCase,
@@ -504,7 +507,7 @@ class VerifiedDailyMarketDataService:
                     else "conflict"
                 )
                 raise VerifiedDailyMarketDataNotPublishable(
-                    _not_publishable_code(candidate_evidence),
+                    _not_publishable_code(store, candidate_evidence),
                     failure_evidence_ref=_not_publishable_evidence_ref(
                         candidate_evidence
                     ),
@@ -805,21 +808,30 @@ class VerifiedDailyMarketDataService:
             except CrossSourceDailyBarUnavailableError as exc:
                 unavailable.add(exc.provider)
                 continue
+            failure = None
             for row in rows:
-                if not row.eligible_for_verified_dataset:
-                    raise VerifiedDailyMarketDataNotPublishable(
-                        _not_publishable_code(row),
-                        failure_evidence_ref=_not_publishable_evidence_ref(row),
-                        source_resolution=VerifiedDailySourceResolution(
-                            policy.policy_id,
-                            "quality_blocked"
-                            if row.verification is None
-                            else "conflict",
-                            tuple(attempted),
-                            tuple(sorted(unavailable)),
-                            (pair.primary_name, pair.comparison_name),
-                        ),
-                    )
+                if row.eligible_for_verified_dataset:
+                    continue
+                code = _not_publishable_code(store, row)
+                if failure is None or code != "verified_daily_market_quality_blocked":
+                    failure = code, row
+                if code != "verified_daily_market_quality_blocked":
+                    break  # An earlier coverage gap cannot hide a later conflict.
+            if failure is not None:
+                code, failed = failure
+                raise VerifiedDailyMarketDataNotPublishable(
+                    code,
+                    failure_evidence_ref=_not_publishable_evidence_ref(failed),
+                    source_resolution=VerifiedDailySourceResolution(
+                        policy.policy_id,
+                        "quality_blocked"
+                        if failed.verification is None
+                        else "conflict",
+                        tuple(attempted),
+                        tuple(sorted(unavailable)),
+                        (pair.primary_name, pair.comparison_name),
+                    ),
+                )
             evidence_rows, selected_pair = rows, pair
             break
         if not evidence_rows or selected_pair is None:
@@ -869,6 +881,8 @@ class VerifiedDailyMarketDataService:
         *,
         verification_ids: tuple[str, ...],
         checked_at: datetime,
+        reported_activity: Mapping[date, TushareEastmoneyActivity] | None = None,
+        tencent_eastmoney_reported_amount: bool = False,
         before_publish: Callable[[], None] | None = None,
         publication_guard: Callable[[Callable[[], None]], None] | None = None,
     ) -> VerifiedDailyMarketPublication:
@@ -913,6 +927,17 @@ class VerifiedDailyMarketDataService:
             raise VerifiedDailyMarketDataRequestError(
                 "captured_reverification_pair_not_allowed"
             )
+        if tencent_eastmoney_reported_amount:
+            if {pair.primary_name, pair.comparison_name} != {
+                "akshare_tencent",
+                "akshare",
+            }:
+                raise VerifiedDailyMarketDataRequestError(
+                    "captured_reverification_pair_not_allowed"
+                )
+            pair = replace(
+                pair, reconciliation_policy=TENCENT_EASTMONEY_STOCK_RECONCILIATION
+            )
         rows = reverify_captured_daily_bar_evidence(
             store,
             verification_ids=verification_ids,
@@ -922,11 +947,12 @@ class VerifiedDailyMarketDataService:
             comparison_descriptor=pair.comparison.descriptor,
             reconciliation_policy=pair.reconciliation_policy,
             checked_at=_utc_now(checked_at),
+            reported_activity=reported_activity,
         )
         for row in rows:
             if not row.eligible_for_verified_dataset:
                 raise VerifiedDailyMarketDataNotPublishable(
-                    _not_publishable_code(row),
+                    _not_publishable_code(store, row),
                     failure_evidence_ref=_not_publishable_evidence_ref(row),
                 )
         return self._publish_range_evidence(
@@ -1067,6 +1093,16 @@ def verified_daily_resolver_policy_id(source_policy_id: str) -> str:
     return _RESOLVER_POLICY_PREFIX + source_policy_id
 
 
+def reported_activity_reverification_payload(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Identify a recheck of the same range using original captures and exchange disclosures."""
+    return {
+        **payload,
+        "observation_round": f"{payload['observation_round']}.reported_activity",
+    }
+
+
 def is_verified_daily_resolver_policy(policy_id: str) -> bool:
     return str(policy_id).startswith(_RESOLVER_POLICY_PREFIX)
 
@@ -1079,10 +1115,38 @@ def is_single_source_daily_resolver_policy(policy_id: str) -> bool:
     return str(policy_id).startswith(_SINGLE_SOURCE_RESOLVER_POLICY_PREFIX)
 
 
-def _not_publishable_code(result: CrossSourceDailyBarResult) -> str:
-    if result.verification is None:
-        return "verified_daily_market_quality_blocked"
-    return "verified_daily_market_cross_source_conflict"
+def _not_publishable_code(
+    store: ContentAddressedObjectStore, result: CrossSourceDailyBarResult
+) -> str:
+    if result.verification is not None:
+        return "verified_daily_market_cross_source_conflict"
+    for side, other in (
+        (result.primary, result.comparison),
+        (result.comparison, result.primary),
+    ):
+        if side.revision.provider != "baostock":
+            continue
+        missing = {
+            d.instrument
+            for d in side.quality.diagnostics
+            if d.kind is MarketQualityDiagnosticKind.MISSING_INSTRUMENT
+        }
+        if not missing:
+            continue
+        if any(
+            d.kind is MarketQualityDiagnosticKind.MATERIALIZATION_INTEGRITY_FAILURE
+            for d in other.quality.diagnostics
+        ):
+            return "verified_daily_market_quality_integrity_blocked"
+        if any(
+            bar.instrument in missing and (bar.volume > 0 or bar.amount > 0)
+            for bar in validate_daily_bar_materialization(
+                store, revision=other.revision, materialization=other.materialization
+            )
+        ):
+            # A later halt correction must never hide the other source's trade.
+            return "verified_daily_market_trade_coverage_conflict"
+    return "verified_daily_market_quality_blocked"
 
 
 def _not_publishable_evidence_ref(result: CrossSourceDailyBarResult) -> str:
