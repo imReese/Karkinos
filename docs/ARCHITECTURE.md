@@ -81,7 +81,7 @@ and availability times. Its `trade_date` selects the daily-bar history window;
 it is not a historical membership effective date. New observations preserve
 revisions under separate content-addressed IDs, including within the same day.
 Research replay uses the frozen universe ID, while current scan freshness still
-checks whether the latest universe has changed. Legacy v1 observations retain
+checks whether the latest universe has changed. Legacy observations retain
 their exact identity but have unknown availability and cannot satisfy an as-of
 read. Capturing today's active stock list never establishes survivorship-free
 historical membership or provider raw-response provenance.

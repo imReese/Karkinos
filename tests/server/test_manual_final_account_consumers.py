@@ -16,7 +16,7 @@ from server.contracts.ai_shadow_research_qualification import (
 from server.persistence.strategy_research import StrategyResearchAuditStore
 from server.services.research import research_final_evaluation as owner
 from tests.server.test_research_final_evaluation import harness  # noqa: F401
-from tests.server.test_research_final_statistical_v2 import v2  # noqa: F401
+from tests.server.test_research_final_statistical_policy import final_policy  # noqa: F401
 
 
 def _source():
@@ -56,8 +56,8 @@ def _evidence(binding=None):
 
 
 @pytest_asyncio.fixture
-async def requirements(v2, monkeypatch):
-    t = v2
+async def requirements(final_policy, monkeypatch):
+    t = final_policy
     evidence = _evidence(deepcopy(t.binding))
     original = deepcopy(evidence)
     validated = []

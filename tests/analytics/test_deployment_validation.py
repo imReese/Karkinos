@@ -11,7 +11,7 @@ from analytics.sealed_holdout import build_sealed_partition, sealed_return_from_
 from backtest.result import BacktestResult
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.recommendation_publication import (
-    FINAL_STATISTICAL_POLICY_V2_SCHEMA,
+    FINAL_STATISTICAL_POLICY_SCHEMA,
     validate_final_statistical_policy,
 )
 
@@ -150,7 +150,7 @@ def _v2_arguments():
     }
     policy = {
         **_policy(),
-        "schema_version": FINAL_STATISTICAL_POLICY_V2_SCHEMA,
+        "schema_version": FINAL_STATISTICAL_POLICY_SCHEMA,
         "research_policy_fingerprint": (
             "sha256:cbe4acc461643454490d81db9f2688c4938f4f49a14ba0131ff7be5c275ccbc4"
         ),
@@ -242,7 +242,7 @@ def test_v2_secondary_misalignment_is_not_waived_by_diagnostic_role():
 def test_v2_profile_requires_explicit_accepted_frozen_thresholds(field, value):
     policy = _v2_arguments()["policy"]
     policy[field] = value
-    with pytest.raises(ValueError, match="statistical_v2_frozen_profile_mismatch"):
+    with pytest.raises(ValueError, match="statistical_frozen_profile_mismatch"):
         validate_final_statistical_policy(policy, content_fingerprint(policy))
 
 
@@ -283,7 +283,7 @@ def test_v2_forbids_checkpoint_roll_forward_while_v1_keeps_existing_interval():
     arguments = _v2_arguments()
     arguments["policy"]["checkpoint_interval_days"] = 120
     arguments["policy_fingerprint"] = content_fingerprint(arguments["policy"])
-    with pytest.raises(ValueError, match="statistical_v2_frozen_profile_mismatch"):
+    with pytest.raises(ValueError, match="statistical_frozen_profile_mismatch"):
         compare_session_curves(**arguments)
 
 

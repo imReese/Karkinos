@@ -14,7 +14,7 @@ from server.contracts.recommendation_publication import (
 from server.services.research import research_final_evaluation as owner
 from tests.server.test_manual_research_prospective import manual, reserve  # noqa: F401
 from tests.server.test_research_final_evaluation import harness  # noqa: F401
-from tests.server.test_research_final_statistical_v2 import v2  # noqa: F401
+from tests.server.test_research_final_statistical_policy import final_policy  # noqa: F401
 
 CALENDAR = "server.services.market.market_universe_automation.verified_trading_dates"
 
@@ -137,9 +137,9 @@ def compare(t, *, curves=None, calendar_db=None):
 
 @pytest.mark.asyncio
 async def test_final_requires_complete_calendar_and_checks_every_observation(
-    v2, monkeypatch
+    final_policy, monkeypatch
 ):
-    t = v2
+    t = final_policy
     opt_in(t.binding, t)
     frozen = deepcopy(t.binding)
     with pytest.raises(ValueError, match="final_calendar_required"):
@@ -174,27 +174,31 @@ async def test_final_requires_complete_calendar_and_checks_every_observation(
 
 
 @pytest.mark.asyncio
-async def test_complete_calendar_with_only_59_sessions_cannot_pass(v2, monkeypatch):
-    opt_in(v2.binding, v2)
-    days = v2.days[1:]
+async def test_complete_calendar_with_only_59_sessions_cannot_pass(
+    final_policy, monkeypatch
+):
+    opt_in(final_policy.binding, final_policy)
+    days = final_policy.days[1:]
     monkeypatch.setattr(CALENDAR, lambda *_a, **_k: days)
-    curves = deepcopy(v2.curves)
+    curves = deepcopy(final_policy.curves)
     curves["candidate"] = curves["candidate"][1:]
     curves["comparators"] = {k: v[1:] for k, v in curves["comparators"].items()}
-    result = compare(v2, curves=curves, calendar_db=v2.h.db)
+    result = compare(final_policy, curves=curves, calendar_db=final_policy.h.db)
     assert result["status"] != "pass"
     assert result["policy"]["minimum_observations"] == 60
 
 
 @pytest.mark.asyncio
-async def test_calendar_revision_rejects_unknown_policy_and_checkpoint_tampering(v2):
-    opt_in(v2.binding, v2)
-    profile = v2.binding["simulation_policy"]["statistical_policy"]
+async def test_calendar_revision_rejects_unknown_policy_and_checkpoint_tampering(
+    final_policy,
+):
+    opt_in(final_policy.binding, final_policy)
+    profile = final_policy.binding["simulation_policy"]["statistical_policy"]
     validate_final_statistical_policy(profile, content_fingerprint(profile))
     for mutation, error in (
         (
             {"calendar_verification_timing": "skip"},
-            "statistical_v2_frozen_profile_mismatch",
+            "statistical_frozen_profile_mismatch",
         ),
         ({"schema_version": None}, "statistical_policy_version_unsupported"),
     ):
@@ -205,14 +209,16 @@ async def test_calendar_revision_rejects_unknown_policy_and_checkpoint_tampering
         {"effective_checkpoint": "2026-03-17"},
         {"checkpoint_resolution": {"last_session_on_or_before": "2026-03-19"}},
     ):
-        bad = {**v2.binding, **mutation}
+        bad = {**final_policy.binding, **mutation}
         with pytest.raises(ValueError, match="frozen_checkpoint_mismatch"):
-            owner._verified_statistical_inputs(bad, v2.h.selection, v2.h.store)
+            owner._verified_statistical_inputs(
+                bad, final_policy.h.selection, final_policy.h.store
+            )
 
 
 @pytest.mark.asyncio
 async def test_canonical_policy_upgrade_preserves_grant_and_omits_v1_rolling_defaults(
-    v2,
+    final_policy,
 ):
     from server.contracts.ai_shadow_research_automation import (
         SHADOW_RESEARCH_PAUSE_CONFIRMATION,
@@ -222,13 +228,13 @@ async def test_canonical_policy_upgrade_preserves_grant_and_omits_v1_rolling_def
         minimal_simulation,
     )
 
-    commands = Commands(v2.h.db)
+    commands = Commands(final_policy.h.db)
     patch = {"enabled": False, "confirmation": SHADOW_RESEARCH_PAUSE_CONFIRMATION}
     first = commands.update_policy(
         {**patch, "simulation_validation": minimal_simulation()}
     )["simulation_validation"]
-    opt_in(v2.binding, v2)
-    profile = deepcopy(v2.binding["simulation_policy"]["statistical_policy"])
+    opt_in(final_policy.binding, final_policy)
+    profile = deepcopy(final_policy.binding["simulation_policy"]["statistical_policy"])
     upgraded = commands.update_policy(
         {**patch, "simulation_validation": {**first, "statistical_policy": profile}}
     )["simulation_validation"]

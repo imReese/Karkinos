@@ -16,12 +16,12 @@ from server.contracts.content_identity import content_fingerprint
 from server.persistence.strategy_research_sealed import final_reservation_id
 from server.services.research import research_final_evaluation as owner
 from tests.server.test_research_final_evaluation import harness  # noqa: F401
-from tests.server.test_research_final_statistical_v2 import v2  # noqa: F401
+from tests.server.test_research_final_statistical_policy import final_policy  # noqa: F401
 
 
 @pytest_asyncio.fixture
-async def manual(v2, monkeypatch):
-    t = v2
+async def manual(final_policy, monkeypatch):
+    t = final_policy
     h = t.h
     refs = ResearchSimulationSourceConfig(
         session_id=h.candidate["session_id"],

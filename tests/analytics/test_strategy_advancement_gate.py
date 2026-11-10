@@ -23,6 +23,7 @@ from analytics.research_account_capital_evidence import (
     build_research_account_capital_evidence,
 )
 from analytics.strategy_advancement_gate import (
+    GATE_SCHEMA,
     STRATEGY_ADVANCEMENT_REQUIRED_CHECK_NAMES,
     build_strategy_advancement_gate,
     is_valid_passed_strategy_advancement_gate,
@@ -319,7 +320,7 @@ def test_strategy_advancement_gate_passes_only_complete_deterministic_evidence()
     assert gate.status == "pass"
     assert gate.blockers == ()
     payload = gate.to_json_dict()
-    assert payload["schema_version"] == "karkinos.strategy_advancement_gate.v2"
+    assert payload["schema_version"] == GATE_SCHEMA
     assert payload["does_not_create_order"] is True
     assert payload["does_not_authorize_execution"] is True
     assert payload["does_not_change_capital_authority"] is True

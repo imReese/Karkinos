@@ -20,7 +20,12 @@ from data.handler import DataHandler
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.http.strategy_models import BacktestCostAssumptions
 from server.contracts.recommendation_publication import (
-    FINAL_STATISTICAL_POLICY_V2_SCHEMA,
+    FINAL_CALENDAR_AT_EVALUATION,
+    FINAL_STATISTICAL_POLICY_SCHEMA,
+    LEGACY_CALENDAR_AT_EVALUATION,
+    LEGACY_FINAL_STATISTICAL_POLICY_SCHEMA,
+    is_final_calendar_timing,
+    is_final_statistical_policy,
 )
 from server.services.ai_shadow.ai_shadow_research_commands import (
     simulation_validation_defaults,
@@ -39,8 +44,26 @@ from tests.server.test_research_final_evaluation import (
 )
 
 
+def test_legacy_statistical_policy_identifier_remains_readable():
+    assert is_final_statistical_policy(
+        {"schema_version": FINAL_STATISTICAL_POLICY_SCHEMA}
+    )
+    assert is_final_statistical_policy(
+        {"schema_version": LEGACY_FINAL_STATISTICAL_POLICY_SCHEMA}
+    )
+    assert not is_final_statistical_policy({})
+    assert not is_final_statistical_policy({"schema_version": "unknown"})
+
+
+def test_legacy_calendar_verification_timing_remains_readable():
+    assert is_final_calendar_timing(FINAL_CALENDAR_AT_EVALUATION)
+    assert is_final_calendar_timing(next(iter(LEGACY_CALENDAR_AT_EVALUATION)))
+    assert not is_final_calendar_timing(None)
+    assert not is_final_calendar_timing("unknown")
+
+
 @pytest_asyncio.fixture
-async def v2(harness):
+async def final_policy(harness):
     h = harness
     symbol = Symbol("600000")
     frame = pd.DataFrame(
@@ -123,7 +146,7 @@ async def v2(harness):
         effective_checkpoint=days[-1],
     )
     profile = {
-        "schema_version": FINAL_STATISTICAL_POLICY_V2_SCHEMA,
+        "schema_version": FINAL_STATISTICAL_POLICY_SCHEMA,
         "method": "paired_moving_block_bootstrap.v1",
         "research_policy_fingerprint": "sha256:" + "a" * 64,
         "minimum_observations": 60,
@@ -183,9 +206,9 @@ def _compare(t, binding=None, curves=None):
 
 @pytest.mark.asyncio
 async def test_v2_reserve_verifies_prebound_mapping_and_calendar_without_filling_policy(
-    v2, monkeypatch
+    final_policy, monkeypatch
 ):
-    t = v2
+    t = final_policy
     before = deepcopy(t.sim)
     monkeypatch.setattr(
         "server.contracts.research_observation_automation.read_research_validation_policy",
@@ -211,10 +234,12 @@ async def test_v2_reserve_verifies_prebound_mapping_and_calendar_without_filling
 
 
 @pytest.mark.asyncio
-async def test_v2_all_eleven_identities_keep_primary_only_gate_and_full_alpha(v2):
-    result = _compare(v2)
+async def test_v2_all_eleven_identities_keep_primary_only_gate_and_full_alpha(
+    final_policy,
+):
+    result = _compare(final_policy)
     assert result["status"] == "pass"
-    assert result["policy"] == v2.sim["statistical_policy"]
+    assert result["policy"] == final_policy.sim["statistical_policy"]
     assert result["effective_checkpoint"] == "2026-03-17"
     assert result["policy"]["decision_checkpoint"] == "2026-03-18"
     assert len(result["comparisons"]) == 11
@@ -228,14 +253,17 @@ async def test_v2_all_eleven_identities_keep_primary_only_gate_and_full_alpha(v2
         ]
         < 0
     )
-    relabeled = deepcopy(v2.binding)
+    relabeled = deepcopy(final_policy.binding)
     relabeled["formula_comparators"]["alias"] = relabeled["formula_comparators"].pop(
         "Gen7"
     )
     actual = owner._statistical_comparator_bindings(
-        relabeled, v2.h.selection, v2.h.store, policy={"primary_comparator": "MA"}
+        relabeled,
+        final_policy.h.selection,
+        final_policy.h.store,
+        policy={"primary_comparator": "MA"},
     )
-    original = v2.sim["statistical_policy"]["comparator_bindings"]
+    original = final_policy.sim["statistical_policy"]["comparator_bindings"]
     assert (
         actual["alias"]["identity_fingerprint"]
         == original["Gen7"]["identity_fingerprint"]
@@ -244,7 +272,7 @@ async def test_v2_all_eleven_identities_keep_primary_only_gate_and_full_alpha(v2
         actual["MA"]["identity_fingerprint"] == original["MA"]["identity_fingerprint"]
     )
     with pytest.raises(ValueError, match="comparator_identity_binding_mismatch"):
-        _compare(v2, relabeled)
+        _compare(final_policy, relabeled)
 
 
 @pytest.mark.asyncio
@@ -263,8 +291,8 @@ async def test_v2_all_eleven_identities_keep_primary_only_gate_and_full_alpha(v2
         "source",
     ],
 )
-async def test_v2_callers_reject_tampering(v2, change):
-    binding, curves = deepcopy(v2.binding), deepcopy(v2.curves)
+async def test_v2_callers_reject_tampering(final_policy, change):
+    binding, curves = deepcopy(final_policy.binding), deepcopy(final_policy.curves)
     if change == "fee":
         binding["simulation_cost_inputs"]["slippage_bps"] = 99
     elif change == "cash":
@@ -292,25 +320,25 @@ async def test_v2_callers_reject_tampering(v2, change):
         for curve in curves["comparators"].values():
             curve.pop()
     elif change == "source":
-        with sqlite3.connect(v2.h.db.path) as conn:
+        with sqlite3.connect(final_policy.h.db.path) as conn:
             conn.execute(
                 "UPDATE backtest_results SET created_at=? WHERE id=?",
-                ("changed", v2.references["Gen7"]["source_result_id"]),
+                ("changed", final_policy.references["Gen7"]["source_result_id"]),
             )
     if change == "truncated":
-        result = _compare(v2, binding, curves)
+        result = _compare(final_policy, binding, curves)
         assert result["status"] == "insufficient_evidence"
         assert "deployment_independent_sample_insufficient" in result["blockers"]
     else:
         with pytest.raises((ValueError, KeyError)):
-            _compare(v2, binding, curves)
+            _compare(final_policy, binding, curves)
 
 
 @pytest.mark.asyncio
 async def test_v2_reviewed_fee_context_is_distinct_and_cannot_relabel_original_sim(
-    v2, monkeypatch
+    final_policy, monkeypatch
 ):
-    t = v2
+    t = final_policy
     original = deepcopy(t.binding)
     grant = deepcopy(t.sim)
     reviewed = {
@@ -363,8 +391,10 @@ async def test_v2_reviewed_fee_context_is_distinct_and_cannot_relabel_original_s
 
 
 @pytest.mark.asyncio
-async def test_v2_incumbent_uses_full_canonical_source_and_remains_in_alpha(v2):
-    t = v2
+async def test_v2_incumbent_uses_full_canonical_source_and_remains_in_alpha(
+    final_policy,
+):
+    t = final_policy
     reference = _seed_exact_formula_comparator(t.h, 11)
     saved = t.h.store.research_backtest_result(reference["source_result_id"])
     binding = deepcopy(t.binding)
@@ -397,10 +427,12 @@ async def test_v2_incumbent_uses_full_canonical_source_and_remains_in_alpha(v2):
 
 
 @pytest.mark.asyncio
-async def test_v1_caller_retains_exact_prior_calculator_bytes_without_new_fields(v2):
+async def test_v1_caller_retains_exact_prior_calculator_bytes_without_new_fields(
+    final_policy,
+):
     from analytics.deployment_validation import compare_session_curves
 
-    binding = deepcopy(v2.binding)
+    binding = deepcopy(final_policy.binding)
     profile = {
         key: binding["simulation_policy"]["statistical_policy"][key]
         for key in (
@@ -417,13 +449,16 @@ async def test_v1_caller_retains_exact_prior_calculator_bytes_without_new_fields
     binding["simulation_policy"]["statistical_policy"] = profile
     before = deepcopy(binding)
     expected = compare_session_curves(
-        candidate=v2.curves["candidate"],
-        comparators=v2.curves["comparators"],
+        candidate=final_policy.curves["candidate"],
+        comparators=final_policy.curves["comparators"],
         initial_cash=binding["initial_cash"],
-        policy={**profile, "decision_checkpoint": v2.curves["candidate"][-1][0][:10]},
-        seed=v2.reserved["sealed_test_id"],
+        policy={
+            **profile,
+            "decision_checkpoint": final_policy.curves["candidate"][-1][0][:10],
+        },
+        seed=final_policy.reserved["sealed_test_id"],
     )
-    actual = _compare(v2, binding)
+    actual = _compare(final_policy, binding)
     assert json.dumps(actual, sort_keys=True) == json.dumps(expected, sort_keys=True)
     assert binding == before
     assert not {
@@ -435,9 +470,9 @@ async def test_v1_caller_retains_exact_prior_calculator_bytes_without_new_fields
 
 @pytest.mark.asyncio
 async def test_v2_final_replay_and_persisted_gate_do_not_reintroduce_max(
-    v2, monkeypatch
+    final_policy, monkeypatch
 ):
-    t = v2
+    t = final_policy
     cash = Decimal(t.binding["initial_cash"])
     asts = {
         content_fingerprint(t.h.draft["formula_ast"]): "candidate",
@@ -541,7 +576,7 @@ async def test_v2_final_replay_and_persisted_gate_do_not_reintroduce_max(
     assert finished[-1]["status"] == "completed"
     assert (
         evidence["sealed_evaluation"]["benchmark_role"]
-        == "frozen_primary_comparator.v2:Gen7"
+        == "frozen_primary_comparator:Gen7"
     )
     assert final_research_evaluation_blocker(evidence) is None
     assert (

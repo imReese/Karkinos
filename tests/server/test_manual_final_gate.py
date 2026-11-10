@@ -18,12 +18,12 @@ from server.contracts.content_identity import content_fingerprint
 from server.services.research import research_final_evaluation as owner
 from tests.server.test_research_final_calendar_timing import opt_in
 from tests.server.test_research_final_evaluation import harness  # noqa: F401
-from tests.server.test_research_final_statistical_v2 import v2  # noqa: F401
+from tests.server.test_research_final_statistical_policy import final_policy  # noqa: F401
 
 
 @pytest_asyncio.fixture
-async def late_calendar_final(v2, monkeypatch):
-    t = v2
+async def late_calendar_final(final_policy, monkeypatch):
+    t = final_policy
     opt_in(t.binding, t)
     cash = Decimal(t.binding["initial_cash"])
     asts = {

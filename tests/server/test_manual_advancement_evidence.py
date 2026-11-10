@@ -21,9 +21,9 @@ from analytics.strategy_advancement_gate import (
 )
 from server.contracts.content_identity import content_fingerprint
 from tests.analytics.test_strategy_advancement_gate import _view
-from tests.server.test_manual_final_v2_gate import late_calendar_final  # noqa: F401
+from tests.server.test_manual_final_gate import late_calendar_final  # noqa: F401
 from tests.server.test_research_final_evaluation import harness  # noqa: F401
-from tests.server.test_research_final_statistical_v2 import v2  # noqa: F401
+from tests.server.test_research_final_statistical_policy import final_policy  # noqa: F401
 
 
 def seal(value):
@@ -91,7 +91,7 @@ def account_view(*, candidate, cash):
 
 
 @pytest.fixture
-def manual_gate_inputs(late_calendar_final, v2):
+def manual_gate_inputs(late_calendar_final, final_policy):
     final = deepcopy(late_calendar_final)
     binding = final["reservation"]
     sim = binding["simulation_policy"]
@@ -137,7 +137,7 @@ def manual_gate_inputs(late_calendar_final, v2):
     baseline = account_view(candidate=False, cash=cash)
     candidate = account_view(candidate=True, cash=cash)
     candidate.update(
-        formula_ast=v2.h.draft["formula_ast"],
+        formula_ast=final_policy.h.draft["formula_ast"],
         formula_fingerprint="sha256:" + "2" * 64,
         independent_evaluation=final,
     )

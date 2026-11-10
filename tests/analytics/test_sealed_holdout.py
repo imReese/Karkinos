@@ -227,7 +227,7 @@ def test_default_partition_preserves_original_serialized_identity():
     original = (
         '{"holdout_fraction":0.2,"research_end":"2026-01-16",'
         '"research_start":"2026-01-01",'
-        '"schema_version":"karkinos.sealed_partition.v1",'
+        '"schema_version":"karkinos.sealed_partition.contiguous",'
         '"sealed_end":"2026-01-20","sealed_start":"2026-01-17"}'
     )
     assert (
@@ -250,7 +250,7 @@ def test_prospective_partition_gap_does_not_become_research_or_test_days():
     assert partition.sealed_days == 4
     assert partition.holdout_fraction == Decimal("0.2")  # 4 / (16 + 4)
     assert partition.to_json_dict() == {
-        "schema_version": "karkinos.sealed_partition.v2",
+        "schema_version": "karkinos.sealed_partition.prospective",
         "research_start": "2026-01-01",
         "research_end": "2026-01-16",
         "sealed_start": "2026-02-01",
@@ -286,6 +286,20 @@ def test_prospective_partition_gap_does_not_become_research_or_test_days():
     assert payload["sealed_return"] == pytest.approx(0.02)
     assert sealed_return_from_result(result, partition) == Decimal("0.02")
     assert is_valid_sealed_holdout_evaluation(payload)
+
+
+def test_legacy_prospective_partition_contract_remains_readable():
+    from analytics.sealed_holdout import _validated_partition
+
+    partition = build_sealed_partition(
+        research_start="2026-01-01",
+        research_end="2026-01-16",
+        sealed_end="2026-02-04",
+        prospective_start="2026-02-01",
+    )
+    payload = partition.to_json_dict()
+    payload["schema_version"] = "karkinos.sealed_partition.v2"
+    assert _validated_partition(payload) == partition
 
 
 @pytest.mark.parametrize(
