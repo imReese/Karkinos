@@ -1785,16 +1785,20 @@ def _verified_seed_master(objects, raw_master, policy, day, now):
     )
 
 
-def _seed_extension_memberships(
-    objects, market_store, scope, dates, prefix, through, now
+def _seed_extension_rosters(
+    objects, market_store, scope, dates, prefix, through, now, *, latest_master
 ):
-    """Use observed daily rosters when extending a completed full-market seed."""
-    from server.services.market.market_universe_truth import MarketUniversePolicy
+    """Collect dated memberships and the halted stocks that keep range batches stable."""
+    from server.services.market.market_universe_truth import (
+        MarketUniversePolicy,
+        market_master_halted_batch_instruments,
+    )
 
     memberships = {}
-    if prefix is None:
-        return memberships
+    if prefix is None or prefix.end_date >= through:
+        return memberships, set()
     policy = MarketUniversePolicy.from_dict(scope["universe_policy"])
+    halted = set(market_master_halted_batch_instruments(latest_master, policy))
     for item in dates:
         day = date.fromisoformat(item.trade_date)
         if not prefix.end_date < day < through:
@@ -1812,7 +1816,8 @@ def _seed_extension_memberships(
                 datetime.fromisoformat(master["available_at"]),
                 (ref,),
             )
-    return memberships
+            halted.update(market_master_halted_batch_instruments(master, policy))
+    return memberships, halted
 
 
 def _forward_seed_market_membership(
@@ -1920,6 +1925,80 @@ def _read_forward_seed_supply_prefix(
     return restored
 
 
+def _restore_forward_seed_origin(
+    db,
+    objects,
+    *,
+    source_dataset_id,
+    scope,
+    minimum,
+    verification_policy,
+    declared_start,
+    now,
+):
+    """Reopen a previous warmup and verify its frozen prefix before extending it."""
+    from server.services.research.research_observation_inputs import (
+        require_research_dataset_agreement,
+    )
+
+    union_source_id = None
+    if source_dataset_id:
+        try:
+            source_snapshot = read_daily_bar_dataset_manifest(
+                objects,
+                DatasetRef(objects.resolve_ref(source_dataset_id)),
+            )
+        except (ObjectStoreError, DatasetManifestError, OSError, ValueError) as exc:
+            # A completed legacy preparation supplies its independently
+            # verified prefix; preserve that existing replay contract.
+            legacy = read_forward_seed_origin(
+                db,
+                forward_seed_origin_id(
+                    scope, minimum, verification_policy, start_date=declared_start
+                ),
+            )
+            if (
+                not legacy
+                or legacy["status"] != "completed"
+                or not legacy.get("source_ref")
+            ):
+                raise DatasetReaderError(
+                    "forward_seed_source_prefix_unreadable"
+                ) from exc
+            source_snapshot = None
+        if (
+            source_snapshot is not None
+            and source_snapshot.resolver_policy_id
+            == _EXPLICIT_VERIFIED_SOURCE_UNION_POLICY_ID
+        ):
+            union_source_id = source_dataset_id
+    origin_id = forward_seed_origin_id(
+        scope,
+        minimum,
+        verification_policy,
+        start_date=declared_start,
+        source_dataset_id=union_source_id,
+    )
+    origin_run = read_forward_seed_origin(db, origin_id)
+    if origin_run is not None:
+        origin_id = origin_run["run_id"]
+    origin = json.loads(origin_run["payload_json"]) if origin_run else None
+    prefix = None
+    if origin_run and origin_run.get("source_ref"):
+        prefix = read_daily_bar_dataset(
+            objects, DatasetRef(objects.resolve_ref(origin_run["source_ref"]))
+        ).snapshot
+        require_research_dataset_agreement(objects, prefix)
+        if (
+            prefix.universe_policy_id != scope["deployment_scope_fingerprint"]
+            or not prefix.verification_bound
+            or prefix.start_date.isoformat() != origin["start_date"]
+            or prefix.cutoff > now
+        ):
+            raise ValueError("forward_seed_origin_dataset_invalid")
+    return origin_id, origin_run, origin, prefix
+
+
 @market_verification_read_scope()
 def ensure_forward_seed_for_source(
     db: Any,
@@ -1978,62 +2057,16 @@ def ensure_forward_seed_for_source(
         origins = AutomationRunRepository(db.path)
         root = db.path.resolve().parent / "research"
         objects = ContentAddressedObjectStore(root / "objects")
-        union_source_id = None
-        if source.get("immutable_dataset_id"):
-            try:
-                source_snapshot = read_daily_bar_dataset_manifest(
-                    objects,
-                    DatasetRef(objects.resolve_ref(source["immutable_dataset_id"])),
-                )
-            except (ObjectStoreError, DatasetManifestError, OSError, ValueError):
-                # A completed legacy preparation supplies its independently
-                # verified prefix; preserve that existing replay contract.
-                legacy = read_forward_seed_origin(
-                    db,
-                    forward_seed_origin_id(
-                        scope, minimum, verification_policy, start_date=declared_start
-                    ),
-                )
-                if (
-                    not legacy
-                    or legacy["status"] != "completed"
-                    or not legacy.get("source_ref")
-                ):
-                    return _forward_seed_blocked(
-                        "forward_seed_source_prefix_unreadable"
-                    )
-                source_snapshot = None
-            if (
-                source_snapshot is not None
-                and source_snapshot.resolver_policy_id
-                == _EXPLICIT_VERIFIED_SOURCE_UNION_POLICY_ID
-            ):
-                union_source_id = source["immutable_dataset_id"]
-        origin_id = forward_seed_origin_id(
-            scope,
-            minimum,
-            verification_policy,
-            start_date=declared_start,
-            source_dataset_id=union_source_id,
+        origin_id, origin_run, origin, prefix = _restore_forward_seed_origin(
+            db,
+            objects,
+            source_dataset_id=source.get("immutable_dataset_id"),
+            scope=scope,
+            minimum=minimum,
+            verification_policy=verification_policy,
+            declared_start=declared_start,
+            now=now,
         )
-        origin_run = read_forward_seed_origin(db, origin_id)
-        if origin_run is not None:
-            origin_id = origin_run["run_id"]
-        origin = json.loads(origin_run["payload_json"]) if origin_run else None
-        catalog = DatasetCatalog(root)
-        prefix = None
-        if origin_run and origin_run.get("source_ref"):
-            prefix = read_daily_bar_dataset(
-                objects, DatasetRef(objects.resolve_ref(origin_run["source_ref"]))
-            ).snapshot
-            require_research_dataset_agreement(objects, prefix)
-            if (
-                prefix.universe_policy_id != scope["deployment_scope_fingerprint"]
-                or not prefix.verification_bound
-                or prefix.start_date.isoformat() != origin["start_date"]
-                or prefix.cutoff > now
-            ):
-                raise ValueError("forward_seed_origin_dataset_invalid")
         window = _forward_seed_window(
             db,
             now=now,
@@ -2072,26 +2105,16 @@ def ensure_forward_seed_for_source(
             through=through,
             now=now,
         )
-        extension_masters = _seed_extension_memberships(
-            objects, market_store, scope, dates, prefix, through, now
+        extension_masters, halted_batch_instruments = _seed_extension_rosters(
+            objects,
+            market_store,
+            scope,
+            dates,
+            prefix,
+            through,
+            now,
+            latest_master=master,
         )
-        halted_batch_instruments = set()
-        if prefix is not None and prefix.end_date < through:
-            from server.services.market.market_universe_truth import (
-                market_master_halted_batch_instruments,
-            )
-
-            policy = MarketUniversePolicy.from_dict(scope["universe_policy"])
-            halted_batch_instruments.update(
-                market_master_halted_batch_instruments(master, policy)
-            )
-            for membership in extension_masters.values():
-                dated = json.loads(
-                    objects.read_bytes_by_id(membership.source_observation_ids[0])
-                )
-                halted_batch_instruments.update(
-                    market_master_halted_batch_instruments(dated, policy)
-                )
         declared = set(warmup_universe)
         for membership in extension_masters.values():
             declared.update(membership.instruments)
@@ -2175,7 +2198,7 @@ def ensure_forward_seed_for_source(
             db,
             config,
             objects,
-            catalog,
+            DatasetCatalog(root),
             dates=dates,
             through=through,
             latest_through=latest_through,

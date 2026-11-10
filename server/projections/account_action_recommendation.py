@@ -98,6 +98,71 @@ def _research_simulation_preview_core(
     }
 
 
+def _research_preview_signals(
+    source,
+    verified_dataset_read,
+    *,
+    frames,
+    cross_section,
+    universe_size,
+    target_weight,
+    truth,
+    held_symbols,
+    market_date,
+):
+    """Evaluate signals only after the strategy's required ranking inputs are complete."""
+    from server.ai_runtime.formula_dsl import (
+        formula_requires_cross_section,
+        formula_uses_exact_close_ratio,
+    )
+    from server.ai_runtime.formula_portfolio import (
+        formula_session_input_blockers,
+        prepare_formula_sessions,
+    )
+    from server.services.strategy_scan.universe.evaluation import (
+        evaluate_strategy_signals,
+    )
+    from server.services.strategy_scan.universe.formula_inputs import (
+        exact_formula_frames,
+    )
+
+    formula = source["formula_ast"]
+    prepared = None
+    if formula_requires_cross_section(formula) or formula_uses_exact_close_ratio(
+        formula
+    ):
+        if cross_section is None or set(cross_section.declared_symbols) != {
+            key.symbol for key in verified_dataset_read.snapshot.instruments
+        }:
+            raise ValueError("research_formula_cross_section_unavailable")
+        frames = exact_formula_frames(verified_dataset_read)
+        universe_size = len(cross_section.declared_symbols)
+        prepared = prepare_formula_sessions(
+            formula,
+            frames,
+            universe_size=universe_size,
+            cross_section=cross_section,
+        )
+        reasons = formula_session_input_blockers(
+            prepared, datetime.fromisoformat(market_date).date()
+        )
+        if reasons:
+            return [], reasons
+    signals = evaluate_strategy_signals(
+        strategy_id="research:" + str(source["draft_id"]),
+        formula_ast=formula,
+        universe_size=universe_size,
+        target_weight=target_weight,
+        frames=frames,
+        eligible_symbols=truth["eligible_symbols"],
+        maintenance_symbols=truth["maintenance_symbols"],
+        held_symbols=held_symbols,
+        market_date=market_date,
+        prepared=prepared,
+    )
+    return signals, ()
+
+
 def build_research_simulation_action_preview(
     *,
     research_source: Mapping[str, Any] | None,
@@ -145,7 +210,6 @@ def build_research_simulation_action_preview(
     )
     from server.services.strategy_scan.universe.evaluation import (
         board_buy_blocker,
-        evaluate_strategy_signals,
         formula_history_rows,
     )
 
@@ -285,57 +349,23 @@ def build_research_simulation_action_preview(
                 **core,
                 "evidence_fingerprint": "sha256:" + content_fingerprint(core),
             }
-        formula = source["formula_ast"]
-        from server.ai_runtime.formula_dsl import (
-            formula_requires_cross_section,
-            formula_uses_exact_close_ratio,
-        )
-        from server.ai_runtime.formula_portfolio import (
-            formula_session_input_blockers,
-            prepare_formula_sessions,
-        )
-        from server.services.strategy_scan.universe.formula_inputs import (
-            exact_formula_frames,
-        )
-
-        prepared = None
-        universe_size = len(selection.universe)
-        if formula_requires_cross_section(formula) or formula_uses_exact_close_ratio(
-            formula
-        ):
-            if cross_section is None or set(cross_section.declared_symbols) != {
-                key.symbol for key in verified_dataset_read.snapshot.instruments
-            }:
-                raise ValueError("research_formula_cross_section_unavailable")
-            frames = exact_formula_frames(verified_dataset_read)
-            universe_size = len(cross_section.declared_symbols)
-            prepared = prepare_formula_sessions(
-                formula,
-                frames,
-                universe_size=universe_size,
-                cross_section=cross_section,
-            )
-            reasons = formula_session_input_blockers(
-                prepared, datetime.fromisoformat(str(as_of)).date()
-            )
-            if reasons:
-                core["blockers"] = list(reasons)
-                return {
-                    **core,
-                    "evidence_fingerprint": "sha256:" + content_fingerprint(core),
-                }
-        signals = evaluate_strategy_signals(
-            strategy_id="research:" + str(source["draft_id"]),
-            formula_ast=formula,
-            universe_size=universe_size,
-            target_weight=float(policy.target_weight),
+        signals, reasons = _research_preview_signals(
+            source,
+            verified_dataset_read,
             frames=frames,
-            eligible_symbols=truth["eligible_symbols"],
-            maintenance_symbols=truth["maintenance_symbols"],
+            cross_section=cross_section,
+            universe_size=len(selection.universe),
+            target_weight=float(policy.target_weight),
+            truth=truth,
             held_symbols=set(stock_symbols),
             market_date=str(as_of),
-            prepared=prepared,
         )
+        if reasons:
+            core["blockers"] = list(reasons)
+            return {
+                **core,
+                "evidence_fingerprint": "sha256:" + content_fingerprint(core),
+            }
         blocked_candidates = []
         usable = []
         for row in signals:
