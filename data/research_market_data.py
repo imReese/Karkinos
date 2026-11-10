@@ -45,7 +45,7 @@ def complete_research_market_binding(
     """
     from data.dataset.catalog import DatasetCatalog
     from data.dataset.manifest import read_daily_bar_dataset_manifest
-    from data.dataset.reader import read_daily_bar_dataset
+    from data.dataset.reader import DatasetReaderIntegrityError, read_daily_bar_dataset
     from data.storage.objects import ContentAddressedObjectStore
 
     if as_of.utcoffset() is None:
@@ -89,7 +89,14 @@ def complete_research_market_binding(
         )
         if not selected or not snapshot.verification_bound:
             continue
-        verified = read_daily_bar_dataset(objects, entry.ref)
+        try:
+            verified = read_daily_bar_dataset(objects, entry.ref)
+        except DatasetReaderIntegrityError as exc:
+            if str(exc) != "dataset_reader_verification_not_matched":
+                raise
+            # An unselected conflicting candidate cannot supply missing bars.
+            # A previously bound supplement was already checked by the loader.
+            continue
         selected_set = set(selected)
         selected_keys = {
             (bar.session_date.isoformat(), bar.instrument.symbol)

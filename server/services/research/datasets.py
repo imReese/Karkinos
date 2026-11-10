@@ -51,6 +51,7 @@ from data.market.quality import (
     MarketQualityStatus,
     evaluate_daily_bar_revision,
 )
+from data.market.reported_activity import TushareEastmoneyActivity
 from data.market.revision import (
     MarketRevisionIntegrityError,
     MarketRevisionRef,
@@ -60,6 +61,7 @@ from data.market.revision import (
 from data.market.serving import MarketServingStore
 from data.market.verification_evidence import (
     MarketVerificationStatus,
+    market_verification_read_scope,
     read_market_verification_evidence,
 )
 from data.providers.tdx import TdxRuntimeSettings, prepare_tdx_runtime
@@ -827,6 +829,7 @@ def _forward_seed_expected(
     now,
     pinned_binding=None,
     prefix=None,
+    extension_masters=None,
 ):
     # Membership in the old warmup is explicit and exploratory. Only the
     # current session binds the actual observed master for a new decision.
@@ -839,10 +842,15 @@ def _forward_seed_expected(
     if prefix is not None:
         for membership in prefix.session_memberships:
             expected[membership.partition_date] = membership.instruments
+    extension_masters = extension_masters or {}
+    for day, membership in extension_masters.items():
+        expected[day] = membership.instruments
     uncovered = tuple(
-        day for day in expected if prefix is None or day > prefix.end_date
+        day
+        for day in expected
+        if (prefix is None or day > prefix.end_date) and day not in extension_masters
     )
-    if not uncovered:
+    if not uncovered or (extension_masters and uncovered == (through,)):
         return expected, pinned_binding
     # Historical warmup is an explicit composition of rows that actually
     # exist in frozen receipts, not a claim that today's IPOs existed then.
@@ -975,6 +983,180 @@ def _source_forward_seed_planning_prefix(
     return snapshot, ref.dataset_id
 
 
+def _historical_seed_halts(objects, job, *, latest, now):
+    """Recover dated nontrading facts from the exact failed price request."""
+    from data.market.quality import MarketQualityDiagnosticKind
+    from data.market.quality_evidence import read_market_quality_evidence
+    from data.providers.baostock import read_baostock_historical_status
+
+    if (
+        job is None
+        or job.kind != VERIFIED_DAILY_MARKET_JOB
+        or job.status != "failed"
+        or job.error != "verified_daily_market_quality_blocked"
+        or not (job.failure_evidence_ref or "").startswith("quality:sha256:")
+    ):
+        return None
+    report = read_market_quality_evidence(
+        objects, objects.resolve_ref(job.failure_evidence_ref.removeprefix("quality:"))
+    ).report
+    if (
+        report.policy_id != RESEARCH_STRICT_DAILY.policy_id
+        or report.status is not MarketQualityStatus.BLOCKED
+        or not report.diagnostics
+        or any(
+            item.kind is not MarketQualityDiagnosticKind.MISSING_INSTRUMENT
+            for item in report.diagnostics
+        )
+    ):
+        return None
+    materialization = read_market_revision_materialization(
+        objects, objects.resolve_ref(report.materialization_id)
+    )
+    revision = read_market_revision(objects, materialization.revision_ref)
+    day = revision.partition_date
+    if revision.provider != "baostock" or day >= latest:
+        return None
+    planned = VerifiedDailyMarketJobRequest.from_payload(job.payload)
+    capture, request, states = read_baostock_historical_status(
+        objects, materialization.capture_ref
+    )
+    members = set(planned.instruments_for_session(day))
+    missing = {item.instrument for item in report.diagnostics}
+    if (
+        report.revision_id != revision.ref.revision_id
+        or not capture.completed_at <= report.checked_at <= now
+        or request
+        != DailyBarRequest(
+            planned.instruments,
+            planned.range_start_date or planned.trade_date,
+            planned.range_end_date or planned.trade_date,
+        )
+        or not missing <= members
+        or report.expected_instrument_count != len(members)
+        or report.observed_instrument_count != len(members - missing)
+        or any(states.get(day, {}).get(key) != "0" for key in missing)
+    ):
+        return None
+    halted = {
+        observed_day: {key for key, state in daily.items() if state == "0"}
+        for observed_day, daily in states.items()
+        if observed_day < latest and observed_day in planned.expected_sessions()
+    }
+    return capture, halted
+
+
+def _historical_seed_memberships(
+    db,
+    objects,
+    job_ids,
+    expected,
+    master,
+    identity,
+    latest,
+    now,
+    *,
+    prefix=None,
+    market_store=None,
+    market_binding=None,
+    extension_masters=None,
+):
+    """Keep the master universe and bind exact status captures to historical days."""
+    from data.market.quality_evidence import MarketQualityEvidenceError
+    from data.providers.baostock import BaoStockDailyBarError
+    from data.providers.eastmoney import read_official_stock_master_captures
+    from data.research_market_data import load_research_market_frames
+
+    halted = {}
+    captures = {}
+    store = SQLiteJobStore(db.path)
+    for job_id in job_ids:
+        try:
+            evidence = _historical_seed_halts(
+                objects, store.get(job_id), latest=latest, now=now
+            )
+        except (
+            BaoStockDailyBarError,
+            MarketQualityEvidenceError,
+            MarketRevisionIntegrityError,
+            ProviderCaptureIntegrityError,
+            ObjectStoreError,
+            OSError,
+            KeyError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            raise ResearchDatasetError("forward_seed_status_evidence_invalid") from exc
+        if evidence is None:
+            continue
+        capture, dated_halts = evidence
+        for day, keys in dated_halts.items():
+            if not keys:
+                continue
+            if day not in expected or (prefix is not None and day <= prefix.end_date):
+                raise ResearchDatasetError("forward_seed_halt_scope_mismatch")
+            halted.setdefault(day, set()).update(keys)
+            captures.setdefault(day, {})[capture.capture_id] = capture.completed_at
+    if not halted:
+        return {}
+    activities = {}
+    traded = set()
+    if market_binding:
+        frames = load_research_market_frames(
+            market_store._root,
+            binding=market_binding,
+            symbols=sorted({key.symbol for keys in halted.values() for key in keys}),
+            start_date=min(expected).isoformat(),
+            end_date=max(expected).isoformat(),
+        )
+        traded = {
+            (row.timestamp.date(), symbol)
+            for symbol, frame in frames.items()
+            for row in frame.itertuples()
+            if row.volume > 0 or row.amount > 0
+        }
+    memberships = {}
+    for day, keys in halted.items():
+        prior = (extension_masters or {}).get(day)
+        master_id = prior.source_observation_ids[0] if prior else identity
+        dated_master = (
+            json.loads(objects.read_bytes_by_id(master_id)) if prior else master
+        )
+        if master_id not in activities:
+            activity = {}
+            if dated_master.get("source_capture_ids"):
+                read_official_stock_master_captures(
+                    objects,
+                    dated_master["source_capture_ids"],
+                    trade_date=dated_master["trade_date"],
+                    dated_activity=activity,
+                )
+            activities[master_id] = activity
+        activity = activities[master_id]
+        if any(
+            activity.get(day, {}).get(key) == "1" or (day, key.symbol) in traded
+            for key in keys
+        ):
+            raise ResearchDatasetError("forward_seed_halt_status_conflict")
+        members = tuple(key for key in expected[day] if key not in keys)
+        if not members:
+            raise ResearchDatasetError("forward_seed_no_traded_members")
+        refs = captures[day]
+        memberships[day] = DailyBarDatasetMembership(
+            day,
+            members,
+            max(datetime.fromisoformat(dated_master["available_at"]), *refs.values()),
+            tuple(sorted((master_id, *refs))),
+        )
+    declared = {key for members in expected.values() for key in members}
+    covered = set(prefix.instruments) if prefix is not None else set()
+    for day, members in expected.items():
+        covered.update(memberships[day].instruments if day in memberships else members)
+    if not declared <= covered:
+        raise ResearchDatasetError("forward_seed_halt_declared_universe_incomplete")
+    return memberships
+
+
 def _publish_forward_seed(
     db,
     root,
@@ -990,6 +1172,7 @@ def _publish_forward_seed(
     now,
     scope,
     prefix_dataset_id=None,
+    historical_memberships=None,
 ):
     job_snapshots = []
     for job in jobs:
@@ -1009,6 +1192,9 @@ def _publish_forward_seed(
     memberships = list(prefix.session_memberships) if prefix is not None else []
     for day, members in expected.items():
         if prefix is not None and day <= prefix.end_date:
+            continue
+        if historical_memberships and day in historical_memberships:
+            memberships.append(historical_memberships[day])
             continue
         available = max(
             snapshot.cutoff
@@ -1038,12 +1224,12 @@ def _publish_forward_seed(
         and prefix.resolver_policy_id == _EXPLICIT_VERIFIED_SOURCE_UNION_POLICY_ID
     ):
         suffix_memberships = tuple(
-            replace(
+            item
+            if item.source_observation_ids
+            else replace(
                 item,
                 source_observation_ids=(identity,),
-                available_at=max(
-                    item.available_at, datetime.fromisoformat(master["available_at"])
-                ),
+                available_at=datetime.fromisoformat(master["available_at"]),
             )
             for item in memberships
             if item.partition_date > prefix.end_date
@@ -1188,7 +1374,17 @@ def _existing_forward_seed(
     return None
 
 
-def _forward_seed_jobs(db, config, *, expected, prefix, through, now, replacements):
+def _forward_seed_jobs(
+    db,
+    config,
+    *,
+    expected,
+    prefix,
+    through,
+    now,
+    replacements,
+    halted_batch_instruments=(),
+):
     from server.services.market.verified_daily_market_jobs import (
         enqueue_verified_daily_market_jobs_for_range,
         verified_daily_instrument_batches,
@@ -1216,6 +1412,11 @@ def _forward_seed_jobs(db, config, *, expected, prefix, through, now, replacemen
             now=now,
             historical_range=True,
             session_instruments=job_expected,
+            **(
+                {"halted_batch_instruments": halted_batch_instruments}
+                if halted_batch_instruments
+                else {}
+            ),
         )
         if job_expected
         and (
@@ -1242,7 +1443,9 @@ def _forward_seed_jobs(db, config, *, expected, prefix, through, now, replacemen
             )
         )
     )
-    jobs = _forward_seed_replacement_jobs(SQLiteJobStore(db.path), jobs, replacements)
+    job_store = SQLiteJobStore(db.path)
+    jobs = _forward_seed_replacement_jobs(job_store, jobs, replacements)
+    jobs = tuple(_reported_activity_successor(job_store, job) for job in jobs)
     if any(job.status != "succeeded" for job in jobs):
         from server.persistence.market_daily_call_budget import BUDGET_DEFERRED_CODE
 
@@ -1261,6 +1464,89 @@ def _forward_seed_jobs(db, config, *, expected, prefix, through, now, replacemen
             else {"code": "forward_seed_verified_jobs_incomplete"},
         }
     return jobs
+
+
+def _reported_activity_successor(store, original_job):
+    """Consume an explicitly reverified terminal range without revising its frozen prefix."""
+    from data.market.reconciliation import (
+        STRICT_DAILY_RECONCILIATION,
+        TENCENT_EASTMONEY_STOCK_RECONCILIATION,
+    )
+    from server.persistence.jobs import job_id_for
+    from server.services.market.verified_daily_market_data import (
+        reported_activity_reverification_payload,
+    )
+
+    if (
+        original_job.status != "failed"
+        or original_job.error != "verified_daily_market_cross_source_conflict"
+        or not (original_job.failure_evidence_ref or "").startswith(
+            "verification:sha256:"
+        )
+    ):
+        return original_job
+    request = reported_activity_reverification_payload(original_job.payload)
+    replacement = store.get(job_id_for(VERIFIED_DAILY_MARKET_JOB, request))
+    if not replacement or replacement.status != "succeeded":
+        return original_job
+    if replacement.payload != request or not (replacement.result_ref or "").startswith(
+        "dataset:sha256:"
+    ):
+        raise ResearchDatasetError("forward_seed_replacement_job_mismatch")
+    objects = ContentAddressedObjectStore(
+        store.path.resolve().parent / "research" / "objects"
+    )
+    original = read_market_verification_evidence(
+        objects,
+        objects.resolve_ref(
+            original_job.failure_evidence_ref.removeprefix("verification:")
+        ),
+    )
+    snapshot = read_daily_bar_dataset_manifest(
+        objects,
+        DatasetRef(
+            objects.resolve_ref(replacement.result_ref.removeprefix("dataset:"))
+        ),
+    )
+
+    def captures(evidence):
+        return tuple(
+            read_market_revision_materialization(
+                objects, objects.resolve_ref(identity)
+            ).capture_ref
+            for identity in (
+                evidence.primary_materialization_id,
+                evidence.comparison_materialization_id,
+            )
+        )
+
+    original_captures = captures(original)
+    reproduced_failure = False
+    for part in snapshot.partitions:
+        corrected = read_market_verification_evidence(
+            objects, objects.resolve_ref(part.verification_id)
+        )
+        if (
+            corrected.status != MarketVerificationStatus.MATCHED
+            or captures(corrected) != original_captures
+        ):
+            raise ResearchDatasetError("forward_seed_replacement_capture_mismatch")
+        if (
+            corrected.primary_materialization_id == original.primary_materialization_id
+            and corrected.comparison_materialization_id
+            == original.comparison_materialization_id
+        ):
+            reproduced_failure = isinstance(
+                corrected.component_relation, TushareEastmoneyActivity
+            ) or (
+                original.policy == STRICT_DAILY_RECONCILIATION
+                and corrected.policy == TENCENT_EASTMONEY_STOCK_RECONCILIATION
+            )
+    if original.status != MarketVerificationStatus.CONFLICT or not reproduced_failure:
+        raise ResearchDatasetError(
+            "forward_seed_replacement_original_difference_unverified"
+        )
+    return replacement
 
 
 def forward_seed_origin_id(
@@ -1479,16 +1765,61 @@ def revise_pending_forward_seed_origin(
     )
 
 
+def _verified_seed_master(objects, raw_master, policy, day, now):
+    from data.dataset.manifest import bind_stock_master_observation
+    from server.services.market.market_universe_truth import (
+        market_master_buy_instruments,
+        require_complete_market_universe_snapshot,
+    )
+
+    master = require_complete_market_universe_snapshot(
+        raw_master,
+        policy=policy,
+        expected_trade_date=day.isoformat(),
+        available_as_of=now,
+    )
+    return (
+        master,
+        bind_stock_master_observation(objects, master),
+        market_master_buy_instruments(master, policy),
+    )
+
+
+def _seed_extension_memberships(
+    objects, market_store, scope, dates, prefix, through, now
+):
+    """Use observed daily rosters when extending a completed full-market seed."""
+    from server.services.market.market_universe_truth import MarketUniversePolicy
+
+    memberships = {}
+    if prefix is None:
+        return memberships
+    policy = MarketUniversePolicy.from_dict(scope["universe_policy"])
+    for item in dates:
+        day = date.fromisoformat(item.trade_date)
+        if not prefix.end_date < day < through:
+            continue
+        roster = market_store.get_market_universe_snapshot(
+            trade_date=item.trade_date, as_of=now
+        )
+        if roster is not None:
+            master, ref, members = _verified_seed_master(
+                objects, roster, policy, day, now
+            )
+            memberships[day] = DailyBarDatasetMembership(
+                day,
+                members,
+                datetime.fromisoformat(master["available_at"]),
+                (ref,),
+            )
+    return memberships
+
+
 def _forward_seed_market_membership(
     objects, market_store, *, origin, planning_prefix, source, scope, through, now
 ):
     """Bind original and current membership without narrowing the warmup market."""
-    from data.dataset.manifest import bind_stock_master_observation
-    from server.services.market.market_universe_truth import (
-        MarketUniversePolicy,
-        market_master_buy_instruments,
-        require_complete_market_universe_snapshot,
-    )
+    from server.services.market.market_universe_truth import MarketUniversePolicy
 
     original = tuple(
         sorted(
@@ -1511,15 +1842,12 @@ def _forward_seed_market_membership(
             trade_date=through.isoformat(), as_of=now
         )
     )
-    master = require_complete_market_universe_snapshot(
+    master, identity, current = _verified_seed_master(
+        objects,
         raw_master,
-        policy=MarketUniversePolicy.from_dict(scope["universe_policy"]),
-        expected_trade_date=through.isoformat(),
-        available_as_of=now,
-    )
-    identity = bind_stock_master_observation(objects, master)
-    current = market_master_buy_instruments(
-        master, MarketUniversePolicy.from_dict(scope["universe_policy"])
+        MarketUniversePolicy.from_dict(scope["universe_policy"]),
+        through,
+        now,
     )
     warmup_universe = tuple(
         sorted(
@@ -1592,6 +1920,7 @@ def _read_forward_seed_supply_prefix(
     return restored
 
 
+@market_verification_read_scope()
 def ensure_forward_seed_for_source(
     db: Any,
     config: Any,
@@ -1743,10 +2072,33 @@ def ensure_forward_seed_for_source(
             through=through,
             now=now,
         )
-        if len(warmup_universe) > 10_000:
+        extension_masters = _seed_extension_memberships(
+            objects, market_store, scope, dates, prefix, through, now
+        )
+        halted_batch_instruments = set()
+        if prefix is not None and prefix.end_date < through:
+            from server.services.market.market_universe_truth import (
+                market_master_halted_batch_instruments,
+            )
+
+            policy = MarketUniversePolicy.from_dict(scope["universe_policy"])
+            halted_batch_instruments.update(
+                market_master_halted_batch_instruments(master, policy)
+            )
+            for membership in extension_masters.values():
+                dated = json.loads(
+                    objects.read_bytes_by_id(membership.source_observation_ids[0])
+                )
+                halted_batch_instruments.update(
+                    market_master_halted_batch_instruments(dated, policy)
+                )
+        declared = set(warmup_universe)
+        for membership in extension_masters.values():
+            declared.update(membership.instruments)
+        if len(declared) > 10_000:
             return _forward_seed_blocked(
                 "forward_seed_instrument_budget_exceeded",
-                instruments=len(warmup_universe),
+                instruments=len(declared),
                 limit=10_000,
             )
         expected, market_binding = _forward_seed_expected(
@@ -1761,6 +2113,7 @@ def ensure_forward_seed_for_source(
             if origin and prefix is None
             else None,
             prefix=planning_prefix,
+            extension_masters=extension_masters,
         )
         warmup_rows = sum(len(members) for members in expected.values()) + sum(
             len(item.maintenance_instruments)
@@ -1864,7 +2217,45 @@ def ensure_forward_seed_for_source(
             through=through,
             now=now,
             replacements=origin.get("job_replacements", {}),
+            halted_batch_instruments=tuple(halted_batch_instruments),
         )
+        historical_memberships = dict(extension_masters)
+        if isinstance(jobs, dict) and jobs["status"] == "blocked":
+            try:
+                halt_memberships = _historical_seed_memberships(
+                    db,
+                    objects,
+                    jobs["job_ids"],
+                    expected,
+                    master,
+                    identity,
+                    latest_through,
+                    now,
+                    prefix=supply_prefix,
+                    market_store=market_store,
+                    market_binding=market_binding,
+                    extension_masters=extension_masters,
+                )
+            except ResearchDatasetError as exc:
+                return {**jobs, "last_blocker": {"code": str(exc)}}
+            if halt_memberships:
+                historical_memberships.update(halt_memberships)
+                expected = {
+                    day: historical_memberships[day].instruments
+                    if day in historical_memberships
+                    else members
+                    for day, members in expected.items()
+                }
+                jobs = _forward_seed_jobs(
+                    db,
+                    config,
+                    expected=expected,
+                    prefix=supply_prefix,
+                    through=through,
+                    now=now,
+                    replacements=origin.get("job_replacements", {}),
+                    halted_batch_instruments=tuple(halted_batch_instruments),
+                )
         if isinstance(jobs, dict):
             return jobs
         summary = _publish_forward_seed(
@@ -1881,6 +2272,7 @@ def ensure_forward_seed_for_source(
             now=now,
             scope=scope,
             prefix_dataset_id=supply_prefix_dataset_id,
+            historical_memberships=historical_memberships,
         )
         snapshot = read_daily_bar_dataset(
             objects, DatasetRef(objects.resolve_ref(summary["dataset_id"]))
@@ -1921,6 +2313,8 @@ def ensure_forward_seed_for_source(
             "job_ids": [job.job_id for job in jobs],
             "last_blocker": None,
         }
+    except DatasetReaderError as exc:
+        return _forward_seed_blocked(str(exc))
     except (ValueError, KeyError, TypeError, ResearchDatasetError) as exc:
         return {"status": "waiting", "job_ids": [], "last_blocker": {"code": str(exc)}}
 

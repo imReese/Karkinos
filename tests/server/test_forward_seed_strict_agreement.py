@@ -215,7 +215,7 @@ def test_completed_job_seed_inputs_reject_conflict_without_publishing(
     assert not tuple(tmp_path.rglob("*.db"))
 
 
-@pytest.mark.parametrize("mode", ["matched", "conflict"])
+@pytest.mark.parametrize("mode", ["matched", "conflict", "strict_reader_conflict"])
 def test_fresh_seed_cold_read_precedes_completed_origin(monkeypatch, tmp_path, mode):
     """The public preparation caller cannot complete a freshly conflicted seed."""
     from dataclasses import replace
@@ -264,7 +264,7 @@ def test_fresh_seed_cold_read_precedes_completed_origin(monkeypatch, tmp_path, m
         restored = read_daily_bar_dataset(
             objects, DatasetRef(objects.resolve_ref(summary["dataset_id"]))
         )
-        if mode == "conflict":
+        if mode != "matched":
             primary = _side(objects, day, TDX_PROVIDER_DESCRIPTOR, instruments=current)
             comparison = _side(
                 objects,
@@ -311,7 +311,7 @@ def test_fresh_seed_cold_read_precedes_completed_origin(monkeypatch, tmp_path, m
     def reader(store, ref, **kwargs):
         if ref.dataset_id == substituted.get("fresh_id"):
             fresh_reads.append(ref.dataset_id)
-        if ref.dataset_id in substituted:
+        if mode == "conflict" and ref.dataset_id in substituted:
             return substituted[ref.dataset_id]
         return read_daily_bar_dataset(store, ref, **kwargs)
 
@@ -324,7 +324,13 @@ def test_fresh_seed_cold_read_precedes_completed_origin(monkeypatch, tmp_path, m
         run_type="forward_seed_preparation", limit=20
     )
     assert fresh_reads == [substituted["fresh_id"]]
-    if mode == "conflict":
+    if mode == "strict_reader_conflict":
+        assert result["status"] == "blocked"
+        assert (
+            result["last_blocker"]["code"] == "dataset_reader_verification_not_matched"
+        )
+        assert after == before
+    elif mode == "conflict":
         assert result["status"] != "ready"
         assert result["last_blocker"]["code"] == "observation_verification_not_matched"
         assert after == before  # In particular, no completed origin write.

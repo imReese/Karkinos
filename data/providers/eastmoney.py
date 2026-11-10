@@ -783,13 +783,9 @@ def capture_official_stock_master(
     store, *, trade_date, request_fn=None, clock=None, bao_client=None
 ):
     """Capture four complete exchange lists plus one bounded Bao daily status read."""
-    import contextlib
-    import io
-
     import requests
 
     from data.market.capture import capture_provider_payload
-    from data.providers.baostock import _SESSION_LOCK, _login, _logout
 
     now = clock or (lambda: datetime.now(timezone.utc))
     request_fn = request_fn or requests.request
@@ -866,6 +862,26 @@ def capture_official_stock_master(
         raise ValueError("stock_master_bse_page_budget_exceeded")
     for page in range(1, pages):
         fetch("bse", "POST", {**base, "page": str(page)})
+    captures.append(
+        capture_baostock_stock_status(
+            store, trade_date=trade_date, bao_client=bao_client, clock=now
+        )
+    )
+    metadata, started, completed = read_official_stock_master_captures(
+        store, captures, trade_date=trade_date
+    )
+    return metadata, tuple(sorted(captures)), started, completed
+
+
+def capture_baostock_stock_status(store, *, trade_date, bao_client=None, clock=None):
+    """Capture one dated BaoStock roster separately from the exchange lists."""
+    import contextlib
+    import io
+
+    from data.market.capture import capture_provider_payload
+    from data.providers.baostock import _SESSION_LOCK, _login, _logout
+
+    now = clock or (lambda: datetime.now(timezone.utc))
     client = bao_client or importlib.import_module("baostock")
     started = now()
     with _SESSION_LOCK:
@@ -903,8 +919,4 @@ def capture_official_stock_master(
         completed_at=completed,
         record_count=len(rows),
     )
-    captures.append(capture.capture_id)
-    metadata, started, completed = read_official_stock_master_captures(
-        store, captures, trade_date=trade_date
-    )
-    return metadata, tuple(sorted(captures)), started, completed
+    return capture.capture_id

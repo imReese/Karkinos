@@ -23,9 +23,9 @@ from tests.server.test_deployment_scope_datasets import _source_prefix_seed
 from tests.server.test_verified_interval_dataset import NOW, _verified_day
 
 
-def union_seed(tmp_path):
+def union_seed(tmp_path, *, suffix_receipts=True):
     db, market, config, source, objects, snapshot, current = _source_prefix_seed(
-        tmp_path
+        tmp_path, suffix_receipts=suffix_receipts
     )
     master = market.get_market_universe_snapshot(trade_date="2026-09-21", as_of=NOW)
     identity = bind_stock_master_observation(objects, master)

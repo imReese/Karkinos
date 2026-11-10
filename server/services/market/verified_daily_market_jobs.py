@@ -176,6 +176,7 @@ def enqueue_verified_daily_market_jobs_for_range(
     reobserve: bool = False,
     historical_range: bool = False,
     session_instruments: Mapping[date, tuple[InstrumentKey, ...]] | None = None,
+    halted_batch_instruments: tuple[InstrumentKey, ...] = (),
 ) -> tuple[JobRun, ...]:
     """Explicitly enqueue one verified-source job for each closed SSE session."""
     if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
@@ -199,7 +200,8 @@ def enqueue_verified_daily_market_jobs_for_range(
     if not isinstance(reobserve, bool):
         raise ValueError("verified_daily_market_reobserve_invalid")
     if not isinstance(historical_range, bool) or (
-        session_instruments is not None and not historical_range
+        (session_instruments is not None or halted_batch_instruments)
+        and not historical_range
     ):
         raise ValueError("verified_daily_market_range_plan_invalid")
     resolved_dates = resolve_verified_closed_trading_dates_in_range(
@@ -239,9 +241,14 @@ def enqueue_verified_daily_market_jobs_for_range(
             else "historical_warmup_range.v1"
         )
         range_payloads = []
-        for batch in verified_daily_instrument_batches(
-            instruments, historical_range=True
+        needed = set(instruments)
+        for layout in verified_daily_instrument_batches(
+            tuple(needed.union(halted_batch_instruments)), historical_range=True
         ):
+            # A corrected halt affects its own batch only; it never adds a bar request.
+            batch = tuple(key for key in layout if key in needed)
+            if not batch:
+                continue
             batch_set = set(batch)
             planned = VerifiedDailyMarketJobRequest(
                 trade_date=dates[-1],

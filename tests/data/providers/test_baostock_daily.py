@@ -362,18 +362,28 @@ def test_explicit_halted_empty_ohlc_is_raw_status_without_synthetic_bar():
 def test_halted_source_ohlc_with_blank_volume_never_becomes_a_planned_bar(tmp_path):
     from data.market.ingestion import DailyBarIngestionNoData, ingest_daily_bars
     from data.market.quality import RESEARCH_STRICT_DAILY
+    from data.providers.baostock import read_baostock_historical_status
     from data.storage.objects import ContentAddressedObjectStore
 
+    store = ContentAddressedObjectStore(tmp_path / "objects")
+    request = _request(
+        *(InstrumentKey(f"600{i:03}", InstrumentType.STOCK) for i in range(100))
+    )
     client = FakeBaoStock()
     client.results["sh.600000"] = FakeResult(
         [_row("sh.600000", volume="", amount="", tradestatus="0")]
     )
-    with pytest.raises(DailyBarIngestionNoData):
+    with pytest.raises(DailyBarIngestionNoData) as no_bars:
         ingest_daily_bars(
             BaoStockDailyBarProvider(client, clock=lambda: AFTER_CLOSE),
-            ContentAddressedObjectStore(tmp_path / "objects"),
-            request=_request(InstrumentKey("600000", InstrumentType.STOCK)),
+            store,
+            request=request,
             quality_policy=RESEARCH_STRICT_DAILY,
             normalizer_version="karkinos.market.normalize.v1",
             checked_at=AFTER_CLOSE,
         )
+    capture, original, statuses = read_baostock_historical_status(
+        store, no_bars.value.capture.capture_ref
+    )
+    assert original == request and capture.completed_at == AFTER_CLOSE
+    assert statuses == {DAY: {request.instruments[0]: "0"}}

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pandas as pd
@@ -39,6 +39,176 @@ def _rows(db, table):
     with sqlite3.connect(db.path) as conn:
         conn.row_factory = sqlite3.Row
         return [dict(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY 1")]
+
+
+@pytest.mark.parametrize(
+    "observation", ["halted", "missing", "contradictory", "traded"]
+)
+def test_failed_seed_keeps_only_proven_halts_out_of_historical_prices(
+    tmp_path, monkeypatch, observation
+):
+    from data.dataset.reader import dataset_session_nontrading_instruments
+    from data.market.contracts import DailyBarRequest
+    from data.market.ingestion import ingest_daily_bars
+    from data.market.quality import RESEARCH_STRICT_DAILY
+    from data.market.quality_evidence import publish_market_quality_evidence
+    from data.providers.baostock import BaoStockDailyBarProvider
+    from server.services.market.market_universe_truth import normalize_a_share_members
+    from tests.data.providers.test_baostock_daily import FakeBaoStock, FakeResult, _row
+    from tests.server.test_forward_verified_union import union_seed
+
+    _, market, config, source, objects, prefix, current = union_seed(
+        tmp_path, suffix_receipts=observation == "traded"
+    )
+    day = DAYS[-1]
+    following = tuple(day + timedelta(days=i) for i in (1, 2, 3))
+    db = _db(tmp_path, trading_days=(*DAYS, *following))
+    latest = SimpleNamespace(trade_date=day.isoformat())
+    monkeypatch.setattr(
+        "server.services.market.calendar.resolve_latest_verified_closed_trading_date",
+        lambda *_: latest,
+    )
+    capture_time = NOW + timedelta(minutes=1)
+    prepare_time = capture_time + timedelta(minutes=1)
+
+    def prepare():
+        return datasets.ensure_forward_seed_for_source(
+            db, config, source=source, now=prepare_time, data_store=market
+        )
+
+    store = SQLiteJobStore(db.path)
+    (original_id,) = prepare()["job_ids"]
+    halted = current[0]
+    sdk = FakeBaoStock()
+    for key in current:
+        code = "sh." + key.symbol
+        if key == halted and observation == "missing":
+            continue
+        values = (
+            _row(
+                code,
+                volume="100" if observation == "contradictory" else "",
+                amount="",
+                tradestatus="0",
+            )
+            if key == halted
+            else _row(code)
+        )
+        values[0] = day.isoformat()
+        sdk.results[code] = FakeResult([values])
+    original = ingest_daily_bars(
+        BaoStockDailyBarProvider(sdk, clock=lambda: capture_time),
+        objects,
+        request=DailyBarRequest(current, day, day),
+        quality_policy=RESEARCH_STRICT_DAILY,
+        normalizer_version="fixture",
+        checked_at=prepare_time,
+    )
+    quality = publish_market_quality_evidence(objects, original.quality)
+    job = store.claim(
+        VERIFIED_DAILY_MARKET_JOB, "fixture", now=prepare_time, job_id=original_id
+    )
+    store.fail(
+        job.lease,
+        now=prepare_time,
+        error="verified_daily_market_quality_blocked",
+        failure_evidence_ref="quality:" + quality.quality_id,
+        retryable=False,
+    )
+    assert prepare()["status"] == "blocked"  # This is still the decision session.
+    latest.trade_date = following[0].isoformat()
+    revised = prepare()
+    if observation != "halted":
+        assert revised["status"] == "blocked"
+        assert revised["job_ids"] == [original_id]
+        if observation == "contradictory":
+            assert (
+                revised["last_blocker"]["code"]
+                == "forward_seed_status_evidence_invalid"
+            )
+        if observation == "traded":
+            assert (
+                revised["last_blocker"]["code"] == "forward_seed_halt_status_conflict"
+            )
+        return
+    assert revised["status"] == "waiting"
+    (successor_id,) = revised["job_ids"]
+    assert successor_id != original_id
+    successor = store.claim(
+        VERIFIED_DAILY_MARKET_JOB, "fixture", now=prepare_time, job_id=successor_id
+    )
+    traded = tuple(key for key in current if key != halted)
+    assert (
+        VerifiedDailyMarketJobRequest.from_payload(successor.payload).instruments
+        == traded
+    )
+    verified = _verified_day(tmp_path / "research", day, instruments=traded)
+    store.finish(
+        successor.lease, now=prepare_time, result_ref="dataset:" + verified.dataset_id
+    )
+    prepare()
+    origins = AutomationRunRepository(db.path).list_automation_runs_sync(
+        run_type="forward_seed_preparation"
+    )
+    (completed,) = [row for row in origins if row["status"] == "completed"]
+    saved = read_daily_bar_dataset(
+        objects, DatasetRef(objects.resolve_ref(completed["source_ref"]))
+    ).snapshot
+    assert (
+        saved.session_memberships[: len(prefix.session_memberships)]
+        == prefix.session_memberships
+    )
+    assert set(saved.instruments) == set(current)
+    membership = saved.session_memberships[-1]
+    assert membership.instruments == traded
+    assert original.capture.capture_id in membership.source_observation_ids
+    assert membership.available_at == capture_time and membership.decision_at is None
+    assert dataset_session_nontrading_instruments(objects, saved, session_date=day) == {
+        day: (halted,)
+    }
+    assert (
+        store.get(original_id).failure_evidence_ref == "quality:" + quality.quality_id
+    )
+
+    # The following sessions have full dated rosters. One has a partial price
+    # receipt, another has none. Neither shrinks the pool or prolongs the halt.
+    for session in following:
+        market.save_market_universe_snapshot(
+            trade_date=session.isoformat(),
+            provider_name="fixture",
+            members=normalize_a_share_members([key.symbol for key in current]),
+            capture_started_at=NOW - timedelta(seconds=1),
+            capture_completed_at=NOW,
+            source_metadata=[
+                {"symbol": key.symbol, "display_name": "普通股"} for key in current
+            ],
+        )
+    partial = following[1]
+    market.ingest_market_daily_batch(
+        trade_date=partial.isoformat(),
+        provider_name="fixture",
+        bars=pd.DataFrame(
+            [
+                dict(
+                    symbol=traded[0].symbol,
+                    timestamp=pd.Timestamp(partial),
+                    open=10,
+                    high=10,
+                    low=10,
+                    close=10,
+                    volume=100,
+                    amount=1000,
+                )
+            ]
+        ),
+    )
+    latest.trade_date = following[-1].isoformat()
+    extension = prepare()
+    assert extension["status"] == "waiting", extension
+    (new_id,) = extension["job_ids"]
+    requested = VerifiedDailyMarketJobRequest.from_payload(store.get(new_id).payload)
+    assert requested.expected_sessions() == following
+    assert all(requested.instruments_for_session(d) == current for d in following)
 
 
 def test_multi_session_suffix_shards_preserve_each_sessions_exact_members(tmp_path):
@@ -89,6 +259,28 @@ def test_multi_session_suffix_shards_preserve_each_sessions_exact_members(tmp_pa
         )
         == report
     )
+    # A dated halt removes the first stock from every new session. The other
+    # two 40-stock acquisition batches keep their original jobs and captures.
+    halted = stocks[0]
+    corrected = datasets._forward_seed_jobs(
+        db,
+        _config(),
+        expected={
+            day: tuple(k for k in keys if k != halted) for day, keys in expected.items()
+        },
+        prefix=prefix,
+        through=days[-1],
+        now=NOW,
+        replacements={},
+        halted_batch_instruments=(halted,),
+    )
+    assert corrected["job_ids"][1:] == report["job_ids"][1:]
+    assert corrected["job_ids"][0] != report["job_ids"][0]
+    updated = VerifiedDailyMarketJobRequest.from_payload(
+        store.get(corrected["job_ids"][0]).payload
+    )
+    assert halted not in updated.instruments
+    assert all(halted not in updated.instruments_for_session(day) for day in days[1:])
 
 
 def test_single_session_suffix_keeps_existing_daily_identity_and_batch_size(tmp_path):

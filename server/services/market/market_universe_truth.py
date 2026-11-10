@@ -290,7 +290,9 @@ def market_universe_observation(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _member_session_exclusion(snapshot: Mapping[str, Any], symbol: str) -> str | None:
+def _member_session_exclusion(
+    snapshot: Mapping[str, Any], symbol: str, *, exclude_halted: bool = True
+) -> str | None:
     metadata: Mapping[str, Any] = next(
         (
             row
@@ -316,7 +318,7 @@ def _member_session_exclusion(snapshot: Mapping[str, Any], symbol: str) -> str |
             "status_capture_id"
         ) not in snapshot.get("source_capture_ids", []):
             return "trading_state_unverified"
-        if metadata["trade_status"] == "0":
+        if exclude_halted and metadata["trade_status"] == "0":
             return "nontrading_session_excluded"
     name = str(metadata.get("display_name") or "").strip()
     if not name or name == symbol or name == f"{symbol} A股":
@@ -328,6 +330,21 @@ def _member_session_exclusion(snapshot: Mapping[str, Any], symbol: str) -> str |
     if name.startswith(("N", "C")) and len(name) > 1 and not name[1].isascii():
         return "special_listing_period_excluded"
     return None
+
+
+def market_master_halted_batch_instruments(snapshot, policy):
+    """Preserve range batch boundaries for ordinary names temporarily unable to trade."""
+    from data.store import stock_master_nontrading_instruments
+
+    if policy.policy_version != MARKET_UNIVERSE_POLICY_VERSION:
+        return ()
+    return tuple(
+        key
+        for key in stock_master_nontrading_instruments(
+            snapshot, session_date=snapshot["trade_date"]
+        )
+        if _member_session_exclusion(snapshot, key.symbol, exclude_halted=False) is None
+    )
 
 
 def market_master_buy_instruments(

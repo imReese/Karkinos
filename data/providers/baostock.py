@@ -405,6 +405,15 @@ def _provider_code(instrument: InstrumentKey) -> str:
     return f"{exchange}.{symbol}"
 
 
+def has_historical_daily_status(capture) -> bool:
+    return (
+        capture.provider == "baostock"
+        and capture.operation == "daily_bars"
+        and capture.adapter_version == "karkinos.baostock.daily_bar.v2"
+        and capture.payload_format == "baostock.history_k_data_plus.rows.v2"
+    )
+
+
 def read_baostock_historical_status(store, capture_ref):
     """Read explicit dated statuses from a reviewed capture, without price bars.
 
@@ -413,15 +422,13 @@ def read_baostock_historical_status(store, capture_ref):
     These are BaoStock observations, not independent-source status agreement.
     """
     from data.market.capture import read_provider_capture, read_provider_raw_payload
-    from data.market.contracts import MAX_DAILY_BAR_RANGE_JOB_INSTRUMENTS
+    from data.market.contracts import (
+        MAX_DAILY_BAR_JOB_INSTRUMENTS,
+        MAX_DAILY_BAR_RANGE_JOB_INSTRUMENTS,
+    )
 
     capture = read_provider_capture(store, capture_ref)
-    if (
-        capture.provider != "baostock"
-        or capture.operation != "daily_bars"
-        or capture.adapter_version != "karkinos.baostock.daily_bar.v2"
-        or capture.payload_format != "baostock.history_k_data_plus.rows.v2"
-    ):
+    if not has_historical_daily_status(capture):
         raise ValueError("baostock_historical_status_source_invalid")
     request = json.loads(capture.request_json)
     instruments = tuple(
@@ -436,7 +443,12 @@ def read_baostock_historical_status(store, capture_ref):
     )
     if (
         request != planned.to_capture_request()
-        or len(instruments) > MAX_DAILY_BAR_RANGE_JOB_INSTRUMENTS
+        or len(instruments)
+        > (
+            MAX_DAILY_BAR_JOB_INSTRUMENTS
+            if planned.start_date == planned.end_date
+            else MAX_DAILY_BAR_RANGE_JOB_INSTRUMENTS
+        )
         or (planned.end_date - planned.start_date).days >= 3653
         or any(key.instrument_type is not InstrumentType.STOCK for key in instruments)
         or capture.started_at < _session_close_utc(planned.end_date)

@@ -161,9 +161,14 @@ def test_receipt_membership_excludes_unbound_rows(tmp_path):
 
 def test_missing_history_binds_exact_verified_dataset_without_rewriting_receipts(
     tmp_path,
+    monkeypatch,
 ):
+    from dataclasses import replace
     from datetime import timedelta
 
+    from data.dataset import reader
+    from data.dataset.catalog import DatasetCatalog
+    from data.dataset.manifest import publish_daily_bar_dataset_manifest
     from tests.server.test_deployment_scope_datasets import _composed
     from tests.server.test_verified_interval_dataset import (
         DAYS,
@@ -183,15 +188,37 @@ def test_missing_history_binds_exact_verified_dataset_without_rewriting_receipts
     original = research_market_binding(receipts)
     # A newer one-session result must not shadow a complete historical range.
     _verified_day(tmp_path / "research", DAYS[-1], instruments=(STOCK,))
+    other = publish_daily_bar_dataset_manifest(
+        objects,
+        replace(
+            canonical.snapshot, cutoff=canonical.snapshot.cutoff + timedelta(seconds=1)
+        ),
+    )
+    DatasetCatalog(tmp_path / "research").register(objects, other)
+    read_original = reader.read_daily_bar_dataset
+    examined = []
+    conflicting_ref = canonical.ref
+
+    def read_candidate(store, ref):
+        if ref == conflicting_ref:
+            examined.append(ref)
+            raise reader.DatasetReaderIntegrityError(
+                "dataset_reader_verification_not_matched"
+            )
+        return read_original(store, ref)
+
+    monkeypatch.setattr(reader, "read_daily_bar_dataset", read_candidate)
     arguments = dict(
         symbols=["600000", "600001"],
         start_date=DAYS[0].isoformat(),
         end_date=DAYS[-1].isoformat(),
     )
     binding, frames = complete_research_market_binding(
-        tmp_path, binding=original, as_of=NOW, **arguments
+        tmp_path, binding=original, as_of=NOW + timedelta(seconds=2), **arguments
     )
     assert binding["normalizer_version"] == VERIFIED_SUPPLEMENT_NORMALIZATION
+    assert conflicting_ref in examined
+    canonical = read_original(objects, other)
     assert binding["point_in_time_verified"] is False
     assert binding["verified_dataset_supplements"] == [
         {
