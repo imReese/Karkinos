@@ -889,6 +889,9 @@ def dataset_cross_section_memberships(
     retain their actual availability; retrospective use never upgrades PIT.
     This projection supplements, rather than replaces, the full bar reader.
     """
+    from data.market.capture import ProviderCaptureError
+    from data.providers.baostock import BaoStockDailyBarError
+
     try:
         if type(allow_retrospective) is not bool or (
             as_of is None and not allow_retrospective
@@ -922,11 +925,23 @@ def dataset_cross_section_memberships(
             store, snapshot, cross_section_evidence=evidence
         )
         result = {}
-        # Source dicts belong to this completed validation call. Reuse only
-        # their listing projection, never a cache across cold requests.
+        missing_activity: dict[date, set[InstrumentKey]] = {}
         master_projections: dict[
             int, tuple[set[InstrumentKey], dict[InstrumentKey, date]]
         ] = {}
+        listing_history: dict[InstrumentKey, date] = {}
+        official_listings: dict[InstrumentKey, date] = {}
+        for masters, _ in evidence.values():
+            for master in masters:
+                if id(master) in master_projections:
+                    continue
+                projection = _cross_section_master_listings(master, declared)
+                master_projections[id(master)] = projection
+                for key, listed in projection[1].items():
+                    if listing_history.setdefault(key, listed) != listed:
+                        raise ValueError("cross_section_listing_date_conflict")
+                if master.get("source_capture_ids"):
+                    official_listings.update(projection[1])
         for membership in memberships:
             day = membership.partition_date
             refs = membership.source_observation_ids
@@ -942,23 +957,33 @@ def dataset_cross_section_memberships(
             listing_dates: dict[InstrumentKey, date] = {}
             source_members: set[InstrumentKey] = set()
             for master in masters:
-                if id(master) not in master_projections:
-                    master_projections[id(master)] = _cross_section_master_listings(
-                        master, declared
-                    )
                 members, dates = master_projections[id(master)]
                 source_members.update(members)
-                for key, listed in dates.items():
-                    if key in listing_dates and listing_dates[key] != listed:
-                        raise ValueError("cross_section_listing_date_conflict")
-                    listing_dates[key] = listed
-            if not declared <= source_members or set(listing_dates) != declared:
+                listing_dates.update(dates)
+            # A later exchange roster may prove that a security not yet present
+            # in this roster had not listed. It cannot supply an earlier member
+            # or excuse a missing already-listed, suspended or delisted stock.
+            not_in_roster = declared - source_members
+            if set(listing_dates) != declared & source_members or any(
+                official_listings.get(key, date.min) <= day for key in not_in_roster
+            ):
+                raise ValueError("cross_section_declared_master_incomplete")
+            if (
+                not_in_roster
+                and membership.decision_at is not None
+                and not any(
+                    master.get("source_capture_ids")
+                    and master.get("trade_date") == day.isoformat()
+                    for master in masters
+                )
+            ):
                 raise ValueError("cross_section_declared_master_incomplete")
             before_listing = {
                 key for key, listed in listing_dates.items() if day < listed
-            }
+            } | not_in_roster
             traded = set(membership.instruments)
             inactive = set(nontrading.get(day, ())) & declared
+            missing = declared - before_listing - inactive - traded
             if (
                 len(traded) != len(membership.instruments)
                 or not traded <= declared
@@ -968,16 +993,24 @@ def dataset_cross_section_memberships(
                     status != "0" and key in before_listing
                     for key, status in statuses.items()
                 )
-                or traded != declared - before_listing - inactive
+                or (missing and membership.decision_at is not None)
+                or any(statuses.get(key) not in (None, "0") for key in missing)
             ):
                 raise ValueError("cross_section_traded_reference_incomplete")
+            if missing:
+                missing_activity[day] = missing
             result[day] = tuple(
                 sorted(traded, key=lambda key: (key.instrument_type.value, key.symbol))
             )
+        if missing_activity:
+            _require_captured_warmup_halts(store, snapshot, missing_activity)
         return result
     except (
         DatasetReaderIntegrityError,
+        BaoStockDailyBarError,
+        MarketRevisionError,
         ObjectStoreError,
+        ProviderCaptureError,
         ValueError,
         TypeError,
         KeyError,
@@ -986,6 +1019,66 @@ def dataset_cross_section_memberships(
         raise DatasetReaderIntegrityError(
             "dataset_cross_section_membership_invalid"
         ) from exc
+
+
+def _require_captured_warmup_halts(store, snapshot, missing):
+    """Reopen explicit statuses in the snapshot's own BaoStock range captures.
+
+    A capture can include a suspended session for a stock whose traded bars
+    are bound on other days of the same range. Only undated-decision warmup
+    uses these observations at the frozen cutoff. No prices or members change.
+    """
+    from data.market.capture import read_provider_capture
+    from data.providers.baostock import (
+        has_historical_daily_status,
+        read_baostock_historical_status,
+    )
+
+    wanted = set().union(*missing.values())
+    confirmed = set()
+    seen = set()
+    for part in snapshot.partitions:
+        if part.provider != "baostock" or wanted.isdisjoint(
+            part.instruments or snapshot.instruments
+        ):
+            continue
+        materialization = read_market_revision_materialization(
+            store, store.resolve_ref(part.materialization_id)
+        )
+        if materialization.revision_ref.revision_id != part.revision_id:
+            raise ValueError("cross_section_halt_revision_mismatch")
+        revision = read_market_revision(store, materialization.revision_ref)
+        if (
+            revision.provider != part.provider
+            or revision.partition_date != part.partition_date
+        ):
+            raise ValueError("cross_section_halt_revision_mismatch")
+        ref = materialization.capture_ref
+        if ref in seen:
+            continue
+        seen.add(ref)
+        capture = read_provider_capture(store, ref)
+        if capture.provider != "baostock" or capture.completed_at > snapshot.cutoff:
+            raise ValueError("cross_section_halt_capture_invalid")
+        if not has_historical_daily_status(capture):
+            continue
+        request = json.loads(capture.request_json)
+        days = [
+            day
+            for day in missing
+            if request["start_date"] <= day.isoformat() <= request["end_date"]
+        ]
+        if not days:
+            continue
+        _, _, statuses = read_baostock_historical_status(store, ref)
+        for day in days:
+            reported = statuses.get(day, {})
+            for key in missing[day].intersection(reported):
+                if reported[key] != "0":
+                    raise ValueError("cross_section_traded_reference_incomplete")
+                confirmed.add((day, key))
+    if len(confirmed) != sum(map(len, missing.values())):
+        raise ValueError("cross_section_traded_reference_incomplete")
 
 
 def _cross_section_master_listings(master, declared):

@@ -758,6 +758,13 @@ async def reserve_manual_research_evaluation(
     Caller-owned historical QA/screen and critique must precede this operation.
     A missed frozen opening consumes the original reservation; it is never moved.
     """
+    from data.dataset.manifest import read_daily_bar_dataset_manifest
+    from data.dataset.model import DatasetRef
+    from data.dataset.reader import (
+        DatasetReaderIntegrityError,
+        dataset_cross_section_memberships,
+    )
+    from server.ai_runtime.formula_dsl import formula_requires_cross_section
     from server.contracts.research_observation_automation import (
         read_simulation_validation_policy,
     )
@@ -839,6 +846,21 @@ async def reserve_manual_research_evaluation(
     )
     if seed["status"] != "ready":
         return {**seed, "reservation_id": None}
+    if formula_requires_cross_section(resolved.source_draft["formula_ast"]):
+        snapshot = read_daily_bar_dataset_manifest(
+            service.objects, DatasetRef(service.objects.resolve_ref(seed["dataset_id"]))
+        )
+        try:
+            dataset_cross_section_memberships(
+                service.objects, snapshot, as_of=fresh_clock()
+            )
+        except DatasetReaderIntegrityError as exc:
+            return {
+                **seed,
+                "status": "blocked",
+                "last_blocker": {"code": str(exc), "detail": str(exc.__cause__ or exc)},
+                "reservation_id": None,
+            }
     # Seed preparation may cross the opening. Read the clock again before allocation.
     return await _reserve_final_research_evaluation(
         db=db,

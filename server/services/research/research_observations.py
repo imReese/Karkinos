@@ -751,7 +751,7 @@ class ResearchObservationService:
         prepared = prepare_formula_sessions(
             formula_ast,
             {symbol: pd.DataFrame(rows) for symbol, rows in frames.items()},
-            universe_size=len(observation["source"]["instruments"]),
+            universe_size=len(snapshot.instruments),
             cross_section=cross_section,
         )
         input_blockers = tuple(

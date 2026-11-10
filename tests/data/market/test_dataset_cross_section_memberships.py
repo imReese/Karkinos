@@ -25,6 +25,8 @@ from data.market.capture import (
     read_provider_capture,
     read_provider_raw_payload,
 )
+from data.market.normalize import normalize_daily_bar
+from data.market.revision import publish_daily_bar_revision
 from data.providers.eastmoney import read_official_stock_master_captures
 from data.providers.tdx import TDX_PROVIDER_DESCRIPTOR
 from data.storage.objects import ContentAddressedObjectStore
@@ -383,11 +385,8 @@ def test_optional_master_activity_preserves_default_projection_and_actual_query_
     assert "trade_status" not in metadata["600000"]
 
 
-def test_verified_master_raw_positive_activity_conflicts_with_prelisting(tmp_path):
-    objects = ContentAddressedObjectStore(tmp_path / "objects")
+def _official_master_with_listing(objects, status_day, listing_day):
     _, original_refs, _, _ = official_capture(objects)
-    status_day = OFFICIAL_DAYS[-1]
-    listing_day = status_day + timedelta(days=1)
     refs = []
     for identity in original_refs:
         capture = read_provider_capture(objects, objects.resolve_ref(identity))
@@ -434,6 +433,114 @@ def test_verified_master_raw_positive_activity_conflicts_with_prelisting(tmp_pat
     target = next(row for row in master["member_metadata"] if row["symbol"] == "600000")
     assert target["list_date"] == str(listing_day)
     assert "trade_status" not in target
+    return master, completed
+
+
+@pytest.mark.parametrize("already_listed", [False, True])
+def test_older_roster_can_omit_only_an_exchange_verified_future_listing(
+    tmp_path, already_listed
+):
+    objects, snapshot, _, _ = _metadata_inputs(tmp_path)
+    early, late = OFFICIAL_DAYS[-2:]
+    official, completed = _official_master_with_listing(
+        objects, late, early if already_listed else late
+    )
+    older = {**official, "trade_date": str(early)}
+    older.pop("source_capture_ids")
+    for key in ("members", "member_metadata"):
+        older[key] = [r for r in older[key] if r["symbol"] != "600000"]
+    sources = [objects.put_bytes(json.dumps(m).encode()) for m in (older, official)]
+    sessions = [
+        DailyBarDatasetMembership(day, members, completed, (ref.object_id,))
+        for day, members, ref in zip(
+            (early, late), (KEYS[1:], KEYS), sources, strict=True
+        )
+    ]
+    parts = tuple(
+        replace(part, partition_date=m.partition_date, instruments=m.instruments)
+        for part, m in zip(snapshot.partitions, sessions, strict=True)
+    )
+    actual = replace(
+        snapshot,
+        start_date=early,
+        end_date=late,
+        cutoff=completed,
+        partitions=parts,
+        session_memberships=tuple(sessions),
+    )
+    if already_listed:
+        with pytest.raises(DatasetReaderIntegrityError, match=ERROR):
+            dataset_cross_section_memberships(objects, actual, as_of=completed)
+    else:
+        assert dataset_cross_section_memberships(objects, actual, as_of=completed) == {
+            early: KEYS[1:],
+            late: KEYS,
+        }
+
+
+@pytest.mark.parametrize("missing_row", [False, True])
+def test_warmup_exclusion_reopens_range_capture_bound_to_a_traded_partition(
+    tmp_path, missing_row
+):
+    objects, snapshot, master, capture = _metadata_inputs(
+        tmp_path,
+        status_mutate=(lambda _request, raw: raw["calls"][0]["rows"].pop())
+        if missing_row
+        else None,
+    )
+    event = CAPTURED_AT.replace(
+        year=DAYS[0].year, month=DAYS[0].month, day=DAYS[0].day, hour=7
+    )
+    bars = [
+        normalize_daily_bar(
+            instrument=key,
+            session_date=DAYS[0],
+            event_time=event,
+            available_at=CAPTURED_AT,
+            captured_at=CAPTURED_AT,
+            open_value=10,
+            high_value=10,
+            low_value=10,
+            close_value=10,
+            volume=100,
+            amount=1000,
+            suspended=False,
+        )
+        for key in KEYS
+    ]
+    revision, mat = publish_daily_bar_revision(
+        objects, capture=capture, bars=bars, normalizer_version="fixture"
+    )
+    first = replace(
+        snapshot.partitions[0],
+        provider="baostock",
+        revision_id=revision.ref.revision_id,
+        materialization_id=mat.materialization_id,
+    )
+    snapshot = replace(
+        snapshot,
+        partitions=(first, snapshot.partitions[1]),
+        session_memberships=tuple(
+            replace(
+                m, source_observation_ids=(master.object_id,), available_at=MASTER_AT
+            )
+            for m in snapshot.session_memberships
+        ),
+    )
+    if missing_row:
+        with pytest.raises(DatasetReaderIntegrityError, match=ERROR):
+            dataset_cross_section_memberships(objects, snapshot, as_of=CAPTURED_AT)
+    else:
+        assert dataset_cross_section_memberships(
+            objects, snapshot, as_of=CAPTURED_AT
+        ) == {DAYS[0]: KEYS, DAYS[1]: KEYS[1:]}
+
+
+def test_verified_master_raw_positive_activity_conflicts_with_prelisting(tmp_path):
+    objects = ContentAddressedObjectStore(tmp_path / "objects")
+    status_day = OFFICIAL_DAYS[-1]
+    listing_day = status_day + timedelta(days=1)
+    master, completed = _official_master_with_listing(objects, status_day, listing_day)
     master_ref = objects.put_bytes(json.dumps(master).encode())
     partitions = []
     memberships = []

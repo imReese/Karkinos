@@ -247,6 +247,28 @@ async def test_seed_pending_and_wrong_policy_never_allocate(manual, monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_verified_bars_without_rank_membership_do_not_spend_final_slot(
+    manual, monkeypatch
+):
+    from tests.server.test_verified_interval_dataset import DAYS, _verified_day
+
+    m = manual
+    ref = _verified_day(m.t.h.db.path.parent / "research", DAYS[0])
+    monkeypatch.setattr(
+        "server.ai_runtime.formula_dsl.formula_requires_cross_section", lambda _: True
+    )
+    monkeypatch.setattr(
+        "server.services.research.datasets.ensure_forward_seed_for_source",
+        lambda *_a, **_k: {"status": "ready", "dataset_id": ref.dataset_id},
+    )
+    result = await reserve(m)
+    assert result["status"] == "blocked"
+    assert result["last_blocker"]["code"] == "dataset_cross_section_membership_invalid"
+    assert result["reservation_id"] is None
+    assert m.t.h.store.manual_research_champion_reservation(asdict(m.refs)) is None
+
+
+@pytest.mark.asyncio
 async def test_manual_final_require_reopens_source_and_never_uses_automation_candidate(
     manual, monkeypatch
 ):
