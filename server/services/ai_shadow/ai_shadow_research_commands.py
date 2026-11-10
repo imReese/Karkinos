@@ -462,8 +462,8 @@ class AiShadowResearchCommandsMixin:
             proposed_profile = proposed.get("statistical_policy", {})
             previous_profile = previous.get("statistical_policy", {})
             if "schema_version" in proposed_profile:
-                # A versioned frozen profile is complete: v1 rolling-checkpoint
-                # defaults must not leak into a v2 one-shot evaluation.
+                # A frozen profile is complete: legacy rolling-checkpoint
+                # defaults must not leak into a one-shot evaluation.
                 simulation["statistical_policy"] = dict(proposed_profile)
             else:
                 simulation["statistical_policy"] = {

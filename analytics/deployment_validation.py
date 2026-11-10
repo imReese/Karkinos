@@ -12,7 +12,7 @@ import numpy as np
 from analytics.backtest_drawdown_evidence import build_backtest_drawdown_evidence
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.recommendation_publication import (
-    FINAL_STATISTICAL_POLICY_V2_SCHEMA,
+    is_final_statistical_policy,
     publication_number,
     validate_final_statistical_policy,
 )
@@ -42,8 +42,8 @@ def compare_session_curves(
     cash = float(initial_cash)
     if not math.isfinite(cash) or cash <= 0 or not comparators:
         raise ValueError("deployment_curve_initial_cash_or_comparators_invalid")
-    v2 = policy.get("schema_version") == FINAL_STATISTICAL_POLICY_V2_SCHEMA
-    if v2:
+    primary_comparator = is_final_statistical_policy(policy)
+    if primary_comparator:
         validate_final_statistical_policy(policy, policy_fingerprint or "")
         if comparator_bindings != policy["comparator_bindings"] or set(
             comparators
@@ -99,7 +99,12 @@ def compare_session_curves(
         or effective < int(policy["minimum_effective_blocks"])
         or samples * alpha < 20
         or not dates
-        or dates[-1] != (effective_checkpoint if v2 else policy["decision_checkpoint"])
+        or dates[-1]
+        != (
+            effective_checkpoint
+            if primary_comparator
+            else policy["decision_checkpoint"]
+        )
     ):
         blockers.append("deployment_independent_sample_insufficient")
     comparisons: list[dict[str, Any]] = []
@@ -139,7 +144,7 @@ def compare_session_curves(
             }
         )
     future_metrics = None
-    if v2:
+    if primary_comparator:
         primary = next(
             row for row in comparisons if row["label"] == policy["primary_comparator"]
         )
@@ -194,7 +199,7 @@ def compare_session_curves(
         blockers.append("deployment_net_excess_not_established")
     core = {
         "schema_version": "karkinos.deployment_uncertainty.v2"
-        if v2
+        if primary_comparator
         else "karkinos.deployment_uncertainty.v1",
         "method": policy["method"],
         "status": "pass" if not blockers else "insufficient_evidence",
@@ -204,7 +209,7 @@ def compare_session_curves(
         "comparisons": comparisons,
         "blockers": blockers,
     }
-    if v2:
+    if primary_comparator:
         core.update(
             policy_fingerprint=policy_fingerprint,
             comparator_bindings=dict(comparator_bindings or {}),

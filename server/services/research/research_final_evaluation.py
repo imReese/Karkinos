@@ -33,7 +33,7 @@ from server.contracts.ai_shadow_research_automation import (
 )
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.jobs import JobLease
-from server.contracts.recommendation_publication import FINAL_CALENDAR_AT_EVALUATION
+from server.contracts.recommendation_publication import is_final_calendar_timing
 from server.contracts.strategy_research import (
     StrategyResearchRejected,
     backtest_evidence_blocker,
@@ -249,23 +249,23 @@ def _reserved_execution_costs(db, binding, universe):
     return resolve_frozen_deployment_fee_schedule(db, binding["fee_schedule"], universe)
 
 
-def _is_statistical_v2(policy):
+def _is_final_statistical_policy(policy):
     from server.contracts.recommendation_publication import (
-        FINAL_STATISTICAL_POLICY_V2_SCHEMA,
+        is_final_statistical_policy,
     )
 
-    return policy.get("schema_version") == FINAL_STATISTICAL_POLICY_V2_SCHEMA
+    return is_final_statistical_policy(policy)
 
 
 def _checkpoint_identity(binding, profile):
     """Freeze a date or an explicit calendar rule, never an inferred future session."""
-    if profile.get("calendar_verification_timing") == FINAL_CALENDAR_AT_EVALUATION:
+    if is_final_calendar_timing(profile.get("calendar_verification_timing")):
         expected = {
-            "calendar_verification_timing": FINAL_CALENDAR_AT_EVALUATION,
+            "calendar_verification_timing": profile["calendar_verification_timing"],
             "last_session_on_or_before": profile["decision_checkpoint"],
         }
         if (
-            not _is_statistical_v2(profile)
+            not _is_final_statistical_policy(profile)
             or binding.get("checkpoint_resolution") != expected
             or "effective_checkpoint" in binding
         ):
@@ -432,7 +432,7 @@ def _statistical_comparator_bindings(binding, selection, research_store, *, poli
 def _verified_statistical_inputs(binding, selection, research_store):
     policy = _validation_policy(binding)
     profile = policy["statistical_policy"]
-    if not _is_statistical_v2(profile):
+    if not _is_final_statistical_policy(profile):
         return {}
     from datetime import date
 
@@ -476,10 +476,7 @@ def _compare_final_curves(
 
     profile = _validation_policy(binding)["statistical_policy"]
     extra = _verified_statistical_inputs(binding, selection, research_store)
-    if (
-        extra
-        and profile.get("calendar_verification_timing") == FINAL_CALENDAR_AT_EVALUATION
-    ):
+    if extra and is_final_calendar_timing(profile.get("calendar_verification_timing")):
         sessions = _verified_final_sessions(binding, calendar_db)
         if [str(row[0])[:10] for row in curves["candidate"]] != sessions:
             raise StrategyResearchRejected("deployment_calendar_observation_mismatch")
@@ -722,7 +719,7 @@ def require_manual_source_binding(research_store, binding, *, now=None):
         or not binding.get("simulation_policy")
         or binding.get("publication_grant")
         or not binding.get("partition", {}).get("prospective_start")
-        or not _is_statistical_v2(
+        or not _is_final_statistical_policy(
             binding.get("simulation_policy", {}).get("statistical_policy", {})
         )
         or not binding.get("forward_seed_dataset_id")
@@ -808,8 +805,10 @@ async def reserve_manual_research_evaluation(
         # The forward-start owner separately rejects a late partial startup.
         return existing
     policy = read_simulation_validation_policy(db, now=fresh_clock())
-    if not _is_statistical_v2(policy["statistical_policy"]):
-        raise StrategyResearchRejected("manual_research_statistical_v2_required")
+    if not _is_final_statistical_policy(policy["statistical_policy"]):
+        raise StrategyResearchRejected(
+            "manual_research_frozen_statistical_policy_required"
+        )
     if resolved.source_selection.deployment_scope != policy[
         "deployment_scope"
     ] or Decimal(str(resolved.source_selection.initial_cash)) != Decimal(
@@ -875,11 +874,10 @@ def require_manual_start_clock(db, binding, now):
     if now >= opening:
         raise StrategyResearchRejected("manual_research_first_opening_missed")
     search_end = local.date() + timedelta(days=14)
-    if (
+    if is_final_calendar_timing(
         _validation_policy(binding)["statistical_policy"].get(
             "calendar_verification_timing"
         )
-        == FINAL_CALENDAR_AT_EVALUATION
     ):
         search_end = min(search_end, date(local.year, 12, 31))
     days = verified_trading_dates(
@@ -947,10 +945,7 @@ def _deployment_opening_sessions(
     from server.services.market.market_universe_automation import verified_trading_dates
 
     opening_end = min(partition.sealed_start + timedelta(days=14), partition.sealed_end)
-    if (
-        statistical_policy.get("calendar_verification_timing")
-        == FINAL_CALENDAR_AT_EVALUATION
-    ):
+    if is_final_calendar_timing(statistical_policy.get("calendar_verification_timing")):
         opening_end = min(opening_end, partition.sealed_start.replace(month=12, day=31))
     opening_days = verified_trading_dates(
         db,
@@ -1265,16 +1260,15 @@ async def _reserve_final_research_evaluation(
         )
     if simulation or grant:
         profile = _validation_policy(binding)["statistical_policy"]
-        if _is_statistical_v2(profile):
+        if _is_final_statistical_policy(profile):
             if sealed_end != profile["decision_checkpoint"]:
                 raise StrategyResearchRejected("deployment_frozen_checkpoint_mismatch")
-            if (
-                profile.get("calendar_verification_timing")
-                == FINAL_CALENDAR_AT_EVALUATION
-            ):
+            if is_final_calendar_timing(profile.get("calendar_verification_timing")):
                 binding.pop("effective_checkpoint")
                 binding["checkpoint_resolution"] = {
-                    "calendar_verification_timing": FINAL_CALENDAR_AT_EVALUATION,
+                    "calendar_verification_timing": profile[
+                        "calendar_verification_timing"
+                    ],
                     "last_session_on_or_before": profile["decision_checkpoint"],
                 }
             else:
@@ -1513,7 +1507,7 @@ def _deployment_replay_inputs(
     if not binding.get("deployment_scope"):
         return None, None, None
     if (
-        _is_statistical_v2(_validation_policy(binding)["statistical_policy"])
+        _is_final_statistical_policy(_validation_policy(binding)["statistical_policy"])
         and trading_dates[-1] != _verified_final_sessions(binding, calendar_db)[-1]
     ):
         raise StrategyResearchRejected("deployment_frozen_checkpoint_mismatch")
@@ -1762,7 +1756,7 @@ async def _evaluate_claimed_champion(
             ),
         )
         primary = None
-        if binding.get("deployment_scope") and _is_statistical_v2(
+        if binding.get("deployment_scope") and _is_final_statistical_policy(
             _validation_policy(binding)["statistical_policy"]
         ):
             primary = _validation_policy(binding)["statistical_policy"][
@@ -1774,7 +1768,7 @@ async def _evaluate_claimed_champion(
         evaluation = build_sealed_holdout_evaluation(
             strategy_id="ai_formula_research",
             benchmark_role=(
-                "frozen_primary_comparator.v2:" + primary
+                "frozen_primary_comparator:" + primary
                 if primary
                 else (
                     "frozen_formulas_and_simple_random_challengers"
@@ -1975,7 +1969,9 @@ def verify_persisted_final_evaluation(
         )
 
         bound_db = AppDatabase(research_store._path)
-        if _is_statistical_v2(_validation_policy(binding)["statistical_policy"]):
+        if _is_final_statistical_policy(
+            _validation_policy(binding)["statistical_policy"]
+        ):
             sessions = _verified_final_sessions(binding, bound_db)
             if (
                 evidence["deployment_assessment"].get("effective_checkpoint")
@@ -2413,8 +2409,8 @@ def manual_account_applicability_requirements(
     source_binding = _manual_final_source_binding(evidence)
     binding = evidence["reservation"]
     sim = binding.get("simulation_policy")
-    if not sim or not _is_statistical_v2(sim["statistical_policy"]):
-        raise StrategyResearchRejected("manual_final_simulation_v2_required")
+    if not sim or not _is_final_statistical_policy(sim["statistical_policy"]):
+        raise StrategyResearchRejected("manual_final_frozen_simulation_required")
     if binding.get("incumbent"):
         raise StrategyResearchRejected("manual_incumbent_account_review_unsupported")
     if (
@@ -2556,12 +2552,13 @@ def _simulation_account_replay_inputs(db, store, result, evidence, grant):
         != grant["deployment_scope_fingerprint"]
     ):
         raise StrategyResearchRejected("deployment_simulation_scope_mismatch")
-    v2 = _is_statistical_v2(sim["statistical_policy"])
+    primary_comparator = _is_final_statistical_policy(sim["statistical_policy"])
     profiles = [
         {
             k: v
             for k, v in p.items()
-            if k != ("comparator_bindings" if v2 else "decision_checkpoint")
+            if k
+            != ("comparator_bindings" if primary_comparator else "decision_checkpoint")
         }
         for p in (sim["statistical_policy"], grant["statistical_policy"])
     ]
@@ -2609,7 +2606,7 @@ def _simulation_account_replay_inputs(db, store, result, evidence, grant):
         },
         tuple(binding["universe"]),
     )
-    if v2:
+    if primary_comparator:
         from server.ai_runtime.strategy_research_support import selection_from_session
 
         selection = selection_from_session(store.get_session(binding["session_id"]))
@@ -2680,7 +2677,7 @@ def _simulation_reviewed_assessment(db, evidence, grant, replay):
     account_binding.pop("simulation_policy", None)
     account_binding["fee_schedule"] = replay["fee_schedule"]
     store = selection = None
-    if _is_statistical_v2(grant["statistical_policy"]):
+    if _is_final_statistical_policy(grant["statistical_policy"]):
         from server.ai_runtime.strategy_research_support import selection_from_session
         from server.persistence.strategy_research import StrategyResearchAuditStore
 
@@ -2752,7 +2749,9 @@ def _build_simulation_account_replay(db, store, result, evidence, grant, *, data
     )
     if (
         binding.get("deployment_scope")
-        and _is_statistical_v2(_validation_policy(binding)["statistical_policy"])
+        and _is_final_statistical_policy(
+            _validation_policy(binding)["statistical_policy"]
+        )
         and (not dates or dates[-1] != _verified_final_sessions(binding, db)[-1])
     ):
         raise StrategyResearchRejected("deployment_frozen_checkpoint_mismatch")
@@ -3009,7 +3008,7 @@ def verify_deployment_validation(
         raise StrategyResearchRejected("deployment_assessment_drift")
     curves = evidence["session_curves"]
     selection = None
-    if _is_statistical_v2(_validation_policy(binding)["statistical_policy"]):
+    if _is_final_statistical_policy(_validation_policy(binding)["statistical_policy"]):
         from server.ai_runtime.strategy_research_support import selection_from_session
 
         selection = selection_from_session(store.get_session(binding["session_id"]))

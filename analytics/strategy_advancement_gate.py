@@ -52,7 +52,8 @@ from analytics.strategy_advancement_evidence import (
     valid_snapshot_id as _valid_snapshot_id,
 )
 
-STRATEGY_ADVANCEMENT_GATE_SCHEMA_VERSION = "karkinos.strategy_advancement_gate.v2"
+GATE_SCHEMA = "karkinos.strategy_advancement_gate"
+LEGACY_GATE_SCHEMAS = frozenset({"karkinos.strategy_advancement_gate.v2"})
 MANUAL_FINAL_ADVANCEMENT_GATE_SCHEMA = "karkinos.strategy_advancement_gate.manual_final"
 MANUAL_FINAL_REQUIRED_CHECK_NAMES = (
     "frozen_dataset_identity",
@@ -68,8 +69,8 @@ MANUAL_FINAL_REQUIRED_CHECK_NAMES = (
     "candidate_realistic_cost_and_tax_evidence",
     "after_tax_excess_return",
     "independent_critique",
-    "independent_final_v2_evaluation",
-    "reviewed_account_v2_evaluation",
+    "independent_final_evaluation",
+    "reviewed_account_evaluation",
 )
 STRATEGY_ADVANCEMENT_REQUIRED_CHECK_NAMES = (
     "frozen_dataset_identity",
@@ -102,7 +103,7 @@ class StrategyAdvancementGate:
 
     def to_json_dict(self) -> dict[str, Any]:
         payload = {
-            "schema_version": STRATEGY_ADVANCEMENT_GATE_SCHEMA_VERSION,
+            "schema_version": GATE_SCHEMA,
             "status": self.status,
             "blockers": list(self.blockers),
             "checks": [dict(check) for check in self.checks],
@@ -158,8 +159,8 @@ def is_valid_passed_strategy_advancement_gate(value: Any) -> bool:
                 {"source_binding": payload.get("source_binding")}
             )
             by_name = {check["name"]: check for check in normalized_checks}
-            final = by_name["independent_final_v2_evaluation"]["evidence"]
-            reviewed = by_name["reviewed_account_v2_evaluation"]["evidence"]
+            final = by_name["independent_final_evaluation"]["evidence"]
+            reviewed = by_name["reviewed_account_evaluation"]["evidence"]
             diagnostics = payload["legacy_gate_diagnostics"]
             if (
                 source is None
@@ -172,7 +173,7 @@ def is_valid_passed_strategy_advancement_gate(value: Any) -> bool:
                 or not _valid_snapshot_id(payload["research_policy_fingerprint"])
                 or not _valid_fingerprint(payload["reviewed_replay_fingerprint"])
                 or diagnostics.get("schema_version")
-                != STRATEGY_ADVANCEMENT_GATE_SCHEMA_VERSION
+                not in ({GATE_SCHEMA} | LEGACY_GATE_SCHEMAS)
                 or not _self_hashed(diagnostics)
             ):
                 return False
@@ -187,11 +188,10 @@ def is_valid_passed_strategy_advancement_gate(value: Any) -> bool:
             and isinstance(check.get("evidence"), Mapping)
             for check in normalized_checks
         )
-        and payload.get("schema_version")
-        == (
-            MANUAL_FINAL_ADVANCEMENT_GATE_SCHEMA
+        and (
+            payload.get("schema_version") == MANUAL_FINAL_ADVANCEMENT_GATE_SCHEMA
             if manual
-            else STRATEGY_ADVANCEMENT_GATE_SCHEMA_VERSION
+            else payload.get("schema_version") in ({GATE_SCHEMA} | LEGACY_GATE_SCHEMAS)
         )
         and payload.get("status") == "pass"
         and blockers == []
@@ -709,7 +709,7 @@ def _manual_final_binding(candidate, source_binding):
         qualification_source_binding,
     )
     from server.contracts.recommendation_publication import (
-        FINAL_STATISTICAL_POLICY_V2_SCHEMA,
+        is_final_statistical_policy,
     )
 
     source = qualification_source_binding({"source_binding": source_binding})
@@ -729,7 +729,7 @@ def _manual_final_binding(candidate, source_binding):
         source != expected
         or source["source_kind"] != "manual_research"
         or final_research_evaluation_blocker(final) is not None
-        or profile.get("schema_version") != FINAL_STATISTICAL_POLICY_V2_SCHEMA
+        or not is_final_statistical_policy(profile)
         or profile.get("primary_comparator") != "Gen7"
         or not _valid_snapshot_id(profile.get("research_policy_fingerprint"))
         or any(
@@ -755,7 +755,7 @@ def _manual_final_binding(candidate, source_binding):
     return source, final, binding, sim, profile
 
 
-def _manual_reviewed_v2_binding(candidate, source, final, binding, sim, profile):
+def _manual_reviewed_binding(candidate, source, final, binding, sim, profile):
     from decimal import Decimal
 
     from analytics.backtest_drawdown_evidence import build_backtest_drawdown_evidence
@@ -820,7 +820,7 @@ def _manual_reviewed_v2_binding(candidate, source, final, binding, sim, profile)
         or assessment.get("status") != "pass"
         or assessment.get("blockers") != []
     ):
-        raise ValueError("manual_reviewed_v2_binding_invalid")
+        raise ValueError("manual_reviewed_binding_invalid")
     computed = compare_session_curves(
         candidate=curves["candidate"],
         comparators=curves["comparators"],
@@ -843,7 +843,7 @@ def _manual_reviewed_v2_binding(candidate, source, final, binding, sim, profile)
         or assessment["statistical_policy_fingerprint"]
         != uncertainty["policy_fingerprint"]
     ):
-        raise ValueError("manual_reviewed_v2_economic_evidence_invalid")
+        raise ValueError("manual_reviewed_economic_evidence_invalid")
     return replay
 
 
@@ -858,7 +858,7 @@ def build_manual_final_strategy_advancement_gate(
 
     Financial evidence is checked by its existing owners. Original rolling,
     drawdown and turnover preferences remain recorded under their original gate.
-    Future economics are re-evaluated from exact original/reviewed v2 evidence.
+    Future economics are re-evaluated from exact original and reviewed evidence.
     Publication consumers must additionally reopen canonical source/fee/account
     facts and the full final calculation; this artifact itself grants no authority.
     """
@@ -948,7 +948,7 @@ def build_manual_final_strategy_advancement_gate(
         source, final, binding, sim, profile = _manual_final_binding(candidate, source)
         policy_fingerprint = profile["research_policy_fingerprint"]
         final_ok = True
-        replay = _manual_reviewed_v2_binding(
+        replay = _manual_reviewed_binding(
             candidate, source, final, binding, sim, profile
         )
         replay_fingerprint = replay["evidence_fingerprint"]
@@ -956,15 +956,15 @@ def build_manual_final_strategy_advancement_gate(
     except (KeyError, TypeError, ValueError, ArithmeticError, AttributeError):
         pass
     record(
-        "independent_final_v2_evaluation",
+        "independent_final_evaluation",
         final_ok,
         "manual_final_evidence_invalid",
         {"source_binding": source, "research_policy_fingerprint": policy_fingerprint},
     )
     record(
-        "reviewed_account_v2_evaluation",
+        "reviewed_account_evaluation",
         reviewed_ok,
-        "manual_reviewed_v2_evidence_invalid",
+        "manual_reviewed_evidence_invalid",
         {"source_binding": source, "reviewed_replay_fingerprint": replay_fingerprint},
     )
     blockers = tuple(

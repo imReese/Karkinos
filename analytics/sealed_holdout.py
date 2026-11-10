@@ -22,8 +22,10 @@ from backtest.result import BacktestResult
 from core.events import FillEvent
 
 SEALED_HOLDOUT_EVIDENCE_SCHEMA_VERSION = "karkinos.sealed_holdout_validation.v1"
-SEALED_PARTITION_CONTRACT = "karkinos.sealed_partition.v1"
-PROSPECTIVE_PARTITION_CONTRACT = "karkinos.sealed_partition.v2"
+SEALED_PARTITION_CONTRACT = "karkinos.sealed_partition.contiguous"
+PROSPECTIVE_PARTITION_CONTRACT = "karkinos.sealed_partition.prospective"
+LEGACY_SEALED_PARTITION_CONTRACTS = frozenset({"karkinos.sealed_partition.v1"})
+LEGACY_PROSPECTIVE_PARTITION_CONTRACTS = frozenset({"karkinos.sealed_partition.v2"})
 SEALED_CONSUMPTION_RECEIPT_CONTRACT = "karkinos.sealed_partition_consumption.v1"
 
 _DEFAULT_HOLDOUT_FRACTION = Decimal("0.20")
@@ -530,7 +532,15 @@ def is_valid_sealed_holdout_evaluation(value: Any) -> bool:
 def _validated_partition(value: Any) -> SealedHoldoutPartition | None:
     if not isinstance(value, Mapping):
         return None
-    prospective = value.get("schema_version") == PROSPECTIVE_PARTITION_CONTRACT
+    schema_version = value.get("schema_version")
+    prospective = schema_version in (
+        {PROSPECTIVE_PARTITION_CONTRACT} | LEGACY_PROSPECTIVE_PARTITION_CONTRACTS
+    )
+    contiguous = schema_version in (
+        {SEALED_PARTITION_CONTRACT} | LEGACY_SEALED_PARTITION_CONTRACTS
+    )
+    if not prospective and not contiguous:
+        return None
     if not prospective and "prospective_start" in value:
         return None
     try:
@@ -549,8 +559,6 @@ def _validated_partition(value: Any) -> SealedHoldoutPartition | None:
     except (ValueError, InvalidOperation, TypeError):
         return None
     if partition.holdout_fraction is None:
-        return None
-    if value.get("schema_version") != partition.to_json_dict()["schema_version"]:
         return None
     if float(partition.holdout_fraction) != value.get("holdout_fraction"):
         return None
@@ -732,15 +740,15 @@ def final_research_evaluation_blocker(value: Any) -> str | None:
         )
         profile = validation_policy.get("statistical_policy", {})
         from server.contracts.recommendation_publication import (
-            FINAL_STATISTICAL_POLICY_V2_SCHEMA,
+            is_final_statistical_policy,
         )
 
-        v2 = profile.get("schema_version") == FINAL_STATISTICAL_POLICY_V2_SCHEMA
+        primary_comparator = is_final_statistical_policy(profile)
         benchmark = max(
             _decimal(core["baseline_sealed_return"]), *returns, *formula_returns
         )
         benchmark_matches = _decimal(evaluation["benchmark_return"]) == benchmark
-        if v2:
+        if primary_comparator:
             from analytics.deployment_validation import compare_session_curves
 
             curves = core["session_curves"]
@@ -756,21 +764,20 @@ def final_research_evaluation_blocker(value: Any) -> str | None:
                 or set(curves["comparators"]) != labels
                 or binding["partition"]["sealed_end"] != profile["decision_checkpoint"]
                 or evaluation["benchmark_role"]
-                != "frozen_primary_comparator.v2:" + profile["primary_comparator"]
+                != "frozen_primary_comparator:" + profile["primary_comparator"]
             ):
                 return "independent_final_primary_binding_invalid"
             from server.contracts.recommendation_publication import (
-                FINAL_CALENDAR_AT_EVALUATION,
+                is_final_calendar_timing,
             )
 
-            if (
-                profile.get("calendar_verification_timing")
-                == FINAL_CALENDAR_AT_EVALUATION
-            ):
+            if is_final_calendar_timing(profile.get("calendar_verification_timing")):
                 if (
                     binding.get("checkpoint_resolution")
                     != {
-                        "calendar_verification_timing": FINAL_CALENDAR_AT_EVALUATION,
+                        "calendar_verification_timing": profile[
+                            "calendar_verification_timing"
+                        ],
                         "last_session_on_or_before": profile["decision_checkpoint"],
                     }
                     or "effective_checkpoint" in binding
