@@ -50,6 +50,30 @@ def test_readonly_connection_is_query_only(tmp_path):
             conn.execute("INSERT INTO facts VALUES ('blocked')")
 
 
+def test_write_connection_can_attach_readonly_market_evidence(tmp_path):
+    from server.persistence.valuation_publication_recovery import (
+        attach_recovery_market_database,
+    )
+
+    market = tmp_path / "market #1.db"
+    with closing(connect_sqlite(market)) as conn:
+        conn.execute("CREATE TABLE facts(value TEXT)")
+        conn.execute("INSERT INTO facts VALUES ('original')")
+        conn.commit()
+
+    app = tmp_path / "app %23.db"
+    with closing(connect_sqlite(app, uri_attachments=True)) as conn:
+        attach_recovery_market_database(conn, market)
+        conn.execute("CREATE TABLE audit(value TEXT)")
+        conn.execute("INSERT INTO audit SELECT value FROM market_meta.facts")
+        with pytest.raises(sqlite3.OperationalError, match="readonly"):
+            conn.execute("DELETE FROM market_meta.facts")
+        conn.commit()
+
+    with closing(connect_sqlite(app, readonly=True)) as conn:
+        assert conn.execute("SELECT value FROM audit").fetchall() == [("original",)]
+
+
 def test_write_baseline_detects_weakened_connection():
     with closing(sqlite3.connect(":memory:")) as conn:
         conn.execute("PRAGMA foreign_keys=OFF")

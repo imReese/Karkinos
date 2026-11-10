@@ -972,7 +972,9 @@ def discard_proven_unpublished_quote_refreshes(
         "confirmation": confirmation,
     }
     command_id = stable_json_fingerprint(request)
-    with closing(connect_sqlite(database_path)) as conn:
+    with closing(
+        connect_sqlite(database_path, uri_attachments=market_database_path is not None)
+    ) as conn:
         conn.row_factory = sqlite3.Row
         attach_recovery_market_database(conn, market_database_path)
         conn.execute("BEGIN IMMEDIATE")

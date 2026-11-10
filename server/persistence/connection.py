@@ -23,6 +23,7 @@ def connect_sqlite(
     database_path: str | Path,
     *,
     readonly: bool = False,
+    uri_attachments: bool = False,
     timeout: float = 2,
     factory: type[sqlite3.Connection] = sqlite3.Connection,
     foreign_keys: bool = True,
@@ -41,7 +42,16 @@ def connect_sqlite(
         conn.execute("PRAGMA query_only=ON")
         return conn
 
-    conn = sqlite3.connect(database_path, timeout=timeout, factory=factory)
+    # ATTACH inherits URI handling from this open. Keep the primary filename
+    # literal, including SQLite's in-memory and temporary database names.
+    target = (
+        Path(database_path).absolute().as_uri()
+        if uri_attachments and database_path not in ("", ":memory:")
+        else database_path
+    )
+    conn = sqlite3.connect(
+        target, uri=uri_attachments, timeout=timeout, factory=factory
+    )
     conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
     conn.execute(f"PRAGMA foreign_keys={'ON' if foreign_keys else 'OFF'}")
     conn.execute("PRAGMA synchronous=FULL")
