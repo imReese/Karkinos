@@ -7,6 +7,8 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+from data.market_daily_receipt import stock_receipt_uses_provider_units
+
 
 def read_market_bars(
     db_path: Path,
@@ -47,14 +49,9 @@ def read_market_bars(
             ).fetchall():
                 try:
                     payload = json.loads(str(r[1]))
-                    schema = payload.get("schema_version")
                     provider = payload.get("provider_name")
                     if (
-                        schema
-                        in (
-                            "karkinos.market_daily_ingestion_receipt.v1",
-                            "karkinos.market_daily_ingestion_receipt.v2",
-                        )
+                        stock_receipt_uses_provider_units(payload)
                         and provider == "tushare"
                     ):
                         legacy_lot_dates.add(str(r[0]))

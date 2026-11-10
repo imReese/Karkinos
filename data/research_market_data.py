@@ -21,6 +21,7 @@ from data.market_daily_store import (
     CANONICAL_STOCK_BAR_UNITS,
     RESEARCH_BAR_NORMALIZATION,
     read_verified_market_daily_receipt_records_on_connection,
+    stock_receipt_uses_provider_units,
 )
 
 VERIFIED_SUPPLEMENT_NORMALIZATION = (
@@ -360,13 +361,7 @@ def load_research_market_frames(
                 or records is None
             ):
                 raise ValueError("research_market_receipt_drift")
-            schema = receipt["schema_version"]
-            if schema == "karkinos.market_daily_ingestion_receipt.v3":
-                if (
-                    receipt.get("units") != CANONICAL_STOCK_BAR_UNITS
-                    or receipt.get("price_basis") != "unadjusted"
-                ):
-                    raise ValueError("research_market_units_or_price_basis_invalid")
+            if not stock_receipt_uses_provider_units(receipt):
                 volume_scale, amount_scale = 1, 1
             elif receipt["provider_name"] == "tushare":
                 # v1/v2 TuShare batches were emitted by the old daily adapter,

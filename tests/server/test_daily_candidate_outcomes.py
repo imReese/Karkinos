@@ -195,6 +195,7 @@ def test_verified_legacy_receipt_without_price_basis_is_not_used_as_anchor(
     db, _, anchor = _store(tmp_path)
     legacy = dict(anchor)
     legacy["schema_version"] = "karkinos.market_daily_ingestion_receipt.v2"
+    legacy["storage_authority"] = "sqlite_market_bars_v2:stock"
     legacy.pop("units", None)
     legacy.pop("price_basis", None)
     legacy.pop("receipt_fingerprint")

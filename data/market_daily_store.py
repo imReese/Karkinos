@@ -7,22 +7,24 @@ import json
 import sqlite3
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
 
 from core.types import BarFrequency, InstrumentType, Symbol
+from data.market.normalize import reported_whole_hand_volume_matches
+from data.market_daily_receipt import (
+    CANONICAL_STOCK_BAR_UNITS,
+    MARKET_DAILY_RECEIPT,
+    STOCK_BAR_STORAGE,
+    is_supported_stock_receipt_identity,
+    stock_receipt_uses_provider_units,
+)
 from data.meta_store_connection import connect_meta_sqlite
 
 _OHLCV_COLUMNS = ("open", "high", "low", "close", "volume")
-_STOCK_RECEIPT_STORAGE_AUTHORITY_BY_SCHEMA = {
-    "karkinos.market_daily_ingestion_receipt.v1": "sqlite_market_bars",
-    "karkinos.market_daily_ingestion_receipt.v2": "sqlite_market_bars_v2:stock",
-    "karkinos.market_daily_ingestion_receipt.v3": "sqlite_market_bars_v2:stock",
-}
-
 RESEARCH_BAR_NORMALIZATION = "karkinos.receipt_stock_units.v1"
-CANONICAL_STOCK_BAR_UNITS = {"volume": "shares", "amount": "CNY"}
 
 
 def _resolve_market_table(conn: sqlite3.Connection, base: str) -> str:
@@ -30,19 +32,19 @@ def _resolve_market_table(conn: sqlite3.Connection, base: str) -> str:
     return base
 
 
-def is_supported_stock_receipt_identity(receipt: Mapping[str, object]) -> bool:
-    """Accept only the exact legacy or typed stock daily-receipt identity."""
-
-    schema_version = str(receipt.get("schema_version") or "")
-    expected_authority = _STOCK_RECEIPT_STORAGE_AUTHORITY_BY_SCHEMA.get(schema_version)
-    if schema_version == "karkinos.market_daily_ingestion_receipt.v3" and (
-        receipt.get("units") != CANONICAL_STOCK_BAR_UNITS
-        or receipt.get("price_basis") != "unadjusted"
-    ):
+def _same_stock_batch(stored, core):
+    """Compare a retry's source batch without reissuing its original signed receipt."""
+    if not is_supported_stock_receipt_identity(
+        stored
+    ) or stock_receipt_uses_provider_units(stored):
         return False
-    return expected_authority is not None and (
-        receipt.get("storage_authority") == expected_authority
+    replay = dict(stored)
+    for key in ("receipt_fingerprint", "source_volumes", "scoped_receipt_fingerprints"):
+        replay.pop(key, None)
+    replay.update(
+        schema_version=MARKET_DAILY_RECEIPT, storage_authority=STOCK_BAR_STORAGE
     )
+    return replay == core
 
 
 def compute_scope_fingerprint(symbols: Sequence[str]) -> str:
@@ -107,6 +109,66 @@ def require_frozen_stock_bars_unchanged(
             ).fetchone()
             if existing is None or tuple(existing) != tuple(record[2:8]):
                 raise ValueError(f"frozen_market_bar_conflict:{symbol}:{timestamp}")
+
+
+def _scoped_reported_volumes(conn, day, provider, records):
+    """Retain TuShare's exact shares alongside existing Eastmoney whole-hand rows."""
+
+    if (
+        provider != "tushare"
+        or conn.execute(
+            "SELECT 1 FROM market_daily_ingestion_receipts WHERE trade_date=?", (day,)
+        ).fetchone()
+    ):
+        return None
+    stored: dict[str, _MarketDailyRecord] = {}
+    fingerprints: list[str] = []
+    for (raw,) in conn.execute(
+        "SELECT receipt_json FROM market_daily_scoped_receipts WHERE trade_date=?",
+        (day,),
+    ):
+        scoped = json.loads(raw)
+        if (
+            scoped.get("provider_name") != "akshare"
+            or scoped.get("trade_date") != day
+            or scoped.get("scope_type") != "scoped"
+            or stock_receipt_uses_provider_units(scoped)
+        ):
+            return None
+        frozen = read_verified_market_daily_receipt_records_on_connection(conn, scoped)
+        if frozen is None:
+            return None
+        fingerprints.append(scoped["receipt_fingerprint"])
+        stored.update((r[0], r) for r in frozen)
+    volumes = {}
+    for row in records:
+        shared = stored.get(row[0])
+        if shared is None or row == shared:
+            continue
+        if (
+            row[:6] != shared[:6]
+            or row[7] != shared[7]
+            or row[6] is None
+            or shared[6] is None
+            or not row[0].startswith(("00", "30", "60", "68"))
+            or not reported_whole_hand_volume_matches(
+                Decimal(str(row[6])), Decimal(str(shared[6]))
+            )
+        ):
+            return None
+        volumes[row[0]] = [shared[6], row[6]]
+    if not volumes:
+        return None
+    return volumes, sorted(fingerprints)
+
+
+def _signed_receipt(core):
+    fingerprint = hashlib.sha256(
+        json.dumps(
+            core, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+    ).hexdigest()
+    return {**core, "receipt_fingerprint": "sha256:" + fingerprint}
 
 
 def _receipt_symbols_set(val: object) -> set[str]:
@@ -182,7 +244,7 @@ class MarketDailyIngestionMixin:
         )
         symbols = [record[0] for record in records]
         receipt_core: dict[str, object] = {
-            "schema_version": "karkinos.market_daily_ingestion_receipt.v3",
+            "schema_version": MARKET_DAILY_RECEIPT,
             "units": CANONICAL_STOCK_BAR_UNITS,
             "price_basis": "unadjusted",
             "trade_date": normalized_date,
@@ -190,7 +252,7 @@ class MarketDailyIngestionMixin:
             "row_count": len(records),
             "symbols": symbols,
             "dataset_fingerprint": dataset_fingerprint,
-            "storage_authority": "sqlite_market_bars_v2:stock",
+            "storage_authority": STOCK_BAR_STORAGE,
             "parquet_mirror_required_for_decision": False,
             "provider_contact_performed_during_ingestion": True,
             "read_endpoints_contact_providers": False,
@@ -198,24 +260,7 @@ class MarketDailyIngestionMixin:
             "authorizes_order_creation": False,
             "changes_capital_authority": False,
         }
-        receipt_fingerprint = (
-            "sha256:"
-            + hashlib.sha256(
-                json.dumps(
-                    receipt_core,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ).encode("utf-8")
-            ).hexdigest()
-        )
-        receipt = {**receipt_core, "receipt_fingerprint": receipt_fingerprint}
-        receipt_json = json.dumps(
-            receipt,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
+        receipt = _signed_receipt(receipt_core)
         now = datetime.now().isoformat()
 
         with connect_meta_sqlite(self._meta_path) as conn:
@@ -230,13 +275,39 @@ class MarketDailyIngestionMixin:
             ).fetchone()
             if existing is not None:
                 stored = json.loads(str(existing["receipt_json"]))
-                if stored != receipt or not self._verify_market_daily_receipt(
-                    conn, stored
-                ):
+                if not _same_stock_batch(
+                    stored, receipt_core
+                ) or not self._verify_market_daily_receipt(conn, stored):
                     raise ValueError("market_daily_ingestion_receipt_conflict")
                 return stored
 
-            require_frozen_stock_bars_unchanged(conn, records)
+            storage_records = records
+            try:
+                require_frozen_stock_bars_unchanged(conn, records)
+            except ValueError as exc:
+                if not str(exc).startswith("frozen_market_bar_conflict:"):
+                    raise
+                reviewed = _scoped_reported_volumes(
+                    conn, normalized_date, normalized_provider, records
+                )
+                if reviewed is None:
+                    raise
+                volumes, scopes = reviewed
+                receipt = _signed_receipt(
+                    {
+                        **receipt_core,
+                        "source_volumes": volumes,
+                        "scoped_receipt_fingerprints": scopes,
+                    }
+                )
+                storage_records = [
+                    (*r[:6], volumes[r[0]][0], r[7]) if r[0] in volumes else r
+                    for r in records
+                ]
+                require_frozen_stock_bars_unchanged(conn, storage_records)
+            receipt_json = json.dumps(
+                receipt, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            )
             target_table = _resolve_market_table(conn, "market_bars")
             conn.executemany(
                 f"""
@@ -278,7 +349,7 @@ class MarketDailyIngestionMixin:
                         close_price,
                         volume,
                         amount,
-                    ) in records
+                    ) in storage_records
                 ],
             )
             if not self._verify_market_daily_receipt(conn, receipt):
@@ -352,7 +423,7 @@ class MarketDailyIngestionMixin:
         bar_symbols = [record[0] for record in records]
         scope_fingerprint = compute_scope_fingerprint(bar_symbols)
         receipt_core: dict[str, object] = {
-            "schema_version": "karkinos.market_daily_ingestion_receipt.v3",
+            "schema_version": MARKET_DAILY_RECEIPT,
             "scope_type": "scoped",
             "scope_fingerprint": scope_fingerprint,
             "units": CANONICAL_STOCK_BAR_UNITS,
@@ -362,7 +433,7 @@ class MarketDailyIngestionMixin:
             "row_count": len(records),
             "symbols": bar_symbols,
             "dataset_fingerprint": dataset_fingerprint,
-            "storage_authority": "sqlite_market_bars_v2:stock",
+            "storage_authority": STOCK_BAR_STORAGE,
             "parquet_mirror_required_for_decision": False,
             "provider_contact_performed_during_ingestion": True,
             "read_endpoints_contact_providers": False,
@@ -370,18 +441,7 @@ class MarketDailyIngestionMixin:
             "authorizes_order_creation": False,
             "changes_capital_authority": False,
         }
-        receipt_fingerprint = (
-            "sha256:"
-            + hashlib.sha256(
-                json.dumps(
-                    receipt_core,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ).encode("utf-8")
-            ).hexdigest()
-        )
-        receipt = {**receipt_core, "receipt_fingerprint": receipt_fingerprint}
+        receipt = _signed_receipt(receipt_core)
         receipt_json = json.dumps(
             receipt,
             ensure_ascii=False,
@@ -414,9 +474,9 @@ class MarketDailyIngestionMixin:
             ).fetchone()
             if existing is not None:
                 stored = json.loads(str(existing["receipt_json"]))
-                if stored != receipt or not self._verify_market_daily_receipt(
-                    conn, stored
-                ):
+                if not _same_stock_batch(
+                    stored, receipt_core
+                ) or not self._verify_market_daily_receipt(conn, stored):
                     raise ValueError("market_daily_ingestion_receipt_conflict")
                 return stored
 
@@ -747,6 +807,12 @@ class MarketDailyIngestionMixin:
         with connect_meta_sqlite(self._meta_path) as conn:
             typed_table = "market_bars"
             if receipts:
+                source_volumes = [r for r in receipts if "source_volumes" in r]
+                source_days = {str(r["trade_date"]) for r in source_volumes}
+                if source_days and sum(
+                    str(r.get("trade_date")) in source_days for r in receipts
+                ) != len(source_days):
+                    raise ValueError("market_daily_receipt_storage_authority_conflict")
                 parts = [
                     _read_market_window_authority(
                         conn,
@@ -761,12 +827,36 @@ class MarketDailyIngestionMixin:
                         conn,
                         table=typed_table,
                         identity_filter="instrument_type = 'stock' AND",
-                        dates=typed_dates,
+                        dates=tuple(
+                            day for day in typed_dates if day not in source_days
+                        ),
                         start=start,
                         end=end,
                         authority_rank=2,
                     ),
                 ]
+                for receipt in source_volumes:
+                    if not start_date <= str(receipt["trade_date"]) <= end_date:
+                        continue
+                    verified = read_verified_market_daily_receipt_records_on_connection(
+                        conn, dict(receipt)
+                    )
+                    if verified is None:
+                        raise ValueError("market_daily_ingestion_receipt_drift")
+                    source = pd.DataFrame.from_records(
+                        verified,
+                        columns=[
+                            "symbol",
+                            "timestamp",
+                            "open",
+                            "high",
+                            "low",
+                            "close",
+                            "volume",
+                            "amount",
+                        ],
+                    )
+                    parts.append(source.assign(_authority_rank=2))
                 available = [part for part in parts if not part.empty]
                 frame = (
                     pd.concat(available, ignore_index=True)
@@ -816,10 +906,9 @@ def _receipt_storage_dates(
         trade_date = str(receipt.get("trade_date") or "")
         if not trade_date:
             raise ValueError("market_daily_receipt_trade_date_invalid")
-        schema_version = str(receipt.get("schema_version") or "")
         target = (
             typed_dates
-            if schema_version != "karkinos.market_daily_ingestion_receipt.v1"
+            if receipt.get("storage_authority") != "sqlite_market_bars"
             else legacy_dates
         )
         target.add(trade_date)
@@ -915,6 +1004,58 @@ def read_verified_market_daily_receipt_records_on_connection(
     records = tuple(tuple(row) for row in rows if str(row[0]) in wanted)
     if len(records) != len(symbols):
         return None
+    if "source_volumes" in receipt:
+        volumes = receipt.get("source_volumes")
+        fingerprints = receipt.get("scoped_receipt_fingerprints")
+        if (
+            receipt.get("provider_name") != "tushare"
+            or not isinstance(volumes, dict)
+            or not volumes
+            or not set(volumes) <= wanted
+            or not isinstance(fingerprints, list)
+            or not fingerprints
+            or any(not isinstance(f, str) for f in fingerprints)
+            or fingerprints != sorted(set(fingerprints))
+        ):
+            return None
+        bound = set()
+        covered = set()
+        for (raw,) in conn.execute(
+            f"SELECT receipt_json FROM {schema}.market_daily_scoped_receipts WHERE trade_date=? AND provider_name='akshare'",
+            (day.isoformat(),),
+        ):
+            scoped = json.loads(raw)
+            if scoped.get("receipt_fingerprint") in fingerprints:
+                if (
+                    scoped.get("scope_type") != "scoped"
+                    or stock_receipt_uses_provider_units(scoped)
+                    or not verify_market_daily_receipt_on_connection(
+                        conn, scoped, schema=schema
+                    )
+                ):
+                    return None
+                bound.add(scoped["receipt_fingerprint"])
+                covered.update(scoped["symbols"])
+        if bound != set(fingerprints) or not set(volumes) <= covered:
+            return None
+        for row in records:
+            if row[0] not in volumes:
+                continue
+            pair = volumes[row[0]]
+            if (
+                not isinstance(pair, list)
+                or len(pair) != 2
+                or any(type(v) not in (int, float) for v in pair)
+                or row[6] != pair[0]
+                or pair[0] == pair[1]
+                or not reported_whole_hand_volume_matches(
+                    Decimal(str(pair[1])), Decimal(str(pair[0]))
+                )
+            ):
+                return None
+        records = tuple(
+            (*r[:6], volumes[r[0]][1], r[7]) if r[0] in volumes else r for r in records
+        )
     expected_dataset_fingerprint = _market_daily_records_fingerprint(
         trade_date=str(receipt.get("trade_date") or ""),
         provider_name=str(receipt.get("provider_name") or ""),
@@ -924,18 +1065,7 @@ def read_verified_market_daily_receipt_records_on_connection(
         return None
     core = dict(receipt)
     stored_fingerprint = core.pop("receipt_fingerprint", None)
-    valid = (
-        stored_fingerprint
-        == "sha256:"
-        + hashlib.sha256(
-            json.dumps(
-                core,
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode("utf-8")
-        ).hexdigest()
-    )
+    valid = stored_fingerprint == _signed_receipt(core)["receipt_fingerprint"]
     return records if valid else None
 
 

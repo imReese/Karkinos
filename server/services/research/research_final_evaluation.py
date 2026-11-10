@@ -136,6 +136,7 @@ def sealed_execution_code_binding() -> dict[str, Any]:
         "data/handler.py",
         "data/manager.py",
         "data/research_market_data.py",
+        "data/market_daily_receipt.py",
         "data/market_daily_store.py",
         "data/store.py",
         "data/dataset/reader.py",

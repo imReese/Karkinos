@@ -8,7 +8,10 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from data.market_daily_store import verify_market_daily_receipt_on_connection
+from data.market_daily_store import (
+    is_supported_stock_receipt_identity,
+    verify_market_daily_receipt_on_connection,
+)
 from server.contracts.quote_ingestion import QuoteIngestionCommand
 from server.persistence.database_normalization import stable_json_fingerprint
 from server.persistence.valuation_publication_recovery import (
@@ -260,11 +263,8 @@ def _read_receipts(conn, refs, observed):
         _require(row is not None, "resolution_evidence_not_found")
         receipt = json.loads(row["receipt_json"])
         _require(
-            receipt.get("schema_version")
-            in {
-                "karkinos.market_daily_ingestion_receipt.v2",
-                "karkinos.market_daily_ingestion_receipt.v3",
-            }
+            is_supported_stock_receipt_identity(receipt)
+            and receipt.get("storage_authority") != "sqlite_market_bars"
             and receipt.get("trade_date") == ref["trade_date"]
             and receipt.get("provider_name") == ref["provider_name"]
             and receipt.get("row_count") == row["row_count"]

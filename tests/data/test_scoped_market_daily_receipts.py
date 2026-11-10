@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import sqlite3
 from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -191,7 +194,7 @@ def test_scoped_receipt_coexists_with_full_market_batch(tmp_path: Path) -> None:
         provider_name="source1",
         bars=bars_full,
     )
-    assert full["schema_version"] == "karkinos.market_daily_ingestion_receipt.v3"
+    assert full["schema_version"] == "karkinos.market_daily_ingestion_receipt"
 
     # Full batch lookup without symbols returns full batch
     assert (
@@ -230,6 +233,109 @@ def test_different_provider_data_conflict_on_frozen_bar(tmp_path: Path) -> None:
             provider_name="provider_beta",
             bars=_create_bars([("600001", 15.0)]),
         )
+
+
+def test_full_batch_preserves_source_volumes_and_the_existing_scoped_receipt(tmp_path):
+    store = DataStore(tmp_path / "data")
+    coarse = _create_bars([("600001", 10.0)])
+    scoped = store.ingest_scoped_market_daily_batch(
+        trade_date=_TRADE_DATE, provider_name="akshare", bars=coarse
+    )
+    fine = _create_bars([("600001", 10.0), ("600002", 20.0)])
+    fine.loc[0, "volume"] = 1009.0
+
+    def ingest(frame):
+        return store.ingest_market_daily_batch(
+            trade_date=_TRADE_DATE, provider_name="tushare", bars=frame
+        )
+
+    with pytest.raises(ValueError, match="frozen_market_bar_conflict"):
+        ingest(fine.assign(amount=123.0))
+    with pytest.raises(ValueError, match="frozen_market_bar_conflict"):
+        ingest(fine.assign(volume=1150.0))
+    full = ingest(fine)
+    assert (
+        full["schema_version"]
+        == scoped["schema_version"]
+        == "karkinos.market_daily_ingestion_receipt"
+    )
+    assert (
+        full["storage_authority"]
+        == scoped["storage_authority"]
+        == "sqlite_market_bars:stock"
+    )
+    assert full["source_volumes"] == {"600001": [1000.0, 1009.0]}
+    assert full["scoped_receipt_fingerprints"] == [scoped["receipt_fingerprint"]]
+    assert ingest(fine) == full
+    assert (
+        store.get_market_daily_ingestion_receipt(
+            trade_date=_TRADE_DATE, provider_name="tushare"
+        )
+        == full
+    )
+    assert (
+        store.get_market_daily_scoped_receipt(
+            trade_date=_TRADE_DATE, provider_name="akshare"
+        )
+        == scoped
+    )
+
+    def volume(row):
+        frames = store.load_market_bar_windows(
+            symbols=["600001"],
+            start_date=_TRADE_DATE,
+            end_date=_TRADE_DATE,
+            receipts=[row],
+        )
+        return frames["600001"]["volume"].iloc[0]
+
+    assert volume(scoped) == 1000 and volume(full) == 1009
+    with pytest.raises(ValueError, match="ingestion_receipt_drift"):
+        volume({**full, "source_volumes": {"600001": [1000.0, 1010.0]}})
+
+
+def test_retry_reopens_historical_full_and_scoped_receipts_without_resigning(tmp_path):
+    store = DataStore(tmp_path)
+    frame = _create_bars([("600001", 10.0)])
+    kwargs = {"trade_date": _TRADE_DATE, "provider_name": "akshare", "bars": frame}
+    scoped = store.ingest_scoped_market_daily_batch(**kwargs)
+
+    def store_historical(table, receipt, identity, authority):
+        core = {**receipt, "schema_version": identity, "storage_authority": authority}
+        core.pop("receipt_fingerprint")
+        encoded = json.dumps(
+            core, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+        historical = {
+            **core,
+            "receipt_fingerprint": "sha256:"
+            + hashlib.sha256(encoded.encode()).hexdigest(),
+        }
+        with sqlite3.connect(store._meta_path) as conn:
+            conn.execute(
+                f"UPDATE {table} SET receipt_json=?", (json.dumps(historical),)
+            )
+        return historical
+
+    old_scoped = store_historical(
+        "market_daily_scoped_receipts",
+        scoped,
+        "karkinos.market_daily_ingestion_receipt.v3",
+        "sqlite_market_bars_v2:stock",
+    )
+    assert store.ingest_scoped_market_daily_batch(**kwargs) == old_scoped
+    fine = {**kwargs, "provider_name": "tushare", "bars": frame.assign(volume=1009.0)}
+    full = store.ingest_market_daily_batch(**fine)
+    assert full["scoped_receipt_fingerprints"] == [old_scoped["receipt_fingerprint"]]
+    old_full = store_historical(
+        "market_daily_ingestion_receipts",
+        full,
+        "karkinos.market_daily_ingestion_receipt.v4",
+        "sqlite_market_bars_v2:stock+reported_volume",
+    )
+    assert store.ingest_market_daily_batch(**fine) == old_full
+    with pytest.raises(ValueError, match="ingestion_receipt_conflict"):
+        store.ingest_market_daily_batch(**{**fine, "bars": frame.assign(volume=1010.0)})
 
 
 def test_post_close_stock_quotes_publication_with_scoped_receipt(

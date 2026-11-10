@@ -12,7 +12,10 @@ from pathlib import Path
 from typing import Any
 
 from analytics.dataset_snapshot import verify_backtest_dataset_snapshot_replay
-from data.market_daily_store import verify_market_daily_receipt_on_connection
+from data.market_daily_store import (
+    stock_receipt_uses_provider_units,
+    verify_market_daily_receipt_on_connection,
+)
 from data.meta_store_connection import connect_meta_sqlite
 
 
@@ -117,10 +120,6 @@ class CandidateOutcomeReceiptReader:
                 row[1] for row in self._conn.execute("PRAGMA table_info(market_bars)")
             }
             has_typed_bars = "instrument_type" in cols
-            legacy = (
-                receipt["schema_version"]
-                == "karkinos.market_daily_ingestion_receipt.v1"
-            )
             table = "market_bars"
             stock_filter = "instrument_type='stock' AND" if has_typed_bars else ""
             rows = self._conn.execute(
@@ -178,17 +177,8 @@ class CandidateOutcomeReceiptReader:
                 valid = False
             if not valid:
                 result = (None, "daily_receipt_unverified")
-            elif receipt.get("schema_version") in {
-                "karkinos.market_daily_ingestion_receipt.v1",
-                "karkinos.market_daily_ingestion_receipt.v2",
-            }:
+            elif stock_receipt_uses_provider_units(receipt):
                 result = (None, "historical_price_basis_unverified")
-            elif (
-                receipt.get("schema_version")
-                != "karkinos.market_daily_ingestion_receipt.v3"
-                or receipt.get("price_basis") != "unadjusted"
-            ):
-                result = (None, "daily_receipt_unverified")
             else:
                 result = (
                     {

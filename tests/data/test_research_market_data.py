@@ -45,6 +45,7 @@ def _legacy_receipt(store, provider="tushare"):
     receipt.pop("price_basis")
     receipt.pop("receipt_fingerprint")
     receipt["schema_version"] = "karkinos.market_daily_ingestion_receipt.v2"
+    receipt["storage_authority"] = "sqlite_market_bars_v2:stock"
     receipt["receipt_fingerprint"] = (
         "sha256:"
         + hashlib.sha256(
