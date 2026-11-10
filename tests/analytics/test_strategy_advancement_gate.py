@@ -27,6 +27,7 @@ from analytics.strategy_advancement_gate import (
     STRATEGY_ADVANCEMENT_REQUIRED_CHECK_NAMES,
     build_strategy_advancement_gate,
     is_valid_passed_strategy_advancement_gate,
+    replay_advancement_gate_schema,
     strategy_advancement_backtest_view,
 )
 from analytics.sweep_robustness import build_sweep_robustness_evidence
@@ -321,6 +322,20 @@ def test_strategy_advancement_gate_passes_only_complete_deterministic_evidence()
     assert gate.blockers == ()
     payload = gate.to_json_dict()
     assert payload["schema_version"] == GATE_SCHEMA
+    legacy = {**payload, "schema_version": "karkinos.strategy_advancement_gate.v2"}
+    legacy.pop("evidence_fingerprint")
+    legacy = _fingerprinted(legacy)
+    assert replay_advancement_gate_schema(payload, legacy) == legacy
+    assert (
+        replay_advancement_gate_schema(payload, {"schema_version": "unknown"})
+        == payload
+    )
+    assert replay_advancement_gate_schema({**payload, "checks": []}, legacy) != legacy
+    changed = {**legacy, "checks": list(reversed(legacy["checks"]))}
+    changed.pop("evidence_fingerprint")
+    assert replay_advancement_gate_schema(
+        payload, _fingerprinted(changed)
+    ) != _fingerprinted(changed)
     assert payload["does_not_create_order"] is True
     assert payload["does_not_authorize_execution"] is True
     assert payload["does_not_change_capital_authority"] is True

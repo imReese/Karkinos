@@ -22,6 +22,7 @@ from analytics.strategy_advancement_gate import (
     build_manual_final_strategy_advancement_gate,
     build_strategy_advancement_gate,
     is_valid_passed_strategy_advancement_gate,
+    replay_advancement_gate_schema,
     strategy_advancement_backtest_view,
 )
 from server.ai_runtime.contracts import content_fingerprint
@@ -391,6 +392,7 @@ def _resolve_ai_shadow_qualification_promotion_evidence(
     except (TypeError, ValueError, OverflowError):
         current_gate = {}
     comparison_gate = _json_object(comparison.get("promotion_gate"))
+    current_gate = replay_advancement_gate_schema(current_gate, comparison_gate)
     if not _qualification_advancement_gate_valid(
         current_gate, manual_binding
     ) or content_fingerprint(current_gate) != content_fingerprint(comparison_gate):
@@ -1211,6 +1213,8 @@ def _ai_shadow_readiness_binding_blockers(
             ).to_json_dict()
         except (TypeError, ValueError, OverflowError):
             current_gate = None
+        if current_gate is not None and isinstance(comparison_gate, dict):
+            current_gate = replay_advancement_gate_schema(current_gate, comparison_gate)
         if not is_valid_passed_strategy_advancement_gate(
             current_gate
         ) or content_fingerprint(current_gate) != content_fingerprint(comparison_gate):

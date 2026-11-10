@@ -207,6 +207,23 @@ def is_valid_passed_strategy_advancement_gate(value: Any) -> bool:
     )
 
 
+def replay_advancement_gate_schema(
+    replayed: dict[str, Any], recorded: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Serialize freshly computed evidence under its original, supported schema."""
+    schema = recorded.get("schema_version")
+    if (
+        replayed.get("schema_version") != GATE_SCHEMA
+        or not isinstance(schema, str)
+        or schema not in LEGACY_GATE_SCHEMAS
+        or not _self_hashed(replayed)
+    ):
+        return replayed
+    payload = {k: v for k, v in replayed.items() if k != "evidence_fingerprint"}
+    payload["schema_version"] = schema
+    return {**payload, "evidence_fingerprint": _payload_fingerprint(payload)}
+
+
 def strategy_advancement_backtest_view(
     source: Mapping[str, Any],
 ) -> dict[str, Any]:
