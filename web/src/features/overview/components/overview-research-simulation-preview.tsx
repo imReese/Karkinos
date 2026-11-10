@@ -10,6 +10,14 @@ import { StatusBadge } from '../../../shared/ui/workbench';
 import type { ResearchSimulationPreview } from '../overview-feature-boundary';
 
 function blockerLabel(code: string, zh: boolean) {
+  if (code === 'research_full_market_warmup_pending')
+    return zh
+      ? '这套策略所需的全市场行情仍在核验。'
+      : 'Full-market history for this strategy is still being verified.';
+  if (code.startsWith('account_truth_') && /fresh|age|old|plan_date/.test(code))
+    return zh
+      ? '账户快照已过期，请更新并确认最新的资金和持仓。'
+      : 'The account snapshot is stale. Refresh and confirm cash and holdings.';
   if (
     code.includes('source_not_configured') ||
     code.includes('source_not_ready')
@@ -75,6 +83,11 @@ export function OverviewResearchSimulationPreview({
   const zh = locale === 'zh';
   const source = preview.source;
   const available = preview.status === 'available';
+  const reasons = new Map<string, string[]>();
+  for (const code of preview.blockers) {
+    const label = blockerLabel(code, zh);
+    reasons.set(label, [...(reasons.get(label) ?? []), code]);
+  }
   const risks = [
     ...(preview.critique?.explicit_failure_conditions ?? []),
     ...(preview.critique?.evidence_gaps ?? []),
@@ -141,9 +154,20 @@ export function OverviewResearchSimulationPreview({
           className="space-y-1 app-type-compact text-[var(--app-text-secondary)]"
           data-testid="overview-research-simulation-blockers"
         >
-          {[...new Set(preview.blockers)].map((code) => (
-            <li key={code} title={code}>
-              {blockerLabel(code, zh)}
+          {[...reasons].map(([label, codes]) => (
+            <li key={label} title={codes.join(', ')}>
+              {label}
+              {codes.includes('account_truth_not_fresh') && (
+                <a
+                  href="/account-truth"
+                  className="ml-2 underline"
+                  onClick={(event) =>
+                    handleClientNavigation(event, '/account-truth')
+                  }
+                >
+                  {zh ? '打开账户核验' : 'Review account'}
+                </a>
+              )}
             </li>
           ))}
         </ul>

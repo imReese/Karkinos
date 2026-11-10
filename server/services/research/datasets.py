@@ -2668,8 +2668,11 @@ def resolve_research_simulation_market_inputs(
     from collections.abc import Mapping
 
     from analytics.dataset_snapshot import backtest_dataset_snapshot_content_id
-    from data.research_market_data import resolve_daily_bar_receipts
     from server.ai_runtime.contracts import canonical_json, content_fingerprint
+    from server.ai_runtime.formula_dsl import (
+        formula_requires_cross_section,
+        formula_uses_exact_close_ratio,
+    )
     from server.ai_runtime.strategy_research_support import selection_from_session
     from server.services.market.calendar import (
         resolve_latest_verified_closed_trading_date,
@@ -2677,7 +2680,6 @@ def resolve_research_simulation_market_inputs(
     from server.services.market.market_universe_truth import (
         MarketUniversePolicy,
         market_deployment_scope,
-        require_complete_market_universe_snapshot,
     )
     from server.services.strategy_scan.universe.evaluation import formula_history_rows
 
@@ -2735,7 +2737,12 @@ def resolve_research_simulation_market_inputs(
             return blocked("research_formula_recursive_warmup_unavailable")
         if operators(formula) & {"rank", "roc"}:
             return blocked("research_formula_bounded_warmup_unsupported")
-        rows = max(policy.minimum_history_rows, formula_history_rows(formula))
+        rows = max(
+            policy.minimum_history_rows,
+            formula_history_rows(
+                formula, minimum_history_rows=policy.minimum_history_rows
+            ),
+        )
         if rows > 252:
             return blocked("research_formula_warmup_window_too_large")
         db = state.db
@@ -2768,6 +2775,21 @@ def resolve_research_simulation_market_inputs(
             history_start=dates[0].isoformat(),
             target_market_date=target,
         )
+        if formula_uses_exact_close_ratio(formula) or formula_requires_cross_section(
+            formula
+        ):
+            read, context = _research_preview_ranked_dataset(
+                state,
+                selection,
+                saved["immutable_dataset_id"],
+                through=through,
+                minimum=rows,
+                now=now,
+            )
+            kwargs.update(verified_dataset_read=read, cross_section=context)
+            return _research_preview_receipts(
+                state, kwargs, policy=policy, as_of=as_of, start=dates[0], now=now
+            )
         instruments = tuple(
             sorted(
                 (
@@ -2933,38 +2955,147 @@ def resolve_research_simulation_market_inputs(
                 for key in short
             ):
                 return blocked("research_formula_effective_bar_warmup_incomplete")
-        market_store = getattr(
-            state, "ai_shadow_research_qualification_data_store", None
+        return _research_preview_receipts(
+            state, kwargs, policy=policy, as_of=as_of, start=dates[0], now=now
         )
-        if market_store is None:
-            return blocked("research_market_store_unavailable")
-        kwargs["market_snapshot"] = require_complete_market_universe_snapshot(
-            market_store.get_market_universe_snapshot(trade_date=as_of, as_of=now),
-            policy=policy,
-            expected_trade_date=as_of,
-            available_as_of=now,
-        )
-        kwargs["receipts"] = resolve_daily_bar_receipts(
-            data_store=market_store,
-            start_date=dates[0].isoformat(),
-            end_date=as_of,
-            config=getattr(state, "config", None),
-            snapshot=kwargs["market_snapshot"],
-        )
-        if set(kwargs["trading_dates"]) - {
-            str(receipt.get("trade_date") or "") for receipt in kwargs["receipts"]
-        }:
-            return blocked("research_market_daily_receipt_window_incomplete")
-        return {"kwargs": kwargs, "blockers": []}
+    except ResearchDatasetError as exc:
+        return blocked(str(exc))
     except (
         KeyError,
         TypeError,
         ValueError,
         OSError,
-        ResearchDatasetError,
         DatasetReaderError,
         DatasetManifestError,
         DatasetCatalogError,
         ObjectStoreError,
     ):
         return blocked("research_simulation_market_inputs_unreadable_or_invalid")
+
+
+def _research_preview_ranked_dataset(
+    state, selection, original_id, *, through, minimum, now
+):
+    """Reopen the selected source's full dated market before evaluating any rank."""
+    from data.source_policy import verification_source_policy_for_config
+    from server.services.research.research_observation_inputs import (
+        read_research_observation_dataset,
+        require_observation_dataset_prefix,
+    )
+    from server.services.strategy_scan.universe.formula_inputs import (
+        formula_dataset_cross_section,
+    )
+
+    db, scope = state.db, selection.deployment_scope
+    root = db.path.resolve().parent / "research"
+    catalog, objects = (
+        DatasetCatalog(root),
+        ContentAddressedObjectStore(root / "objects"),
+    )
+    original = catalog.get(original_id)
+    origin = read_forward_seed_origin(
+        db,
+        forward_seed_origin_id(
+            scope,
+            minimum,
+            verification_source_policy_for_config(state.config).policy_id,
+            start_date=selection.start_date,
+            source_dataset_id=original_id
+            if original.resolver_policy_id == _EXPLICIT_VERIFIED_SOURCE_UNION_POLICY_ID
+            else None,
+        ),
+    )
+    anchor = (
+        catalog.get(origin["source_ref"])
+        if origin and origin.get("source_ref")
+        else original
+    )
+    members_policy = scope["deployment_scope_fingerprint"]
+    for entry in catalog.list_daily_bar_datasets(
+        start_date=anchor.start_date,
+        end_date=through,
+        cutoff_lte=now,
+        resolver_policy_id=anchor.resolver_policy_id,
+    ):
+        if entry.start_date != anchor.start_date or entry.end_date != through:
+            continue
+        snapshot = read_daily_bar_dataset_manifest(objects, entry.ref)
+        if snapshot.universe_policy_id != members_policy:
+            continue
+        calendar = [
+            row
+            for year in range(anchor.start_date.year, through.year + 2)
+            if (row := db.get_market_calendar_snapshot_sync(exchange="SSE", year=year))
+            is not None
+        ]
+        selected = tuple(
+            InstrumentKey(symbol, InstrumentType.STOCK) for symbol in selection.universe
+        )
+        read = read_research_observation_dataset(
+            objects,
+            entry.ref.dataset_id,
+            instruments=selected,
+            start_date=anchor.start_date,
+            now=now,
+            calendar_rows=calendar,
+            minimum_bars=minimum,
+            deployment_scope=scope,
+            membership_after=through,
+        )
+        if read.snapshot.end_date != through or not set(selected) <= set(
+            read.snapshot.instruments
+        ):
+            raise ResearchDatasetError(
+                "research_simulation_immutable_dataset_scope_mismatch"
+            )
+        require_observation_dataset_prefix(
+            objects,
+            {
+                "forward_input": {
+                    "dataset_id": anchor.ref.dataset_id,
+                    "start_date": anchor.start_date.isoformat(),
+                    "end_date": anchor.end_date.isoformat(),
+                },
+                "source_selection": selection.to_dict(),
+            },
+            read.snapshot,
+            verified_parent=read,
+            verified_source=read if anchor.ref == entry.ref else None,
+        )
+        context = formula_dataset_cross_section(
+            objects,
+            read.snapshot,
+            minimum_history_rows=scope["universe_policy"]["minimum_history_rows"],
+            as_of=now,
+        )
+        return read, context
+    raise ResearchDatasetError("research_full_market_warmup_pending")
+
+
+def _research_preview_receipts(state, kwargs, *, policy, as_of, start, now):
+    from data.research_market_data import resolve_daily_bar_receipts
+    from server.services.market.market_universe_truth import (
+        require_complete_market_universe_snapshot,
+    )
+
+    market_store = getattr(state, "ai_shadow_research_qualification_data_store", None)
+    if market_store is None:
+        raise ResearchDatasetError("research_market_store_unavailable")
+    kwargs["market_snapshot"] = require_complete_market_universe_snapshot(
+        market_store.get_market_universe_snapshot(trade_date=as_of, as_of=now),
+        policy=policy,
+        expected_trade_date=as_of,
+        available_as_of=now,
+    )
+    kwargs["receipts"] = resolve_daily_bar_receipts(
+        data_store=market_store,
+        start_date=start.isoformat(),
+        end_date=as_of,
+        config=getattr(state, "config", None),
+        snapshot=kwargs["market_snapshot"],
+    )
+    if set(kwargs["trading_dates"]) - {
+        str(receipt.get("trade_date") or "") for receipt in kwargs["receipts"]
+    }:
+        raise ResearchDatasetError("research_market_daily_receipt_window_incomplete")
+    return {"kwargs": kwargs, "blockers": []}

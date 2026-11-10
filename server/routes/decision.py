@@ -342,7 +342,7 @@ def _research_simulation_preview_for_state(
                 values[symbol] = Decimal(str(value))
     session = project_market_session(getattr(state, "db", None))
     market_inputs: dict[str, Any] = {}
-    if source.get("status") == "ready":
+    if source.get("status") == "ready" and not blockers:
         from server.services.research.datasets import (
             resolve_research_simulation_market_inputs,
         )

@@ -155,40 +155,12 @@ def load_exact_formula_market_inputs(
                     or set(membership.instruments) != expected[0]
                 ):
                     raise ValueError("formula_dataset_full_scope_members_missing")
-            memberships = dataset_cross_section_memberships(
-                objects, result.snapshot, as_of=cutoff
-            )
-            context = FormulaCrossSectionInputs(
-                declared_symbols=tuple(
-                    key.symbol for key in result.snapshot.instruments
-                ),
-                session_memberships={
-                    day: tuple(key.symbol for key in members)
-                    for day, members in memberships.items()
-                },
+            context = formula_dataset_cross_section(
+                objects,
+                result.snapshot,
                 minimum_history_rows=policy.minimum_history_rows,
                 as_of=cutoff,
             )
-            rows = {}
-            for bar in result.bars:
-                rows.setdefault(bar.instrument.symbol, []).append(
-                    {
-                        "timestamp": bar.event_time,
-                        "available_at": bar.available_at,
-                        "captured_at": bar.captured_at,
-                        **{
-                            name: getattr(bar, name)
-                            for name in (
-                                "open",
-                                "high",
-                                "low",
-                                "close",
-                                "volume",
-                                "amount",
-                            )
-                        },
-                    }
-                )
             binding = {
                 "anchor": anchor,
                 "dataset_id": result.ref.dataset_id,
@@ -197,9 +169,7 @@ def load_exact_formula_market_inputs(
             }
             if saved is not None and binding != saved:
                 raise ValueError("formula_dataset_saved_binding_changed")
-            frames[strategy_id] = {
-                symbol: pd.DataFrame(values) for symbol, values in rows.items()
-            }
+            frames[strategy_id] = exact_formula_frames(result)
             contexts[strategy_id] = context
             bindings[strategy_id] = binding
         except (
@@ -216,3 +186,41 @@ def load_exact_formula_market_inputs(
                 + f":exact_dataset:{type(exc).__name__}:{exc}"
             )
     return frames, contexts, bindings, blockers
+
+
+def formula_dataset_cross_section(objects, snapshot, *, minimum_history_rows, as_of):
+    memberships = dataset_cross_section_memberships(objects, snapshot, as_of=as_of)
+    return FormulaCrossSectionInputs(
+        declared_symbols=tuple(key.symbol for key in snapshot.instruments),
+        session_memberships={
+            day: tuple(key.symbol for key in members)
+            for day, members in memberships.items()
+        },
+        minimum_history_rows=minimum_history_rows,
+        as_of=as_of,
+    )
+
+
+def exact_formula_frames(result):
+    """Preserve native decimal observations and both availability clocks for formula evaluation."""
+    rows = {}
+    for bar in result.bars:
+        rows.setdefault(bar.instrument.symbol, []).append(
+            {
+                "timestamp": bar.event_time,
+                "available_at": bar.available_at,
+                "captured_at": bar.captured_at,
+                **{
+                    name: getattr(bar, name)
+                    for name in (
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "amount",
+                    )
+                },
+            }
+        )
+    return {symbol: pd.DataFrame(values) for symbol, values in rows.items()}

@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from copy import deepcopy
 from dataclasses import replace
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -242,6 +242,88 @@ def test_overlapping_different_verified_lineage_fails_without_picking_winner(
     result = resolve_research_simulation_market_inputs(p.state, p.source, p.session)
     assert result["blockers"] == ["research_latest_cross_source_lineage_conflict"]
     assert result["kwargs"]["verified_dataset_read"] is None
+
+
+def test_ranked_preview_waits_for_a_complete_dated_market_instead_of_using_price_shards(
+    market_inputs,
+):
+    p = market_inputs
+    DatasetCatalog(p.root).register(p.objects, p.prefix_ref)
+    source = deepcopy(p.source)
+    source["formula_ast"]["entry"] = {
+        "op": "gt",
+        "left": {"op": "rolling_max_close_ratio", "window": 1},
+        "right": {"op": "constant", "value": 1},
+    }
+    result = resolve_research_simulation_market_inputs(
+        p.state, _bind(source), p.session
+    )
+    assert result["blockers"] == ["research_full_market_warmup_pending"]
+    assert result["kwargs"]["verified_dataset_read"] is None
+
+
+def test_ranked_preview_reopens_exact_prefix_and_retains_dated_pool(market_inputs):
+    from server.ai_runtime.strategy_research_support import selection_from_session
+    from server.contracts.content_identity import canonical_json
+    from server.services.research.datasets import _research_preview_ranked_dataset
+
+    p = market_inputs
+    selection = selection_from_session(
+        {"request_json": canonical_json({"selection": p.source["selection"]})}
+    )
+    stamp = datetime(2026, 9, 21, 8, tzinfo=timezone.utc)
+    observed = p.state.ai_shadow_research_qualification_data_store.get_market_universe_snapshot(
+        trade_date=DAYS[-1].isoformat()
+    )
+    master = bind_stock_master_observation(p.objects, observed)
+    closed = stamp + timedelta(minutes=15)
+    memberships = tuple(
+        DailyBarDatasetMembership(
+            day,
+            (STOCK,),
+            stamp,
+            (master,),
+            decision_at=closed if day == DAYS[-1] else None,
+        )
+        for day in DAYS
+    )
+    full = replace(
+        p.snapshots[0],
+        end_date=DAYS[-1],
+        cutoff=closed,
+        partitions=tuple(
+            replace(s.partitions[0], instruments=(STOCK,)) for s in p.snapshots
+        ),
+        session_memberships=memberships,
+        universe_policy_id=selection.deployment_scope["deployment_scope_fingerprint"],
+    )
+    prefix = replace(
+        full,
+        end_date=DAYS[1],
+        partitions=full.partitions[:2],
+        session_memberships=memberships[:2],
+    )
+    catalog = DatasetCatalog(p.root)
+    prefix_ref, full_ref = [
+        publish_daily_bar_dataset_manifest(p.objects, snapshot)
+        for snapshot in (prefix, full)
+    ]
+    for ref in (prefix_ref, full_ref):
+        catalog.register(p.objects, ref)
+    p.state.db = _db(p.state.db.path.parent, trading_days=(*DAYS, date(2026, 9, 29)))
+    p.state.db.calendar_row["fetched_at"] = stamp.isoformat()
+    clock = datetime(2026, 9, 28, 9, tzinfo=timezone.utc)
+    read, context = _research_preview_ranked_dataset(
+        p.state,
+        selection,
+        prefix_ref.dataset_id,
+        through=DAYS[-1],
+        minimum=3,
+        now=clock,
+    )
+    assert read.ref == full_ref
+    assert context.session_memberships == {day: (STOCK.symbol,) for day in DAYS}
+    assert context.as_of == clock
 
 
 def test_original_warmup_membership_observations_and_availability_remain_bound(

@@ -199,6 +199,37 @@ def test_closed_market_keeps_explicit_research_asof_and_no_authority(preview_inp
     assert preview_inputs["research_source"] == original
 
 
+def test_exact_formula_preview_uses_the_verified_pool_and_decimal_closes(
+    preview_inputs,
+):
+    from server.ai_runtime.formula_portfolio import FormulaCrossSectionInputs
+
+    source = deepcopy(preview_inputs["research_source"])
+    ratio = {"op": "rolling_max_close_ratio", "window": 1}
+    source["formula_ast"]["entry"] = {"op": "equal", "left": ratio, "right": ratio}
+    source["formula_fingerprint"] = "sha256:" + content_fingerprint(
+        source["formula_ast"]
+    )
+    source["source_fingerprint"] = "sha256:" + content_fingerprint(
+        {k: v for k, v in source.items() if k != "source_fingerprint"}
+    )
+    inputs = preview_inputs | {"research_source": source}
+    blocked = build_research_simulation_action_preview(**inputs)
+    assert blocked["status"] == "blocked"
+    assert blocked["blockers"] == ["research_formula_cross_section_unavailable"]
+    snap = inputs["verified_dataset_read"].snapshot
+    members = tuple(k.symbol for k in snap.instruments)
+    context = FormulaCrossSectionInputs(
+        members,
+        {p.partition_date: members for p in snap.partitions},
+        2,
+        as_of=snap.cutoff,
+    )
+    result = build_research_simulation_action_preview(**inputs, cross_section=context)
+    assert result["status"] == "available"
+    assert result["actions"] and result["creates_action_task"] is False
+
+
 @pytest.mark.parametrize(
     "missing",
     [
