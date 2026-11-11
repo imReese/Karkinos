@@ -7,6 +7,7 @@ import {
   useExplainabilityQuery,
   useMarketCalendarQuery,
   useDailyTradingPlanQuery,
+  useResearchSimulationPreviewQuery,
   useTodayDecisionQuery,
   type EquityCurveRange,
 } from '../overview-feature-boundary';
@@ -19,6 +20,7 @@ export function useOverviewPageController() {
     useState<OverviewAnalysisView>('curve');
   const [equityCurveRange, setEquityCurveRange] =
     useState<EquityCurveRange>('all');
+  const [researchPreviewOpen, setResearchPreviewOpen] = useState(false);
   const account = useAccountStateQuery();
   const accountReady = Boolean(account.data);
   const marketSession = account.data?.overview.market_session;
@@ -39,6 +41,11 @@ export function useOverviewPageController() {
     accountReady && analysisView === 'calendar',
   );
   const tradingPlan = useDailyTradingPlanQuery(accountReady);
+  const researchPreview = useResearchSimulationPreviewQuery(
+    accountReady &&
+      researchPreviewOpen &&
+      !tradingPlan.data?.research_simulation_preview,
+  );
   const todayDecision = useTodayDecisionQuery(accountReady && !marketClosed);
   return {
     copy,
@@ -47,6 +54,8 @@ export function useOverviewPageController() {
     explainability,
     marketCalendar,
     tradingPlan,
+    researchPreview,
+    setResearchPreviewOpen,
     todayDecision,
     marketClosed,
     analysisView,

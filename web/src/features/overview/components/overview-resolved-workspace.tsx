@@ -182,6 +182,8 @@ export function OverviewResolvedWorkspace({
             marketClosed={controller.marketClosed}
             nextTradingDate={state.overview.market_session.next_trading_date}
             planQuery={controller.tradingPlan}
+            researchPreviewQuery={controller.researchPreview}
+            onResearchPreviewToggle={controller.setResearchPreviewOpen}
             todayQuery={controller.todayDecision}
             positions={state.snapshot.positions}
             currentWeightBySymbol={weightBySymbol}

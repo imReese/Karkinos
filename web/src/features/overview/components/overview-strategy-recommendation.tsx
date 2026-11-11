@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { formatDate } from '../../../shared/format';
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
@@ -12,8 +11,8 @@ import type {
   AccountStateResponse,
   DailyTradingPlanResponse,
   DecisionResponse,
+  ResearchSimulationPreview,
 } from '../overview-feature-boundary';
-import { useResearchSimulationPreviewQuery } from '../overview-feature-boundary';
 import { OverviewResearchSimulationPreview } from './overview-research-simulation-preview';
 import {
   RecommendationActionItem,
@@ -219,21 +218,23 @@ function HistoricalComparisonDetails({
 
 function ResearchSimulationSection({
   preview,
+  query,
+  onToggle,
   collapsible,
   locale,
 }: {
   preview?: DailyTradingPlanResponse['research_simulation_preview'];
+  query: QueryState<ResearchSimulationPreview>;
+  onToggle: (open: boolean) => void;
   collapsible: boolean;
   locale: 'en' | 'zh';
 }) {
-  const [requested, setRequested] = useState(false);
-  const query = useResearchSimulationPreviewQuery(requested && !preview);
   const current = preview ?? query.data;
   if (collapsible || !preview) {
     return (
       <details
         data-testid="overview-research-simulation-details"
-        onToggle={(event) => setRequested(event.currentTarget.open)}
+        onToggle={(event) => onToggle(event.currentTarget.open)}
         className="mt-3 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 px-4 py-3 app-type-compact text-[var(--app-text-secondary)]"
       >
         <summary className="cursor-pointer font-semibold text-[var(--app-text)]">
@@ -271,6 +272,8 @@ export function OverviewStrategyRecommendation({
   marketClosed,
   nextTradingDate,
   planQuery,
+  researchPreviewQuery,
+  onResearchPreviewToggle,
   todayQuery,
   positions,
   currentWeightBySymbol,
@@ -279,6 +282,8 @@ export function OverviewStrategyRecommendation({
   marketClosed: boolean;
   nextTradingDate?: string | null;
   planQuery: QueryState<DailyTradingPlanResponse>;
+  researchPreviewQuery: QueryState<ResearchSimulationPreview>;
+  onResearchPreviewToggle: (open: boolean) => void;
   todayQuery: QueryState<DecisionResponse>;
   positions: AccountStateResponse['snapshot']['positions'];
   currentWeightBySymbol: Record<string, number>;
@@ -506,6 +511,8 @@ export function OverviewStrategyRecommendation({
       {plan ? (
         <ResearchSimulationSection
           preview={plan.research_simulation_preview}
+          query={researchPreviewQuery}
+          onToggle={onResearchPreviewToggle}
           collapsible={shouldCollapseResearch}
           locale={locale}
         />
