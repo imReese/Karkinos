@@ -36,6 +36,61 @@ def _endpoint(path: str, method: str = "GET"):
     )
 
 
+def test_blocked_scan_stays_blocked_without_replaying_market_inputs(monkeypatch):
+    from server.projections.account_action_recommendation import (
+        build_account_action_recommendation,
+    )
+
+    replays = []
+
+    def current_inputs(**kwargs):
+        replays.append(kwargs["scan"]["status"])
+        return ["fixture_current_replay_blocked"]
+
+    monkeypatch.setattr(
+        "server.services.strategy_scan.promoted_strategy_universe_scan."
+        "PromotedStrategyUniverseScanService",
+        lambda **_: SimpleNamespace(current_input_blockers=current_inputs),
+    )
+    state = SimpleNamespace(db=object(), config=object(), trading_controls=None)
+    decision, plan = {}, {}
+    for status in ("blocked", "completed", "completed_no_signal"):
+        scan = {
+            "verified": True,
+            "status": status,
+            "strategy_bindings": [{"strategy_id": "fixture"}],
+            "blockers": ["strategy_scan_outside_reviewed_decision_window"]
+            if status == "blocked"
+            else [],
+        }
+        blockers, fingerprint = decision_routes._current_account_action_evidence(
+            state,
+            decision_payload=decision,
+            trading_plan=plan,
+            promoted_scan=scan,
+        )
+        if status == "blocked":
+            assert replays == []
+            assert "promoted_strategy_scan_current_inputs_not_replayed" in blockers
+            result = build_account_action_recommendation(
+                decision_payload=decision,
+                trading_plan=plan,
+                promoted_scan=scan,
+                current_evidence_blockers=blockers,
+                current_evidence_fingerprint=fingerprint,
+            )
+            assert result["status"] == "blocked"
+            assert (
+                "strategy_scan_outside_reviewed_decision_window"
+                in result["reason_codes"]
+            )
+            assert result["actions"] == []
+            assert result["authorizes_execution"] is False
+        else:
+            assert replays[-1] == status
+            assert "fixture_current_replay_blocked" in blockers
+
+
 class FakeDecisionDb:
     def __init__(self) -> None:
         self.manual_orders: list[dict] = []
@@ -265,8 +320,29 @@ def test_decision_trading_plan_route_returns_read_only_order_intent(monkeypatch)
         ),
     )
 
+    def expensive_research_read(*_args, **_kwargs):
+        raise AssertionError(
+            "Account recommendations must not wait for research replay"
+        )
+
+    monkeypatch.setattr(
+        decision_routes,
+        "_research_simulation_preview_for_state",
+        expensive_research_read,
+    )
     endpoint = _endpoint("/api/decision/trading-plan")
     response = asyncio.run(endpoint())
+    assert "research_simulation_preview" not in response
+
+    preview = {"status": "unavailable", "blockers": ["fixture_data_pending"]}
+    monkeypatch.setattr(
+        decision_routes,
+        "_research_simulation_preview_for_state",
+        lambda *_args, **_kwargs: preview,
+    )
+    assert (
+        asyncio.run(_endpoint("/api/decision/research-simulation-preview")()) == preview
+    )
 
     assert response["schema_version"] == "karkinos.daily_trading_plan.v1"
     generated_at = datetime.fromisoformat(response["generated_at"])

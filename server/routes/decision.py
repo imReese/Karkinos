@@ -155,27 +155,30 @@ def create_router() -> APIRouter:
     @router.get("/trading-plan")
     async def get_daily_trading_plan() -> dict[str, Any]:
         from server.dependencies import get_app_state
-        from server.services.decision.decision_projection import (
-            suppress_unverified_daily_scan_candidates,
-        )
 
         state = get_app_state()
-        portfolio_context = await asyncio.to_thread(
-            _decision_portfolio_context,
-            state,
-        )
-        decision_payload = suppress_unverified_daily_scan_candidates(
-            await _today_decision_payload(
-                state,
-                portfolio_context=portfolio_context,
-            )
-        )
+        decision_payload, portfolio_context = await _trading_plan_inputs(state)
         return await asyncio.to_thread(
             _build_daily_trading_plan_for_state,
             state,
             decision_payload,
             portfolio_context,
         )
+
+    @router.get("/research-simulation-preview")
+    async def get_research_simulation_preview() -> dict[str, Any]:
+        from server.dependencies import get_app_state
+
+        state = get_app_state()
+        decision_payload, portfolio_context = await _trading_plan_inputs(state)
+        plan = await asyncio.to_thread(
+            _build_daily_trading_plan_for_state,
+            state,
+            decision_payload,
+            portfolio_context,
+            include_research_simulation_preview=True,
+        )
+        return plan["research_simulation_preview"]
 
     @router.post("/pre-trade-risk/batch")
     async def run_batch_pre_trade_risk() -> dict[str, Any]:
@@ -203,10 +206,22 @@ def _decision_quality_service(state: Any) -> DecisionQualityService:
     )
 
 
+async def _trading_plan_inputs(state: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+    from server.services.decision.decision_projection import (
+        suppress_unverified_daily_scan_candidates,
+    )
+
+    context = await asyncio.to_thread(_decision_portfolio_context, state)
+    decision = await _today_decision_payload(state, portfolio_context=context)
+    return suppress_unverified_daily_scan_candidates(decision), context
+
+
 def _build_daily_trading_plan_for_state(
     state: Any,
     decision_payload: dict[str, Any],
     portfolio_context: dict[str, Any],
+    *,
+    include_research_simulation_preview: bool = False,
 ) -> dict[str, Any]:
     from server.services.decision.plan import build_daily_trading_plan
     from server.services.research.daily_research_operation_preview import (
@@ -263,12 +278,13 @@ def _build_daily_trading_plan_for_state(
     plan["historical_research_comparison"] = resolve_historical_research_comparison(
         getattr(state, "db", None)
     )
-    plan["research_simulation_preview"] = _research_simulation_preview_for_state(
-        state,
-        decision_payload=decision_payload,
-        trading_plan=plan,
-        portfolio_context=portfolio_context,
-    )
+    if include_research_simulation_preview:
+        plan["research_simulation_preview"] = _research_simulation_preview_for_state(
+            state,
+            decision_payload=decision_payload,
+            trading_plan=plan,
+            portfolio_context=portfolio_context,
+        )
     plan["research_operation_instruments"] = build_research_operation_instruments(
         getattr(state, "db", None),
         plan.get("research_operation_preview"),
@@ -393,7 +409,17 @@ def _current_account_action_evidence(
         )
     )
     additional_blockers.extend(qualification_blockers)
-    if promoted_scan.get("verified") is True:
+    # A rejected saved scan cannot become actionable through a page read.
+    # Keep its recorded blockers without replaying the full market to deny it again.
+    if (
+        promoted_scan.get("verified") is True
+        and promoted_scan.get("status") == "blocked"
+    ):
+        additional_blockers.append("promoted_strategy_scan_current_inputs_not_replayed")
+    if promoted_scan.get("verified") is True and promoted_scan.get("status") in {
+        "completed",
+        "completed_no_signal",
+    }:
         try:
             from server.services.automation.automation_control import (
                 AutomationControlService,

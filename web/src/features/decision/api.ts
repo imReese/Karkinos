@@ -36,6 +36,7 @@ export {
   useDecisionQualityQuery,
   useIntradayDecisionQuery,
   useRecordDecisionOutcomeReviewMutation,
+  useResearchSimulationPreviewQuery,
   useSignalActionsQuery,
   useSignalJournalQuery,
   useTodayDecisionQuery,

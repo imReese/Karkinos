@@ -1391,6 +1391,7 @@ def _portfolio_preview_blockers(
         blockers.append("portfolio_preview_source_fingerprint_invalid")
 
     structural_markers = (
+        "current_inputs_not_replayed",
         "contract_invalid",
         "fingerprint_invalid",
         "date_mismatch",

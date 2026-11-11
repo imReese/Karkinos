@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { apiClient, postJson } from '../../shared/api/client';
+import { apiClient, postJson, requestJson } from '../../shared/api/client';
 import type {
   ActionCard,
   BatchPreTradeRiskResult,
@@ -10,6 +10,7 @@ import type {
   DecisionQualityCaptureResult,
   DecisionQualityView,
   DecisionResponse,
+  ResearchSimulationPreview,
   SignalJournalEntry,
 } from './api-contracts';
 
@@ -88,6 +89,21 @@ export function useDailyTradingPlanQuery(enabled = true) {
     enabled,
     refetchInterval: liveRefetchInterval,
     refetchOnWindowFocus: true,
+  });
+}
+
+export function useResearchSimulationPreviewQuery(enabled = false) {
+  return useQuery({
+    queryKey: ['decision', 'research-simulation-preview'],
+    queryFn: ({ signal }) =>
+      requestJson<ResearchSimulationPreview>(
+        '/api/decision/research-simulation-preview',
+        { signal },
+      ),
+    enabled,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    retry: false,
   });
 }
 

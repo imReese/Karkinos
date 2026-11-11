@@ -22,6 +22,7 @@ export {
 } from '../market/api';
 export {
   useDailyTradingPlanQuery,
+  useResearchSimulationPreviewQuery,
   useTodayDecisionQuery,
 } from '../decision/api';
 export type {

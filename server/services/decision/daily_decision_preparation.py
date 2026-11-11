@@ -116,7 +116,11 @@ def build_daily_candidate_preparation_check(
             fee_blockers.append(f"reviewed_fee_schedule_{field}_invalid")
 
     strategy_states = sorted(
-        StrategyPromotionPipeline(db=state.db).list_states(),
+        (
+            item
+            for item in StrategyPromotionPipeline(db=state.db).list_states()
+            if item.get("stage") == "paper_shadow"
+        ),
         key=lambda item: str(item.get("strategy_id") or ""),
     )
     strategy_blockers: list[str] = []

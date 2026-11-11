@@ -1219,6 +1219,54 @@ test('keeps explicit research what-if visible during closure without publishing 
   );
 });
 
+test('loads research separately when expanded while account recommendations remain available', async () => {
+  const state = accountFixture();
+  state.overview.market_session.status = 'non_trading_day';
+  const plan = tradingPlanFixture();
+  plan.historical_research_comparison = historicalResearchFixture();
+  const fetch = installFetch(state, false, plan);
+  const normalRead = fetch.getMockImplementation()!;
+  let finishResearch!: (response: Response) => void;
+  const researchRead = new Promise<Response>((resolve) => {
+    finishResearch = resolve;
+  });
+  fetch.mockImplementation((input) =>
+    String(input).includes('/api/decision/research-simulation-preview')
+      ? researchRead
+      : normalRead(input),
+  );
+  renderPage('zh');
+  const history = await screen.findByTestId(
+    'overview-historical-research-comparison',
+  );
+  await userEvent.click(
+    within(history).getByText('历史研究对比 · Gen7 与候选策略'),
+  );
+  expect(within(history).getByRole('table')).toBeVisible();
+  expect(fetch.mock.calls.map(([url]) => String(url))).not.toContain(
+    '/api/decision/research-simulation-preview',
+  );
+  const section = await screen.findByTestId(
+    'overview-research-simulation-details',
+  );
+  await userEvent.click(within(section).getByText('账户研究／模拟预览'));
+  expect(await within(section).findByRole('status')).toHaveTextContent(
+    '正在核验研究数据',
+  );
+  expect(
+    screen.getByTestId('overview-recommendation-market-closed'),
+  ).toBeVisible();
+  expect(
+    screen.getByTestId('overview-historical-research-comparison'),
+  ).toBeVisible();
+  await act(async () => {
+    finishResearch(Response.json(researchSimulationFixture()));
+  });
+  expect(
+    await screen.findByTestId('overview-research-simulation-preview'),
+  ).toHaveTextContent('合成制造');
+});
+
 test('displays detailed sell recommendation with sell price and net cash inflow', async () => {
   const plan = tradingPlanFixture();
   plan.manual_ready_count = 1;

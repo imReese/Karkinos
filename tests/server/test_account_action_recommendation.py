@@ -403,7 +403,10 @@ def test_manual_review_projection_preserves_display_name_for_overview() -> None:
 
 @pytest.mark.unit
 @pytest.mark.trading_safety
-def test_stale_execution_evidence_keeps_verified_signal_as_portfolio_preview() -> None:
+@pytest.mark.parametrize("market_replayed", [False, True])
+def test_portfolio_preview_requires_replayed_inputs_even_when_clock_is_stale(
+    market_replayed,
+) -> None:
     decision, plan = _current_gate_inputs()
     decision["candidates"] = [{"action_id": 7, "symbol": "600519"}]
     current_blockers = [
@@ -415,6 +418,8 @@ def test_stale_execution_evidence_keeps_verified_signal_as_portfolio_preview() -
         "decision_generation_time_not_bound_to_plan_date",
         "plan_generation_time_not_bound_to_plan_date",
     ]
+    if not market_replayed:
+        current_blockers.append("promoted_strategy_scan_current_inputs_not_replayed")
     recommendation = build_account_action_recommendation(
         decision_payload=decision,
         trading_plan=plan,
@@ -446,8 +451,12 @@ def test_stale_execution_evidence_keeps_verified_signal_as_portfolio_preview() -
     )
 
     assert recommendation["status"] == "blocked"
-    assert recommendation["presentation"]["level"] == "portfolio_preview"
-    assert recommendation["presentation"]["portfolio_preview_status"] == "ready"
+    assert recommendation["presentation"]["level"] == (
+        "portfolio_preview" if market_replayed else "signal"
+    )
+    assert recommendation["presentation"]["portfolio_preview_status"] == (
+        "ready" if market_replayed else "blocked"
+    )
     assert recommendation["presentation"]["manual_review_status"] == "blocked"
     assert recommendation["presentation"]["actions"][0]["symbol"] == "600519"
     assert recommendation["presentation"]["actions"][0]["display_name"] == ("贵州茅台")

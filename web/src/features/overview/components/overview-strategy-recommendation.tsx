@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { formatDate } from '../../../shared/format';
 import { useCopy } from '../../../shared/i18n/context';
 import { usePreferences } from '../../../shared/preferences/context';
@@ -12,6 +13,7 @@ import type {
   DailyTradingPlanResponse,
   DecisionResponse,
 } from '../overview-feature-boundary';
+import { useResearchSimulationPreviewQuery } from '../overview-feature-boundary';
 import { OverviewResearchSimulationPreview } from './overview-research-simulation-preview';
 import {
   RecommendationActionItem,
@@ -220,14 +222,18 @@ function ResearchSimulationSection({
   collapsible,
   locale,
 }: {
-  preview: NonNullable<DailyTradingPlanResponse['research_simulation_preview']>;
+  preview?: DailyTradingPlanResponse['research_simulation_preview'];
   collapsible: boolean;
   locale: 'en' | 'zh';
 }) {
-  if (collapsible) {
+  const [requested, setRequested] = useState(false);
+  const query = useResearchSimulationPreviewQuery(requested && !preview);
+  const current = preview ?? query.data;
+  if (collapsible || !preview) {
     return (
       <details
         data-testid="overview-research-simulation-details"
+        onToggle={(event) => setRequested(event.currentTarget.open)}
         className="mt-3 rounded-xl border border-[var(--app-divider)] bg-[var(--app-surface-raised)]/40 px-4 py-3 app-type-compact text-[var(--app-text-secondary)]"
       >
         <summary className="cursor-pointer font-semibold text-[var(--app-text)]">
@@ -236,7 +242,24 @@ function ResearchSimulationSection({
             : 'Account research / simulation preview'}
         </summary>
         <div className="mt-3">
-          <OverviewResearchSimulationPreview preview={preview} />
+          {current ? (
+            <OverviewResearchSimulationPreview preview={current} />
+          ) : query.isError ? (
+            <ExceptionBoundary
+              tone="warning"
+              title={
+                locale === 'zh'
+                  ? '研究预览暂时不可用'
+                  : 'Research preview unavailable'
+              }
+            />
+          ) : (
+            <p role="status">
+              {locale === 'zh'
+                ? '正在核验研究数据…'
+                : 'Verifying research data…'}
+            </p>
+          )}
         </div>
       </details>
     );
@@ -480,7 +503,7 @@ export function OverviewStrategyRecommendation({
         </div>
       ) : null}
 
-      {plan?.research_simulation_preview ? (
+      {plan ? (
         <ResearchSimulationSection
           preview={plan.research_simulation_preview}
           collapsible={shouldCollapseResearch}

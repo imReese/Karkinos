@@ -261,7 +261,7 @@ def test_independent_scan_validation_reopens_data_and_current_grant(scope_consum
     assert {task["id"] for task in fixture.db.get_action_tasks_sync(limit=100)} == ids
 
 
-def test_independent_preparation_reopens_data_and_current_grant(
+def test_preparation_uses_active_sources_and_rechecks_current_grant(
     scope_consumer, monkeypatch
 ):
     from server.services.decision.daily_decision_preparation import (
@@ -270,6 +270,15 @@ def test_independent_preparation_reopens_data_and_current_grant(
     from server.services.research import strategy_promotion_pipeline as promotion
 
     fixture = scope_consumer
+    fixture.db.upsert_strategy_promotion_state_sync(
+        strategy_id="ai_formula_shadow:retired-source",
+        stage="retired",
+        gate_status="retired",
+        live_like_enabled=False,
+        missing_requirements=[],
+        backtest_result_id=2,
+        payload={},
+    )
     monkeypatch.setattr(
         promotion, "resolve_strategy_order_generation_gate", fixture.gate
     )
@@ -286,6 +295,13 @@ def test_independent_preparation_reopens_data_and_current_grant(
             fixture.state, run_date="2026-08-24"
         )
         assert result["passing_strategy_count"] == 1
+        assert result["strategy_state_count"] == 1
+        assert (
+            next(gate for gate in result["gates"] if gate["gate"] == "strategy")[
+                "status"
+            ]
+            == "pass"
+        )
         assert len(fixture.cold) == 2 * (index + 1)
     fixture.revoke()
     refused = build_daily_candidate_preparation_check(
