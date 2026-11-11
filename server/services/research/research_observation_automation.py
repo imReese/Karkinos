@@ -129,8 +129,11 @@ async def start_reserved_champion_observation(
         row = await db.get_backtest_result(source_result_id)
         if row is None:
             raise ValueError("observation_source_not_found")
-        source = load_research_observation_source(
-            row, store, allow_unbound_dataset=True
+        source = await asyncio.to_thread(
+            load_research_observation_source,
+            row,
+            store,
+            allow_unbound_dataset=True,
         )
         scope = observation_deployment_scope(source)
         if (
@@ -186,7 +189,13 @@ async def start_reserved_champion_observation(
             seed = (
                 {"status": "ready", "dataset_id": binding["forward_seed_dataset_id"]}
                 if manual
-                else ensure_forward_seed_for_source(db, config, source=source, now=now)
+                else await asyncio.to_thread(
+                    ensure_forward_seed_for_source,
+                    db,
+                    config,
+                    source=source,
+                    now=now,
+                )
             )
             if seed["status"] != "ready":
                 return {**seed, "observation_id": None}
@@ -210,7 +219,8 @@ async def start_reserved_champion_observation(
         book = paper.get(identity)
         if book is None:
             settings = json.loads(row["config_json"])
-            paper.start(
+            await asyncio.to_thread(
+                paper.start,
                 identity,
                 request_id=key + ":book",
                 initial_cash=initial_cash,
@@ -239,7 +249,8 @@ async def start_reserved_champion_observation(
             not observation["publications"]
             and observation["lifecycle"] == book["lifecycle"] == "active"
         ):
-            initial = service.advance(
+            initial = await asyncio.to_thread(
+                service.advance,
                 identity,
                 request_id=key + ":initial-target:" + str(observation["version"]),
                 expected_version=observation["version"],

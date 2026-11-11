@@ -997,7 +997,10 @@ def _bound_formula_cross_section_inputs(
     if set(declared) != set(selection.universe):
         raise StrategyResearchRejected("cross_section_declared_scope_mismatch")
     memberships = dataset_cross_section_memberships(
-        objects, restored.snapshot, allow_retrospective=True
+        objects,
+        restored.snapshot,
+        allow_retrospective=True,
+        deployment_scope=selection.deployment_scope,
     )
     return FormulaCrossSectionInputs(
         declared_symbols=declared,

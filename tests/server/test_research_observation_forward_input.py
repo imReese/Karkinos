@@ -55,6 +55,29 @@ def request(result_id, ref):
     }
 
 
+def test_forward_start_reads_native_js_data_outside_the_async_event_loop(
+    journey, monkeypatch
+):
+    import data.dataset.reader as reader
+    from data.providers.bse_sina_history import _decode_sina_js
+
+    client, service, _, seed, _ = journey
+    result_id = save_old_report(service, seed)
+    read_dataset = reader._read_daily_bar_dataset
+    decoded = []
+
+    def read_native_dataset(*args, **kwargs):
+        decoded.append(_decode_sina_js("function d(value) { return value; }", "probe"))
+        return read_dataset(*args, **kwargs)
+
+    monkeypatch.setattr(reader, "_read_daily_bar_dataset", read_native_dataset)
+    response = client.post("/api/research-observations", json=request(result_id, seed))
+    assert response.status_code == 200, response.text
+    assert decoded and set(decoded) == {"probe"}
+    detail = client.get(f"/api/research-observations/{response.json()['id']}").json()
+    assert detail["source"]["forward_input"]["dataset_id"] == seed.dataset_id
+
+
 def test_old_report_starts_new_forward_book_without_rewriting_research(
     journey, tmp_path
 ):

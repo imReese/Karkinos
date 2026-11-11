@@ -385,7 +385,9 @@ def test_optional_master_activity_preserves_default_projection_and_actual_query_
     assert "trade_status" not in metadata["600000"]
 
 
-def _official_master_with_listing(objects, status_day, listing_day):
+def _official_master_with_listing(
+    objects, status_day, listing_day, *, display_name=None
+):
     _, original_refs, _, _ = official_capture(objects)
     refs = []
     for identity in original_refs:
@@ -397,6 +399,8 @@ def _official_master_with_listing(objects, status_day, listing_day):
                 row for row in payload["result"] if row["A_STOCK_CODE"] == "600000"
             )
             target["LIST_DATE"] = listing_day.strftime("%Y%m%d")
+            if display_name is not None:
+                target["SEC_NAME_CN"] = display_name
             capture = capture_provider_payload(
                 objects,
                 provider=capture.provider,
@@ -434,6 +438,136 @@ def _official_master_with_listing(objects, status_day, listing_day):
     assert target["list_date"] == str(listing_day)
     assert "trade_status" not in target
     return master, completed
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "st",
+        "ipo",
+        "ordinary",
+        "unverified",
+        "wrong_day",
+        "wrong_scope",
+        "no_scope",
+        "historical_st",
+        "historical_not_st",
+        "historical_conflict",
+        "historical_no_scope",
+        "historical_decision",
+        "same_day_st",
+        "same_day_st_conflict",
+        "same_day_ordinary_conflict",
+    ],
+)
+def test_only_bound_scope_and_same_day_official_exclusion_explain_missing_member(
+    tmp_path, case
+):
+    from server.services.market.market_universe_truth import (
+        MarketUniversePolicy,
+        market_deployment_scope,
+    )
+
+    objects, snapshot, _, _ = _metadata_inputs(tmp_path)
+    early, late = OFFICIAL_DAYS[-2:]
+    official, completed = _official_master_with_listing(
+        objects,
+        late,
+        early,
+        display_name="普通股票"
+        if case in {"ordinary", "same_day_ordinary_conflict"}
+        else "N普通股票"
+        if case == "ipo"
+        else "ST普通股票",
+    )
+    if case == "unverified":
+        official.pop("source_capture_ids")
+    ref = objects.put_bytes(json.dumps(official).encode())
+    sessions = tuple(
+        DailyBarDatasetMembership(day, members, completed, (ref.object_id,))
+        for day, members in zip(
+            (early, late),
+            (KEYS[1:], KEYS)
+            if case == "wrong_day" or case.startswith("historical_")
+            else (KEYS, KEYS[1:]),
+            strict=True,
+        )
+    )
+    if case.startswith("historical_"):
+        from tests.data.providers.test_baostock_stock_eligibility import (
+            eligibility_capture,
+        )
+
+        capture = eligibility_capture(
+            objects,
+            day=early,
+            completed=completed,
+            flag="0" if case == "historical_not_st" else "1",
+        )
+        refs = [ref.object_id, capture.capture_id]
+        if case == "historical_conflict":
+            refs.append(
+                eligibility_capture(
+                    objects, day=early, completed=completed, flag="0"
+                ).capture_id
+            )
+        sessions = (
+            replace(
+                sessions[0],
+                source_observation_ids=tuple(refs),
+                decision_at=completed if case == "historical_decision" else None,
+            ),
+            sessions[1],
+        )
+    if case.startswith("same_day_"):
+        from tests.data.providers.test_baostock_stock_eligibility import (
+            eligibility_capture,
+        )
+
+        capture = eligibility_capture(
+            objects,
+            day=late,
+            completed=completed,
+            flag="0" if case == "same_day_st_conflict" else "1",
+        )
+        sessions = (
+            sessions[0],
+            replace(
+                sessions[1],
+                source_observation_ids=(ref.object_id, capture.capture_id),
+            ),
+        )
+    scope = market_deployment_scope(MarketUniversePolicy(minimum_master_member_count=1))
+    actual = replace(
+        snapshot,
+        start_date=early,
+        end_date=late,
+        cutoff=completed,
+        universe_policy_id=scope["deployment_scope_fingerprint"],
+        partitions=tuple(
+            replace(part, partition_date=m.partition_date, instruments=m.instruments)
+            for part, m in zip(snapshot.partitions, sessions, strict=True)
+        ),
+        session_memberships=sessions,
+    )
+    original = serialize_daily_bar_dataset_manifest(actual)
+    if case == "wrong_scope":
+        scope["universe_policy"]["minimum_history_rows"] += 1
+    kwargs = (
+        {"deployment_scope": scope}
+        if case not in {"no_scope", "historical_no_scope"}
+        else {}
+    )
+    if case in {"st", "ipo", "historical_st", "same_day_st"}:
+        assert dataset_cross_section_memberships(
+            objects, actual, as_of=completed, **kwargs
+        ) == {m.partition_date: m.instruments for m in sessions}
+    else:
+        with pytest.raises(DatasetReaderIntegrityError, match=ERROR):
+            dataset_cross_section_memberships(
+                objects, actual, as_of=completed, **kwargs
+            )
+    assert serialize_daily_bar_dataset_manifest(actual) == original
 
 
 @pytest.mark.parametrize("already_listed", [False, True])

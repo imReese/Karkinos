@@ -16,9 +16,11 @@ from core.types import BarFrequency, InstrumentKey, Symbol
 from data.market_daily_store import is_supported_stock_receipt_identity
 from data.store import DataStore, normalize_stock_master_metadata
 from domain.instrument import (
+    RESEARCH_STOCK_SESSION_ELIGIBILITY,
     RESEARCH_STOCK_TRADING_RULES_ID,
     a_share_identity,
     make_research_stock,
+    observed_stock_session_exclusion,
 )
 from domain.research_targets import FORMULA_PORTFOLIO_POLICY_ID
 from server.ai_runtime.contracts import content_fingerprint
@@ -115,9 +117,7 @@ class MarketUniversePolicy:
             result["scope_kind"] = "full_declared_market"
             result["selection_order"] = "all_eligible_then_symbol_asc"
             result["trading_rules_id"] = RESEARCH_STOCK_TRADING_RULES_ID
-            result["session_eligibility"] = (
-                "source_observed_ordinary_name_and_verified_history"
-            )
+            result["session_eligibility"] = RESEARCH_STOCK_SESSION_ELIGIBILITY
             result["minimum_history_basis"] = "verified_observed_sessions"
         return result
 
@@ -301,35 +301,13 @@ def _member_session_exclusion(
         ),
         {},
     )
-    session = str(snapshot.get("trade_date") or "")
-    delisted = metadata.get("delist_date")
-    status = metadata.get("list_status")
-    if (delisted and str(delisted) <= session) or (
-        status in {"P", "G", "UN"} or (status == "D" and not delisted)
-    ):
-        return "inactive_listing_excluded"
-    if status is not None and status not in {"L", "D", "P", "G", "UN"}:
-        return "trading_state_unverified"
-    listed = metadata.get("list_date")
-    if listed and str(listed) > session:
-        return "not_yet_listed_excluded"
-    if "trade_status" in metadata:
-        if metadata.get("status_session_date") != session or metadata.get(
-            "status_capture_id"
-        ) not in snapshot.get("source_capture_ids", []):
-            return "trading_state_unverified"
-        if exclude_halted and metadata["trade_status"] == "0":
-            return "nontrading_session_excluded"
-    name = str(metadata.get("display_name") or "").strip()
-    if not name or name == symbol or name == f"{symbol} A股":
-        return "trading_state_unverified"
-    if "ST" in name.upper():
-        return "special_treatment_excluded"
-    if "退" in name:
-        return "delisting_period_excluded"
-    if name.startswith(("N", "C")) and len(name) > 1 and not name[1].isascii():
-        return "special_listing_period_excluded"
-    return None
+    return observed_stock_session_exclusion(
+        metadata,
+        symbol,
+        session=str(snapshot.get("trade_date") or ""),
+        status_capture_ids=snapshot.get("source_capture_ids", ()),
+        exclude_halted=exclude_halted,
+    )
 
 
 def market_master_halted_batch_instruments(snapshot, policy):

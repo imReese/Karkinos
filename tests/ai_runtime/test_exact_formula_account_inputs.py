@@ -120,7 +120,10 @@ def fixture(monkeypatch, tmp_path):
     monkeypatch.setattr(module, "market_master_buy_instruments", lambda *_: keys)
 
     def context(_objects, actual, **kwargs):
-        assert actual is snapshot and kwargs == {"as_of": now}
+        assert actual is snapshot and kwargs == {
+            "as_of": now,
+            "deployment_scope": scope,
+        }
         return {start: keys, end: keys}
 
     monkeypatch.setattr(module, "dataset_cross_section_memberships", context)

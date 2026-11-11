@@ -26,8 +26,9 @@ Reader 不重新执行 Resolver，也不会访问 Provider。
 
 from __future__ import annotations
 
+import hashlib
 import json
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from copy import deepcopy
@@ -880,17 +881,24 @@ def dataset_cross_section_memberships(
     *,
     as_of: datetime | None = None,
     allow_retrospective: bool = False,
+    deployment_scope: Mapping[str, Any] | None = None,
 ) -> dict[date, tuple[InstrumentKey, ...]]:
     """Verify a complete traded reference pool without applying capital filters.
 
     A selected-row-complete Dataset alone does not prove this denominator. Every
-    declared stock must be either not yet listed, explicitly nontrading, or in
-    that session's traded selection. Backfilled status and listing observations
+    declared stock must be not yet listed, explicitly nontrading, excluded by
+    the bound scope's dated rules, or in that session's traded selection.
+    Backfilled status and listing observations
     retain their actual availability; retrospective use never upgrades PIT.
     This projection supplements, rather than replaces, the full bar reader.
     """
     from data.market.capture import ProviderCaptureError
     from data.providers.baostock import BaoStockDailyBarError
+    from domain.instrument import (
+        RESEARCH_STOCK_SESSION_ELIGIBILITY,
+        RESEARCH_STOCK_TRADING_RULES_ID,
+        observed_stock_session_exclusion,
+    )
 
     try:
         if type(allow_retrospective) is not bool or (
@@ -903,6 +911,30 @@ def dataset_cross_section_memberships(
             raise ValueError("cross_section_as_of_timezone_required")
         if type(snapshot) is not DailyBarDatasetSnapshot:
             raise TypeError("cross_section_snapshot_required")
+        ordinary_scope = False
+        if deployment_scope is not None:
+            core = {
+                key: deployment_scope[key]
+                for key in ("universe_policy", "portfolio_policy_id")
+            }
+            identity = (
+                "sha256:"
+                + hashlib.sha256(
+                    json.dumps(
+                        core, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                    ).encode()
+                ).hexdigest()
+            )
+            if (
+                identity != snapshot.universe_policy_id
+                or identity != deployment_scope["deployment_scope_fingerprint"]
+            ):
+                raise ValueError("cross_section_deployment_scope_mismatch")
+            policy = core["universe_policy"]
+            ordinary_scope = (
+                policy.get("session_eligibility") == RESEARCH_STOCK_SESSION_ELIGIBILITY
+                and policy.get("trading_rules_id") == RESEARCH_STOCK_TRADING_RULES_ID
+            )
         memberships = snapshot.session_memberships
         declared = set(snapshot.instruments)
         days = [item.partition_date for item in memberships]
@@ -919,7 +951,12 @@ def dataset_cross_section_memberships(
         ):
             raise ValueError("cross_section_scope_incomplete")
         evidence: dict[
-            date, tuple[tuple[dict[str, Any], ...], dict[InstrumentKey, str]]
+            date,
+            tuple[
+                tuple[dict[str, Any], ...],
+                dict[InstrumentKey, str],
+                dict[InstrumentKey, str],
+            ],
         ] = {}
         nontrading = _validate_membership_evidence(
             store, snapshot, cross_section_evidence=evidence
@@ -931,7 +968,7 @@ def dataset_cross_section_memberships(
         ] = {}
         listing_history: dict[InstrumentKey, date] = {}
         official_listings: dict[InstrumentKey, date] = {}
-        for masters, _ in evidence.values():
+        for masters, _, _ in evidence.values():
             for master in masters:
                 if id(master) in master_projections:
                     continue
@@ -953,7 +990,7 @@ def dataset_cross_section_memberships(
                 or (as_of is not None and membership.available_at > as_of)
             ):
                 raise ValueError("cross_section_source_incomplete")
-            masters, statuses = evidence[day]
+            masters, statuses, special_treatment = evidence[day]
             listing_dates: dict[InstrumentKey, date] = {}
             source_members: set[InstrumentKey] = set()
             for master in masters:
@@ -984,6 +1021,47 @@ def dataset_cross_section_memberships(
             traded = set(membership.instruments)
             inactive = set(nontrading.get(day, ())) & declared
             missing = declared - before_listing - inactive - traded
+            if ordinary_scope and missing:
+                missing -= {
+                    key for key, flag in special_treatment.items() if flag == "1"
+                }
+                # Only the frozen scope's own exclusions, proved by complete
+                # official captures for this exact session, explain omissions.
+                # A later ST name or an unverified projection proves nothing.
+                excluded = []
+                for master in masters:
+                    if master.get("trade_date") != day.isoformat():
+                        continue
+                    observed_exclusions = set()
+                    if master.get("source_capture_ids"):
+                        for row in master.get("member_metadata", ()):
+                            key = InstrumentKey(row["symbol"], InstrumentType.STOCK)
+                            reason = observed_stock_session_exclusion(
+                                row,
+                                row["symbol"],
+                                session=day.isoformat(),
+                                status_capture_ids=master["source_capture_ids"],
+                                exclude_halted=False,
+                            )
+                            if (
+                                key in special_treatment
+                                and reason in {None, "special_treatment_excluded"}
+                                and (reason == "special_treatment_excluded")
+                                != (special_treatment[key] == "1")
+                            ):
+                                raise ValueError(
+                                    "historical_eligibility_sources_conflict"
+                                )
+                            if reason in {
+                                "inactive_listing_excluded",
+                                "special_treatment_excluded",
+                                "delisting_period_excluded",
+                                "special_listing_period_excluded",
+                            }:
+                                observed_exclusions.add(key)
+                    excluded.append(observed_exclusions)
+                if excluded:
+                    missing -= set.intersection(*excluded)
             if (
                 len(traded) != len(membership.instruments)
                 or not traded <= declared
@@ -1188,6 +1266,7 @@ def _validate_membership_evidence(
         members: set[InstrumentKey] = set()
         session_nontrading: set[InstrumentKey] = set()
         historical_status: dict[InstrumentKey, str] = {}
+        special_treatment: dict[InstrumentKey, str] = {}
         historical_requests = []
         availability = []
         masters = []
@@ -1238,6 +1317,12 @@ def _validate_membership_evidence(
                             }
                         elif source_kind == ("baostock", "daily_bars"):
                             read_status = read_baostock_historical_status
+                        elif source_kind == ("baostock", "stock_eligibility"):
+                            from data.providers.baostock import (
+                                read_baostock_stock_eligibility,
+                            )
+
+                            read_status = read_baostock_stock_eligibility
                         elif source_kind == ("tushare", "suspend_d"):
                             read_status = read_tushare_historical_status
                         elif source_kind == (
@@ -1288,7 +1373,7 @@ def _validate_membership_evidence(
                     availability.append(source[0].completed_at)
                     continue
                 if kind == "historical_status":
-                    capture, request, statuses = source
+                    capture, request, statuses = source[:3]
                     if membership.decision_at is not None or not (
                         request.start_date
                         <= membership.partition_date
@@ -1296,6 +1381,18 @@ def _validate_membership_evidence(
                     ):
                         raise ValueError("historical_status_not_exploratory_or_dated")
                     historical_requests.append(request)
+                    if len(source) == 4:
+                        for key, flag in (
+                            source[3].get(membership.partition_date, {}).items()
+                        ):
+                            if (
+                                key in special_treatment
+                                and special_treatment[key] != flag
+                            ):
+                                raise ValueError(
+                                    "historical_eligibility_sources_conflict"
+                                )
+                            special_treatment[key] = flag
                     for key, status in statuses.get(
                         membership.partition_date, {}
                     ).items():
@@ -1367,6 +1464,7 @@ def _validate_membership_evidence(
                 cross_section_evidence[membership.partition_date] = (
                     tuple(masters),
                     dict(historical_status),
+                    dict(special_treatment),
                 )
         except (
             ObjectStoreError,

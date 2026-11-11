@@ -215,8 +215,13 @@ never caches an authority decision.
 Coverage is measured against the declared universe before provider failures are
 removed. Operational sync thresholds do not prove full validation coverage.
 Known policy exclusions, unavailable evidence and actually evaluated members
-remain separately countable. Missing members that could change a global ranking
-block that strategy's affected new targets; they do not disable unrelated books
+remain separately countable. Cross-sectional reads bind the exact deployment
+scope and share its ordinary-stock eligibility rules with collection. A missing
+member needs same-session official metadata or explicitly dated historical ST
+facts to establish a policy exclusion; later names cannot establish past status.
+Historical backfills retain their actual capture availability and do not change
+the selected prices or claim historical PIT. Missing members that could change a
+global ranking block that strategy's affected new targets; they do not disable unrelated books
 or excuse missing valuation of an existing position. A narrower available-data
 scope is admissible only when explicitly declared in advance and used throughout
 the experiment and publication.

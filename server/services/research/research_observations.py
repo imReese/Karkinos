@@ -7,6 +7,7 @@ previously frozen future intervals. Historical warmup cannot create publications
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import platform
@@ -179,8 +180,11 @@ class ResearchObservationService:
         row = await self.db.get_backtest_result(source_backtest_result_id)
         if row is None:
             raise ValueError("observation_source_not_found")
-        source = load_research_observation_source(
-            row, self.objects, allow_unbound_dataset=True
+        source = await asyncio.to_thread(
+            load_research_observation_source,
+            row,
+            self.objects,
+            allow_unbound_dataset=True,
         )
         return {
             "source_backtest_result_id": source_backtest_result_id,
@@ -249,14 +253,18 @@ class ResearchObservationService:
         row = await self.db.get_backtest_result(source_backtest_result_id)
         if row is None:
             raise ValueError("observation_source_not_found")
-        source = load_research_observation_source(
-            row, self.objects, allow_unbound_dataset=forward_dataset_id is not None
+        source = await asyncio.to_thread(
+            load_research_observation_source,
+            row,
+            self.objects,
+            allow_unbound_dataset=forward_dataset_id is not None,
         )
         scope = observation_deployment_scope(source)
         if len(source["instruments"]) > (10_000 if scope else 50):
             raise ValueError("observation_universe_budget_exceeded")
         if forward_dataset_id is not None:
-            source["forward_input"] = bind_observation_forward_input(
+            source["forward_input"] = await asyncio.to_thread(
+                bind_observation_forward_input,
                 self.objects,
                 source,
                 forward_dataset_id,
@@ -289,7 +297,8 @@ class ResearchObservationService:
             from data.dataset.model import DatasetRef
             from data.dataset.reader import read_daily_bar_dataset
 
-            seed_result = read_daily_bar_dataset(
+            seed_result = await asyncio.to_thread(
+                read_daily_bar_dataset,
                 self.objects,
                 DatasetRef(self.objects.resolve_ref(binding["dataset_id"])),
             )
@@ -733,7 +742,7 @@ class ResearchObservationService:
         if formula_requires_cross_section(formula_ast):
             try:
                 memberships = dataset_cross_section_memberships(
-                    self.objects, snapshot, as_of=as_of
+                    self.objects, snapshot, as_of=as_of, deployment_scope=scope
                 )
                 cross_section = FormulaCrossSectionInputs(
                     declared_symbols=tuple(key.symbol for key in snapshot.instruments),

@@ -3090,6 +3090,7 @@ def _research_preview_ranked_dataset(
             read.snapshot,
             minimum_history_rows=scope["universe_policy"]["minimum_history_rows"],
             as_of=now,
+            deployment_scope=scope,
         )
         return read, context
     raise ResearchDatasetError("research_full_market_warmup_pending")

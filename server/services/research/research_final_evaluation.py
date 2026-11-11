@@ -771,6 +771,8 @@ async def reserve_manual_research_evaluation(
     )
     from server.services.research.datasets import ensure_forward_seed_for_source
     from server.services.research.research_observation_inputs import (
+        ResearchObservationInputError,
+        bind_observation_forward_input,
         load_research_observation_source,
     )
     from server.services.research.research_observations import (
@@ -836,14 +838,21 @@ async def reserve_manual_research_evaluation(
     )
     row = research_store.research_backtest_result(source.canonical_backtest_result_id)
     service = ResearchObservationService(db, clock=fresh_clock)
-    seed_source = load_research_observation_source(
-        row, service.objects, allow_unbound_dataset=True
+    seed_source = await asyncio.to_thread(
+        load_research_observation_source,
+        row,
+        service.objects,
+        allow_unbound_dataset=True,
     )
     seed_source["forward_minimum_observations"] = policy["statistical_policy"][
         "minimum_observations"
     ]
-    seed = ensure_forward_seed_for_source(
-        db, config, source=seed_source, now=fresh_clock()
+    seed = await asyncio.to_thread(
+        ensure_forward_seed_for_source,
+        db,
+        config,
+        source=seed_source,
+        now=fresh_clock(),
     )
     if seed["status"] != "ready":
         return {**seed, "reservation_id": None}
@@ -852,8 +861,12 @@ async def reserve_manual_research_evaluation(
             service.objects, DatasetRef(service.objects.resolve_ref(seed["dataset_id"]))
         )
         try:
-            dataset_cross_section_memberships(
-                service.objects, snapshot, as_of=fresh_clock()
+            await asyncio.to_thread(
+                dataset_cross_section_memberships,
+                service.objects,
+                snapshot,
+                as_of=fresh_clock(),
+                deployment_scope=resolved.source_selection.deployment_scope,
             )
         except DatasetReaderIntegrityError as exc:
             return {
@@ -862,6 +875,27 @@ async def reserve_manual_research_evaluation(
                 "last_blocker": {"code": str(exc), "detail": str(exc.__cause__ or exc)},
                 "reservation_id": None,
             }
+    # Use the actual observation-start reader before spending the final-test
+    # allocation. Seed collection can finish with an older close or metadata
+    # captured after its decision window; neither can start a forward book.
+    try:
+        await asyncio.to_thread(
+            bind_observation_forward_input,
+            service.objects,
+            seed_source,
+            seed["dataset_id"],
+            now=fresh_clock(),
+            calendar_reader=service._calendar,
+        )
+    except ResearchObservationInputError as exc:
+        return {
+            **seed,
+            "status": "waiting"
+            if str(exc) == "observation_dataset_not_latest_closed"
+            else "blocked",
+            "last_blocker": {"code": str(exc)},
+            "reservation_id": None,
+        }
     # Seed preparation may cross the opening. Read the clock again before allocation.
     return await _reserve_final_research_evaluation(
         db=db,

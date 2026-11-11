@@ -729,31 +729,26 @@ def read_official_stock_master_captures(
                 raise ValueError("stock_master_status_row_invalid")
             seen.add(code)
             symbol = code.rsplit(".", maxsplit=1)[-1]
-            if dated_activity is not None and symbol in metadata:
-                instrument_identity = a_share_identity(symbol)
-                if (
-                    instrument_identity is None
-                    or code
-                    != {"SSE": "sh.", "SZSE": "sz."}.get(
-                        instrument_identity["exchange"], ""
-                    )
-                    + symbol
-                    or str(date.fromisoformat(day)) != day
-                ):
-                    raise ValueError("stock_master_status_instrument_invalid")
+            # query_all_stock also returns indices. Shanghai's 000xxx index
+            # codes overlap Shenzhen stock numbers, but identify other assets.
+            if symbol not in metadata or re.fullmatch(r"sh\.000[0-9]{3}", code):
+                continue
+            instrument_identity = a_share_identity(symbol)
+            if (
+                instrument_identity is None
+                or code
+                != {"SSE": "sh.", "SZSE": "sz."}.get(
+                    instrument_identity["exchange"], ""
+                )
+                + symbol
+                or str(date.fromisoformat(day)) != day
+            ):
+                raise ValueError("stock_master_status_instrument_invalid")
+            if dated_activity is not None:
                 verified_activity.setdefault(date.fromisoformat(day), {})[
                     InstrumentKey(symbol, InstrumentType.STOCK)
                 ] = row["tradeStatus"]
-            if symbol in metadata and row["tradeStatus"] == "0":
-                instrument_identity = a_share_identity(symbol)
-                if instrument_identity is None or (
-                    code
-                    != {"SSE": "sh.", "SZSE": "sz."}.get(
-                        instrument_identity["exchange"], ""
-                    )
-                    + symbol
-                ):
-                    raise ValueError("stock_master_status_instrument_invalid")
+            if row["tradeStatus"] == "0":
                 metadata[symbol].update(
                     trade_status="0",
                     status_session_date=day,

@@ -131,6 +131,10 @@ async def manual(final_policy, monkeypatch):
     monkeypatch.setattr(
         "server.services.research.datasets.ensure_forward_seed_for_source", seed
     )
+    monkeypatch.setattr(
+        "server.services.research.research_observation_inputs.bind_observation_forward_input",
+        lambda *_a, **_k: {"dataset_id": "synthetic-seed"},
+    )
     return SimpleNamespace(
         t=t, refs=refs, start=start, end=end, now=now, sim=sim, seed_calls=seed_calls
     )
@@ -244,6 +248,54 @@ async def test_seed_pending_and_wrong_policy_never_allocate(manual, monkeypatch)
     m.end = "2026-06-01"
     with pytest.raises(ValueError, match="checkpoint_mismatch"):
         await reserve(m)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "blocker",
+    ["observation_dataset_not_latest_closed", "observation_membership_not_available"],
+)
+async def test_seed_unusable_at_observation_start_does_not_spend_final_slot(
+    manual, monkeypatch, blocker
+):
+    from server.services.research.research_observation_inputs import (
+        ResearchObservationInputError,
+    )
+
+    m = manual
+    with sqlite3.connect(m.t.h.db.path) as conn:
+        before = conn.execute("SELECT * FROM ai_strategy_sealed_tests").fetchall()
+    started = m.now[0]
+
+    def slow_seed(*_a, **_kw):
+        m.now[0] += timedelta(minutes=20)
+        return {"status": "ready", "dataset_id": "synthetic-seed"}
+
+    def rejected_start(_objects, source, dataset_id, *, now, calendar_reader):
+        assert source["minimum_bars"] == 20
+        assert dataset_id == "synthetic-seed"
+        assert now == started + timedelta(minutes=20)
+        assert callable(calendar_reader)
+        raise ResearchObservationInputError(blocker)
+
+    monkeypatch.setattr(
+        "server.services.research.datasets.ensure_forward_seed_for_source", slow_seed
+    )
+    monkeypatch.setattr(
+        "server.services.research.research_observation_inputs.bind_observation_forward_input",
+        rejected_start,
+    )
+    result = await reserve(m)
+    assert result["status"] == (
+        "waiting" if blocker == "observation_dataset_not_latest_closed" else "blocked"
+    )
+    assert result["last_blocker"]["code"] == blocker
+    assert result["reservation_id"] is None
+    assert m.t.h.store.manual_research_champion_reservation(asdict(m.refs)) is None
+    with sqlite3.connect(m.t.h.db.path) as conn:
+        assert (
+            conn.execute("SELECT * FROM ai_strategy_sealed_tests").fetchall() == before
+        )
 
 
 @pytest.mark.asyncio

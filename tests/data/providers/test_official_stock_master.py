@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
+from core.types import InstrumentKey, InstrumentType
 from data.dataset.manifest import (
     bind_stock_master_observation,
     publish_daily_bar_dataset_manifest,
@@ -30,7 +31,7 @@ from tests.server.test_deployment_scope_datasets import _composed
 from tests.server.test_verified_interval_dataset import DAYS, NOW
 
 
-def _capture(objects):
+def _capture(objects, *, status_rows=None):
     calls = []
     buffer = BytesIO()
     pd.DataFrame(
@@ -87,7 +88,11 @@ def _capture(objects):
     class Result:
         error_code = "0"
         fields = ["code", "tradeStatus", "code_name"]
-        rows = iter([["sz.000001", "0", "普通银行"], ["sh.600000", "1", "普通股票"]])
+        rows = iter(
+            status_rows
+            if status_rows is not None
+            else [["sz.000001", "0", "普通银行"], ["sh.600000", "1", "普通股票"]]
+        )
 
         def next(self):
             self.current = next(self.rows, None)
@@ -170,6 +175,41 @@ def test_official_master_replays_complete_sources_and_real_dated_halt(tmp_path):
     )
     ref = publish_daily_bar_dataset_manifest(objects, snapshot)
     assert read_daily_bar_dataset(objects, ref).row_count == 3
+
+
+@pytest.mark.parametrize("index_status", ["0", "1"])
+def test_index_status_does_not_conflict_with_or_halt_same_number_stock(
+    tmp_path, index_status
+):
+    objects, _ = _composed(tmp_path)
+    _, refs, _, _ = _capture(
+        objects,
+        status_rows=[
+            ["sh.000001", index_status, "上证综合指数"],
+            ["sz.000001", "1", "普通银行"],
+            ["sh.600000", "0", "普通股票"],
+        ],
+    )
+    activity = {}
+    rows, _, _ = read_official_stock_master_captures(
+        objects, refs, trade_date=DAYS[-1].isoformat(), dated_activity=activity
+    )
+    assert activity == {
+        DAYS[-1]: {
+            InstrumentKey("000001", InstrumentType.STOCK): "1",
+            InstrumentKey("600000", InstrumentType.STOCK): "0",
+        }
+    }
+    metadata = {row["symbol"]: row for row in rows}
+    assert "trade_status" not in metadata["000001"]
+    assert metadata["600000"]["trade_status"] == "0"
+
+
+@pytest.mark.parametrize("code", ["sz.600000", "invalid.000001"])
+def test_malformed_stock_exchange_is_still_rejected(tmp_path, code):
+    objects, _ = _composed(tmp_path)
+    with pytest.raises(ValueError, match="stock_master_status_instrument_invalid"):
+        _capture(objects, status_rows=[[code, "1", "无效交易所"]])
 
 
 @pytest.mark.parametrize(

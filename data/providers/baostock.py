@@ -519,6 +519,70 @@ def read_baostock_historical_status(store, capture_ref):
     return capture, planned, statuses
 
 
+def read_baostock_stock_eligibility(store, capture_ref):
+    """Read actual dated trading and ST flags without inferring past names."""
+    from data.market.capture import read_provider_capture, read_provider_raw_payload
+
+    capture = read_provider_capture(store, capture_ref)
+    if (
+        capture.provider != "baostock"
+        or capture.operation != "stock_eligibility"
+        or capture.adapter_version != "baostock.stock_eligibility"
+        or capture.payload_format != "baostock.history_k_data_plus.stock_eligibility"
+    ):
+        raise ValueError("baostock_stock_eligibility_source_invalid")
+    request = json.loads(capture.request_json)
+    code = request["code"]
+    if not isinstance(code, str) or not re.fullmatch(r"(?:sh|sz)\.[0-9]{6}", code):
+        raise ValueError("baostock_stock_eligibility_instrument_invalid")
+    key = InstrumentKey(code[3:], InstrumentType.STOCK)
+    planned = DailyBarRequest(
+        (key,), _trade_date(request["start_date"]), _trade_date(request["end_date"])
+    )
+    fields = ["date", "code", "tradestatus", "isST"]
+    if (
+        request
+        != {
+            "code": _provider_code(key),
+            "fields": ",".join(fields),
+            "frequency": "d",
+            "adjustflag": "3",
+            "start_date": planned.start_date.isoformat(),
+            "end_date": planned.end_date.isoformat(),
+        }
+        or (planned.end_date - planned.start_date).days >= 3653
+        or capture.started_at < _session_close_utc(planned.end_date)
+    ):
+        raise ValueError("baostock_stock_eligibility_request_invalid")
+    payload = json.loads(read_provider_raw_payload(store, capture))
+    rows = payload["rows"]
+    if (
+        payload.get("error_code") != "0"
+        or payload.get("fields") != fields
+        or not isinstance(rows, list)
+        or len(rows) != capture.record_count
+        or len(rows) > (planned.end_date - planned.start_date).days + 1
+    ):
+        raise ValueError("baostock_stock_eligibility_response_invalid")
+    activity, special_treatment = {}, {}
+    for row in rows:
+        if (
+            not isinstance(row, list)
+            or len(row) != len(fields)
+            or not all(isinstance(value, str) for value in row)
+            or row[1] != code
+            or row[2] not in {"0", "1"}
+            or row[3] not in {"0", "1"}
+        ):
+            raise ValueError("baostock_stock_eligibility_row_invalid")
+        day = _trade_date(row[0])
+        if not planned.start_date <= day <= planned.end_date or day in activity:
+            raise ValueError("baostock_stock_eligibility_session_invalid")
+        activity[day] = {key: row[2]}
+        special_treatment[day] = {key: row[3]}
+    return capture, planned, activity, special_treatment
+
+
 def _trade_date(value: str) -> date:
     text = value.strip()
     try:

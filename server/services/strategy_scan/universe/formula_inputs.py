@@ -160,6 +160,7 @@ def load_exact_formula_market_inputs(
                 result.snapshot,
                 minimum_history_rows=policy.minimum_history_rows,
                 as_of=cutoff,
+                deployment_scope=scope,
             )
             binding = {
                 "anchor": anchor,
@@ -188,8 +189,12 @@ def load_exact_formula_market_inputs(
     return frames, contexts, bindings, blockers
 
 
-def formula_dataset_cross_section(objects, snapshot, *, minimum_history_rows, as_of):
-    memberships = dataset_cross_section_memberships(objects, snapshot, as_of=as_of)
+def formula_dataset_cross_section(
+    objects, snapshot, *, minimum_history_rows, as_of, deployment_scope=None
+):
+    memberships = dataset_cross_section_memberships(
+        objects, snapshot, as_of=as_of, deployment_scope=deployment_scope
+    )
     return FormulaCrossSectionInputs(
         declared_symbols=tuple(key.symbol for key in snapshot.instruments),
         session_memberships={
