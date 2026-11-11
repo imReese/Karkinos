@@ -768,6 +768,52 @@ def test_scheduler_syncs_default_market_indices_without_strategy_watchlist(
     assert json.loads(run["metadata_json"])["symbols"] == ["600519"]
 
 
+@pytest.mark.parametrize("future_quote", [False, True])
+def test_index_capture_clock_follows_each_provider_response(
+    monkeypatch, tmp_path, future_quote
+):
+    from server.scheduler import service as scheduler_service
+
+    current = [datetime(2026, 5, 25, 9, 35)]
+    received = {}
+
+    class CaptureClock(datetime):
+        @classmethod
+        def now(cls):
+            return current[0]
+
+    class Source:
+        def fetch_latest(self, symbol, asset_class):
+            current[0] += timedelta(seconds=2)
+            received[str(symbol)] = current[0].isoformat()
+            return {
+                "price": 3120.5,
+                "timestamp": (
+                    current[0] + timedelta(seconds=int(future_quote))
+                ).isoformat(),
+                "provider_name": "fixture",
+            }
+
+    monkeypatch.setattr(scheduler_service, "datetime", CaptureClock)
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    scheduler = scheduler_service.TradingScheduler(
+        _scheduler_config(), FakeBridge(), db=db
+    )
+    if future_quote:
+        with pytest.raises(ValueError, match="later than the authoritative capture"):
+            scheduler._sync_default_market_index_quotes(Source())
+        assert db.get_latest_quote_sync("000001", asset_type="index") is None
+        return
+
+    scheduler._sync_default_market_index_quotes(Source())
+    assert len(received) > 1
+    for symbol, capture_time in received.items():
+        quote = db.get_latest_quote_sync(symbol, asset_type="index")
+        assert quote["captured_at"] == capture_time
+        assert quote["quote_timestamp"] == capture_time
+
+
 def test_scheduler_rejects_strategy_order_that_bypasses_pre_trade_gate(
     monkeypatch,
     tmp_path,

@@ -424,7 +424,6 @@ class TradingScheduler(
 
     def _sync_default_market_index_quotes(self, source, fallback_source=None) -> None:
         """Refresh broad-market index quotes without feeding them to strategies."""
-        current = datetime.now()
         for asset in default_market_index_assets():
             symbol = Symbol(asset["symbol"])
             snapshot = self._fetch_market_index_snapshot(
@@ -434,6 +433,7 @@ class TradingScheduler(
             )
             if snapshot is None:
                 continue
+            current = datetime.now()
             price = snapshot.get("price")
             if price in {None, ""}:
                 continue
