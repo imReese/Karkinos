@@ -20,6 +20,7 @@ from data.dataset.reader import daily_bar_dataset_read_scope
 from data.market.contracts import MarketDataProviderDescriptor
 from data.market.corporate_actions import CorporateActionObservationError
 from data.market.ingestion import DailyBarIngestionCapturedFailure
+from data.providers.tushare_corporate_actions import TushareDividendRequestDeferred
 from data.source_policy import (
     source_policy_for_config,
     verification_source_policy_for_config,
@@ -484,7 +485,11 @@ async def execute_corporate_action_day_job(
     await _execute_daily_market_job(
         store,
         job,
-        CorporateActionDayService(db.path.resolve().parent / "research", config),
+        CorporateActionDayService(
+            db.path.resolve().parent / "research",
+            config,
+            resume_ref=job.failure_evidence_ref,
+        ),
         timeout=timeout,
         heartbeat_interval=heartbeat_interval,
         result_prefix="corporate_action_day:sha256:",
@@ -722,12 +727,25 @@ async def _execute_daily_market_job(
         try:
             now = datetime.now(timezone.utc)
             retry_seconds = min(60 * 2 ** min(job.attempt - 1, 6), 3600)
-            if isinstance(exc, CorporateActionObservationError):
+            if isinstance(exc, TushareDividendRequestDeferred):
+                store.fail(
+                    job.lease,
+                    now=now,
+                    error=str(exc),
+                    retry_seconds=exc.retry_seconds,
+                    failure_evidence_ref=exc.failure_evidence_ref,
+                    preserve_retry_allowance=True,
+                )
+            elif isinstance(exc, CorporateActionObservationError):
                 store.fail(
                     job.lease,
                     now=now,
                     error=str(exc),
                     retry_seconds=retry_seconds,
+                    failure_evidence_ref=f"capture:{exc.capture_id}"
+                    if exc.capture_id
+                    and job.payload.get("provider") == "eastmoney_datacenter"
+                    else None,
                     retryable=str(exc) != "tushare_dividend_response_may_be_truncated",
                 )
             elif isinstance(exc, VerifiedDailyMarketDataUnavailable):
@@ -992,8 +1010,8 @@ async def run_data_worker(config) -> None:
             except Exception:
                 logger.exception("Daily market collection job planning failed")
 
-            # One market-date job needs four genuine SDK calls for every stock,
-            # so complete its source-reported distribution inputs before bars.
+            # Complete market-wide distribution terms and their payment
+            # calendars before the corresponding bars are used for settlement.
             action_job = store.claim(CORPORATE_ACTION_DAY_JOB, owner, now=now)
             if action_job:
                 try:

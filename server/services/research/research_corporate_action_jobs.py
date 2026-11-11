@@ -18,6 +18,15 @@ from data.market.corporate_actions import (
     read_corporate_action_window,
     read_market_dividend_day,
 )
+from data.providers.eastmoney_corporate_actions import (
+    ADAPTER as EASTMONEY_DIVIDEND_ADAPTER,
+)
+from data.providers.eastmoney_corporate_actions import (
+    PROVIDER as EASTMONEY_DIVIDEND_PROVIDER,
+)
+from data.providers.eastmoney_corporate_actions import (
+    collect_eastmoney_market_dividend_day,
+)
 from data.providers.tushare_corporate_actions import collect_tushare_market_dividend_day
 from data.storage.objects import ContentAddressedObjectStore
 from server.contracts.research_observation_automation import (
@@ -32,6 +41,9 @@ from server.persistence.jobs import SQLiteJobStore
 CORPORATE_ACTION_DAY_JOB = "research_corporate_action_day"
 DIVIDEND_DESCRIPTOR = MarketDataProviderDescriptor(
     "tushare", "tushare", "karkinos.tushare.dividend.v1", ()
+)
+EASTMONEY_DIVIDEND_DESCRIPTOR = MarketDataProviderDescriptor(
+    EASTMONEY_DIVIDEND_PROVIDER, "eastmoney", EASTMONEY_DIVIDEND_ADAPTER, ()
 )
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 
@@ -58,16 +70,10 @@ def ensure_dataset_corporate_actions(
     """Queue actual market-date queries, then bind a fully replayable window.
 
     The start belongs to the fresh cash book, never to exploratory price warmup.
-    Four calls/day cover all typed members, independent of basket size.
+    Market-wide terms cover all members; payment calendars retain actual dates.
     """
     root = db.path.resolve().parent / "research"
     objects = ContentAddressedObjectStore(root / "objects")
-    if not str(getattr(config, "tushare_token", "") or "").strip():
-        return {
-            "status": "blocked",
-            "job_ids": [],
-            "last_blocker": {"code": "corporate_action_tushare_token_required"},
-        }
     if permission is None:
         try:
             grant = read_research_validation_policy(db, now=now)
@@ -130,8 +136,33 @@ def ensure_dataset_corporate_actions(
         if previous
         else start
     )
+    # Continue an existing book with its original source. New prospective
+    # books use the public provider without requiring a TuShare subscription.
+    source = {"provider": EASTMONEY_DIVIDEND_PROVIDER}
+    if (
+        previous
+        and read_market_dividend_day(
+            objects, objects.resolve_ref(previous["day_observation_ids"][-1])
+        ).get("provider", "tushare")
+        == "tushare"
+    ):
+        source = {}
+    if (
+        not source
+        and begin <= through
+        and not str(getattr(config, "tushare_token", "") or "").strip()
+    ):
+        return {
+            "status": "blocked",
+            "job_ids": [],
+            "last_blocker": {"code": "corporate_action_tushare_token_required"},
+        }
     payloads = [
-        {"date": (begin + timedelta(days=index)).isoformat(), "permission": permission}
+        {
+            "date": (begin + timedelta(days=index)).isoformat(),
+            "permission": permission,
+            **source,
+        }
         for index in range((through - begin).days + 1)
     ]
 
@@ -204,19 +235,33 @@ def ensure_dataset_corporate_actions(
 class CorporateActionDayService:
     """Concrete provider adapter for the existing data worker's fenced executor."""
 
-    def __init__(self, root: Path, config):
+    def __init__(self, root: Path, config, *, resume_ref: str | None = None):
         self.objects = ContentAddressedObjectStore(root / "objects")
         self.config = config
+        self.resume_ref = resume_ref
 
     def run(
         self, payload, *, before_publish, before_provider_fetch, publication_guard=None
     ):
-        ref = collect_tushare_market_dividend_day(
-            self.objects,
-            day=date.fromisoformat(payload["date"]),
-            token=self.config.tushare_token,
-            before_fetch=lambda: before_provider_fetch(DIVIDEND_DESCRIPTOR),
-        )
+        provider = payload.get("provider", "tushare")
+        if provider == EASTMONEY_DIVIDEND_PROVIDER:
+            ref = collect_eastmoney_market_dividend_day(
+                self.objects,
+                day=date.fromisoformat(payload["date"]),
+                before_fetch=lambda: before_provider_fetch(
+                    EASTMONEY_DIVIDEND_DESCRIPTOR
+                ),
+            )
+        elif provider == "tushare":
+            ref = collect_tushare_market_dividend_day(
+                self.objects,
+                day=date.fromisoformat(payload["date"]),
+                token=self.config.tushare_token,
+                before_fetch=lambda: before_provider_fetch(DIVIDEND_DESCRIPTOR),
+                resume_ref=self.resume_ref,
+            )
+        else:
+            raise ValueError("corporate_action_provider_unsupported")
         before_publish()
         # Captures are append-only. A revoked generation can leave inert CAS
         # bytes, but cannot finish the job or publish any Dataset composition.

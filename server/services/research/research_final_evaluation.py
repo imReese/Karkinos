@@ -161,6 +161,7 @@ def sealed_execution_code_binding() -> dict[str, Any]:
         "data/providers/eastmoney.py",
         "data/market/corporate_actions.py",
         "data/providers/tushare_corporate_actions.py",
+        "data/providers/eastmoney_corporate_actions.py",
         "data/storage/objects.py",
         "server/contracts/ai_shadow_research_automation.py",
         "server/services/ai_shadow/ai_shadow_research_commands.py",

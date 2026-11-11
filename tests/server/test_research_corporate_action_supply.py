@@ -52,6 +52,7 @@ from tests.server.test_verified_interval_dataset import (
 
 
 def clocked_worker(monkeypatch, current, *, frame=None, after_call=None):
+    from data.providers import eastmoney_corporate_actions as eastmoney
     from data.providers import tushare_corporate_actions as provider
 
     calls = []
@@ -62,6 +63,7 @@ def clocked_worker(monkeypatch, current, *, frame=None, after_call=None):
             return current[0].astimezone(tz or timezone.utc)
 
     monkeypatch.setattr(provider, "datetime", Clock)
+    monkeypatch.setattr(eastmoney, "datetime", Clock)
     monkeypatch.setattr(data_worker, "datetime", Clock)
 
     def dividend(**query):
@@ -76,6 +78,25 @@ def clocked_worker(monkeypatch, current, *, frame=None, after_call=None):
     monkeypatch.setattr(
         provider, "tushare_pro_client", lambda _: SimpleNamespace(dividend=dividend)
     )
+
+    def empty_market_page(url, *, params, timeout):
+        assert url == eastmoney.URL and params["reportName"] == "RPT_SHAREBONUS_DET"
+        calls.append(params)
+        if after_call:
+            after_call(len(calls))
+        return SimpleNamespace(
+            status_code=200,
+            content=json.dumps(
+                {
+                    "success": False,
+                    "code": 9201,
+                    "message": "返回数据为空",
+                    "result": None,
+                }
+            ).encode(),
+        )
+
+    monkeypatch.setattr(eastmoney.requests, "get", empty_market_page)
     return calls
 
 
@@ -105,6 +126,132 @@ def run_jobs(db, config, ids, current):
             data_worker.execute_corporate_action_day_job(db, config, store, job)
         )
     return [store.get(identity) for identity in ids]
+
+
+@pytest.mark.parametrize("resume", ["complete", "revoked", "changed_capture"])
+def test_hourly_dividend_limit_resumes_verified_queries_across_worker_restarts(
+    tmp_path, monkeypatch, resume
+):
+    from data.market.corporate_actions import read_market_dividend_day
+
+    objects, composed = _composed(tmp_path)
+    db = _db(tmp_path)
+    grant = install_grant(db)
+    config = SimpleNamespace(tushare_token="sanitized")
+    current = [
+        datetime.combine(DAYS[-1], datetime.min.time(), timezone.utc)
+        + timedelta(hours=14)
+    ]
+    last_success = [None]
+
+    def hourly_limit(_count):
+        if last_success[0] == current[0]:
+            raise RuntimeError("抱歉，您访问接口(dividend)频率超限(1次/小时)。")
+        last_success[0] = current[0]
+
+    frame = _response()
+    frame["cash_div_tax"] = float("nan")
+    frame["base_date"] = pd.NaT
+    frame["base_share"] = pd.NA
+    for field in ("ann_date", "imp_ann_date", "record_date", "ex_date", "pay_date"):
+        frame[field] = DAYS[-1].strftime("%Y%m%d")
+    calls = clocked_worker(monkeypatch, current, frame=frame, after_call=hourly_limit)
+    pending = supply.ensure_dataset_corporate_actions(
+        db,
+        config,
+        snapshot=replace(composed.snapshot, universe_policy_id="b" * 64),
+        now=current[0],
+        prospective_start=DAYS[-1],
+    )
+    identities = pending["job_ids"]
+    jobs = SQLiteJobStore(db.path)
+    scheduled = jobs.get(identities[0])
+    # Previously persisted TuShare jobs retain their provider, captures and
+    # retry semantics while newly scheduled days use the public source.
+    legacy = jobs.enqueue(
+        supply.CORPORATE_ACTION_DAY_JOB,
+        {key: value for key, value in scheduled.payload.items() if key != "provider"},
+        now=current[0],
+    )
+    identities = [legacy.job_id]
+    result = run_jobs(db, config, identities, current)[0]
+    assert result.status == "queued" and result.attempt == 1
+    assert result.error == "tushare_dividend_rate_limited"
+    assert result.result_ref is None
+    assert datetime.fromisoformat(result.available_at) == current[0] + timedelta(
+        hours=1
+    )
+    progress = json.loads(
+        objects.read_bytes(objects.resolve_ref(result.failure_evidence_ref))
+    )
+    original_capture = progress["capture_ids"][0]
+    assert len(calls) == 2
+    assert (
+        SQLiteJobStore(db.path).claim(
+            supply.CORPORATE_ACTION_DAY_JOB,
+            "too-early",
+            now=current[0] + timedelta(minutes=59),
+            job_id=result.job_id,
+        )
+        is None
+    )
+    current[0] += timedelta(hours=1)
+    if resume == "revoked":
+        AutomationRunRepository(db.path).upsert_automation_policy_sync(
+            policy_id="ai_recommendation_publication",
+            payload={**grant, "enabled": False},
+            updated_by="human:test",
+        )
+    elif resume == "changed_capture":
+        progress["date"] = (DAYS[-1] - timedelta(days=1)).isoformat()
+        invalid = objects.put_bytes(json.dumps(progress).encode())
+        with sqlite3.connect(db.path) as conn:
+            conn.execute(
+                "UPDATE job_runs SET failure_evidence_ref=? WHERE job_id=?",
+                (invalid.object_id, result.job_id),
+            )
+    if resume != "complete":
+        result = run_jobs(db, config, identities, current)[0]
+        assert result.status != "succeeded" and result.result_ref is None
+        assert len(calls) == 2
+        return
+    for hour in range(1, 4):
+        result = run_jobs(db, config, identities, current)[0]
+        assert result.attempt == hour + 1
+        if hour < 3:
+            assert result.status == "queued" and result.result_ref is None
+            assert result.error == "tushare_dividend_rate_limited"
+        current[0] += timedelta(hours=1)
+    assert result.status == "succeeded" and result.failure_evidence_ref is None
+    day = read_market_dividend_day(
+        objects,
+        objects.resolve_ref(result.result_ref.removeprefix("corporate_action_day:")),
+    )
+    assert day["date"] == DAYS[-1]
+    assert day["available_at"] == current[0] - timedelta(hours=1)
+    assert day["oldest_captured_at"] == current[0] - timedelta(hours=4)
+    assert len(day["rows"]) == 4
+    assert day["rows"][0][1].capture_id == original_capture
+    for row, _ in day["rows"]:
+        assert row["cash_dividend_before_tax"] is None
+        assert row["base_date"] is None
+        assert row["base_shares"] is None
+    assert [next(key for key in call if key != "fields") for call in calls] == [
+        "ann_date",
+        "imp_ann_date",
+        "imp_ann_date",
+        "record_date",
+        "record_date",
+        "ex_date",
+        "ex_date",
+    ]
+    with sqlite3.connect(db.path) as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM market_daily_provider_call_reservations WHERE upstream_group='tushare'"
+            ).fetchone()[0]
+            == 7
+        )
 
 
 @pytest.mark.parametrize("simulation", [False, True])
@@ -166,7 +313,7 @@ def test_automatic_full_scope_seed_waits_for_canonical_worker_then_reuses_ca(
         },
     }
     config = SimpleNamespace(
-        tushare_token="sanitized-not-a-secret",
+        tushare_token="",
         market_data_verification_source_policy=FREE_CN_RESEARCH_V1.policy_id,
     )
     calls = clocked_worker(monkeypatch, current)
@@ -281,7 +428,7 @@ def test_automatic_full_scope_seed_waits_for_canonical_worker_then_reuses_ca(
     assert len(calls) == 4 * len(pending["job_ids"])
     with sqlite3.connect(db.path) as conn:
         assert conn.execute(
-            "SELECT COUNT(*) FROM market_daily_provider_call_reservations WHERE upstream_group='tushare'"
+            "SELECT COUNT(*) FROM market_daily_provider_call_reservations WHERE upstream_group='eastmoney'"
         ).fetchone()[0] == len(calls)
 
 
@@ -325,7 +472,7 @@ def test_real_append_new_member_and_maintenance_preserves_old_raw_inputs(
     )
     capture = read_provider_capture(
         objects,
-        objects.resolve_ref(first_day["queries"][0]["capture_ref"]["object_id"]),
+        objects.resolve_ref(first_day["captures"][0]["object_id"]),
     )
     original_bytes = objects.read_bytes(capture.raw_object_ref)
     # Actual suffix adds SECOND as buy member and keeps held STOCK as maintenance.
@@ -447,6 +594,56 @@ def test_provider_window_revocation_and_budget_fence_without_more_sdk_calls(
     assert result[0].status == "queued"
     assert result[0].error == "market_daily_provider_call_budget_exhausted"
     assert calls == []
+
+
+def test_existing_tushare_window_retains_source_and_requires_its_credentials(tmp_path):
+    from data.market.corporate_actions import publish_corporate_action_window
+    from data.providers.tushare_corporate_actions import (
+        collect_tushare_market_dividend_day,
+    )
+
+    objects, composed = _composed(tmp_path)
+    db = _db(tmp_path)
+    install_grant(db)
+    captured = datetime.combine(DAYS[0], datetime.min.time(), timezone.utc) + timedelta(
+        hours=14
+    )
+    first = collect_tushare_market_dividend_day(
+        objects,
+        day=DAYS[0],
+        client=SimpleNamespace(dividend=lambda **_: pd.DataFrame()),
+        clock=lambda: captured,
+    )
+    window = publish_corporate_action_window(
+        objects,
+        instruments=composed.snapshot.instruments,
+        day_observation_ids=[first.object_id],
+    )
+    original = read_corporate_action_window(objects, window)
+    snapshot = replace(composed.snapshot, universe_policy_id="b" * 64)
+    current = datetime.combine(DAYS[-1], datetime.min.time(), timezone.utc) + timedelta(
+        hours=14
+    )
+    args = dict(
+        snapshot=snapshot,
+        now=current,
+        prospective_start=DAYS[0],
+        previous_observation_ids=(window.object_id,),
+    )
+    pending = supply.ensure_dataset_corporate_actions(
+        db, SimpleNamespace(tushare_token="sanitized"), **args
+    )
+    assert pending["status"] == "waiting"
+    jobs = SQLiteJobStore(db.path)
+    assert all(
+        "provider" not in jobs.get(identity).payload for identity in pending["job_ids"]
+    )
+    missing = supply.ensure_dataset_corporate_actions(
+        db, SimpleNamespace(tushare_token=""), **args
+    )
+    assert missing["status"] == "blocked" and missing["job_ids"] == []
+    assert missing["last_blocker"]["code"] == "corporate_action_tushare_token_required"
+    assert read_corporate_action_window(objects, window) == original
 
 
 def test_real_observation_opt_in_supplies_window_and_revocation_blocks_future_jobs(

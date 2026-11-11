@@ -60,9 +60,13 @@ also quotes reviewed fees and slippage for modeled exit/re-entry, rather than
 assuming free switching. Unknown distribution tax or share-entitlement effects
 block this first automatic path; provider-reported action coverage is shown as
 such, not upgraded to an exchange-complete total-return claim.
-Prospective dividend supply uses four all-market provider queries per calendar
-day through the existing worker and call budget, from the cash book's start;
-missing, truncated or conflicting evidence blocks settlement.
+New prospective books collect Eastmoney's market-wide announcement, latest-notice,
+record-date and ex-date pages, then bind actual payment and share-listing dates
+from its distribution calendar. Every page uses the existing worker and upstream
+call budget. Original responses, pagination and per-ten-share units are verified
+again on offline reads. Missing dates, truncated pages and conflicting terms block
+settlement. Existing TuShare books retain their original source and captures;
+new books do not require a TuShare subscription. Coverage remains provider-reported.
 Cold warmup uses actual range captures per stock shard and retains per-session
 dual-source verification. It does not repeat every historical request by day or
 claim historical availability. Current forward jobs take priority over ordinary

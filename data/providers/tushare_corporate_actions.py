@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections.abc import Callable
 from datetime import date, datetime, timezone
 from decimal import Decimal, DecimalException
@@ -12,7 +13,11 @@ from typing import Any
 import pandas as pd
 
 from core.types import InstrumentKey, InstrumentType
-from data.market.capture import capture_provider_payload
+from data.market.capture import (
+    capture_provider_payload,
+    read_provider_capture,
+    read_provider_raw_payload,
+)
 from data.market.corporate_actions import (
     CorporateActionObservationError,
     publish_corporate_action_observation,
@@ -45,6 +50,15 @@ _NUMBER_MAPPING = {
     "base_share": "base_shares",
 }
 DIVIDEND_FIELDS = ",".join(("ts_code", "div_proc", *_DATE_MAPPING, *_NUMBER_MAPPING))
+
+
+class TushareDividendRequestDeferred(CorporateActionObservationError):
+    """Keep completed source captures while the provider's rate window resets."""
+
+    def __init__(self, *, retry_seconds: int, failure_evidence_ref: str) -> None:
+        super().__init__("tushare_dividend_rate_limited")
+        self.retry_seconds = retry_seconds
+        self.failure_evidence_ref = failure_evidence_ref
 
 
 def collect_tushare_dividend_observation(
@@ -246,6 +260,7 @@ def collect_tushare_market_dividend_day(
     token: str | None = None,
     clock: Callable[[], datetime] | None = None,
     before_fetch: Callable[[], None] | None = None,
+    resume_ref: str | None = None,
 ) -> ObjectRef:
     """Four documented date queries, never fabricated per-stock SDK requests."""
     from datetime import time
@@ -259,9 +274,15 @@ def collect_tushare_market_dividend_day(
     now = clock or (lambda: datetime.now(timezone.utc))
     if now() < datetime.combine(day, time(21), ZoneInfo("Asia/Shanghai")):
         raise CorporateActionObservationError("tushare_dividend_update_window_pending")
+    captures = _restore_dividend_queries(store, resume_ref, day=day, now=now())
+    completed = {
+        next(key for key in json.loads(capture.request_json) if key != "fields")
+        for capture, _ in captures
+    }
     provider = client if client is not None else tushare_pro_client(token)
-    captures = []
     for field in DIVIDEND_DATE_QUERIES:
+        if field in completed:
+            continue
         if before_fetch is not None:
             before_fetch()
         started = now()
@@ -270,6 +291,23 @@ def collect_tushare_market_dividend_day(
                 **{field: day.strftime("%Y%m%d"), "fields": DIVIDEND_FIELDS}
             )
         except Exception as exc:
+            frequency = re.search(r"频率超限.*?\d+次/(分钟|小时|天)", str(exc))
+            if frequency:
+                progress = store.put_bytes(
+                    json.dumps(
+                        {
+                            "date": day.isoformat(),
+                            "capture_ids": [
+                                capture.capture_id for capture, _ in captures
+                            ],
+                        },
+                        sort_keys=True,
+                    ).encode("utf-8")
+                )
+                raise TushareDividendRequestDeferred(
+                    retry_seconds={"分钟": 60, "小时": 3600, "天": 86400}[frequency[1]],
+                    failure_evidence_ref=progress.object_id,
+                ) from exc
             raise CorporateActionObservationError(
                 "tushare_dividend_unavailable"
             ) from exc
@@ -286,39 +324,92 @@ def collect_tushare_market_dividend_day(
             record_count=len(response) if isinstance(response, pd.DataFrame) else None,
         )
         try:
-            if not isinstance(response, pd.DataFrame):
-                raise CorporateActionObservationError(
-                    "tushare_dividend_response_type_invalid"
-                )
-            if len(response) >= 2000:
-                raise CorporateActionObservationError(
-                    "tushare_dividend_response_may_be_truncated"
-                )
-            records = []
-            if not response.empty:
-                if response.columns.has_duplicates or set(
-                    DIVIDEND_FIELDS.split(",")
-                ) - set(response.columns):
-                    raise CorporateActionObservationError(
-                        "tushare_dividend_response_fields_invalid"
-                    )
-                for code in response["ts_code"].unique():
-                    if (
-                        not isinstance(code, str)
-                        or len(code) != 9
-                        or code[6] != "."
-                        or code[7:] not in {"SH", "SZ", "BJ"}
-                        or not code[:6].isdigit()
-                    ):
-                        raise CorporateActionObservationError(
-                            "tushare_dividend_response_instrument_mismatch"
-                        )
-                    records.extend(
-                        _normalize_response(response[response["ts_code"] == code], code)
-                    )
-            captures.append((capture, records))
+            captures.append((capture, _normalize_market_dividend_response(response)))
         except (TypeError, ValueError) as exc:
             raise CorporateActionObservationError(
                 str(exc), capture_id=capture.capture_id
             ) from exc
     return publish_market_dividend_day(store, day=day, captures_and_records=captures)
+
+
+def _normalize_market_dividend_response(response):
+    if not isinstance(response, pd.DataFrame):
+        raise CorporateActionObservationError("tushare_dividend_response_type_invalid")
+    if len(response) >= 2000:
+        raise CorporateActionObservationError(
+            "tushare_dividend_response_may_be_truncated"
+        )
+    records = []
+    if response.empty:
+        return records
+    if response.columns.has_duplicates or set(DIVIDEND_FIELDS.split(",")) - set(
+        response.columns
+    ):
+        raise CorporateActionObservationError(
+            "tushare_dividend_response_fields_invalid"
+        )
+    for code in response["ts_code"].unique():
+        if (
+            not isinstance(code, str)
+            or len(code) != 9
+            or code[6] != "."
+            or code[7:] not in {"SH", "SZ", "BJ"}
+            or not code[:6].isdigit()
+        ):
+            raise CorporateActionObservationError(
+                "tushare_dividend_response_instrument_mismatch"
+            )
+        records.extend(_normalize_response(response[response["ts_code"] == code], code))
+    return records
+
+
+def _restore_dividend_queries(store, resume_ref, *, day, now):
+    """Reopen original bytes; a retry pointer never certifies complete coverage."""
+    from datetime import time
+    from zoneinfo import ZoneInfo
+
+    from data.market.corporate_actions import DIVIDEND_DATE_QUERIES
+
+    if resume_ref is None:
+        return []
+    progress = json.loads(store.read_bytes(store.resolve_ref(resume_ref)))
+    if (
+        set(progress) != {"date", "capture_ids"}
+        or progress["date"] != day.isoformat()
+        or not isinstance(progress["capture_ids"], list)
+        or len(progress["capture_ids"]) >= len(DIVIDEND_DATE_QUERIES)
+    ):
+        raise CorporateActionObservationError("tushare_dividend_resume_invalid")
+    captures = []
+    for field, identity in zip(DIVIDEND_DATE_QUERIES, progress["capture_ids"]):
+        capture = read_provider_capture(store, store.resolve_ref(identity))
+        if (
+            capture.provider != "tushare"
+            or capture.operation != "dividend"
+            or capture.adapter_version != ADAPTER_VERSION
+            or capture.payload_format != PAYLOAD_FORMAT
+            or json.loads(capture.request_json)
+            != {field: day.strftime("%Y%m%d"), "fields": DIVIDEND_FIELDS}
+            or capture.started_at
+            < datetime.combine(day, time(21), ZoneInfo("Asia/Shanghai"))
+            or capture.completed_at > now
+        ):
+            raise CorporateActionObservationError("tushare_dividend_resume_invalid")
+        raw = json.loads(read_provider_raw_payload(store, capture))
+        if raw.get("schema_version") != PAYLOAD_FORMAT:
+            raise CorporateActionObservationError("tushare_dividend_resume_invalid")
+        response = pd.DataFrame(**raw["response"])
+        if len(response) != capture.record_count:
+            raise CorporateActionObservationError("tushare_dividend_resume_invalid")
+        # The SDK snapshot encodes pandas missing scalars as strings. Restore
+        # their missingness before normalization; do not turn them into zero or
+        # accept other nonfinite values such as infinity.
+        response = response.replace(
+            {
+                field: {"nan": None, "NaT": None, "<NA>": None}
+                for field in (*_DATE_MAPPING, *_NUMBER_MAPPING)
+                if field in response
+            }
+        )
+        captures.append((capture, _normalize_market_dividend_response(response)))
+    return captures

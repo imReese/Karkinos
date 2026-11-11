@@ -728,6 +728,12 @@ def read_market_dividend_day(
     from zoneinfo import ZoneInfo
 
     value = _read_json(store, ref)
+    if value.get("provider") == "eastmoney_datacenter":
+        from data.providers.eastmoney_corporate_actions import (
+            read_eastmoney_market_dividend_day,
+        )
+
+        return read_eastmoney_market_dividend_day(store, ref, value)
     if value.get("schema_version") != MARKET_DAY_SCHEMA:
         raise CorporateActionObservationError("corporate_action_market_day_invalid")
     day = date.fromisoformat(value["date"])
@@ -842,7 +848,7 @@ def read_corporate_action_window(
     symbols = {key.symbol: key for key in keys}
     versions: dict[
         tuple[str, str | None, str | None],
-        tuple[bytes, dict[str, Any], ProviderCapture],
+        tuple[bytes, dict[str, Any], ProviderCapture, str],
     ] = {}
     implemented_periods: set[tuple[str, str | None]] = set()
     # Keep the first actual observation time for unchanged terms. A changed
@@ -851,7 +857,7 @@ def read_corporate_action_window(
     for day in days:
         daily: dict[
             tuple[str, str | None, str | None],
-            tuple[bytes, dict[str, Any], ProviderCapture],
+            tuple[bytes, dict[str, Any], ProviderCapture, str],
         ] = {}
         for row, capture in day["rows"]:
             symbol, _, venue = row["source_code"].partition(".")
@@ -875,8 +881,13 @@ def read_corporate_action_window(
                 identity not in daily
                 or capture.completed_at < daily[identity][2].completed_at
             ):
-                daily[identity] = (encoded, row, capture)
-        for identity, (encoded, row, capture) in daily.items():
+                revision = (
+                    day["observation_id"]
+                    if day.get("provider") == "eastmoney_datacenter"
+                    else capture.capture_id
+                )
+                daily[identity] = (encoded, row, capture, revision)
+        for identity, (encoded, row, capture, revision) in daily.items():
             period = (identity[0], row["report_period"])
             if row["implementation_status"] != "实施" and period in implemented_periods:
                 # An explicit later cancellation/retraction cannot leave the
@@ -887,10 +898,10 @@ def read_corporate_action_window(
             if row["implementation_status"] == "实施":
                 implemented_periods.add(period)
             if identity not in versions or versions[identity][0] != encoded:
-                versions[identity] = (encoded, row, capture)
+                versions[identity] = (encoded, row, capture, revision)
     events = []
     pending_count = 0
-    for _, row, capture in versions.values():
+    for _, row, capture, revision in versions.values():
         # A proposal is preserved source material, not an implemented cash or
         # share entitlement. Implemented but undated terms remain unresolved.
         if row["implementation_status"] != "实施":
@@ -904,15 +915,16 @@ def read_corporate_action_window(
             "instrument": _instrument_payload(symbols[symbol]),
             "available_at": capture.completed_at.isoformat(),
             "captured_at": capture.completed_at.isoformat(),
-            "facts_revision_id": capture.capture_id,
+            "facts_revision_id": revision,
             "observation_id": ref.object_id,
         }
         events.append(_event_summary(row, observed))
+    providers = sorted({day.get("provider", "tushare") for day in days})
     return {
         "schema_version": "karkinos.corporate_action_evidence.v1",
         "status": "observed",
         "observation_ids": [ref.object_id],
-        "provider": "tushare",
+        "provider": providers[0] if len(providers) == 1 else ",".join(providers),
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
         "coverage_start_date": start.isoformat(),
@@ -934,7 +946,9 @@ def read_corporate_action_window(
         "day_observation_ids": window["day_observation_ids"],
         "limitations": [
             *_LIMITATIONS,
-            "Only prospective daily announcement, implementation, record and ex-date queries are covered; price warmup is not covered.",
+            "Only prospective daily announcement, implementation, record and ex-date queries are covered; price warmup is not covered."
+            if providers == ["tushare"]
+            else "Dated market-wide distribution terms and their captured payment calendars are covered; price warmup is not covered.",
             "Unannounced retrospective source changes outside these date queries may remain unobserved.",
         ],
     }
