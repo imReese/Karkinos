@@ -225,7 +225,7 @@ def test_outer_rank_history_accumulates_after_the_original_membership_floor():
     assert formula_history_rows({"entry": legacy, "exit": legacy}) == 20
 
 
-def test_observation_passes_actual_cutoff_and_bar_availability(monkeypatch):
+def test_observation_passes_scope_cutoff_and_bar_availability(monkeypatch):
     from data.dataset import reader
     from server.ai_runtime import formula_portfolio
     from server.persistence import research_paper_books
@@ -234,6 +234,7 @@ def test_observation_passes_actual_cutoff_and_bar_availability(monkeypatch):
     keys = tuple(SimpleNamespace(symbol=s) for s in ("600000", "300001"))
     snapshot = SimpleNamespace(instruments=keys, instruments_for_session=lambda _: keys)
     book = {"lifecycle": "active", "evaluation_start": "2027-01-01"}
+    scope = {"universe_policy": {"minimum_history_rows": 2}}
     monkeypatch.setattr(
         research_paper_books,
         "ResearchPaperBooksRepository",
@@ -242,11 +243,12 @@ def test_observation_passes_actual_cutoff_and_bar_availability(monkeypatch):
     monkeypatch.setattr(
         module,
         "observation_deployment_scope",
-        lambda _: {"universe_policy": {"minimum_history_rows": 2}},
+        lambda _: scope,
     )
 
-    def membership(_objects, actual_snapshot, *, as_of):
+    def membership(_objects, actual_snapshot, *, as_of, deployment_scope):
         assert actual_snapshot is snapshot and as_of == NOW
+        assert deployment_scope is scope
         return {DAY: keys}
 
     monkeypatch.setattr(reader, "dataset_cross_section_memberships", membership)
