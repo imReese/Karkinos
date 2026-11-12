@@ -13,14 +13,14 @@ dependencies = [
     "akshare>=1.18.97",
     "tushare>=1.4.29",
     "tdxaidata==1.0.2",
-    "pandas>=3.0.6",
+    "pandas>=3.1.0",
     "numpy>=2.5.4",
     "pyarrow>=26.0.0",
     "httpx>=0.28.1",
     "python-dotenv>=1.2.4",
     "cryptography>=50.0.2",
     "xlrd>=2.0.2",
-    "ruff>=0.17.0",
+    "ruff>=0.17.3",
     "baostock>=0.9.4,<1",
     "pytdx>=1.72",
     "pypdf>=6.21.0,<7",
@@ -28,20 +28,20 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=9.1.1",
-    "pytest-asyncio>=1.4.0",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.4.1.post1",
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.8.0",
     "pip-audit==2.10.1",
-    "pre-commit>=4.6.2",
-    "mypy>=2.4.0",
+    "pre-commit>=4.7.0",
+    "mypy>=2.4.1",
 ]
 server = [
-    "fastapi>=0.143.0",
+    "fastapi>=0.162.0",
     "uvicorn[standard]>=0.54.0",
     "aiosqlite>=0.22.1",
-    "websockets>=17.2",
-    "pydantic>=2.14.1",
+    "websockets>=17.4",
+    "pydantic>=2.14.2",
 ]
 
 [project.urls]
