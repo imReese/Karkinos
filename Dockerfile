@@ -1,5 +1,5 @@
 # ---- Stage 1: Build React frontend ----
-FROM node:24.20.0-alpine3.24@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf AS frontend-build
+FROM node:24.22.1-alpine3.24@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS frontend-build
 WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
@@ -9,7 +9,7 @@ COPY web/test-fixtures/shadow-observations.ts web/test-fixtures/publication-poli
 RUN npm run build
 
 # ---- Stage 2: Python runtime ----
-FROM python:3.12.13-slim-trixie@sha256:229a2c5bfa27522db7815ea81f9bed70af17ccb9de9fc7ad142b1877b5830d36
+FROM python:3.15.0-slim-trixie@sha256:f5b92f2a669a4c347044f29367f31983280b648250ca94dea66f98c53bc87e58
 
 ARG UV_VERSION=0.11.28
 ARG VERSION=dev
