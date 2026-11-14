@@ -63,7 +63,6 @@ def _is_trading_safety_test(path: str) -> bool:
     return filename in {
         "test_account_truth_gate.py",
         "test_automation_control.py",
-        "test_controlled_broker_submission.py",
         "test_controlled_session_automatic_pause.py",
         "test_controlled_submission_reconciliation_clearance.py",
         "test_execution_batch_reconciliation.py",
