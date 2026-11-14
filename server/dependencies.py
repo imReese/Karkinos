@@ -25,10 +25,10 @@ if TYPE_CHECKING:
     from server.services.controlled_execution.execution_gateway_verification import (
         ExecutionGatewayRuntimeProtocol,
     )
-    from server.services.controlled_execution.trading_controls import (
+    from server.services.research.datasets import ResearchDatasetService
+    from server.services.risk.trading_controls import (
         TradingControlState,
     )
-    from server.services.research.datasets import ResearchDatasetService
     from server.ws.hub import ConnectionHub
 
 

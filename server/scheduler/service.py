@@ -31,7 +31,6 @@ from server.scheduler.post_close import SchedulerPostCloseMixin
 from server.scheduler.quote_runs import SchedulerQuoteRunMixin
 from server.scheduler.signals import handle_scheduler_signal
 from server.scheduler.values import optional_float
-from server.services.controlled_execution.trading_controls import TradingControlState
 from server.services.market.hours import is_cn_trading_session
 from server.services.market.indices import default_market_index_assets
 from server.services.market.quotes import (
@@ -39,6 +38,7 @@ from server.services.market.quotes import (
     persist_quote_ingestion,
 )
 from server.services.portfolio.ledger import rebuild_portfolio_from_ledger
+from server.services.risk.trading_controls import TradingControlState
 
 if TYPE_CHECKING:
     from server.config import ServerConfig

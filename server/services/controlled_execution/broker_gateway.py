@@ -14,14 +14,8 @@ from server.contracts.broker_gateway import (
 from server.contracts.broker_gateway import (
     BrokerGatewayPersistencePort as _BrokerGatewayPersistencePort,
 )
-from server.services.controlled_execution.broker_gateway_execution import (
-    BrokerGatewayExecutionEvidenceMixin as _BrokerGatewayExecutionEvidenceMixin,
-)
 from server.services.controlled_execution.broker_gateway_gates import (
     BrokerGatewayGateMixin as _BrokerGatewayGateMixin,
-)
-from server.services.controlled_execution.broker_gateway_manual_tickets import (
-    BrokerGatewayManualTicketMixin as _BrokerGatewayManualTicketMixin,
 )
 from server.services.controlled_execution.broker_gateway_queries import (
     BrokerGatewayQueryMixin as _BrokerGatewayQueryMixin,
@@ -29,102 +23,17 @@ from server.services.controlled_execution.broker_gateway_queries import (
 from server.services.controlled_execution.broker_gateway_values import (
     CONTROLLED_BRIDGE_REQUIRED_GATES as _CONTROLLED_BRIDGE_REQUIRED_GATES,
 )
-from server.services.controlled_execution.broker_gateway_values import (
-    FINGERPRINT_PATTERN as _FINGERPRINT_PATTERN,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    REQUIRED_GATEWAY_EVIDENCE as _REQUIRED_GATEWAY_EVIDENCE,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    broker_account_fill_payload as _broker_account_fill_payload,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    broker_fill_payload as _broker_fill_payload,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    cash_balance_payloads as _cash_balance_payloads,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    cash_impact_preview as _cash_impact_preview,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    clean_number as _clean_number,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    decimal_value as _decimal_value,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    fee_tax_assumptions as _fee_tax_assumptions,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    fingerprint_payload as _fingerprint_payload,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    first_mapping as _first_mapping,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    gateway_event_payload as _gateway_event_payload,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    manual_execution_ledger_draft as _manual_execution_ledger_draft,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    manual_execution_preview as _manual_execution_preview,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    mapping_value as _mapping_value,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    money_string as _money_string,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    operator_account_alias as _operator_account_alias,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    optional_clean_number as _optional_clean_number,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    optional_decimal as _optional_decimal,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    optional_string as _optional_string,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    order_intent_payload as _order_intent_payload,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    order_payload as _order_payload,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    position_cost_preview as _position_cost_preview,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    position_payloads as _position_payloads,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    quantity_string as _quantity_string,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    required_decimal as _required_decimal,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    string_list as _string_list,
-)
-from server.services.controlled_execution.broker_gateway_values import (
-    trading_session_constraints as _trading_session_constraints,
-)
 from server.services.controlled_execution.broker_lifecycle_evidence_view import (
     BrokerLifecycleEvidenceViewService,
 )
 from server.services.controlled_execution.oms import OmsService
-from server.services.controlled_execution.trading_controls import (
+from server.services.manual_trading import ManualTradingService
+from server.services.risk.trading_controls import (
     resolve_kill_switch_evidence,
 )
 
 
 class BrokerGatewayService(
-    _BrokerGatewayExecutionEvidenceMixin,
-    _BrokerGatewayManualTicketMixin,
     _BrokerGatewayQueryMixin,
     _BrokerGatewayGateMixin,
 ):
@@ -149,6 +58,136 @@ class BrokerGatewayService(
         self._current_per_order_confirmation_provider = (
             current_per_order_confirmation_provider
         )
+        self._manual_trading = ManualTradingService(
+            db=db,
+            oms=self._oms,
+            controlled_bridge_policy=controlled_bridge_policy,
+            trading_controls=trading_controls,
+            current_per_order_confirmation_provider=(
+                current_per_order_confirmation_provider
+            ),
+        )
+
+    def preview_manual_ticket(
+        self,
+        order_id: str,
+        *,
+        actor: str | None = None,
+    ) -> dict[str, Any]:
+        return self._manual_trading.preview_manual_ticket(order_id, actor=actor)
+
+    def export_manual_ticket(
+        self,
+        order_id: str,
+        *,
+        actor: str | None = None,
+    ) -> dict[str, Any]:
+        return self._manual_trading.export_manual_ticket(order_id, actor=actor)
+
+    def dry_run_manual_ticket(
+        self,
+        order_id: str,
+        *,
+        actor: str | None = None,
+    ) -> dict[str, Any]:
+        return self._manual_trading.dry_run_manual_ticket(order_id, actor=actor)
+
+    def create_manual_ticket(
+        self,
+        order_id: str,
+        *,
+        actor: str | None = None,
+    ) -> dict[str, Any]:
+        return self._manual_trading.create_manual_ticket(order_id, actor=actor)
+
+    def preview_manual_execution_record(
+        self,
+        order_id: str,
+        *,
+        fill_price: Any,
+        quantity: Any,
+        fee: Any = None,
+        tax: Any = None,
+        transfer_fee: Any = None,
+        actor: str | None = None,
+    ) -> dict[str, Any]:
+        return self._manual_trading.preview_manual_execution_record(
+            order_id,
+            fill_price=fill_price,
+            quantity=quantity,
+            fee=fee,
+            tax=tax,
+            transfer_fee=transfer_fee,
+            actor=actor,
+        )
+
+    def record_manual_execution_evidence(
+        self,
+        order_id: str,
+        *,
+        fill_price: Any,
+        quantity: Any,
+        preview_fingerprint: str,
+        fee: Any = None,
+        tax: Any = None,
+        transfer_fee: Any = None,
+        actor: str | None = None,
+        operator_note: str | None = None,
+    ) -> dict[str, Any]:
+        return self._manual_trading.record_manual_execution_evidence(
+            order_id,
+            fill_price=fill_price,
+            quantity=quantity,
+            preview_fingerprint=preview_fingerprint,
+            fee=fee,
+            tax=tax,
+            transfer_fee=transfer_fee,
+            actor=actor,
+            operator_note=operator_note,
+        )
+
+    def submit_live_disabled(
+        self,
+        order_id: str,
+        *,
+        actor: str | None = None,
+    ) -> dict[str, Any]:
+        order = self._require_order(order_id)
+        self._db.record_broker_gateway_event_sync(
+            gateway_id="live_disabled",
+            event_type="live_submission_rejected",
+            order_id=order_id,
+            status="rejected",
+            actor=actor,
+            payload={
+                "schema_version": BROKER_GATEWAY_SCHEMA_VERSION,
+                "order_status": order["status"],
+                "submitted_to_broker": False,
+            },
+        )
+        raise ValueError("live broker submission is disabled")
+
+    def cancel_live_disabled(
+        self,
+        order_id: str,
+        *,
+        actor: str | None = None,
+    ) -> dict[str, Any]:
+        order = self._require_order(order_id)
+        self._db.record_broker_gateway_event_sync(
+            gateway_id="live_disabled",
+            event_type="live_cancel_rejected",
+            order_id=order_id,
+            status="rejected",
+            actor=actor,
+            payload={
+                "schema_version": BROKER_GATEWAY_SCHEMA_VERSION,
+                "order_status": order["status"],
+                "submitted_to_broker": False,
+                "cancelled_at_broker": False,
+            },
+        )
+        raise ValueError("live broker cancellation is disabled")
 
     def get_status(self) -> dict[str, Any]:
         kill_switch = self._kill_switch_snapshot()

@@ -15,6 +15,9 @@ import pandas as pd
 from data.research_market_data import (
     resolve_daily_bar_receipts as resolve_daily_bar_receipts,
 )
+from execution.manual_trade_fees import (
+    resolve_manual_trade_fee_breakdown,
+)
 from server.ai_runtime.contracts import content_fingerprint
 from server.ai_runtime.formula_dsl import (
     FORMULA_AST_CONTRACT,
@@ -28,9 +31,6 @@ from server.ai_runtime.formula_dsl import (
     validate_formula_ast,
 )
 from server.ai_runtime.formula_portfolio import formula_session_candidates
-from server.services.controlled_execution.manual_trade_fees import (
-    resolve_manual_trade_fee_breakdown,
-)
 from server.services.market.market_universe_automation import verified_trading_dates
 from server.services.market.market_universe_truth import (
     FULL_MARKET_UNIVERSE_TRUTH_SCHEMA_VERSION,

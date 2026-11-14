@@ -9,12 +9,12 @@ from data.source_policy import (
     MarketDataUseCase,
     preferred_source_for_config,
 )
+from domain.position_presence import (
+    is_economically_zero_quantity,
+)
 from server.models import (
     MarketCalendarSnapshotResponse,
     MarketHealthQuote,
-)
-from server.services.controlled_execution.position_presence import (
-    is_economically_zero_quantity,
 )
 from server.services.market.asset_metadata import (
     resolve_asset_metadata,
