@@ -7,6 +7,12 @@ from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException
 
+from execution.manual_trade_fees import (
+    MANUAL_FEE_INPUT_RULE_ID,
+    MANUAL_FEE_INPUT_RULE_VERSION,
+    manual_fee_input_payload,
+    resolve_manual_trade_fee_breakdown,
+)
 from server.contracts.content_identity import canonical_json
 from server.contracts.idempotency import IdempotencyConflict
 from server.contracts.ledger_mutations import (
@@ -31,12 +37,6 @@ from server.models import (
 )
 from server.projections.ledger_correction_read import (
     correction_read_evidence,
-)
-from server.services.controlled_execution.manual_trade_fees import (
-    MANUAL_FEE_INPUT_RULE_ID,
-    MANUAL_FEE_INPUT_RULE_VERSION,
-    manual_fee_input_payload,
-    resolve_manual_trade_fee_breakdown,
 )
 
 
