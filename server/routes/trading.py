@@ -17,7 +17,7 @@ from server.contracts.order_state import (
     ManualOrderStateCommand,
     ManualOrderTicketCommand,
 )
-from server.services.controlled_execution.manual_order_tickets import (
+from server.services.manual_trading.manual_order_tickets import (
     ManualOrderTicketService,
 )
 from server.services.risk.trading_controls import (

@@ -13,7 +13,7 @@ from core.events import OrderEvent, OrderIntentEvent, RiskDecisionEvent
 from core.types import AssetClass, OrderSide, OrderType, Symbol
 from execution.gateway import ManualConfirmGateway
 from server.db import AppDatabase
-from server.services.controlled_execution.manual_order_tickets import (
+from server.services.manual_trading.manual_order_tickets import (
     RuntimeManualOrderTicketAdapter,
 )
 
