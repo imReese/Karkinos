@@ -5,31 +5,17 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
 
+from server.routes.manual_trading_tickets import (
+    ManualExecutionPreviewRequest,
+    ManualExecutionRecordRequest,
+    ManualTicketRequest,
+)
 from server.services.controlled_execution.broker import build_broker_connectors
 from server.services.controlled_execution.broker_gateway import BrokerGatewayService
 from server.services.controlled_execution.current_per_order_dossier_factory import (
     build_current_per_order_dossier_service,
 )
-
-
-class ManualTicketRequest(BaseModel):
-    actor: str | None = None
-
-
-class ManualExecutionPreviewRequest(BaseModel):
-    actor: str | None = None
-    fill_price: str
-    quantity: str
-    fee: str | None = None
-    tax: str | None = None
-    transfer_fee: str | None = None
-
-
-class ManualExecutionRecordRequest(ManualExecutionPreviewRequest):
-    preview_fingerprint: str
-    operator_note: str | None = None
 
 
 def create_router() -> APIRouter:
@@ -99,6 +85,7 @@ def create_router() -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+    # Backward compatibility routes for manual ticket endpoints (delegated to service)
     @r.post("/orders/{order_id}/manual-ticket")
     async def create_manual_ticket(
         order_id: str,

@@ -262,6 +262,9 @@ function installTradingFetchMock({
       }
       if (
         url.includes(
+          '/api/manual-trading/orders/ORD-CONFIRMED/manual-ticket/export',
+        ) ||
+        url.includes(
           '/api/broker-gateway/orders/ORD-CONFIRMED/manual-ticket/export',
         )
       ) {
@@ -442,6 +445,9 @@ function installTradingFetchMock({
       }
       if (
         url.includes(
+          '/api/manual-trading/orders/ORD-CONFIRMED/manual-execution/preview',
+        ) ||
+        url.includes(
           '/api/broker-gateway/orders/ORD-CONFIRMED/manual-execution/preview',
         )
       ) {
@@ -581,6 +587,9 @@ function installTradingFetchMock({
         });
       }
       if (
+        url.includes(
+          '/api/manual-trading/orders/ORD-CONFIRMED/manual-execution',
+        ) ||
         url.includes(
           '/api/broker-gateway/orders/ORD-CONFIRMED/manual-execution',
         )
@@ -1709,7 +1718,7 @@ test('exports confirmed manual ticket without broker submission controls', async
 
   await waitFor(() => {
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/broker-gateway/orders/ORD-CONFIRMED/manual-ticket/export',
+      '/api/manual-trading/orders/ORD-CONFIRMED/manual-ticket/export',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ actor: 'web' }),
@@ -1798,7 +1807,7 @@ test('previews manual execution draft without ledger or broker submission contro
 
   await waitFor(() => {
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/broker-gateway/orders/ORD-CONFIRMED/manual-execution/preview',
+      '/api/manual-trading/orders/ORD-CONFIRMED/manual-execution/preview',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({
@@ -1904,7 +1913,7 @@ test('records manual execution evidence without saving ledger or submitting brok
 
   await waitFor(() => {
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/broker-gateway/orders/ORD-CONFIRMED/manual-execution',
+      '/api/manual-trading/orders/ORD-CONFIRMED/manual-execution',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({

@@ -480,7 +480,7 @@ export function useManualTicketExportMutation() {
   return useMutation({
     mutationFn: ({ orderId }: { orderId: string }) =>
       requestJson<ManualTicketExportResponse>(
-        `/api/broker-gateway/orders/${encodeURIComponent(
+        `/api/manual-trading/orders/${encodeURIComponent(
           orderId,
         )}/manual-ticket/export`,
         {
@@ -502,7 +502,7 @@ export function useManualExecutionPreviewMutation() {
       transfer_fee,
     }: { orderId: string } & ManualExecutionPreviewRequest) =>
       requestJson<ManualExecutionPreviewResponse>(
-        `/api/broker-gateway/orders/${encodeURIComponent(
+        `/api/manual-trading/orders/${encodeURIComponent(
           orderId,
         )}/manual-execution/preview`,
         {
@@ -533,7 +533,7 @@ export function useManualExecutionRecordMutation() {
       operator_note,
     }: { orderId: string } & ManualExecutionRecordRequest) =>
       requestJson<ManualExecutionRecordResponse>(
-        `/api/broker-gateway/orders/${encodeURIComponent(
+        `/api/manual-trading/orders/${encodeURIComponent(
           orderId,
         )}/manual-execution`,
         {
