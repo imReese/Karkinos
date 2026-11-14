@@ -372,3 +372,206 @@ def test_manual_trading_service_kill_switch_blocks() -> None:
 
     with pytest.raises(ValueError, match="kill switch is enabled"):
         service.create_manual_ticket("ORD-BLOCKED")
+
+
+def test_manual_trading_service_preview_tampering_fails_closed() -> None:
+    """Verify that tampering any field (price, qty, fee, tax) invalidates the fingerprint."""
+    db = FakeDb()
+    oms = FakeOms(db)
+    controls = FakeTradingControls(enabled=False)
+    evidence = _make_passing_evidence("ORD-TAMPER")
+    db.orders["ORD-TAMPER"] = {
+        "order_id": "ORD-TAMPER",
+        "symbol": "600519",
+        "side": "buy",
+        "asset_class": "stock",
+        "quantity": 100,
+        "order_type": "limit",
+        "limit_price": 1720.25,
+        "status": "manual_ticket_created",
+        "broker_submission_enabled": False,
+        "payload": {"gateway_evidence": evidence},
+    }
+
+    service = ManualTradingService(
+        db=db,
+        oms=oms,
+        trading_controls=controls,
+        current_per_order_confirmation_provider=lambda oid: evidence[
+            "current_per_order_confirmation"
+        ],
+    )
+
+    # Legitimate preview with price 1720.25, qty 100, fee 5.00
+    preview = service.preview_manual_execution_record(
+        "ORD-TAMPER",
+        fill_price="1720.25",
+        quantity="100",
+        fee="5.00",
+        tax="0.00",
+        transfer_fee="0.20",
+    )
+    valid_fp = preview["preview_fingerprint"]
+
+    # 1. Tamper fill_price
+    with pytest.raises(ValueError, match="preview_fingerprint does not match"):
+        service.record_manual_execution_evidence(
+            "ORD-TAMPER",
+            preview_fingerprint=valid_fp,
+            fill_price="1720.00",  # tampered
+            quantity="100",
+            fee="5.00",
+            tax="0.00",
+            transfer_fee="0.20",
+        )
+
+    # 2. Tamper quantity
+    with pytest.raises(ValueError, match="preview_fingerprint does not match"):
+        service.record_manual_execution_evidence(
+            "ORD-TAMPER",
+            preview_fingerprint=valid_fp,
+            fill_price="1720.25",
+            quantity="200",  # tampered
+            fee="5.00",
+            tax="0.00",
+            transfer_fee="0.20",
+        )
+
+    # 3. Tamper fee
+    with pytest.raises(ValueError, match="preview_fingerprint does not match"):
+        service.record_manual_execution_evidence(
+            "ORD-TAMPER",
+            preview_fingerprint=valid_fp,
+            fill_price="1720.25",
+            quantity="100",
+            fee="10.00",  # tampered
+            tax="0.00",
+            transfer_fee="0.20",
+        )
+
+    # 4. Tamper transfer_fee
+    with pytest.raises(ValueError, match="preview_fingerprint does not match"):
+        service.record_manual_execution_evidence(
+            "ORD-TAMPER",
+            preview_fingerprint=valid_fp,
+            fill_price="1720.25",
+            quantity="100",
+            fee="5.00",
+            tax="0.00",
+            transfer_fee="1.00",  # tampered
+        )
+
+
+def test_manual_trading_service_order_lifecycle_guards() -> None:
+    """Verify that unconfirmed orders cannot be ticketed or recorded."""
+    db = FakeDb()
+    oms = FakeOms(db)
+    controls = FakeTradingControls(enabled=False)
+    evidence = _make_passing_evidence("ORD-UNCONFIRMED")
+    db.orders["ORD-UNCONFIRMED"] = {
+        "order_id": "ORD-UNCONFIRMED",
+        "symbol": "600519",
+        "side": "buy",
+        "asset_class": "stock",
+        "quantity": 100,
+        "order_type": "limit",
+        "limit_price": 1720.25,
+        "status": "pending_confirmation",  # unconfirmed!
+        "broker_submission_enabled": False,
+        "payload": {"gateway_evidence": evidence},
+    }
+
+    service = ManualTradingService(
+        db=db,
+        oms=oms,
+        trading_controls=controls,
+        current_per_order_confirmation_provider=lambda oid: evidence[
+            "current_per_order_confirmation"
+        ],
+    )
+
+    # Ticketing unconfirmed order fails
+    with pytest.raises(ValueError, match="must be manually_confirmed"):
+        service.preview_manual_ticket("ORD-UNCONFIRMED")
+    with pytest.raises(ValueError, match="must be manually_confirmed"):
+        service.create_manual_ticket("ORD-UNCONFIRMED")
+
+    # Execution preview before ticket creation fails
+    db.orders["ORD-UNCONFIRMED"]["status"] = "manually_confirmed"
+    with pytest.raises(ValueError, match="must be manual_ticket_created"):
+        service.preview_manual_execution_record(
+            "ORD-UNCONFIRMED",
+            fill_price="1720.25",
+            quantity="100",
+        )
+
+
+def test_manual_trading_service_concurrent_record_and_ledger_isolation() -> None:
+    """Verify concurrent record attempts and guarantee zero ledger mutation."""
+    import concurrent.futures
+
+    db = FakeDb()
+    oms = FakeOms(db)
+    controls = FakeTradingControls(enabled=False)
+    evidence = _make_passing_evidence("ORD-CONCURRENT")
+    db.orders["ORD-CONCURRENT"] = {
+        "order_id": "ORD-CONCURRENT",
+        "symbol": "600519",
+        "side": "buy",
+        "asset_class": "stock",
+        "quantity": 100,
+        "order_type": "limit",
+        "limit_price": 1720.25,
+        "status": "manual_ticket_created",
+        "broker_submission_enabled": False,
+        "payload": {"gateway_evidence": evidence},
+    }
+
+    service = ManualTradingService(
+        db=db,
+        oms=oms,
+        trading_controls=controls,
+        current_per_order_confirmation_provider=lambda oid: evidence[
+            "current_per_order_confirmation"
+        ],
+    )
+
+    preview = service.preview_manual_execution_record(
+        "ORD-CONCURRENT",
+        fill_price="1720.25",
+        quantity="100",
+        fee="5.00",
+        tax="0.00",
+        transfer_fee="0.20",
+    )
+    fp = preview["preview_fingerprint"]
+
+    def _record(idx: int) -> dict[str, Any]:
+        return service.record_manual_execution_evidence(
+            "ORD-CONCURRENT",
+            preview_fingerprint=fp,
+            fill_price="1720.25",
+            quantity="100",
+            fee="5.00",
+            tax="0.00",
+            transfer_fee="0.20",
+            actor=f"worker-{idx}",
+            operator_note=f"thread {idx}",
+        )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        results = list(executor.map(_record, range(5)))
+
+    assert len(results) == 5
+    for res in results:
+        assert res["status"] == "manual_execution_recorded"
+        assert res["does_not_mutate_production_ledger"] is True
+        assert res["does_not_mutate_oms"] is True
+        assert res["submitted_to_broker"] is False
+
+    # Verify OMS order was not mutated
+    assert db.orders["ORD-CONCURRENT"]["status"] == "manual_ticket_created"
+
+    # Verify 5 gateway audit events were recorded
+    events = [e for e in db.events if e["order_id"] == "ORD-CONCURRENT"]
+    assert len(events) == 5

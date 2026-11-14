@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from server.contracts.manual_trading import (
+from server.contracts.http.manual_trading import (
     ManualExecutionPreviewRequest,
     ManualExecutionRecordRequest,
     ManualTicketRequest,
