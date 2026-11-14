@@ -5,30 +5,16 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 
+from server.contracts.manual_trading import (
+    ManualExecutionPreviewRequest,
+    ManualExecutionRecordRequest,
+    ManualTicketRequest,
+)
 from server.services.manual_trading import (
     ManualTradingService,
     build_manual_trading_service,
 )
-
-
-class ManualTicketRequest(BaseModel):
-    actor: str | None = None
-
-
-class ManualExecutionPreviewRequest(BaseModel):
-    actor: str | None = None
-    fill_price: str
-    quantity: str
-    fee: str | None = None
-    tax: str | None = None
-    transfer_fee: str | None = None
-
-
-class ManualExecutionRecordRequest(ManualExecutionPreviewRequest):
-    preview_fingerprint: str
-    operator_note: str | None = None
 
 
 def create_router() -> APIRouter:
