@@ -8,6 +8,9 @@ from datetime import date
 from types import SimpleNamespace
 from typing import Any
 
+from domain.position_presence import (
+    is_economically_zero_quantity,
+)
 from server.dependencies import (
     AppState,
     bind_portfolio_read_request_state,
@@ -15,9 +18,6 @@ from server.dependencies import (
 )
 from server.services.account.account_board_permissions import (
     resolve_board_buy_permissions,
-)
-from server.services.controlled_execution.position_presence import (
-    is_economically_zero_quantity,
 )
 from server.services.decision.decision_contracts import (
     TRUSTED_DATA_STATUSES,

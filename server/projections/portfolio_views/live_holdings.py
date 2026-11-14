@@ -6,6 +6,9 @@ from collections import defaultdict
 from datetime import datetime
 
 from core.types import Symbol
+from domain.position_presence import (
+    is_economically_zero_quantity,
+)
 from server.models import (
     LiveHoldingGroupResponse,
     LiveHoldingItemResponse,
@@ -49,9 +52,6 @@ from server.projections.quote_status import (
 )
 from server.services.account.valuation_snapshot import (
     valuation_identity_fields,
-)
-from server.services.controlled_execution.position_presence import (
-    is_economically_zero_quantity,
 )
 from server.services.market.asset_metadata import resolve_asset_metadata
 from server.services.market.calendar import project_market_session

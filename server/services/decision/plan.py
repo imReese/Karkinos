@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from server.services.controlled_execution.manual_trade_fees import (
+from execution.manual_trade_fees import (
     resolve_manual_trade_fee_breakdown,
 )
 from server.services.decision.daily_trading_plan_constraints import (

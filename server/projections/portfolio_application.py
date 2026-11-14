@@ -7,6 +7,9 @@ from contextlib import nullcontext
 from datetime import datetime
 
 from core.types import Symbol
+from domain.position_presence import (
+    classify_position_presence,
+)
 from server.dependencies import (
     bind_portfolio_read_request_state,
     get_portfolio_read_request_state,
@@ -76,9 +79,6 @@ from server.projections.portfolio_snapshot_projection import (
 from server.services.account.account_state import build_account_state_projection
 from server.services.account.valuation_snapshot import (
     valuation_identity_fields,
-)
-from server.services.controlled_execution.position_presence import (
-    classify_position_presence,
 )
 from server.services.market.asset_metadata import resolve_asset_metadata
 from server.services.market.hours import get_shanghai_now

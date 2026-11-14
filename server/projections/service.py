@@ -13,6 +13,9 @@ from domain.portfolio_accounting import (
     moving_average_cost_after_buy,
     realized_pnl_after_sell,
 )
+from domain.position_presence import (
+    is_economically_zero_quantity,
+)
 from server.ledger.models import LedgerEntry
 from server.projections.ledger_projection_correction import (
     apply_projection_correction as _apply_projection_correction,
@@ -29,9 +32,6 @@ from server.projections.portfolio_projection_values import require_text as _requ
 from server.projections.portfolio_projection_values import trade_side as _trade_side
 from server.projections.portfolio_projection_values import (
     trade_total_fee as _trade_total_fee,
-)
-from server.services.controlled_execution.position_presence import (
-    is_economically_zero_quantity,
 )
 
 _CASH_DEPOSIT_TYPES = {"cash_deposit", "deposit"}

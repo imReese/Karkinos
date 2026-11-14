@@ -25,6 +25,9 @@ from account_truth.source_fact_lineage import (
     account_truth_scope_review_binding_fingerprint,
     project_account_truth_source_fact_lineage,
 )
+from execution.manual_trade_fees import (
+    resolve_manual_trade_fee_breakdown,
+)
 from server.contracts.reviewed_fee_schedule import (
     ReviewedFeeScheduleReadRejected,
     ReviewedFeeScheduleRejected,
@@ -47,9 +50,6 @@ from server.services.account.fees.policy import (
 )
 from server.services.account.fees.repository import (
     ReviewedFeeScheduleReviewRepository,
-)
-from server.services.controlled_execution.manual_trade_fees import (
-    resolve_manual_trade_fee_breakdown,
 )
 
 

@@ -6,6 +6,9 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from core.types import Symbol
+from domain.position_presence import (
+    is_economically_zero_quantity,
+)
 from server.models import (
     EquitySeriesPoint,
 )
@@ -44,9 +47,6 @@ from server.services.account.daily_performance import (
     build_position_daily_context,
     mark_position_daily,
     price_at_tick,
-)
-from server.services.controlled_execution.position_presence import (
-    is_economically_zero_quantity,
 )
 from server.services.market.hours import get_shanghai_now
 

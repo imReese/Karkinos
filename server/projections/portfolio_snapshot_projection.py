@@ -10,6 +10,9 @@ from math import isfinite
 from typing import Any
 
 from core.types import InstrumentType, Symbol
+from domain.position_presence import (
+    classify_position_presence,
+)
 from server.models import (
     AllocationItem,
     ClosedPositionResponse,
@@ -40,9 +43,6 @@ from server.projections.quote_status import (
     quote_valuation_status,
 )
 from server.services.account.valuation_snapshot import valuation_identity_fields
-from server.services.controlled_execution.position_presence import (
-    classify_position_presence,
-)
 from server.services.market.asset_metadata import resolve_asset_metadata
 from server.services.market.calendar import project_market_session
 from server.valuation.service import value_position

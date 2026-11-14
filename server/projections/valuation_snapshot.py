@@ -11,6 +11,9 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from data.market_data import is_fund_estimate_quote_source
+from domain.position_presence import (
+    is_economically_zero_quantity,
+)
 from server.contracts.financial_values import strip_financial_storage_mirrors
 from server.contracts.quote_ingestion import (
     quote_authority_conflict_fields,
@@ -25,9 +28,6 @@ from server.projections.quote_status import (
     quote_valuation_status,
 )
 from server.projections.service import build_portfolio_projection
-from server.services.controlled_execution.position_presence import (
-    is_economically_zero_quantity,
-)
 from server.services.market.calendar import project_market_session
 from server.services.market.hours import get_shanghai_now
 from server.valuation_snapshot_contract import validate_valuation_snapshot
