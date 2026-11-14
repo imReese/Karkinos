@@ -16,6 +16,10 @@ from server.services.controlled_execution.broker_gateway import BrokerGatewaySer
 from server.services.controlled_execution.current_per_order_dossier_factory import (
     build_current_per_order_dossier_service,
 )
+from server.services.manual_trading import (
+    ManualTradingService,
+    build_manual_trading_service,
+)
 
 
 def create_router() -> APIRouter:
@@ -85,13 +89,13 @@ def create_router() -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    # Backward compatibility routes for manual ticket endpoints (delegated to service)
+    # Backward compatibility routes for manual ticket endpoints (delegated to ManualTradingService)
     @r.post("/orders/{order_id}/manual-ticket")
     async def create_manual_ticket(
         order_id: str,
         request: ManualTicketRequest,
     ) -> dict[str, Any]:
-        service = _service()
+        service = _manual_service()
         try:
             return service.create_manual_ticket(order_id, actor=request.actor)
         except KeyError as exc:
@@ -104,7 +108,7 @@ def create_router() -> APIRouter:
         order_id: str,
         request: ManualTicketRequest,
     ) -> dict[str, Any]:
-        service = _service()
+        service = _manual_service()
         try:
             return service.dry_run_manual_ticket(order_id, actor=request.actor)
         except KeyError as exc:
@@ -117,7 +121,7 @@ def create_router() -> APIRouter:
         order_id: str,
         request: ManualTicketRequest,
     ) -> dict[str, Any]:
-        service = _service()
+        service = _manual_service()
         try:
             return service.export_manual_ticket(order_id, actor=request.actor)
         except KeyError as exc:
@@ -130,7 +134,7 @@ def create_router() -> APIRouter:
         order_id: str,
         request: ManualTicketRequest,
     ) -> dict[str, Any]:
-        service = _service()
+        service = _manual_service()
         try:
             return service.preview_manual_ticket(order_id, actor=request.actor)
         except KeyError as exc:
@@ -143,7 +147,7 @@ def create_router() -> APIRouter:
         order_id: str,
         request: ManualExecutionPreviewRequest,
     ) -> dict[str, Any]:
-        service = _service()
+        service = _manual_service()
         try:
             return service.preview_manual_execution_record(
                 order_id,
@@ -164,7 +168,7 @@ def create_router() -> APIRouter:
         order_id: str,
         request: ManualExecutionRecordRequest,
     ) -> dict[str, Any]:
-        service = _service()
+        service = _manual_service()
         try:
             return service.record_manual_execution_evidence(
                 order_id,
@@ -202,6 +206,12 @@ def _service() -> BrokerGatewayService:
             current_dossiers.resolve_current_confirmation
         ),
     )
+
+
+def _manual_service() -> ManualTradingService:
+    from server.dependencies import get_app_state
+
+    return build_manual_trading_service(get_app_state())
 
 
 __all__ = [

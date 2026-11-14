@@ -237,6 +237,7 @@ def test_manual_trading_tickets_endpoints(monkeypatch) -> None:
 def test_backward_compatibility_broker_gateway_routes(monkeypatch) -> None:
     fake_service = FakeBrokerGatewayService()
     monkeypatch.setattr(broker_gateway_module, "_service", lambda: fake_service)
+    monkeypatch.setattr(broker_gateway_module, "_manual_service", lambda: fake_service)
 
     app = FastAPI()
     app.include_router(broker_gateway_module.create_router())
@@ -287,3 +288,18 @@ def test_backward_compatibility_broker_gateway_routes(monkeypatch) -> None:
     )
     assert res.status_code == 200
     assert res.json()["status"] == "manual_execution_recorded"
+
+
+def test_build_manual_trading_service_from_app_state() -> None:
+    from types import SimpleNamespace
+
+    from server.services.manual_trading import (
+        ManualTradingService,
+        build_manual_trading_service,
+    )
+
+    state = SimpleNamespace(
+        db=object(), config=SimpleNamespace(), trading_controls=None
+    )
+    service = build_manual_trading_service(state)
+    assert isinstance(service, ManualTradingService)
