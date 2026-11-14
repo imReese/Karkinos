@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from server.contracts.memory_informed_analysis import MemoryInformedAnalysisRecord
+from server.persistence.connection import connect_sqlite
 
 
 class MemoryInformedAnalysisRepositoryMixin:
@@ -18,7 +19,7 @@ class MemoryInformedAnalysisRepositoryMixin:
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self._path, timeout=2)
+        conn = connect_sqlite(self._path, timeout=2)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=2000")

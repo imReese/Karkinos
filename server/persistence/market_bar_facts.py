@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from core.types import InstrumentType
+from server.persistence.connection import connect_sqlite
 
 
 def _instrument_type(raw_type: object) -> str:
@@ -47,7 +48,7 @@ def get_latest_market_bar_before_date(
     if not meta_path.exists():
         return None
     try:
-        with sqlite3.connect(meta_path) as conn:
+        with connect_sqlite(meta_path) as conn:
             conn.row_factory = sqlite3.Row
             bars_table = _resolve_bars_table(conn)
             row = conn.execute(
@@ -84,7 +85,7 @@ def get_market_bar_on_date(
     if not meta_path.exists():
         return None
     try:
-        with sqlite3.connect(meta_path) as conn:
+        with connect_sqlite(meta_path) as conn:
             conn.row_factory = sqlite3.Row
             bars_table = _resolve_bars_table(conn)
             row = conn.execute(

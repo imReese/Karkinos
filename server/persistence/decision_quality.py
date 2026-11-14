@@ -18,6 +18,7 @@ from server.contracts.decision_quality import (
     StoredDecisionQualityCapture,
 )
 from server.contracts.idempotency import IdempotencyConflict
+from server.persistence.connection import connect_sqlite
 from server.persistence.event_log import insert_event_sync
 
 
@@ -29,7 +30,7 @@ class DecisionQualityStore:
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self._path, timeout=2)
+        conn = connect_sqlite(self._path, timeout=2)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=2000")

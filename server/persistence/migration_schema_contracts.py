@@ -10,6 +10,7 @@ from typing import Any, Protocol
 
 from server.persistence.ai_shadow_qualification_schema import V26_SCHEMA_OBJECTS
 from server.persistence.backtest_results import V25_SCHEMA_OBJECTS
+from server.persistence.connection import connect_sqlite
 from server.persistence.financial_canonical_migrations import V18_SCHEMA_OBJECTS
 from server.persistence.financial_invariant_migrations import V17_SCHEMA_OBJECTS
 from server.persistence.research_observation_schema import V22_SCHEMA_OBJECTS
@@ -310,7 +311,7 @@ def build_v1_baseline_contract(
     *,
     baseline_checksum: str,
 ) -> dict[str, Any]:
-    with sqlite3.connect(":memory:") as expected_conn:
+    with connect_sqlite(":memory:") as expected_conn:
         initializer(expected_conn)
         contract = read_schema_contract(expected_conn)
     if schema_contract_checksum(contract) != baseline_checksum:
@@ -355,7 +356,7 @@ def build_schema_contract_through_version(
     migrations: Sequence[MigrationSpec],
     baseline_checksum: str,
 ) -> tuple[dict[str, Any], dict[tuple[str, str], str]]:
-    with sqlite3.connect(":memory:") as expected_conn:
+    with connect_sqlite(":memory:") as expected_conn:
         initializer(expected_conn)
         baseline = read_schema_contract(expected_conn)
         if schema_contract_checksum(baseline) != baseline_checksum:

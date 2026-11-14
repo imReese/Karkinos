@@ -8,7 +8,7 @@ import sqlite3
 from typing import Any
 
 from server.persistence.backtest_results import backtest_invalidation_for_result
-from server.persistence.connection import SQLiteRepository
+from server.persistence.connection import SQLiteRepository, connect_sqlite
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class StrategyPromotionRepository(SQLiteRepository):
             sort_keys=True,
         )
         payload_json = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True)
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             existing = conn.execute(
                 """
@@ -91,7 +91,7 @@ class StrategyPromotionRepository(SQLiteRepository):
         strategy_id: str,
     ) -> dict[str, Any] | None:
         """Read one strategy promotion state."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -110,7 +110,7 @@ class StrategyPromotionRepository(SQLiteRepository):
         """Read the candidate and human approval that back one reserved strategy."""
 
         try:
-            with sqlite3.connect(self._path) as conn:
+            with connect_sqlite(self._path) as conn:
                 conn.row_factory = sqlite3.Row
                 row = conn.execute(
                     """
@@ -208,7 +208,7 @@ class StrategyPromotionRepository(SQLiteRepository):
         offset: int = 0,
     ) -> list[dict[str, Any]]:
         """List strategy promotion states."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
@@ -234,7 +234,7 @@ class StrategyPromotionRepository(SQLiteRepository):
         """Persist one strategy promotion audit event."""
         now = self._now().isoformat()
         payload_json = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True)
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             cur = conn.execute(
                 """
@@ -265,7 +265,7 @@ class StrategyPromotionRepository(SQLiteRepository):
         strategy_id: str,
     ) -> list[dict[str, Any]]:
         """List strategy promotion audit events for one strategy."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """

@@ -6,6 +6,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
+
 
 class SignedBrokerAdapterReviewReader:
     """Read persisted manifest and review rows without schema side effects."""
@@ -67,7 +69,7 @@ class SignedBrokerAdapterReviewReader:
         return manifests, reviews
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(
+        connection = connect_sqlite(
             f"{self._path.resolve().as_uri()}?mode=ro",
             uri=True,
         )

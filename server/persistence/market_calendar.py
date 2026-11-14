@@ -8,7 +8,7 @@ from datetime import timezone
 from typing import Any
 
 from server.contracts.market_calendar import MarketCalendarVerificationCommand
-from server.persistence.connection import SQLiteRepository
+from server.persistence.connection import SQLiteRepository, connect_sqlite
 
 
 class MarketCalendarRepository(SQLiteRepository):
@@ -18,7 +18,7 @@ class MarketCalendarRepository(SQLiteRepository):
         """Ingest provider evidence without accepting self-asserted verification."""
 
         payload = _snapshot_payload(snapshot)
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("BEGIN IMMEDIATE")
             now = self._now(timezone.utc).isoformat()
@@ -32,7 +32,7 @@ class MarketCalendarRepository(SQLiteRepository):
             return row
 
     def get_snapshot(self, *, exchange: str, year: int) -> dict[str, Any] | None:
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = _find_snapshot(conn, exchange=exchange, year=year)
             return dict(row) if row else None
@@ -43,7 +43,7 @@ class MarketCalendarRepository(SQLiteRepository):
     ) -> dict[str, Any] | None:
         """Apply a review only when the exact provider evidence is still current."""
 
-        with sqlite3.connect(self._path, timeout=2) as conn:
+        with connect_sqlite(self._path, timeout=2) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("BEGIN IMMEDIATE")
             now = self._now(timezone.utc).isoformat()

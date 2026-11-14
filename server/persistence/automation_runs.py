@@ -301,7 +301,7 @@ class AutomationRunRepository(SQLiteRepository):
 
     def list_observation_automation_policies(self) -> list[dict[str, Any]]:
         """Read explicit opt-ins without truncating them to a UI history page."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 "SELECT policy_id, payload_json FROM automation_policies WHERE policy_id LIKE ? "
@@ -409,7 +409,7 @@ class AutomationRunRepository(SQLiteRepository):
 
     def get_automation_policy_sync(self, policy_id: str) -> dict[str, Any] | None:
         """Read one persisted automation policy by ID."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -441,7 +441,7 @@ class AutomationRunRepository(SQLiteRepository):
         """Persist an automation policy snapshot."""
         now = self._now().isoformat()
         payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             existing = conn.execute(
                 """
@@ -474,7 +474,7 @@ class AutomationRunRepository(SQLiteRepository):
     def upsert_automation_run_sync(self, run: dict[str, Any]) -> dict[str, Any]:
         """Persist or update an automation run audit record."""
         now = self._now().isoformat()
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = upsert_automation_run_in_transaction(conn, run, now=now)
             conn.commit()
@@ -482,7 +482,7 @@ class AutomationRunRepository(SQLiteRepository):
 
     def get_automation_run_sync(self, run_id: str) -> dict[str, Any] | None:
         """Read one automation run audit record."""
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM automation_runs WHERE run_id = ?",
@@ -574,7 +574,7 @@ class AutomationRunRepository(SQLiteRepository):
             raise ValueError("automation run claim identity is incomplete")
         payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         now = self._now().isoformat()
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 """
@@ -632,7 +632,7 @@ class AutomationRunRepository(SQLiteRepository):
             params.append(run_date)
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         params.extend([int(limit), int(offset)])
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 f"""
@@ -657,7 +657,7 @@ class AutomationRunRepository(SQLiteRepository):
         evidence-window consumers must not silently turn an old, valid trial
         into a truncated one when the installation passes a UI page limit.
         """
-        with sqlite3.connect(self._path) as conn:
+        with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """

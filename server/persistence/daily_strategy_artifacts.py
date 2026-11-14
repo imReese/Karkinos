@@ -9,6 +9,7 @@ from typing import Any
 
 from server.contracts.content_identity import canonical_json
 from server.contracts.daily_strategy_artifacts import DailyStrategyArtifactRejected
+from server.persistence.connection import connect_sqlite
 from server.persistence.daily_strategy_backups import DailyStrategyBackupStore
 from server.projections.daily_strategy_artifacts import selection_from_record
 
@@ -27,7 +28,7 @@ class DailyStrategyArtifactRepository:
 
     def init(self) -> None:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self._db_path) as conn:
+        with connect_sqlite(self._db_path) as conn:
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS ai_shadow_research_daily_selections (
                     selection_id TEXT PRIMARY KEY,
@@ -92,7 +93,7 @@ class DailyStrategyArtifactRepository:
     ) -> dict[str, Any]:
         """Atomically persist or idempotently replay one selection/receipt pair."""
 
-        with sqlite3.connect(self._db_path, timeout=30) as conn:
+        with connect_sqlite(self._db_path, timeout=30) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("BEGIN IMMEDIATE")
             existing_selection = conn.execute(
@@ -378,7 +379,7 @@ class DailyStrategyArtifactRepository:
     def _connect_readonly(self) -> sqlite3.Connection:
         if not self._db_path.exists():
             raise sqlite3.OperationalError("daily artifact store is not initialized")
-        conn = sqlite3.connect(
+        conn = connect_sqlite(
             f"file:{self._db_path.resolve()}?mode=ro", uri=True, timeout=30
         )
         conn.row_factory = sqlite3.Row

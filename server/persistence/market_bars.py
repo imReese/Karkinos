@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from data.market_daily_receipt import stock_receipt_uses_provider_units
+from server.persistence.connection import connect_sqlite
 
 
 def read_market_bars(
@@ -25,7 +26,7 @@ def read_market_bars(
         return []
 
     uri = f"{db_path.resolve().as_uri()}?mode=ro"
-    with sqlite3.connect(uri, uri=True, timeout=1.0) as connection:
+    with connect_sqlite(uri, uri_attachments=True, timeout=1.0) as connection:
         if not connection.execute(
             "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') AND name = 'market_bars'"
         ).fetchone():

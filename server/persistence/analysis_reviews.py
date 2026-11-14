@@ -11,6 +11,7 @@ from typing import Any, Iterator
 from server.ai_runtime.analysis_review_schema import ANALYSIS_REVIEW_SCHEMA
 from server.ai_runtime.contracts import JsonObject, canonical_json, content_fingerprint
 from server.ai_runtime.store import IdempotencyConflict
+from server.persistence.connection import connect_sqlite
 
 
 class AnalysisReviewPersistenceMixin:
@@ -32,7 +33,7 @@ class AnalysisReviewPersistenceMixin:
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self._path, timeout=2)
+        conn = connect_sqlite(self._path, timeout=2)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=2000")

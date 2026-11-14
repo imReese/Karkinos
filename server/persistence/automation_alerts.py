@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from server.persistence.connection import connect_sqlite
+
 
 class AutomationAlertRepository:
     """Own automation-alert persistence without alert-generation behavior."""
@@ -37,7 +39,7 @@ class AutomationAlertRepository:
     ) -> dict[str, Any]:
         now = self._utc_now()
         payload_json = json.dumps(payload or {}, ensure_ascii=False, sort_keys=True)
-        with sqlite3.connect(self._database_path) as conn:
+        with connect_sqlite(self._database_path) as conn:
             conn.row_factory = sqlite3.Row
             existing = conn.execute(
                 """
@@ -106,7 +108,7 @@ class AutomationAlertRepository:
             params.append(status)
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         params.extend([int(limit), int(offset)])
-        with sqlite3.connect(self._database_path) as conn:
+        with connect_sqlite(self._database_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 f"""
@@ -134,7 +136,7 @@ class AutomationAlertRepository:
         actor: str | None = None,
     ) -> dict[str, Any]:
         now = self._local_now()
-        with sqlite3.connect(self._database_path) as conn:
+        with connect_sqlite(self._database_path) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute(
                 """

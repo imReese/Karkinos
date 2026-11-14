@@ -17,6 +17,7 @@ from data.market_daily_store import (
     verify_market_daily_receipt_on_connection,
 )
 from data.meta_store_connection import connect_meta_sqlite
+from server.persistence.connection import connect_sqlite
 
 
 class CandidateOutcomeStoreUnavailable(Exception):
@@ -42,9 +43,7 @@ def read_research_candidate_payloads(
 ) -> tuple[str, str] | None:
     """Read the exact candidate comparison and backtest payload as stored."""
     try:
-        with closing(
-            sqlite3.connect(app_path.resolve().as_uri() + "?mode=ro", uri=True)
-        ) as conn:
+        with closing(connect_sqlite(app_path, readonly=True)) as conn:
             row = conn.execute(
                 """SELECT c.comparison_json, r.metrics_json
                    FROM ai_shadow_research_candidates AS c

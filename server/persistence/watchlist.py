@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from core.types import InstrumentType
+from server.persistence.connection import connect_sqlite
 
 
 class WatchlistRepository:
@@ -60,7 +61,7 @@ class WatchlistRepository:
         else:
             persisted_identity = canonical_type.value
         now = datetime.now().isoformat()
-        with sqlite3.connect(self._database_path) as conn:
+        with connect_sqlite(self._database_path) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute(
                 """
@@ -95,7 +96,7 @@ class WatchlistRepository:
             return _public_watchlist_row(row) if row else None
 
     def list_assets(self) -> list[dict[str, Any]]:
-        with sqlite3.connect(self._database_path) as conn:
+        with connect_sqlite(self._database_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute("""
                 SELECT *
@@ -108,7 +109,7 @@ class WatchlistRepository:
         clean_symbol = str(symbol).strip()
         if not clean_symbol:
             return False
-        with sqlite3.connect(self._database_path) as conn:
+        with connect_sqlite(self._database_path) as conn:
             cursor = conn.execute(
                 "DELETE FROM watchlist_assets WHERE lower(symbol) = lower(?)",
                 (clean_symbol,),

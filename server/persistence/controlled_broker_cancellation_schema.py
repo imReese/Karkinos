@@ -5,6 +5,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from server.persistence.connection import connect_sqlite
+
 CONTROLLED_BROKER_CANCELLATION_COMMAND_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS controlled_broker_cancellation_commands (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,7 +84,7 @@ def ensure_controlled_broker_cancellation_schema(database_path: str | Path) -> N
 
     path = Path(database_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(path) as connection:
+    with connect_sqlite(path) as connection:
         connection.execute("PRAGMA foreign_keys=ON")
         connection.executescript(CONTROLLED_BROKER_CANCELLATION_COMMAND_TABLE_SQL)
         connection.executescript(CONTROLLED_BROKER_CANCELLATION_RECOVERY_TABLE_SQL)
@@ -98,7 +100,7 @@ def controlled_broker_cancellation_table_exists(
     path = Path(database_path)
     if not path.exists():
         return False
-    with sqlite3.connect(path) as connection:
+    with connect_sqlite(path) as connection:
         row = connection.execute(
             """
             SELECT 1 FROM sqlite_master

@@ -12,6 +12,7 @@ from server.ai_runtime.contracts import JsonObject, canonical_json, content_fing
 from server.ai_runtime.evidence import EvidenceIdentityMismatch
 from server.ai_runtime.store import IdempotencyConflict
 from server.ai_runtime.task_schema import TASK_SCHEMA
+from server.persistence.connection import connect_sqlite
 
 
 class ResearchTaskPersistenceMixin:
@@ -45,7 +46,7 @@ class ResearchTaskPersistenceMixin:
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self._path, timeout=2)
+        conn = connect_sqlite(self._path, timeout=2)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=2000")

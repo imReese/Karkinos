@@ -9,6 +9,7 @@ from typing import Any, Iterator
 
 from server.ai_runtime.contracts import canonical_json, content_fingerprint
 from server.ai_runtime.store import IdempotencyConflict
+from server.persistence.connection import connect_sqlite
 
 TASK_ANALYSIS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS ai_research_task_analyses (
@@ -44,7 +45,7 @@ class ResearchTaskAnalysisPersistenceMixin:
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self._path, timeout=2)
+        conn = connect_sqlite(self._path, timeout=2)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=2000")

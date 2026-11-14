@@ -7,6 +7,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+from server.persistence.connection import connect_sqlite
+
 from .external_research_schema import EXTERNAL_BACKTEST_REPORT_SCHEMA
 
 
@@ -19,7 +21,7 @@ class ExternalBacktestReportRepository:
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self._path, timeout=2)
+        conn = connect_sqlite(self._path, timeout=2)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=2000")

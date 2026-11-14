@@ -12,7 +12,7 @@ from typing import Any
 
 from core.types import InstrumentKey, InstrumentType
 from data.market_data import is_fund_estimate_quote_source
-from server.persistence.connection import run_immediate_transaction
+from server.persistence.connection import connect_sqlite, run_immediate_transaction
 from server.persistence.market_identity_schema import (
     build_market_identity_schema_migration,
 )
@@ -35,8 +35,7 @@ def migrate_legacy_daily_closes_to_v2(
         if meta_database_path is None
         else Path(meta_database_path)
     )
-    uri = f"{app_path.resolve().as_uri()}?mode=ro" if dry_run else str(app_path)
-    conn = sqlite3.connect(uri, uri=dry_run, timeout=2.0)
+    conn = connect_sqlite(app_path, readonly=dry_run, timeout=2.0)
     conn.row_factory = sqlite3.Row
     try:
         if dry_run:
@@ -321,8 +320,7 @@ def _independent_close_evidence(
                     continue
 
     if meta_path.is_file():
-        uri = f"{meta_path.resolve().as_uri()}?mode=ro"
-        with sqlite3.connect(uri, uri=True, timeout=1.0) as meta:
+        with connect_sqlite(meta_path, readonly=True, timeout=1.0) as meta:
             meta.row_factory = sqlite3.Row
             if _table_exists(meta, "market_bars"):
                 for symbol, instrument_type, trade_date in sorted(requested):

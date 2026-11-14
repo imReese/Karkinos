@@ -13,6 +13,7 @@ from data.market_daily_store import (
     verify_market_daily_receipt_on_connection,
 )
 from server.contracts.quote_ingestion import QuoteIngestionCommand
+from server.persistence.connection import connect_sqlite
 from server.persistence.database_normalization import stable_json_fingerprint
 from server.persistence.valuation_publication_recovery import (
     attach_recovery_market_database,
@@ -32,7 +33,7 @@ def preview_unpublished_quote_recovery(
 ) -> dict[str, Any]:
     """Inspect exact failed-refresh proofs without changing any incident or fact."""
     path = Path(database_path).resolve(strict=True)
-    conn = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=2)
+    conn = connect_sqlite(path, readonly=True)
     conn.row_factory = sqlite3.Row
     try:
         conn.execute("PRAGMA query_only=ON")
@@ -197,7 +198,9 @@ def preview_daily_close_recovery(
     conn = None
     try:
         app_path = Path(database_path).resolve(strict=True)
-        conn = sqlite3.connect(f"{app_path.as_uri()}?mode=ro", uri=True, timeout=2)
+        conn = connect_sqlite(
+            f"{app_path.as_uri()}?mode=ro", uri_attachments=True, timeout=2
+        )
         conn.row_factory = sqlite3.Row
         if market_database_path is not None:
             meta_path = Path(market_database_path).resolve(strict=True)

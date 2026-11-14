@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from server.contracts.jobs import job_time
+from server.persistence.connection import connect_sqlite
 from server.persistence.jobs import SQLiteJobStore
 from server.persistence.valuation_publication_recovery import unresolved_publications
 from server.projections.system_readiness import build_system_readiness
@@ -27,9 +28,7 @@ from server.state_preflight import preflight_persistent_state
 def _published(path: Path):
     if not path.exists():
         return None
-    with closing(
-        sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
-    ) as conn:
+    with closing(connect_sqlite(path, readonly=True)) as conn:
         conn.row_factory = sqlite3.Row
         tables = {
             row[0]
@@ -46,9 +45,7 @@ def _published(path: Path):
 
 
 def _ledger_identity(path: Path):
-    with closing(
-        sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
-    ) as conn:
+    with closing(connect_sqlite(path, readonly=True)) as conn:
         conn.row_factory = sqlite3.Row
         return ledger_identity_from_rows(
             [
@@ -59,9 +56,7 @@ def _ledger_identity(path: Path):
 
 
 def _incidents(path: Path):
-    with closing(
-        sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
-    ) as conn:
+    with closing(connect_sqlite(path, readonly=True)) as conn:
         return unresolved_publications(conn)
 
 
@@ -150,7 +145,7 @@ def _replay(app_factory):
 
     with (
         TestClient(app_factory()) as client,
-        closing(sqlite3.connect(path)) as observer,
+        closing(connect_sqlite(path)) as observer,
     ):
         started_publication = _published(path)
         read_version = observer.execute("PRAGMA data_version").fetchone()[0]

@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
+
 V25_BACKTEST_INVALIDATIONS = (
     """CREATE TABLE backtest_result_invalidations (
         result_id INTEGER PRIMARY KEY REFERENCES backtest_results(id),
@@ -177,7 +179,7 @@ class BacktestResultsRepository:
         metrics_json: str = "{}",
         cost_summary_json: str = "{}",
     ) -> int:
-        with sqlite3.connect(self._database_path) as conn:
+        with connect_sqlite(self._database_path) as conn:
             result_id = insert_backtest_result(
                 conn,
                 created_at=datetime.now().isoformat(),
@@ -199,7 +201,7 @@ class BacktestResultsRepository:
             return result_id
 
     async def list_results(self) -> list[dict[str, Any]]:
-        with sqlite3.connect(self._database_path) as conn:
+        with connect_sqlite(self._database_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute("""SELECT id, created_at, config_json, initial_cash,
                           final_equity, total_return, sharpe, max_drawdown,
@@ -208,7 +210,7 @@ class BacktestResultsRepository:
             return [with_backtest_invalidation(conn, dict(row)) for row in rows]
 
     async def get_result(self, result_id: int) -> dict[str, Any] | None:
-        with sqlite3.connect(self._database_path) as conn:
+        with connect_sqlite(self._database_path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM backtest_results WHERE id = ?", (result_id,)

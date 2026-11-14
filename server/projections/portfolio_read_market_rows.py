@@ -11,6 +11,7 @@ from typing import Any, Iterator
 from zoneinfo import ZoneInfo
 
 from core.types import InstrumentKey
+from server.persistence.connection import connect_sqlite
 from server.projections.portfolio_read_snapshot import PortfolioReadSnapshotRejected
 
 _MATRIX_SYMBOL_BATCH_SIZE = 400
@@ -171,7 +172,7 @@ def read_only_connection(path: Path) -> Iterator[sqlite3.Connection]:
     if not path.is_file():
         raise OSError(f"database does not exist: {path}")
     uri = f"{path.resolve().as_uri()}?mode=ro"
-    connection = sqlite3.connect(uri, uri=True, timeout=1.0)
+    connection = connect_sqlite(uri, uri_attachments=True, timeout=1.0)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA query_only = ON")
     connection.execute("BEGIN")

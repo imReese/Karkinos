@@ -7,6 +7,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Callable
 
+from server.persistence.connection import connect_sqlite
+
 
 class ControlledBrokerRejectionReviewAlreadyRecorded(RuntimeError):
     """One submit intent already owns a different immutable review."""
@@ -33,7 +35,7 @@ class ControlledBrokerRejectionReviewRepository:
     ) -> tuple[dict[str, Any], bool]:
         """Record one exact review after revalidating its domain draft in-UoW."""
 
-        with sqlite3.connect(self._path, timeout=2) as connection:
+        with connect_sqlite(self._path, timeout=2) as connection:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA busy_timeout=2000")
             connection.execute("PRAGMA foreign_keys=ON")
@@ -111,7 +113,7 @@ class ControlledBrokerRejectionReviewRepository:
 
     def list_reviews(self, *, limit: int = 500) -> list[dict[str, Any]]:
         bounded_limit = max(1, min(int(limit), 500))
-        with sqlite3.connect(self._path, timeout=2) as connection:
+        with connect_sqlite(self._path, timeout=2) as connection:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA busy_timeout=2000")
             rows = connection.execute(

@@ -6,6 +6,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
+
 
 class BrokerAdapterEvidenceReadError(RuntimeError):
     """Persisted broker adapter evidence could not be read safely."""
@@ -48,7 +50,7 @@ class BrokerAdapterEvidenceReader:
         return [dict(row) for row in rows]
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(
+        connection = connect_sqlite(
             f"{self._path.resolve().as_uri()}?mode=ro",
             uri=True,
         )

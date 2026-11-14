@@ -14,6 +14,7 @@ from server.contracts.reviewed_fee_schedule import (
     REVIEWED_FEE_SCHEDULE_REVIEW_SCHEMA_VERSION,
     ReviewedFeeScheduleReadRejected,
 )
+from server.persistence.connection import connect_sqlite
 
 _REVIEW_COLUMNS = (
     "review_id",
@@ -69,7 +70,7 @@ class ReviewedFeeScheduleReviewStore:
         review_fingerprint: str,
     ) -> tuple[dict[str, Any], bool]:
         self._ensure_schema()
-        with sqlite3.connect(self._path) as connection:
+        with connect_sqlite(self._path) as connection:
             connection.row_factory = sqlite3.Row
             connection.execute("BEGIN IMMEDIATE")
             latest = connection.execute(
@@ -127,7 +128,7 @@ class ReviewedFeeScheduleReviewStore:
             return
         try:
             uri = f"{self._path.resolve().as_uri()}?mode=ro"
-            with sqlite3.connect(uri, uri=True) as connection:
+            with connect_sqlite(uri, uri_attachments=True) as connection:
                 connection.row_factory = sqlite3.Row
                 connection.execute("PRAGMA query_only = ON")
                 row = connection.execute(
@@ -157,7 +158,7 @@ class ReviewedFeeScheduleReviewStore:
 
     def _ensure_schema(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self._path) as connection:
+        with connect_sqlite(self._path) as connection:
             connection.execute("""
                 CREATE TABLE IF NOT EXISTS reviewed_fee_schedule_reviews (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,

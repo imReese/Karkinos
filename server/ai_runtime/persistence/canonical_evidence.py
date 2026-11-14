@@ -8,6 +8,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
+
 CANONICAL_EVIDENCE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS ai_canonical_evidence (
     reference_id TEXT PRIMARY KEY,
@@ -45,7 +47,7 @@ class CanonicalEvidenceSqliteRepository:
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self._path, timeout=2)
+        conn = connect_sqlite(self._path, timeout=2)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout=2000")
         try:

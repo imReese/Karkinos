@@ -6,6 +6,7 @@ import sqlite3
 from pathlib import Path
 
 from server.db import AppDatabase
+from server.persistence.connection import connect_sqlite
 from server.persistence.initializer import initialize_market_metadata_database
 from server.runtime_paths import resolve_data_dir
 
@@ -13,7 +14,7 @@ from server.runtime_paths import resolve_data_dir
 def _require_sqlite_integrity(path: Path) -> None:
     if path.is_symlink() or not path.is_file():
         raise RuntimeError("state_preflight_database_missing")
-    with sqlite3.connect(path) as connection:
+    with connect_sqlite(path) as connection:
         result = connection.execute("PRAGMA quick_check").fetchall()
     if result != [("ok",)]:
         raise RuntimeError("state_preflight_integrity_failed")

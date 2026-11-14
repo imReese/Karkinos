@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
 from server.persistence.valuation_publication_recovery import (
     affected_publications,
     unresolved_publications,
@@ -71,7 +72,7 @@ def build_system_readiness(
         if database_path is None:
             raise ValueError("database_unavailable")
         uri = Path(database_path).resolve().as_uri() + "?mode=ro"
-        with closing(sqlite3.connect(uri, uri=True, timeout=0.1)) as conn:
+        with closing(connect_sqlite(uri, uri_attachments=True, timeout=0.1)) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA query_only=ON")
             conn.execute("BEGIN")

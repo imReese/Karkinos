@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
 from server.persistence.event_log import insert_event_sync
 
 
@@ -28,7 +29,7 @@ class ResearchNotesRepository:
         event_date: str | None = None,
     ) -> int:
         now = datetime.now().isoformat()
-        with sqlite3.connect(self._database_path) as conn:
+        with connect_sqlite(self._database_path) as conn:
             cursor = conn.execute(
                 """INSERT INTO market_research_notes
                    (symbol, asset_class, entry_kind, title, content, priority, event_date, created_at, updated_at)
@@ -148,7 +149,7 @@ class ResearchNotesRepository:
         query += " ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
 
-        with sqlite3.connect(self._database_path) as conn:
+        with connect_sqlite(self._database_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(query, tuple(params)).fetchall()
             return [dict(row) for row in rows]

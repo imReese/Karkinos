@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
 from server.persistence.event_log import insert_event_sync
 from server.projections.broker_connector_soak import (
     BROKER_CONNECTOR_SOAK_EVENT_ENTITY_TYPE,
@@ -106,7 +107,7 @@ def record_sequenced_soak_observation(
     observed_at: datetime,
     advance_state: SourceSequenceStateWriter,
 ) -> tuple[dict[str, Any], bool]:
-    with sqlite3.connect(db_path, timeout=2) as conn:
+    with connect_sqlite(db_path, timeout=2) as conn:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA busy_timeout = 2000")

@@ -9,6 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from server.persistence.connection import connect_sqlite
+
 _MAX_METADATA_BATCH_READ = 40
 
 
@@ -38,7 +40,7 @@ class InstrumentMetadataRepository:
             return None
         now = datetime.now().isoformat()
         fetched_at_value = fetched_at or now
-        with sqlite3.connect(self._database_path) as conn:
+        with connect_sqlite(self._database_path) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute(
                 """
@@ -122,7 +124,7 @@ class InstrumentMetadataRepository:
         if not normalized:
             return 0
 
-        with sqlite3.connect(self._database_path) as conn:
+        with connect_sqlite(self._database_path) as conn:
             conn.executemany(
                 """
                 INSERT INTO instrument_metadata (
@@ -149,7 +151,7 @@ class InstrumentMetadataRepository:
     def get_metadata(
         self, symbol: str, asset_type: str | None = None
     ) -> dict[str, Any] | None:
-        with sqlite3.connect(self._database_path) as conn:
+        with connect_sqlite(self._database_path) as conn:
             conn.row_factory = sqlite3.Row
             if asset_type:
                 row = conn.execute(
@@ -192,7 +194,7 @@ class InstrumentMetadataRepository:
             raise ValueError("instrument_metadata_batch_read_too_large")
         placeholders = ",".join("?" for _ in normalized_symbols)
         uri = f"{self._database_path.resolve().as_uri()}?mode=ro"
-        with sqlite3.connect(uri, uri=True, timeout=1.0) as conn:
+        with connect_sqlite(uri, uri_attachments=True, timeout=1.0) as conn:
             conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA query_only = ON")
             rows = conn.execute(
@@ -207,7 +209,7 @@ class InstrumentMetadataRepository:
             return [dict(row) for row in rows]
 
     def list_metadata(self) -> list[dict[str, Any]]:
-        with sqlite3.connect(self._database_path) as conn:
+        with connect_sqlite(self._database_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute("""
                 SELECT *

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import server.ai_runtime.persistence.ai_audit as ai_audit_persistence
+from server.persistence.connection import connect_sqlite
 
 CONTEXT_CAPTURE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS ai_context_capture_runs (
@@ -38,7 +39,7 @@ class ContextCaptureSqliteRepository:
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self._path, timeout=2)
+        conn = connect_sqlite(self._path, timeout=2)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout=2000")
         try:
@@ -154,7 +155,7 @@ class ContextCaptureSqliteRepository:
         """Atomically persist one already-validated guarded capture."""
 
         write_guard()
-        conn = sqlite3.connect(self._path, timeout=2)
+        conn = connect_sqlite(self._path, timeout=2)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=2000")

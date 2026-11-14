@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from core.types import InstrumentKey, InstrumentType
+from server.persistence.connection import connect_sqlite
 
 _MAX_IDENTITIES_PER_QUERY = 400
 
@@ -201,7 +202,7 @@ def _read_chunk(
     if not app_database_path.is_file():
         return []
     uri = _read_only_uri(app_database_path)
-    with sqlite3.connect(uri, uri=True, timeout=1.0) as connection:
+    with connect_sqlite(uri, uri_attachments=True, timeout=1.0) as connection:
         bars_table: str | None = None
         if meta_database_path.is_file():
             connection.execute(

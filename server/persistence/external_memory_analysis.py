@@ -18,6 +18,7 @@ from server.contracts.external_memory_analysis import (
     HumanExternalMemoryAnalysisRequest,
 )
 from server.contracts.idempotency import IdempotencyConflict
+from server.persistence.connection import connect_sqlite
 
 EXTERNAL_MEMORY_ANALYSIS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS ai_external_memory_informed_analyses (
@@ -78,7 +79,7 @@ class ExternalMemoryAnalysisStore:
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self._path, timeout=2)
+        conn = connect_sqlite(self._path, timeout=2)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
         conn.execute("PRAGMA busy_timeout=2000")
