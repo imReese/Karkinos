@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import random
 import sqlite3
+import time
 from collections.abc import Callable
+from contextlib import contextmanager
 from datetime import datetime, tzinfo
+from functools import wraps
 from pathlib import Path
 from typing import Any, Protocol
 
-SQLITE_BUSY_TIMEOUT_MS = 2_000
+SQLITE_BUSY_TIMEOUT_MS = 5_000
 
 
 class DateTimeNow(Protocol):
@@ -24,7 +28,7 @@ def connect_sqlite(
     *,
     readonly: bool = False,
     uri_attachments: bool = False,
-    timeout: float = 2,
+    timeout: float = 5.0,
     factory: type[sqlite3.Connection] = sqlite3.Connection,
     foreign_keys: bool = True,
 ) -> sqlite3.Connection:
@@ -109,22 +113,71 @@ def assert_foreign_key_integrity(conn: sqlite3.Connection) -> None:
         raise RuntimeError("sqlite_foreign_key_check_failed: " + details)
 
 
-def run_immediate_transaction(
-    conn: sqlite3.Connection,
-    operation,
-):
-    """Run one caller-supplied operation in its own immediate transaction."""
+def retry_on_locked(
+    max_retries: int = 5,
+    initial_delay_sec: float = 0.05,
+    max_delay_sec: float = 1.0,
+    backoff_factor: float = 2.0,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Retry a transaction-level operation if SQLite raises database is locked/busy."""
+
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            delay = initial_delay_sec
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except sqlite3.OperationalError as exc:
+                    err_msg = str(exc).lower()
+                    if (
+                        "database is locked" in err_msg
+                        or "database table is locked" in err_msg
+                    ) and attempt < max_retries - 1:
+                        jittered_delay = delay * random.uniform(0.5, 1.5)
+                        time.sleep(min(jittered_delay, max_delay_sec))
+                        delay = min(delay * backoff_factor, max_delay_sec)
+                        continue
+                    raise
+            return None
+
+        return wrapper
+
+    return decorator
+
+
+@contextmanager
+def immediate_transaction(conn: sqlite3.Connection):
+    """Context manager executing write operations inside BEGIN IMMEDIATE.
+
+    Acquires reserved write lock immediately, preventing mid-transaction deadlocks.
+    """
 
     if conn.in_transaction:
-        raise RuntimeError("schema operation requires its own write transaction")
+        raise RuntimeError("write operation requires its own immediate transaction")
     conn.execute("BEGIN IMMEDIATE")
     try:
-        result = operation()
+        yield conn
         conn.commit()
-        return result
     except Exception:
         conn.rollback()
         raise
+
+
+def run_immediate_transaction(
+    conn: sqlite3.Connection,
+    operation: Callable[[], Any],
+    *,
+    retries: int = 5,
+) -> Any:
+    """Run one caller-supplied operation in its own immediate transaction with retries."""
+
+    @retry_on_locked(max_retries=retries)
+    def _execute() -> Any:
+        with immediate_transaction(conn):
+            return operation()
+
+    return _execute()
 
 
 class SQLiteRepository:

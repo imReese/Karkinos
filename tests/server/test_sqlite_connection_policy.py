@@ -12,6 +12,9 @@ from server.persistence.connection import (
     assert_foreign_key_integrity,
     assert_sqlite_write_baseline,
     connect_sqlite,
+    immediate_transaction,
+    retry_on_locked,
+    run_immediate_transaction,
     sqlite_runtime_profile,
 )
 
@@ -100,3 +103,53 @@ def test_foreign_key_integrity_accepts_valid_rows(tmp_path):
         conn.execute("INSERT INTO parent(id) VALUES (1)")
         conn.execute("INSERT INTO child(parent_id) VALUES (1)")
         assert_foreign_key_integrity(conn)
+
+
+def test_immediate_transaction_commits_and_rolls_back(tmp_path):
+    path = tmp_path / "app.db"
+    with closing(connect_sqlite(path)) as conn:
+        conn.execute("CREATE TABLE accounts (id INTEGER PRIMARY KEY, balance REAL)")
+
+        with immediate_transaction(conn):
+            conn.execute("INSERT INTO accounts VALUES (1, 100.0)")
+
+        # Verify committed
+        row = conn.execute("SELECT balance FROM accounts WHERE id = 1").fetchone()
+        assert row[0] == 100.0
+
+        # Verify rollback on exception
+        with pytest.raises(ValueError, match="fail_test"):
+            with immediate_transaction(conn):
+                conn.execute("INSERT INTO accounts VALUES (2, 200.0)")
+                raise ValueError("fail_test")
+
+        assert conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0] == 1
+
+
+def test_retry_on_locked_retries_transient_lock_and_succeeds():
+    attempts = 0
+
+    @retry_on_locked(max_retries=3, initial_delay_sec=0.01)
+    def flaky_operation():
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise sqlite3.OperationalError("database is locked")
+        return "success"
+
+    assert flaky_operation() == "success"
+    assert attempts == 3
+
+
+def test_retry_on_locked_fails_when_exhausted():
+    attempts = 0
+
+    @retry_on_locked(max_retries=2, initial_delay_sec=0.01)
+    def always_locked():
+        nonlocal attempts
+        attempts += 1
+        raise sqlite3.OperationalError("database is locked")
+
+    with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+        always_locked()
+    assert attempts == 2
