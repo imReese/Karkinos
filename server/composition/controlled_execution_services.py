@@ -129,12 +129,6 @@ def resolve_controlled_broker_release_evidence_provider(
     injected = state.controlled_broker_release_evidence_provider
     if callable(injected):
         return injected
-    try:
-        persisted = build_controlled_broker_write_release_service(state)
-        if persisted.get_status().get("active_release_count", 0) > 0:
-            return persisted
-    except Exception:
-        return None
     return None
 
 
