@@ -8,9 +8,6 @@ from server.account_truth_gate import build_latest_account_truth_promotion_evide
 from server.services.controlled_execution.broker_connector_runtime import (
     build_broker_connectors,
 )
-from server.services.controlled_execution.broker_connector_soak_promotion import (
-    BrokerConnectorSoakPromotionService,
-)
 from server.services.controlled_execution.current_per_order_dossier import (
     CurrentPerOrderDossierService,
     resolve_persisted_execution_gateway_verification,
@@ -35,16 +32,7 @@ def build_current_per_order_dossier_service(
         connectors=connectors,
         trusted_operator_identities=trusted_operator_identities,
         trading_controls=getattr(state, "trading_controls", None),
-        broker_soak_promotion_evidence_provider=(
-            lambda connector_id: BrokerConnectorSoakPromotionService(
-                db=state.db,
-                connectors=connectors,
-                trusted_operator_identities=trusted_operator_identities,
-                account_truth_evidence_provider=(
-                    lambda: build_latest_account_truth_promotion_evidence(state)
-                ),
-            ).preview_dossier(connector_id)
-        ),
+        broker_soak_promotion_evidence_provider=(lambda connector_id: {}),
         execution_gateway_verification_provider=(
             lambda fingerprint: resolve_persisted_execution_gateway_verification(
                 state.db,

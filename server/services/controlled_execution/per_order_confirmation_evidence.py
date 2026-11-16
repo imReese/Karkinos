@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from server.services.controlled_execution import per_order_confirmation_values as values
-from server.services.controlled_execution.broker_adapter_readiness import (
+from server.services.controlled_execution.broker import (
     BROKER_ADAPTER_READINESS_SCHEMA_VERSION,
     build_broker_adapter_readiness,
 )

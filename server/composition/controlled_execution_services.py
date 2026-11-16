@@ -19,9 +19,32 @@ from server.services.account.session_start_account_truth import (
 from server.services.controlled_execution.broker_connector_runtime import (
     build_broker_connectors,
 )
-from server.services.controlled_execution.broker_connector_soak_promotion import (
-    BrokerConnectorSoakPromotionService,
-)
+
+
+class DisabledBrokerConnectorSoakPromotionService:
+    def get_status(self) -> dict[str, Any]:
+        return {
+            "schema_version": "karkinos.broker_connector_soak_promotion_status.v1",
+            "contract_status": "disabled",
+            "ready": False,
+            "limitations": [
+                "Broker connector soak promotion is permanently disabled in Karkinos."
+            ],
+        }
+
+    def preview_dossier(self, connector_id: str) -> dict[str, Any]:
+        return {}
+
+
+BrokerConnectorSoakPromotionService = DisabledBrokerConnectorSoakPromotionService
+
+
+def build_broker_connector_soak_promotion_service(
+    state: AppState,
+) -> DisabledBrokerConnectorSoakPromotionService:
+    return DisabledBrokerConnectorSoakPromotionService()
+
+
 from server.services.controlled_execution.controlled_broker_cancellation import (
     ControlledBrokerCancellationService,
 )
@@ -47,24 +70,6 @@ from server.services.controlled_execution.manual_broker_cancellation_evidence im
 from server.services.controlled_execution.per_order_confirmation import (
     PerOrderConfirmationService,
 )
-
-
-def build_broker_connector_soak_promotion_service(
-    state: AppState,
-) -> BrokerConnectorSoakPromotionService:
-    config = state.config
-    return BrokerConnectorSoakPromotionService(
-        db=state.db,
-        connectors=build_broker_connectors(
-            getattr(config, "broker_connectors", []) or []
-        ),
-        trusted_operator_identities=(
-            getattr(config, "trusted_operator_identities", []) or []
-        ),
-        account_truth_evidence_provider=(
-            lambda: build_latest_account_truth_promotion_evidence(state)
-        ),
-    )
 
 
 def build_per_order_confirmation_service(

@@ -7,15 +7,30 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from server.services.controlled_execution.broker_adapter_readiness import (
+from server.services.controlled_execution.broker import (
     build_broker_adapter_readiness,
 )
 from server.services.controlled_execution.broker_connector_runtime import (
     build_broker_connectors,
 )
-from server.services.controlled_execution.broker_connector_soak_promotion import (
-    BrokerConnectorSoakPromotionService,
-)
+
+
+class DisabledBrokerConnectorSoakPromotionService:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def get_status(self) -> dict[str, Any]:
+        return {
+            "schema_version": "karkinos.broker_connector_soak_promotion_status.v1",
+            "contract_status": "disabled",
+            "ready": False,
+            "limitations": [
+                "Broker soak promotion is permanently disabled in Karkinos."
+            ],
+        }
+
+
+BrokerConnectorSoakPromotionService = DisabledBrokerConnectorSoakPromotionService
 from server.services.controlled_execution.citic.follow_up import (
     build_citic_source_follow_up,
 )

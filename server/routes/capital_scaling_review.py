@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
@@ -9,21 +10,80 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from server.account_truth_gate import build_latest_account_truth_score_payload
-from server.services.controlled_execution.capital_scaling_evidence_window import (
-    CapitalScalingEvidenceWindowService,
+
+@dataclass(frozen=True)
+class CapitalScalingTierLimits:
+    max_authorized_capital: Decimal
+    max_order_value: Decimal
+    max_daily_turnover: Decimal
+    max_daily_loss: Decimal
+    max_drawdown_pct: Decimal
+
+
+@dataclass(frozen=True)
+class CapitalScalingTier:
+    tier_id: str
+    policy_version: str
+    limits: CapitalScalingTierLimits
+
+
+@dataclass(frozen=True)
+class CapitalScalingEvidence:
+    pass
+
+
+@dataclass(frozen=True)
+class CapitalScalingReview:
+    pass
+
+
+CAPITAL_SCALING_REVIEW_ACKNOWLEDGEMENT = (
+    "review_exact_capital_scaling_proposal_without_automatic_execution"
 )
-from server.services.controlled_execution.capital_scaling_review import (
-    CapitalScalingEvidence,
-    CapitalScalingReview,
-    CapitalScalingTier,
-    CapitalScalingTierLimits,
-)
-from server.services.controlled_execution.capital_scaling_review_audit import (
-    CAPITAL_SCALING_REVIEW_ACKNOWLEDGEMENT,
-    CapitalScalingReviewAuditService,
-    CapitalScalingReviewDecisionRejected,
-)
+
+
+class CapitalScalingReviewDecisionRejected(Exception):
+    def __init__(self, message: str, evidence: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.evidence = evidence or {}
+
+
+class CapitalScalingReviewAuditService:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def get_status(self) -> dict[str, Any]:
+        return {
+            "schema_version": "karkinos.capital_scaling_review_status.v1",
+            "contract_status": "disabled",
+            "ready": False,
+            "limitations": [
+                "Capital scaling review is permanently disabled in Karkinos."
+            ],
+        }
+
+    def list_review_decisions(self, limit: int = 100) -> list[dict[str, Any]]:
+        return []
+
+    def preview(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise HTTPException(
+            status_code=400, detail="Capital scaling review is permanently disabled."
+        )
+
+    def record_human_decision(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise HTTPException(
+            status_code=400, detail="Capital scaling review is permanently disabled."
+        )
+
+
+class CapitalScalingEvidenceWindowService:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def evaluate_window(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise HTTPException(
+            status_code=400, detail="Capital scaling review is permanently disabled."
+        )
 
 
 class CapitalScalingTierLimitsPayload(BaseModel):
@@ -236,19 +296,11 @@ def create_router() -> APIRouter:
 
 
 def _service() -> CapitalScalingReviewAuditService:
-    from server.dependencies import get_app_state
-
-    return CapitalScalingReviewAuditService(db=get_app_state().db)
+    return CapitalScalingReviewAuditService()
 
 
 def _evidence_service() -> CapitalScalingEvidenceWindowService:
-    from server.dependencies import get_app_state
-
-    state = get_app_state()
-    return CapitalScalingEvidenceWindowService(
-        db=state.db,
-        account_truth_provider=lambda: build_latest_account_truth_score_payload(state),
-    )
+    return CapitalScalingEvidenceWindowService()
 
 
 __all__ = [

@@ -7,11 +7,9 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-from server.services.controlled_execution.capital_authorization_audit import (
-    CAPITAL_AUTHORIZATION_EVENT_ENTITY_TYPE,
-    CAPITAL_AUTHORIZATION_EVENT_SOURCE,
-    CAPITAL_AUTHORIZATION_EVENT_TYPE,
-)
+CAPITAL_AUTHORIZATION_EVENT_TYPE = "capital_authorization.evaluated"
+CAPITAL_AUTHORIZATION_EVENT_ENTITY_TYPE = "capital_authorization_evaluation"
+CAPITAL_AUTHORIZATION_EVENT_SOURCE = "capital_authorization"
 from server.services.controlled_execution.execution_gateway_verification import (
     EXECUTION_GATEWAY_VERIFICATION_ENTITY_TYPE,
     EXECUTION_GATEWAY_VERIFICATION_EVENT_SOURCE,

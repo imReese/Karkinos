@@ -10,10 +10,42 @@ from pydantic import BaseModel, ConfigDict, Field
 from account_truth.broker_adapter_release import (
     BROKER_ADAPTER_RELEASE_REVIEW_ACKNOWLEDGEMENT,
 )
-from server.services.controlled_execution.signed_broker_adapter_release_review import (
-    SignedBrokerAdapterReleaseReviewRejected,
-    SignedBrokerAdapterReleaseReviewService,
-)
+
+
+class SignedBrokerAdapterReleaseReviewRejected(Exception):
+    def __init__(self, message: str, evidence: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.evidence = evidence or {}
+
+
+class SignedBrokerAdapterReleaseReviewService:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def get_status(self) -> dict[str, Any]:
+        return {
+            "schema_version": "karkinos.broker_adapter_release_review_status.v1",
+            "contract_status": "disabled",
+            "ready": False,
+            "limitations": [
+                "Broker adapter release review is permanently disabled in Karkinos."
+            ],
+        }
+
+    def list_releases(self, limit: int = 100) -> list[dict[str, Any]]:
+        return []
+
+    def preview_dossier(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise HTTPException(
+            status_code=400,
+            detail="Broker adapter release review is permanently disabled.",
+        )
+
+    def record_review(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise HTTPException(
+            status_code=400,
+            detail="Broker adapter release review is permanently disabled.",
+        )
 
 
 class SignedBrokerAdapterReleaseReviewDossierRequest(BaseModel):
@@ -96,19 +128,11 @@ def create_router() -> APIRouter:
 def build_signed_broker_adapter_release_review_service(
     state: Any,
 ) -> SignedBrokerAdapterReleaseReviewService:
-    config = getattr(state, "config", None)
-    return SignedBrokerAdapterReleaseReviewService(
-        db=state.db,
-        trusted_operator_identities=(
-            getattr(config, "trusted_operator_identities", []) or []
-        ),
-    )
+    return SignedBrokerAdapterReleaseReviewService()
 
 
 def _service() -> SignedBrokerAdapterReleaseReviewService:
-    from server.dependencies import get_app_state
-
-    return build_signed_broker_adapter_release_review_service(get_app_state())
+    return SignedBrokerAdapterReleaseReviewService()
 
 
 __all__ = [
