@@ -10,12 +10,12 @@ from zoneinfo import ZoneInfo
 import pytest
 from fastapi.routing import APIRoute
 
-from server.projections.models import ProjectedPosition
-from server.services.controlled_execution.position_presence import (
+from domain.position_presence import (
     POSITION_QUANTITY_ZERO_TOLERANCE,
     classify_position_presence,
     is_economically_zero_quantity,
 )
+from server.projections.models import ProjectedPosition
 from tests.portfolio_valuation_fakes import PublishedValuationFakeDbMixin
 
 

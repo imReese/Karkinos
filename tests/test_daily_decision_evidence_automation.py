@@ -11,7 +11,6 @@ from server.services.account.account_truth_replay import (
     account_truth_replay_evidence_fingerprint,
 )
 from server.services.controlled_execution.oms import OmsService
-from server.services.controlled_execution.trading_controls import TradingControlState
 from server.services.decision import (
     daily_decision_evidence_automation as automation_module,
 )
@@ -26,6 +25,7 @@ from server.services.decision.daily_decision_evidence_composition import (
     promoted_scan_cache_key,
     promoted_strategy_state_cache_identity,
 )
+from server.services.risk.trading_controls import TradingControlState
 
 STRATEGY_OPERATING_CONSTRAINTS = {
     "schema_version": "karkinos.ai.strategy_operating_constraints.v1",

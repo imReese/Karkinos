@@ -16,7 +16,7 @@ from server.services.controlled_execution.execution_reconciliation import (
     ExecutionReconciliationService,
 )
 from server.services.controlled_execution.oms import OmsService
-from server.services.controlled_execution.trading_controls import TradingControlState
+from server.services.risk.trading_controls import TradingControlState
 
 
 class _ConnectorWouldFailIfQueried:

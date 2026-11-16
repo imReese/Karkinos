@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 
 def test_manual_trade_fee_service_formats_stock_sell_components():
-    from server.services.controlled_execution.manual_trade_fees import (
+    from execution.manual_trade_fees import (
         resolve_manual_trade_fee_breakdown,
     )
 
@@ -44,7 +44,7 @@ def test_manual_trade_fee_service_formats_stock_sell_components():
 
 
 def test_manual_trade_fee_service_prefers_broker_fee_schedule_account_terms():
-    from server.services.controlled_execution.manual_trade_fees import (
+    from execution.manual_trade_fees import (
         resolve_manual_trade_fee_breakdown,
     )
 
@@ -75,7 +75,7 @@ def test_manual_trade_fee_service_prefers_broker_fee_schedule_account_terms():
 
 
 def test_manual_trade_fee_service_rounds_each_component_to_broker_money_precision():
-    from server.services.controlled_execution.manual_trade_fees import (
+    from execution.manual_trade_fees import (
         resolve_manual_trade_fee_breakdown,
     )
 
@@ -113,7 +113,7 @@ def test_manual_trade_fee_service_rounds_each_component_to_broker_money_precisio
 
 
 def test_manual_trade_fee_service_uses_symbol_exchange_transfer_fee_split():
-    from server.services.controlled_execution.manual_trade_fees import (
+    from execution.manual_trade_fees import (
         resolve_manual_trade_fee_breakdown,
     )
 
@@ -161,7 +161,7 @@ def test_manual_trade_fee_service_uses_symbol_exchange_transfer_fee_split():
 
 
 def test_manual_trade_fee_service_uses_account_profile_and_schedule_as_fee_rule_version():
-    from server.services.controlled_execution.manual_trade_fees import (
+    from execution.manual_trade_fees import (
         resolve_manual_trade_fee_breakdown,
     )
 
@@ -193,7 +193,7 @@ def test_manual_trade_fee_service_uses_account_profile_and_schedule_as_fee_rule_
 
 
 def test_manual_trade_fee_service_formats_etf_without_stamp_tax():
-    from server.services.controlled_execution.manual_trade_fees import (
+    from execution.manual_trade_fees import (
         resolve_manual_trade_fee_breakdown,
     )
 
@@ -223,7 +223,7 @@ def test_manual_trade_fee_service_formats_etf_without_stamp_tax():
 
 
 def test_manual_trade_fee_service_uses_etf_specific_transfer_fee_rate():
-    from server.services.controlled_execution.manual_trade_fees import (
+    from execution.manual_trade_fees import (
         resolve_manual_trade_fee_breakdown,
     )
 
@@ -262,7 +262,7 @@ def test_manual_trade_fee_service_uses_etf_specific_transfer_fee_rate():
 
 
 def test_manual_trade_fee_service_formats_bond_without_stock_taxes():
-    from server.services.controlled_execution.manual_trade_fees import (
+    from execution.manual_trade_fees import (
         resolve_manual_trade_fee_breakdown,
     )
 
@@ -293,7 +293,7 @@ def test_manual_trade_fee_service_formats_bond_without_stock_taxes():
 
 
 def test_manual_trade_fee_service_treats_convertible_bond_as_exchange_bond_fee():
-    from server.services.controlled_execution.manual_trade_fees import (
+    from execution.manual_trade_fees import (
         resolve_manual_trade_fee_breakdown,
     )
 
@@ -325,7 +325,7 @@ def test_manual_trade_fee_service_treats_convertible_bond_as_exchange_bond_fee()
 
 
 def test_manual_trade_fee_service_leaves_unsupported_assets_to_explicit_fee():
-    from server.services.controlled_execution.manual_trade_fees import (
+    from execution.manual_trade_fees import (
         resolve_manual_trade_fee_breakdown,
     )
 

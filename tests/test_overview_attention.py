@@ -3,11 +3,11 @@ from __future__ import annotations
 import pytest
 
 from server.models import PortfolioSnapshot, PositionResponse
-from server.services.controlled_execution.current_holding_market_evidence_review import (
-    build_current_holding_market_evidence_review,
-)
 from server.services.decision.operations_today import build_overview_attention_items
 from server.services.decision.operations_today_values import attention_items
+from server.services.market.current_holding_market_evidence_review import (
+    build_current_holding_market_evidence_review,
+)
 
 
 def _review(quote_status: str = "confirmed"):

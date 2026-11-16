@@ -610,7 +610,7 @@ async def test_normalized_background_admission_uses_policy_and_durable_scheduler
     from server.services.ai_shadow.ai_shadow_research_job_scheduler import (
         AiShadowResearchJobScheduler,
     )
-    from server.services.controlled_execution.trading_controls import (
+    from server.services.risk.trading_controls import (
         TradingControlState,
     )
 

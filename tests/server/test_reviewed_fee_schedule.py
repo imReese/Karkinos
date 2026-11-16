@@ -19,6 +19,9 @@ from account_truth.broker_statement_roll_forward import (
 )
 from account_truth.evidence_scope_review import EvidenceScopeReviewRepository
 from core.types import CommissionType, OrderSide
+from execution.manual_trade_fees import (
+    resolve_manual_trade_fee_breakdown,
+)
 from server.config import BrokerFeeScheduleConfig
 from server.db import AppDatabase
 from server.services.account.account_truth_evidence_readiness import (
@@ -37,9 +40,6 @@ from server.services.account.reviewed_fee_schedule import (
     build_reviewed_fee_schedule_review_status,
     resolve_reviewed_fee_schedule,
     reviewed_cost_model_reference,
-)
-from server.services.controlled_execution.manual_trade_fees import (
-    resolve_manual_trade_fee_breakdown,
 )
 
 _BROKER_TRADES = """event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method

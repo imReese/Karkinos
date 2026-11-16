@@ -32,7 +32,7 @@ from server.services.ai_shadow.ai_shadow_research_worker import (
     AiShadowResearchWorker,
     AiShadowResearchWorkerLeaseLost,
 )
-from server.services.controlled_execution.trading_controls import TradingControlState
+from server.services.risk.trading_controls import TradingControlState
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 

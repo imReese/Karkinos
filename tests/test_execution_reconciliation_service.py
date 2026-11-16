@@ -17,7 +17,7 @@ from server.services.controlled_execution.oms import OmsService
 from server.services.controlled_execution.per_order_confirmation import (
     build_order_fingerprint,
 )
-from server.services.controlled_execution.trading_controls import TradingControlState
+from server.services.risk.trading_controls import TradingControlState
 from tests.broker_gateway_fixtures import clear_current_per_order_confirmation
 from tests.paper_shadow_fixtures import insert_paper_shadow_evidence
 
