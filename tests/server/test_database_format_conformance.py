@@ -8,7 +8,11 @@ from pathlib import Path
 import pytest
 
 from server.db import AppDatabase
-from server.persistence.connection import connect_sqlite, sqlite_runtime_profile
+from server.persistence.connection import (
+    SQLITE_BUSY_TIMEOUT_MS,
+    connect_sqlite,
+    sqlite_runtime_profile,
+)
 from server.persistence.database_format import DATABASE_FORMAT_VERSION
 from server.persistence.financial_canonical_migrations import V18_SCHEMA_OBJECTS
 from server.persistence.financial_invariant_migrations import V17_SCHEMA_OBJECTS
@@ -47,7 +51,7 @@ def test_format_v1_runtime_sqlite_baseline_is_enforced(tmp_path: Path) -> None:
         assert profile["journal_mode"] == "wal"
         assert profile["synchronous"] == 2
         assert profile["foreign_keys"] == 1
-        assert profile["busy_timeout_ms"] == 2_000
+        assert profile["busy_timeout_ms"] == SQLITE_BUSY_TIMEOUT_MS
         assert conn.execute("PRAGMA integrity_check").fetchall() == [("ok",)]
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
 
