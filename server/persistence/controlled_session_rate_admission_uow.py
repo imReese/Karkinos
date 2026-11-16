@@ -384,14 +384,19 @@ class ControlledSessionRateAdmissionUnitOfWorkMixin(ControlledSessionRepositoryA
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """List immutable runtime rate-admission evidence newest first."""
-        with connect_sqlite(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                """
-                    SELECT * FROM controlled_session_rate_admissions
-                    ORDER BY admitted_at_epoch_ms DESC, id DESC
-                    LIMIT ?
-                    """,
-                (max(1, min(int(limit), 500)),),
-            ).fetchall()
-            return [dict(row) for row in rows]
+        try:
+            with connect_sqlite(self._path) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    """
+                        SELECT * FROM controlled_session_rate_admissions
+                        ORDER BY admitted_at_epoch_ms DESC, id DESC
+                        LIMIT ?
+                        """,
+                    (max(1, min(int(limit), 500)),),
+                ).fetchall()
+                return [dict(row) for row in rows]
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc):
+                return []
+            raise

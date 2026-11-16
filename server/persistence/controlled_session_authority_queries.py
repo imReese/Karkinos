@@ -19,17 +19,22 @@ class ControlledSessionAuthorityQueryRepositoryMixin(ControlledSessionRepository
         session_id: str,
     ) -> dict[str, Any] | None:
         """Read one runtime session including private hash fields for verification."""
-        with connect_sqlite(self._path, readonly=True) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                """
-                    SELECT * FROM controlled_session_runtime_sessions
-                    WHERE session_id = ?
-                    LIMIT 1
-                    """,
-                (session_id,),
-            ).fetchone()
-            return dict(row) if row is not None else None
+        try:
+            with connect_sqlite(self._path, readonly=True) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    """
+                        SELECT * FROM controlled_session_runtime_sessions
+                        WHERE session_id = ?
+                        LIMIT 1
+                        """,
+                    (session_id,),
+                ).fetchone()
+                return dict(row) if row is not None else None
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc):
+                return None
+            raise
 
     def list_controlled_session_runtime_sessions_sync(
         self,
@@ -37,17 +42,22 @@ class ControlledSessionAuthorityQueryRepositoryMixin(ControlledSessionRepository
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """List runtime sessions without interpreting current authority."""
-        with connect_sqlite(self._path, readonly=True) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                """
-                    SELECT * FROM controlled_session_runtime_sessions
-                    ORDER BY created_at DESC, id DESC
-                    LIMIT ?
-                    """,
-                (max(1, min(int(limit), 500)),),
-            ).fetchall()
-            return [dict(row) for row in rows]
+        try:
+            with connect_sqlite(self._path, readonly=True) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    """
+                        SELECT * FROM controlled_session_runtime_sessions
+                        ORDER BY created_at DESC, id DESC
+                        LIMIT ?
+                        """,
+                    (max(1, min(int(limit), 500)),),
+                ).fetchall()
+                return [dict(row) for row in rows]
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc):
+                return []
+            raise
 
     def find_enabled_paused_controlled_session_sync(
         self,

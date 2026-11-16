@@ -163,34 +163,44 @@ class ControlledSessionPauseUnitOfWorkMixin(ControlledSessionRepositoryAccess):
         session_id: str,
     ) -> dict[str, Any] | None:
         """Read the durable pause state for one session."""
-        with connect_sqlite(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                """
-                    SELECT * FROM controlled_session_runtime_states
-                    WHERE session_id = ?
-                    LIMIT 1
-                    """,
-                (session_id,),
-            ).fetchone()
-            return dict(row) if row is not None else None
+        try:
+            with connect_sqlite(self._path) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    """
+                        SELECT * FROM controlled_session_runtime_states
+                        WHERE session_id = ?
+                        LIMIT 1
+                        """,
+                    (session_id,),
+                ).fetchone()
+                return dict(row) if row is not None else None
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc):
+                return None
+            raise
 
     def get_controlled_session_pause_event_sync(
         self,
         pause_event_id: str,
     ) -> dict[str, Any] | None:
         """Read one immutable automatic-pause event by fingerprint."""
-        with connect_sqlite(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                """
-                    SELECT * FROM controlled_session_pause_events
-                    WHERE pause_event_id = ?
-                    LIMIT 1
-                    """,
-                (pause_event_id,),
-            ).fetchone()
-            return dict(row) if row is not None else None
+        try:
+            with connect_sqlite(self._path) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    """
+                        SELECT * FROM controlled_session_pause_events
+                        WHERE pause_event_id = ?
+                        LIMIT 1
+                        """,
+                    (pause_event_id,),
+                ).fetchone()
+                return dict(row) if row is not None else None
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc):
+                return None
+            raise
 
     def list_controlled_session_pause_events_sync(
         self,
@@ -198,14 +208,19 @@ class ControlledSessionPauseUnitOfWorkMixin(ControlledSessionRepositoryAccess):
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """List immutable automatic-pause evidence newest first."""
-        with connect_sqlite(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                """
-                    SELECT * FROM controlled_session_pause_events
-                    ORDER BY paused_at_epoch_ms DESC, id DESC
-                    LIMIT ?
-                    """,
-                (max(1, min(int(limit), 500)),),
-            ).fetchall()
-            return [dict(row) for row in rows]
+        try:
+            with connect_sqlite(self._path) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    """
+                        SELECT * FROM controlled_session_pause_events
+                        ORDER BY paused_at_epoch_ms DESC, id DESC
+                        LIMIT ?
+                        """,
+                    (max(1, min(int(limit), 500)),),
+                ).fetchall()
+                return [dict(row) for row in rows]
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc):
+                return []
+            raise

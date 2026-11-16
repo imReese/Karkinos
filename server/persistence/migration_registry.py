@@ -18,6 +18,9 @@ from server.persistence.job_schema_migrations import V13_DURABLE_BACKGROUND_JOBS
 from server.persistence.market_identity_schema import (
     build_market_identity_schema_migration,
 )
+from server.persistence.migration_27_archive_broker_tables import (
+    V27_STATEMENTS,
+)
 from server.persistence.quote_schema_migrations import (
     build_legacy_mutated_v14,
     build_quote_schema_migrations,
@@ -527,5 +530,10 @@ MIGRATIONS = (
         version=26,
         name="support_exact_manual_research_qualification",
         statements=QUALIFICATION_STATEMENTS,
+    ),
+    SchemaMigration(
+        version=27,
+        name="archive_deprecated_broker_tables",
+        statements=V27_STATEMENTS,
     ),
 )

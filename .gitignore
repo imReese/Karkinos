@@ -182,6 +182,7 @@ web/dist/
 /reports/
 /exports/
 /screenshots/
+.karkinos_backup/
 
 # Local temporary databases
 tmp-*.db

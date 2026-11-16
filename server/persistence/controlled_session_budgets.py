@@ -329,31 +329,41 @@ class ControlledSessionBudgetRepositoryMixin(ControlledSessionRepositoryAccess):
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """List immutable reservation records newest first."""
-        with connect_sqlite(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                """
-                    SELECT * FROM controlled_session_budget_reservations
-                    ORDER BY created_at DESC, id DESC
-                    LIMIT ?
-                    """,
-                (max(1, min(int(limit), 500)),),
-            ).fetchall()
-            return [dict(row) for row in rows]
+        try:
+            with connect_sqlite(self._path) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    """
+                        SELECT * FROM controlled_session_budget_reservations
+                        ORDER BY created_at DESC, id DESC
+                        LIMIT ?
+                        """,
+                    (max(1, min(int(limit), 500)),),
+                ).fetchall()
+                return [dict(row) for row in rows]
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc):
+                return []
+            raise
 
     def get_controlled_session_budget_reservation_sync(
         self,
         reservation_id: str,
     ) -> dict[str, Any] | None:
         """Read one reservation by its deterministic id."""
-        with connect_sqlite(self._path) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                """
-                    SELECT * FROM controlled_session_budget_reservations
-                    WHERE reservation_id = ?
-                    LIMIT 1
-                    """,
-                (reservation_id,),
-            ).fetchone()
-            return dict(row) if row is not None else None
+        try:
+            with connect_sqlite(self._path) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    """
+                        SELECT * FROM controlled_session_budget_reservations
+                        WHERE reservation_id = ?
+                        LIMIT 1
+                        """,
+                    (reservation_id,),
+                ).fetchone()
+                return dict(row) if row is not None else None
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc):
+                return None
+            raise

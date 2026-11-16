@@ -13,6 +13,9 @@ from server.persistence.backtest_results import V25_SCHEMA_OBJECTS
 from server.persistence.connection import connect_sqlite
 from server.persistence.financial_canonical_migrations import V18_SCHEMA_OBJECTS
 from server.persistence.financial_invariant_migrations import V17_SCHEMA_OBJECTS
+from server.persistence.migration_27_archive_broker_tables import (
+    DEPRECATED_BROKER_TABLES,
+)
 from server.persistence.research_observation_schema import V22_SCHEMA_OBJECTS
 from server.persistence.research_paper_schema import V24_SCHEMA_OBJECTS
 from server.persistence.structured_fact_migrations import V19_SCHEMA_OBJECTS
@@ -143,7 +146,27 @@ def assert_known_legacy_v1_schema(
     actual = read_schema_contract(conn)
     actual_columns = actual["tables"].get(LEGACY_V1_REPAIR_TABLE, ())
     if any(column[0] == LEGACY_V1_REPAIR_COLUMN for column in actual_columns):
-        assert_required_schema_contract(conn, expected)
+        if 27 in applied:
+            filtered_expected = {
+                "tables": {
+                    k: v
+                    for k, v in expected["tables"].items()
+                    if k not in DEPRECATED_BROKER_TABLES
+                },
+                "indexes": {
+                    k: v
+                    for k, v in expected["indexes"].items()
+                    if v[0] not in DEPRECATED_BROKER_TABLES
+                },
+                "unique_constraints": {
+                    k: v
+                    for k, v in expected["unique_constraints"].items()
+                    if k not in DEPRECATED_BROKER_TABLES
+                },
+            }
+            assert_required_schema_contract(conn, filtered_expected)
+        else:
+            assert_required_schema_contract(conn, expected)
         return
 
     if tuple(applied) != (1,):
