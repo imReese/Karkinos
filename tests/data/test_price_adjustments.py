@@ -608,3 +608,445 @@ def test_factor_calculation_determinism():
     p1 = serialize_factor_series(s1)
     p2 = serialize_factor_series(s2)
     assert p1 == p2
+
+
+# ============================================================================
+# 9. Volume Precision & Invariance Matrix Tests
+# ============================================================================
+
+
+def test_volume_precision_non_integer_share_dilution():
+    """Verify non-integer share dilution (e.g. 10送1.5转3.8, ratio=1.53).
+
+    Confirms:
+    1. round_volume=False retains full float64 precision (105 * 1.53 = 160.65).
+    2. Turnover P * V remains strictly invariant within float64 epsilon (< 1e-12).
+    3. round_volume=True rounds to nearest integer (161.0) with bounded error.
+    """
+    dates = [date(2026, 5, 1), date(2026, 5, 2)]
+    # Day 1: Close 15.30, Volume 105 shares (odd lot)
+    # Day 2: Ex-date for 10送1.5转3.8 (s = 0.53, dilution = 1.53)
+    # Theoretical P_ex = 15.30 / 1.53 = 10.00
+    df = pd.DataFrame(
+        {
+            "trade_date": dates,
+            "open": [15.30, 10.00],
+            "high": [16.00, 10.50],
+            "low": [15.00, 9.80],
+            "close": [15.30, 10.00],
+            "volume": [105.0, 200.0],
+        }
+    )
+
+    events = [
+        CorporateActionEvent(
+            event_id="ev_non_int",
+            symbol=Symbol("000003"),
+            event_type=CorporateActionType.COMPOSITE,
+            record_date=date(2026, 5, 1),
+            ex_date=date(2026, 5, 2),
+            bonus_ratio=Decimal("0.15"),
+            capitalization_ratio=Decimal("0.38"),
+        )
+    ]
+
+    series = CorporateActionAdjustmentEngine.calculate_factors(
+        symbol="000003",
+        trading_dates=dates,
+        closing_prices=[Decimal("15.30"), Decimal("10.00")],
+        events=events,
+        cutoff_date=date(2026, 5, 2),
+    )
+
+    # 1. Full precision (round_volume=False, price_precision=None)
+    df_exact = adjust_ohlcv_dataframe(
+        df,
+        series,
+        basis=PriceBasis.FORWARD,
+        adjust_volume=True,
+        price_precision=None,
+        round_volume=False,
+    )
+    # Day 1 exact volume: 105.0 * 1.53 = 160.65
+    assert abs(df_exact.loc[0, "volume"] - 160.65) < 1e-10
+    # Day 1 exact close: 15.30 / 1.53 = 10.0
+    assert abs(df_exact.loc[0, "close"] - 10.0) < 1e-10
+    # Strict turnover invariance: 15.30 * 105 = 1606.5 == 10.0 * 160.65 = 1606.5!
+    raw_turnover = df.loc[0, "close"] * df.loc[0, "volume"]
+    adj_turnover = df_exact.loc[0, "close"] * df_exact.loc[0, "volume"]
+    assert abs(raw_turnover - adj_turnover) < 1e-10
+
+    # 2. UI / Integer lot mode (round_volume=True)
+    df_ui = adjust_ohlcv_dataframe(
+        df,
+        series,
+        basis=PriceBasis.FORWARD,
+        adjust_volume=True,
+        price_precision=4,
+        round_volume=True,
+    )
+    assert df_ui.loc[0, "volume"] == 161.0  # round(160.65)
+    ui_turnover = df_ui.loc[0, "close"] * df_ui.loc[0, "volume"]
+    # Rounding error is bounded: (161.0 - 160.65) * 10.0 = 3.5 RMB
+    assert abs(raw_turnover - ui_turnover) <= 0.5 * df_ui.loc[0, "close"] + 1e-5
+
+
+def test_turnover_invariance_matrix_all_action_types():
+    """Verify Turnover (P * V) behavior across all corporate action types.
+
+    1. Pure stock dividend: strictly invariant.
+    2. Pure capitalization: strictly invariant.
+    3. Pure stock split: strictly invariant.
+    4. Pure reverse split: strictly invariant.
+    5. Pure cash dividend: Turnover drops by exactly D * V_raw (capital distribution).
+    6. Composite (cash + stock): Adjusted turnover equals (P_raw - D) * V_raw.
+    """
+    dates = [date(2026, 5, 1), date(2026, 5, 2)]
+    p_prev = Decimal("20.0")
+    v_raw = 1000.0
+    raw_turnover = float(p_prev) * v_raw  # 20,000
+
+    # --- Case A: Pure Stock Bonus (10送5) ---
+    ev_bonus = [
+        CorporateActionEvent(
+            event_id="bonus",
+            symbol=Symbol("000001"),
+            event_type=CorporateActionType.STOCK_DIVIDEND,
+            record_date=date(2026, 5, 1),
+            ex_date=date(2026, 5, 2),
+            bonus_ratio=Decimal("0.5"),
+        )
+    ]
+    s_bonus = CorporateActionAdjustmentEngine.calculate_factors(
+        "000001", dates, [p_prev, Decimal("13.33")], ev_bonus, cutoff_date=dates[1]
+    )
+    df_bonus = adjust_ohlcv_dataframe(
+        pd.DataFrame(
+            {
+                "trade_date": dates,
+                "open": [20.0, 13.33],
+                "high": [20.0, 13.33],
+                "low": [20.0, 13.33],
+                "close": [20.0, 13.33],
+                "volume": [1000.0, 1500.0],
+            }
+        ),
+        s_bonus,
+        basis=PriceBasis.FORWARD,
+        price_precision=None,
+        round_volume=False,
+    )
+    assert (
+        abs(df_bonus.loc[0, "close"] * df_bonus.loc[0, "volume"] - raw_turnover) < 1e-10
+    )
+
+    # --- Case B: Pure Stock Split (1拆4) ---
+    ev_split = [
+        CorporateActionEvent(
+            event_id="split",
+            symbol=Symbol("000001"),
+            event_type=CorporateActionType.STOCK_SPLIT,
+            record_date=date(2026, 5, 1),
+            ex_date=date(2026, 5, 2),
+            split_ratio=Decimal("4.0"),
+        )
+    ]
+    s_split = CorporateActionAdjustmentEngine.calculate_factors(
+        "000001", dates, [p_prev, Decimal("5.0")], ev_split, cutoff_date=dates[1]
+    )
+    df_split = adjust_ohlcv_dataframe(
+        pd.DataFrame(
+            {
+                "trade_date": dates,
+                "open": [20.0, 5.0],
+                "high": [20.0, 5.0],
+                "low": [20.0, 5.0],
+                "close": [20.0, 5.0],
+                "volume": [1000.0, 4000.0],
+            }
+        ),
+        s_split,
+        basis=PriceBasis.FORWARD,
+        price_precision=None,
+        round_volume=False,
+    )
+    assert (
+        abs(df_split.loc[0, "close"] * df_split.loc[0, "volume"] - raw_turnover) < 1e-10
+    )
+
+    # --- Case C: Pure Reverse Split (2合1) ---
+    ev_rev = [
+        CorporateActionEvent(
+            event_id="rev_split",
+            symbol=Symbol("000001"),
+            event_type=CorporateActionType.REVERSE_SPLIT,
+            record_date=date(2026, 5, 1),
+            ex_date=date(2026, 5, 2),
+            split_ratio=Decimal("0.5"),
+        )
+    ]
+    s_rev = CorporateActionAdjustmentEngine.calculate_factors(
+        "000001", dates, [p_prev, Decimal("40.0")], ev_rev, cutoff_date=dates[1]
+    )
+    df_rev = adjust_ohlcv_dataframe(
+        pd.DataFrame(
+            {
+                "trade_date": dates,
+                "open": [20.0, 40.0],
+                "high": [20.0, 40.0],
+                "low": [20.0, 40.0],
+                "close": [20.0, 40.0],
+                "volume": [1000.0, 500.0],
+            }
+        ),
+        s_rev,
+        basis=PriceBasis.FORWARD,
+        price_precision=None,
+        round_volume=False,
+    )
+    assert abs(df_rev.loc[0, "close"] * df_rev.loc[0, "volume"] - raw_turnover) < 1e-10
+
+    # --- Case D: Pure Cash Dividend (10派5元, D=0.5) ---
+    # Cash dividend decreases price by 0.5; volume is NOT multiplied.
+    # Adjusted turnover = (20.0 - 0.5) * 1000 = 19,500 = Raw turnover - D * V
+    ev_cash = [
+        CorporateActionEvent(
+            event_id="cash",
+            symbol=Symbol("000001"),
+            event_type=CorporateActionType.CASH_DIVIDEND,
+            record_date=date(2026, 5, 1),
+            ex_date=date(2026, 5, 2),
+            cash_dividend_per_share=Decimal("0.5"),
+        )
+    ]
+    s_cash = CorporateActionAdjustmentEngine.calculate_factors(
+        "000001", dates, [p_prev, Decimal("19.5")], ev_cash, cutoff_date=dates[1]
+    )
+    df_cash = adjust_ohlcv_dataframe(
+        pd.DataFrame(
+            {
+                "trade_date": dates,
+                "open": [20.0, 19.5],
+                "high": [20.0, 19.5],
+                "low": [20.0, 19.5],
+                "close": [20.0, 19.5],
+                "volume": [1000.0, 1000.0],
+            }
+        ),
+        s_cash,
+        basis=PriceBasis.FORWARD,
+        price_precision=None,
+        round_volume=False,
+    )
+    expected_cash_turnover = float(p_prev - Decimal("0.5")) * v_raw  # 19,500
+    assert (
+        abs(df_cash.loc[0, "close"] * df_cash.loc[0, "volume"] - expected_cash_turnover)
+        < 1e-10
+    )
+
+    # --- Case E: Composite (10送5派2元, D=0.2, s=0.5) ---
+    # P_ex = (20.0 - 0.2) / 1.5 = 13.2
+    # P_adj = 13.2, V_adj = 1000 * 1.5 = 1500
+    # P_adj * V_adj = 13.2 * 1500 = 19,800 == (20.0 - 0.2) * 1000!
+    ev_comp = [
+        CorporateActionEvent(
+            event_id="comp",
+            symbol=Symbol("000001"),
+            event_type=CorporateActionType.COMPOSITE,
+            record_date=date(2026, 5, 1),
+            ex_date=date(2026, 5, 2),
+            cash_dividend_per_share=Decimal("0.2"),
+            bonus_ratio=Decimal("0.5"),
+        )
+    ]
+    s_comp = CorporateActionAdjustmentEngine.calculate_factors(
+        "000001", dates, [p_prev, Decimal("13.2")], ev_comp, cutoff_date=dates[1]
+    )
+    df_comp = adjust_ohlcv_dataframe(
+        pd.DataFrame(
+            {
+                "trade_date": dates,
+                "open": [20.0, 13.2],
+                "high": [20.0, 13.2],
+                "low": [20.0, 13.2],
+                "close": [20.0, 13.2],
+                "volume": [1000.0, 1500.0],
+            }
+        ),
+        s_comp,
+        basis=PriceBasis.FORWARD,
+        price_precision=None,
+        round_volume=False,
+    )
+    expected_comp_turnover = float(p_prev - Decimal("0.2")) * v_raw  # 19,800
+    assert (
+        abs(df_comp.loc[0, "close"] * df_comp.loc[0, "volume"] - expected_comp_turnover)
+        < 1e-10
+    )
+
+
+# ============================================================================
+# 10. Advanced Point-in-Time (PIT) Boundary Tests
+# ============================================================================
+
+
+def test_pit_future_announcement_not_yet_effective():
+    """Test scenario: Announcement is known on 2026-04-01, but ex-date is 2026-04-20.
+
+    When running backtest at simulation date 2026-04-10:
+    - 2026-04-10 has NOT reached ex-date yet.
+    - Prices on/before 2026-04-10 must NOT be adjusted by the future 4/20 event.
+    - Factor at 4/10 is 1.0, factor at 4/05 is 1.0.
+    """
+    trading_dates = [
+        date(2026, 4, 1),
+        date(2026, 4, 10),  # Decision date
+        date(2026, 4, 20),  # Ex-date
+    ]
+    prices = [Decimal("10.0"), Decimal("10.2"), Decimal("9.7")]
+
+    # Plan announced on 4/1, but effective on 4/20
+    events = [
+        CorporateActionEvent(
+            event_id="plan_announced",
+            symbol=Symbol("000001"),
+            event_type=CorporateActionType.CASH_DIVIDEND,
+            announcement_date=date(2026, 4, 1),
+            record_date=date(2026, 4, 19),
+            ex_date=date(2026, 4, 20),
+            cash_dividend_per_share=Decimal("0.5"),
+            available_at=datetime(2026, 4, 1, 18, 0, tzinfo=timezone.utc),
+        )
+    ]
+
+    # As of 2026-04-10: Cutoff at 2026-04-10
+    series_at_410 = CorporateActionAdjustmentEngine.calculate_factors(
+        "000001",
+        trading_dates,
+        prices,
+        events,
+        cutoff_date=date(2026, 4, 10),
+        as_of_time=datetime(2026, 4, 10, 15, 0, tzinfo=timezone.utc),
+    )
+    # Because 4/20 is after 4/10 cutoff, QFQ factors for 4/1 and 4/10 are 1.0!
+    assert series_at_410.get_factor(date(2026, 4, 1)).qfq_factor == Decimal("1.0")
+    assert series_at_410.get_factor(date(2026, 4, 10)).qfq_factor == Decimal("1.0")
+
+    # When time advances to 2026-04-20 (post ex-date):
+    series_at_420 = CorporateActionAdjustmentEngine.calculate_factors(
+        "000001",
+        trading_dates,
+        prices,
+        events,
+        cutoff_date=date(2026, 4, 20),
+        as_of_time=datetime(2026, 4, 20, 15, 0, tzinfo=timezone.utc),
+    )
+    # Now the 4/20 event is active: historical 4/1 and 4/10 are adjusted
+    alpha = (Decimal("10.2") - Decimal("0.5")) / Decimal("10.2")
+    assert abs(
+        series_at_420.get_factor(date(2026, 4, 10)).qfq_factor - alpha
+    ) < Decimal("1e-6")
+
+
+def test_pit_delayed_data_ingestion_safety():
+    """Test scenario: Ex-date is 2026-04-10, but due to network/provider delay,
+
+    data was only captured on 2026-04-12 10:00.
+    At decision time 2026-04-10 15:00:
+    - Data not yet available in store (available_at > as_of_time).
+    - System must NOT apply the factor (fail-safe to unadjusted 1.0).
+    """
+    trading_dates = [date(2026, 4, 9), date(2026, 4, 10)]
+    prices = [Decimal("10.0"), Decimal("9.5")]
+
+    events = [
+        CorporateActionEvent(
+            event_id="delayed_event",
+            symbol=Symbol("000001"),
+            event_type=CorporateActionType.CASH_DIVIDEND,
+            record_date=date(2026, 4, 9),
+            ex_date=date(2026, 4, 10),
+            cash_dividend_per_share=Decimal("0.5"),
+            available_at=datetime(2026, 4, 12, 10, 0, tzinfo=timezone.utc),  # Delayed!
+        )
+    ]
+
+    # Querying at 4/10 close:
+    series_blind = CorporateActionAdjustmentEngine.calculate_factors(
+        "000001",
+        trading_dates,
+        prices,
+        events,
+        as_of_time=datetime(2026, 4, 10, 15, 0, tzinfo=timezone.utc),
+    )
+    # Event excluded by available_at filter:
+    assert series_blind.get_factor(date(2026, 4, 9)).qfq_factor == Decimal("1.0")
+
+    # Querying at 4/13 close (after data arrived):
+    series_informed = CorporateActionAdjustmentEngine.calculate_factors(
+        "000001",
+        trading_dates,
+        prices,
+        events,
+        as_of_time=datetime(2026, 4, 13, 15, 0, tzinfo=timezone.utc),
+    )
+    # Event included:
+    assert series_informed.get_factor(date(2026, 4, 9)).qfq_factor == Decimal("0.95")
+
+
+def test_pit_historical_correction_announcement():
+    """Test scenario: Initial announcement at 2026-04-01 proposes 10派3元 (D=0.3).
+
+    Correction announcement at 2026-04-08 updates to 10派4元 (D=0.4).
+    Ex-date is 2026-04-15.
+    - At 2026-04-05: Only initial announcement is known.
+    - At 2026-04-10: Corrected announcement is known.
+    """
+    trading_dates = [date(2026, 4, 1), date(2026, 4, 14), date(2026, 4, 15)]
+    prices = [Decimal("10.0"), Decimal("10.0"), Decimal("9.6")]
+
+    ev_v1 = CorporateActionEvent(
+        event_id="ann_v1",
+        symbol=Symbol("000001"),
+        event_type=CorporateActionType.CASH_DIVIDEND,
+        record_date=date(2026, 4, 14),
+        ex_date=date(2026, 4, 15),
+        cash_dividend_per_share=Decimal("0.3"),
+        available_at=datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc),
+    )
+    ev_v2 = CorporateActionEvent(
+        event_id="ann_v2_corrected",
+        symbol=Symbol("000001"),
+        event_type=CorporateActionType.CASH_DIVIDEND,
+        record_date=date(2026, 4, 14),
+        ex_date=date(2026, 4, 15),
+        cash_dividend_per_share=Decimal("0.4"),
+        available_at=datetime(2026, 4, 8, 12, 0, tzinfo=timezone.utc),
+    )
+
+    # At 2026-04-05: ev_v2 is not yet available, only ev_v1 is available
+    s_early = CorporateActionAdjustmentEngine.calculate_factors(
+        "000001",
+        trading_dates,
+        prices,
+        [ev_v1, ev_v2],
+        cutoff_date=date(2026, 4, 15),
+        as_of_time=datetime(2026, 4, 5, 15, 0, tzinfo=timezone.utc),
+    )
+    # Cash dividend was 0.3 -> alpha = 9.7 / 10.0 = 0.97
+    assert s_early.get_factor(date(2026, 4, 14)).qfq_factor == Decimal("0.97")
+
+    # At 2026-04-10: ev_v2 is available. In deduplication, ev_v2 takes precedence
+    # when filtering by latest available_at.
+    # To simulate resolution of conflicting revisions on the same ex-date:
+    events_at_410 = [ev_v2]  # Normalizer or store resolves to latest active revision
+    s_late = CorporateActionAdjustmentEngine.calculate_factors(
+        "000001",
+        trading_dates,
+        prices,
+        events_at_410,
+        cutoff_date=date(2026, 4, 15),
+        as_of_time=datetime(2026, 4, 10, 15, 0, tzinfo=timezone.utc),
+    )
+    # Cash dividend was 0.4 -> alpha = 9.6 / 10.0 = 0.96
+    assert s_late.get_factor(date(2026, 4, 14)).qfq_factor == Decimal("0.96")

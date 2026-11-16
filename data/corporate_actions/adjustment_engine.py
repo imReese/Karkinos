@@ -24,8 +24,8 @@ Formulas strictly adhere to Shanghai (SSE) and Shenzhen (SZSE) exchange standard
        P_hfq,t = P_raw,t * f_hfq,t
 
 5. Volume adjustment multiplier (share-dilution scaling):
-       v_qfq,t = prod_{tau=t+1}^T (1 + s_tau + p_tau)
-       V_qfq,t = round(V_raw,t * v_qfq,t)
+       v_qfq,t = prod_{tau=t+1}^T ((1 + s_tau + p_tau) * split_ratio_tau)
+       V_qfq,t = V_raw,t * v_qfq,t  (retains float64 precision; optional UI integer rounding)
 """
 
 from __future__ import annotations
@@ -205,7 +205,15 @@ class CorporateActionAdjustmentEngine:
             daily_event_ids[trade_date] = tuple(e.event_id for e in day_events)
 
         # Determine cutoff date for QFQ
-        qfq_cutoff = cutoff_date if cutoff_date is not None else dates_list[-1]
+        if cutoff_date is not None:
+            qfq_cutoff = cutoff_date
+        elif as_of_time is not None:
+            as_of_date = as_of_time.date()
+            valid_as_of = [d for d in dates_list if d <= as_of_date]
+            qfq_cutoff = valid_as_of[-1] if valid_as_of else dates_list[0]
+        else:
+            qfq_cutoff = dates_list[-1]
+
         if qfq_cutoff not in date_to_close:
             # If cutoff not directly in trading dates, use latest date <= cutoff
             valid_cutoffs = [d for d in dates_list if d <= qfq_cutoff]

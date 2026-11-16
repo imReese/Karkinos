@@ -65,6 +65,7 @@ def adjust_ohlcv_dataframe(
     *,
     adjust_volume: bool = True,
     price_precision: int | None = 4,
+    round_volume: bool = False,
 ) -> pd.DataFrame:
     """Apply adjustment factors to an OHLCV dataframe.
 
@@ -72,10 +73,14 @@ def adjust_ohlcv_dataframe(
     - df: DataFrame with at least columns ['open', 'high', 'low', 'close']
           and optionally 'volume', 'amount'/'turnover'.
           Must have either a 'date' / 'trade_date' column or a DatetimeIndex.
+          Volume unit is in shares (股).
     - factor_series: Pre-computed AdjustmentFactorSeries for the security.
     - basis: PriceBasis (UNADJUSTED, FORWARD, BACKWARD, POINT_IN_TIME).
     - adjust_volume: If True, scales volume inversely to share dilution.
-    - price_precision: Rounding decimals for prices (e.g. 4 decimals); None for float precision.
+    - price_precision: Rounding decimals for prices (e.g. 4 decimals); None for full float64 precision.
+    - round_volume: If True, rounds adjusted volume to nearest integer shares (useful for UI display
+                    or integer-lot order modeling). If False (default), retains full float64 precision
+                    to maintain exact quantitative turnover (P * V) invariance for research.
     """
     if df.empty:
         return df.copy()
@@ -131,7 +136,9 @@ def adjust_ohlcv_dataframe(
 
     if adjust_volume and "volume" in out.columns:
         adjusted_vol = out["volume"].astype(float) * v_mult
-        out["volume"] = np.round(adjusted_vol)
+        if round_volume:
+            adjusted_vol = np.round(adjusted_vol)
+        out["volume"] = adjusted_vol
 
     verify_ohlcv_invariants(out)
     return out
