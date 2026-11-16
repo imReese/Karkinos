@@ -95,7 +95,6 @@ def load_dataset_backtest_inputs(root: Path, request):
             [
                 {
                     "timestamp": bar.event_time,
-                    "trade_date": bar.session_date,
                     "open": bar.open,
                     "high": bar.high,
                     "low": bar.low,
