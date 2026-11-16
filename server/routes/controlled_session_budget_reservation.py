@@ -8,13 +8,19 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from server.composition.controlled_execution_services import (
+    ControlledSessionBudgetReservationService,
     build_controlled_session_budget_reservation_service,
 )
-from server.services.controlled_execution.controlled_session_budget_reservation import (
-    CONTROLLED_SESSION_BUDGET_RESERVATION_ACKNOWLEDGEMENT,
-    ControlledSessionBudgetReservationRejected,
-    ControlledSessionBudgetReservationService,
+
+CONTROLLED_SESSION_BUDGET_RESERVATION_ACKNOWLEDGEMENT = (
+    "reserve_exact_non_authorizing_controlled_session_budget"
 )
+
+
+class ControlledSessionBudgetReservationRejected(Exception):
+    def __init__(self, message: str, evidence: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.evidence = evidence or {}
 
 
 class ControlledSessionBudgetPreviewRequest(BaseModel):

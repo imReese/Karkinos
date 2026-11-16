@@ -8,15 +8,20 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from server.composition.controlled_execution_services import (
+    ControlledSessionRuntimeAuthorityService,
     build_controlled_session_runtime_authority_service,
 )
-from server.services.controlled_execution.controlled_session_runtime_authority import (
+from server.contracts.controlled_session_runtime_authority import (
     CONTROLLED_SESSION_ISSUANCE_ACKNOWLEDGEMENT,
     CONTROLLED_SESSION_REPLACEMENT_ACKNOWLEDGEMENT,
     CONTROLLED_SESSION_REVOCATION_ACKNOWLEDGEMENT,
-    ControlledSessionRuntimeAuthorityRejected,
-    ControlledSessionRuntimeAuthorityService,
 )
+
+
+class ControlledSessionRuntimeAuthorityRejected(Exception):
+    def __init__(self, message: str, evidence: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.evidence = evidence or {}
 
 
 class ControlledSessionIssuancePreviewRequest(BaseModel):

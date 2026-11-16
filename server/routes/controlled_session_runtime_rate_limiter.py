@@ -7,10 +7,8 @@ from typing import Any
 from fastapi import APIRouter, Query
 
 from server.composition.controlled_execution_services import (
-    build_controlled_session_runtime_rate_limiter_service,
-)
-from server.services.controlled_execution.controlled_session_runtime_rate_limiter import (
     ControlledSessionRuntimeRateLimiterService,
+    build_controlled_session_runtime_rate_limiter_service,
 )
 
 

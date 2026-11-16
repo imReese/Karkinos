@@ -51,9 +51,8 @@ from server.services.controlled_execution.controlled_execution_operator_projecti
 from server.services.controlled_execution.controlled_execution_operator_projection import (
     submission_intent_summary as _submission_intent_summary,
 )
-from server.services.controlled_execution.controlled_session_gate_contract import (
-    CONTROLLED_SESSION_LIVE_GATE_MAX_AGE_SECONDS,
-)
+
+CONTROLLED_SESSION_LIVE_GATE_MAX_AGE_SECONDS = 30
 
 CONTROLLED_EXECUTION_OPERATOR_VIEW_SCHEMA_VERSION = (
     "karkinos.controlled_execution_operator_view.v4"

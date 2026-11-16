@@ -10,13 +10,19 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from server.composition.controlled_execution_services import (
+    ControlledSessionEnvelopeService,
     build_controlled_session_envelope_service,
 )
-from server.services.controlled_execution.controlled_session_envelope import (
+from server.contracts.controlled_session_envelope import (
     CONTROLLED_SESSION_ACKNOWLEDGEMENT,
-    ControlledSessionAttestationRejected,
-    ControlledSessionEnvelopeService,
 )
+
+
+class ControlledSessionAttestationRejected(Exception):
+    def __init__(self, message: str, evidence: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.evidence = evidence or {}
+
 
 GatewayVerificationFingerprint = Annotated[
     str,

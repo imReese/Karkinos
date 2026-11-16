@@ -8,18 +8,19 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from server.composition.controlled_execution_services import (
+    ControlledSessionAutomaticPauseOrchestratorService,
+    ControlledSessionAutomaticPauseService,
+    ControlledSessionLiveGateSnapshotService,
     build_controlled_session_automatic_pause_orchestrator_service,
     build_controlled_session_automatic_pause_service,
     build_controlled_session_live_gate_service,
 )
-from server.services.controlled_execution.controlled_session_automatic_pause import (
-    ControlledSessionAutomaticPauseService,
-)
-from server.services.controlled_execution.controlled_session_live_gates import (
-    ControlledSessionAutomaticPauseOrchestratorService,
-    ControlledSessionLiveGateRejected,
-    ControlledSessionLiveGateSnapshotService,
-)
+
+
+class ControlledSessionLiveGateRejected(Exception):
+    def __init__(self, message: str, evidence: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.evidence = evidence or {}
 
 
 class ControlledSessionPauseEvaluationRequest(BaseModel):

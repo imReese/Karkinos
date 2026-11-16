@@ -14,8 +14,9 @@ from server.services.controlled_execution.capital_scaling_evidence_values import
     json_object,
     parse_datetime,
 )
-from server.services.controlled_execution.controlled_session_runtime_rate_limiter import (
-    CONTROLLED_SESSION_RATE_ADMISSION_SCHEMA_VERSION,
+
+CONTROLLED_SESSION_RATE_ADMISSION_SCHEMA_VERSION = (
+    "karkinos.controlled_session_rate_admission.v1"
 )
 from server.services.controlled_execution.execution_batch_reconciliation import (
     EXECUTION_BATCH_RECONCILIATION_EVENT_ENTITY_TYPE,
