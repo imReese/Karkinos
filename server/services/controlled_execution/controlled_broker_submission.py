@@ -72,6 +72,8 @@ class ControlledBrokerSubmissionService:
             "kill_switch_provider_configured": True,
             "default_broker_submission_enabled": False,
             "automatic_submission_enabled": False,
+            "strategy_direct_submission_enabled": False,
+            "recovery_resubmission_enabled": False,
             "submission_interlock": {
                 "schema_version": "karkinos.controlled_broker_submission_interlock.v1",
                 "blocked": bool(unresolved),
