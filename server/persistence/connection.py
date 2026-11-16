@@ -27,6 +27,7 @@ def connect_sqlite(
     database_path: str | Path,
     *,
     readonly: bool = False,
+    uri: bool = False,
     uri_attachments: bool = False,
     timeout: float = 5.0,
     factory: type[sqlite3.Connection] = sqlite3.Connection,
@@ -34,10 +35,23 @@ def connect_sqlite(
 ) -> sqlite3.Connection:
     """Open one SQLite connection with Karkinos' lifecycle safety baseline."""
 
-    if readonly:
-        path = Path(database_path).expanduser().absolute()
+    is_uri_str = isinstance(database_path, str) and database_path.startswith("file:")
+    is_readonly = readonly or (
+        isinstance(database_path, str)
+        and database_path.startswith("file:")
+        and "mode=ro" in database_path
+    )
+
+    if is_readonly:
+        if isinstance(database_path, str) and database_path.startswith("file:"):
+            readonly_target = database_path
+            if "mode=ro" not in readonly_target:
+                readonly_target += ("&" if "?" in readonly_target else "?") + "mode=ro"
+        else:
+            path = Path(database_path).expanduser().resolve()
+            readonly_target = path.as_uri() + "?mode=ro"
         conn = sqlite3.connect(
-            path.as_uri() + "?mode=ro",
+            readonly_target,
             uri=True,
             timeout=timeout,
             factory=factory,
@@ -48,14 +62,19 @@ def connect_sqlite(
 
     # ATTACH inherits URI handling from this open. Keep the primary filename
     # literal, including SQLite's in-memory and temporary database names.
-    target = (
-        Path(database_path).absolute().as_uri()
-        if uri_attachments and database_path not in ("", ":memory:")
-        else database_path
-    )
-    conn = sqlite3.connect(
-        target, uri=uri_attachments, timeout=timeout, factory=factory
-    )
+    use_uri = uri or uri_attachments or is_uri_str
+    write_target: str | Path
+    if use_uri:
+        if database_path in ("", ":memory:"):
+            write_target = database_path
+        elif isinstance(database_path, str) and database_path.startswith("file:"):
+            write_target = database_path
+        else:
+            write_target = Path(database_path).expanduser().resolve().as_uri()
+    else:
+        write_target = database_path
+
+    conn = sqlite3.connect(write_target, uri=use_uri, timeout=timeout, factory=factory)
     conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
     conn.execute(f"PRAGMA foreign_keys={'ON' if foreign_keys else 'OFF'}")
     conn.execute("PRAGMA synchronous=FULL")

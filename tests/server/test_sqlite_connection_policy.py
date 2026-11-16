@@ -153,3 +153,37 @@ def test_retry_on_locked_fails_when_exhausted():
     with pytest.raises(sqlite3.OperationalError, match="database is locked"):
         always_locked()
     assert attempts == 2
+
+
+def test_connect_sqlite_supports_uri_and_uri_strings(tmp_path):
+    path = tmp_path / "app.db"
+    with closing(connect_sqlite(path)) as conn:
+        conn.execute("CREATE TABLE items (id INTEGER, name TEXT)")
+        conn.execute("INSERT INTO items VALUES (1, 'alpha')")
+        conn.commit()
+
+    # Connect with standard uri=True parameter on file path
+    with closing(connect_sqlite(path, uri=True)) as conn:
+        assert conn.execute("SELECT name FROM items").fetchone() == ("alpha",)
+
+    # Connect with pre-constructed file URI string and uri=True
+    uri_string = f"{path.resolve().as_uri()}?mode=ro"
+    with closing(connect_sqlite(uri_string, uri=True)) as conn:
+        assert conn.execute("SELECT name FROM items").fetchone() == ("alpha",)
+        assert conn.execute("PRAGMA query_only").fetchone() == (1,)
+
+    # Connect with pre-constructed file URI string and uri_attachments=True
+    with closing(connect_sqlite(uri_string, uri_attachments=True)) as conn:
+        assert conn.execute("SELECT name FROM items").fetchone() == ("alpha",)
+        assert conn.execute("PRAGMA query_only").fetchone() == (1,)
+
+    # Connect with readonly=True on URI string
+    with closing(connect_sqlite(path.resolve().as_uri(), readonly=True)) as conn:
+        assert conn.execute("SELECT name FROM items").fetchone() == ("alpha",)
+        assert conn.execute("PRAGMA query_only").fetchone() == (1,)
+
+    # In-memory URI connection
+    with closing(connect_sqlite(":memory:", uri=True)) as conn:
+        conn.execute("CREATE TABLE mem (val INT)")
+        conn.execute("INSERT INTO mem VALUES (42)")
+        assert conn.execute("SELECT val FROM mem").fetchone() == (42,)
