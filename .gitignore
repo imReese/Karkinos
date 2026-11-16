@@ -54,6 +54,8 @@ cover/
 # Web test artifacts
 web/test-results/
 web/playwright-report/
+*.tmp.mjs
+*.tmp.js
 
 # Translations
 *.mo
@@ -183,6 +185,7 @@ web/dist/
 /exports/
 /screenshots/
 .karkinos_backup/
+/data/backups/
 
 # Local temporary databases
 tmp-*.db
