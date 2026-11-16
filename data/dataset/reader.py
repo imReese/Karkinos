@@ -34,7 +34,10 @@ from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import date, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 import pyarrow as pa
 
@@ -1531,3 +1534,79 @@ def _membership_master_evidence(store, source, *, include_activity: bool = False
         for row in source["members"]
     }
     return members, available, dated_nontrading, source, activity
+
+
+def read_daily_bar_dataset_frames(
+    store: ContentAddressedObjectStore,
+    ref: DatasetRef,
+    *,
+    price_basis: str | Any = "unadjusted",
+) -> dict[InstrumentKey, pd.DataFrame]:
+    """Read dataset bars grouped into per-instrument DataFrames with optional corporate action adjustment."""
+    import pandas as pd
+
+    from data.corporate_actions.models import PriceBasis
+
+    result = read_daily_bar_dataset(store, ref)
+    bars_by_key: dict[InstrumentKey, list[Any]] = {
+        k: [] for k in result.snapshot.instruments
+    }
+    for b in result.bars:
+        if b.instrument in bars_by_key:
+            bars_by_key[b.instrument].append(b)
+
+    frames: dict[InstrumentKey, pd.DataFrame] = {}
+    basis_enum = PriceBasis(str(price_basis))
+
+    events = []
+    if basis_enum != PriceBasis.UNADJUSTED and result.corporate_action_evidence:
+        from data.corporate_actions.normalization import normalize_observation_evidence
+
+        events = normalize_observation_evidence(result.corporate_action_evidence)
+
+    for key, bars in bars_by_key.items():
+        if not bars:
+            frames[key] = pd.DataFrame()
+            continue
+        df = pd.DataFrame(
+            [
+                {
+                    "trade_date": b.session_date,
+                    "timestamp": b.event_time,
+                    "open": b.open,
+                    "high": b.high,
+                    "low": b.low,
+                    "close": b.close,
+                    "volume": b.volume,
+                    "amount": b.amount,
+                    "available_at": b.available_at,
+                    "captured_at": b.captured_at,
+                }
+                for b in bars
+            ]
+        )
+        if basis_enum != PriceBasis.UNADJUSTED and events:
+            from data.corporate_actions.adjustment_engine import (
+                CorporateActionAdjustmentEngine,
+            )
+            from data.corporate_actions.price_series import adjust_ohlcv_dataframe
+
+            trading_dates = [b.session_date for b in bars]
+            closing_prices = [b.close for b in bars]
+            as_of = (
+                result.snapshot.cutoff
+                if basis_enum == PriceBasis.POINT_IN_TIME
+                else None
+            )
+            factor_series = CorporateActionAdjustmentEngine.calculate_factors(
+                key.symbol,
+                trading_dates,
+                closing_prices,
+                events,
+                cutoff_date=result.snapshot.cutoff.date(),
+                as_of_time=as_of,
+            )
+            df = adjust_ohlcv_dataframe(df, factor_series, basis=basis_enum)
+        frames[key] = df
+
+    return frames

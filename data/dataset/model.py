@@ -45,6 +45,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 
 from core.types import InstrumentKey
+from data.corporate_actions.models import PriceBasis
 from data.storage.objects import ObjectRef
 
 DATASET_KIND_DAILY_BARS = "daily_bars"

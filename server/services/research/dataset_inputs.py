@@ -74,16 +74,28 @@ def load_dataset_backtest_inputs(root: Path, request):
     for bar in restored.bars:
         bars_by_instrument.setdefault(bar.instrument, []).append(bar)
     instruments, handlers = {}, {}
+    price_basis = getattr(request, "price_basis", "unadjusted") or "unadjusted"
+    if price_basis not in {"unadjusted", "forward", "backward", "point_in_time"}:
+        raise ResearchDatasetError("dataset_request_price_basis_unsupported")
+
+    events = []
+    if price_basis != "unadjusted" and restored.corporate_action_evidence:
+        from data.corporate_actions.normalization import normalize_observation_evidence
+
+        events = normalize_observation_evidence(restored.corporate_action_evidence)
+
     for key in snapshot.instruments:
         symbol = Symbol(key.symbol)
         factory = (
             make_stock if key.instrument_type is InstrumentType.STOCK else make_etf
         )
         instruments[symbol] = factory(key.symbol, key.symbol)
+        instrument_bars = bars_by_instrument.get(key, ())
         frame = pd.DataFrame(
             [
                 {
                     "timestamp": bar.event_time,
+                    "trade_date": bar.session_date,
                     "open": bar.open,
                     "high": bar.high,
                     "low": bar.low,
@@ -93,15 +105,39 @@ def load_dataset_backtest_inputs(root: Path, request):
                     "available_at": bar.available_at,
                     "captured_at": bar.captured_at,
                 }
-                for bar in bars_by_instrument.get(key, ())
+                for bar in instrument_bars
             ]
         )
         if frame.empty:
             raise ResearchDatasetError("dataset_instrument_has_no_rows")
+
+        adjustment_mode = "none"
+        if price_basis != "unadjusted" and events:
+            from data.corporate_actions.adjustment_engine import (
+                CorporateActionAdjustmentEngine,
+            )
+            from data.corporate_actions.models import PriceBasis
+            from data.corporate_actions.price_series import adjust_ohlcv_dataframe
+
+            basis_enum = PriceBasis(price_basis)
+            trading_dates = [b.session_date for b in instrument_bars]
+            closing_prices = [b.close for b in instrument_bars]
+            as_of = snapshot.cutoff if basis_enum == PriceBasis.POINT_IN_TIME else None
+            factor_series = CorporateActionAdjustmentEngine.calculate_factors(
+                key.symbol,
+                trading_dates,
+                closing_prices,
+                events,
+                cutoff_date=snapshot.cutoff.date(),
+                as_of_time=as_of,
+            )
+            frame = adjust_ohlcv_dataframe(frame, factor_series, basis=basis_enum)
+            adjustment_mode = price_basis
+
         frame.attrs.update(
             provider_name=single_source,
             data_source=single_source,
-            adjustment_mode="none",
+            adjustment_mode=adjustment_mode,
             dataset_id=ref.dataset_id,
         )
         handlers[symbol] = DataHandler(
@@ -113,7 +149,7 @@ def load_dataset_backtest_inputs(root: Path, request):
     binding = {
         "dataset_id": ref.dataset_id,
         "cutoff": snapshot.cutoff.isoformat(),
-        "price_basis": "unadjusted",
+        "price_basis": price_basis,
         "source_names": source_names,
         "cross_source_verified": snapshot.verification_bound,
         "offline_replay": True,
@@ -121,7 +157,9 @@ def load_dataset_backtest_inputs(root: Path, request):
         "decision_availability": decision_availability,
         "limitations": [
             "Historical backfill is a frozen research snapshot, not proof of historical availability.",
-            "Unadjusted prices do not model corporate-action cash flows or total returns.",
+            "Unadjusted prices do not model corporate-action cash flows or total returns."
+            if price_basis == "unadjusted"
+            else f"Adjusted price basis '{price_basis}' normalizes corporate actions for signals, but trades execute on unadjusted prices.",
         ],
         **(
             {"corporate_action_evidence": restored.corporate_action_evidence}

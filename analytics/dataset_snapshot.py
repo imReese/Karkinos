@@ -291,7 +291,8 @@ def build_backtest_dataset_snapshot(
     """Build an audit identity for the exact bars given to the backtest engine."""
     if research_dataset_binding is not None and (
         market_data_binding is not None
-        or research_dataset_binding.get("price_basis") != "unadjusted"
+        or research_dataset_binding.get("price_basis")
+        not in {"unadjusted", "forward", "backward", "point_in_time"}
         or research_dataset_binding.get("point_in_time_verified") is not False
     ):
         raise ValueError("research_dataset_binding_unsupported")
@@ -677,7 +678,8 @@ def _verify_immutable_dataset_replay(
         restored.snapshot.start_date.isoformat() != start_date
         or restored.snapshot.end_date.isoformat() != end_date
         or restored.snapshot.cutoff.isoformat() != snapshot.get("available_as_of")
-        or snapshot.get("price_basis") != "unadjusted"
+        or snapshot.get("price_basis")
+        not in {"unadjusted", "forward", "backward", "point_in_time"}
         or snapshot.get("point_in_time_verified") is not False
         or snapshot.get("research_use") != "exploratory_backtest"
         or snapshot.get("cross_source_verified")
@@ -694,7 +696,7 @@ def _verify_immutable_dataset_replay(
         )
         or not isinstance(content_identity, Mapping)
         or content_identity.get("row_contract") != "timestamp_ohlcv.v1"
-        or snapshot.get("adjustment_mode") != "none"
+        or snapshot.get("adjustment_mode") not in {"none", snapshot.get("price_basis")}
         or snapshot.get("row_count") != restored.row_count
         or snapshot.get("corporate_action_evidence")
         != restored.corporate_action_evidence

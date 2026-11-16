@@ -52,6 +52,9 @@ class BacktestCostAssumptions(BaseModel):
 class BacktestRequest(BaseModel):
     # 指定后只消费该数据集，不能失败后自动改用旧缓存或远程行情。
     dataset_id: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    price_basis: Literal["unadjusted", "forward", "backward", "point_in_time"] = (
+        "unadjusted"
+    )
     corporate_action_mode: Literal[
         "price_only", "cash_dividends_gross", "reported_distributions_gross"
     ] = "price_only"
@@ -123,6 +126,9 @@ class BacktestResponse(BaseModel):
 
 class BacktestSweepRequest(BaseModel):
     dataset_id: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    price_basis: Literal["unadjusted", "forward", "backward", "point_in_time"] = (
+        "unadjusted"
+    )
     corporate_action_mode: Literal[
         "price_only", "cash_dividends_gross", "reported_distributions_gross"
     ] = "price_only"
@@ -169,6 +175,9 @@ class CompareRunRequest(BaseModel):
 
 class CompareRequest(BaseModel):
     dataset_id: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    price_basis: Literal["unadjusted", "forward", "backward", "point_in_time"] = (
+        "unadjusted"
+    )
     corporate_action_mode: Literal[
         "price_only", "cash_dividends_gross", "reported_distributions_gross"
     ] = "price_only"
