@@ -179,42 +179,6 @@ uv run --locked python scripts/data/verify_market_bars.py \
 
 `--instrument-type` 选择本地缓存的精确身份，例如 `etf` 或 `open_end_fund`。ETF 与开放式基金都使用 `--asset-class fund`，此时必须同时指定精确类型；两者冲突时会在读取数据前拒绝。省略资产大类时可由精确类型确定；两者均省略则沿用股票。
 
-## 独立暂停后台任务队列
-
-[`data/job_queue.py`](data/job_queue.py) 只控制已有任务的调度，不请求数据、不创建恢复任务。
-任务的 `queue_name` 与暂停开关保存在现有 `runtime_controls`，不改写 `job_runs` 或迁移表结构；
-暂停和恢复均与操作人、原因、修订号一起记入数据库审计。
-普通未分组任务继续运行。已分组队列的控制缺失或损坏时，仅该队列停止领取任务。
-
-```bash
-# 查看持久化状态和该队列中的具体任务；数据库须已由当前服务完成迁移。
-uv run --locked python scripts/data/job_queue.py status \
-  --db /path/to/app.db --queue bk_recovery
-
-# jobs.json 格式为 {"jobs": ["完整任务ID", ...]}，只接受已存在的精确任务。
-# 首次登记的修订号为 0，后续使用 status 返回的 revision。
-uv run --locked python scripts/data/job_queue.py pause \
-  --db /path/to/app.db --queue bk_recovery --job-ids-file jobs.json \
-  --expected-revision 0 --actor operator --reason "等待确认恢复范围"
-```
-
-确认继续后，用 `resume` 替换 `pause` 并传入当前修订号；恢复不改写原重试时间，
-不重新入队 `failed` / `succeeded` 任务，也不创建后继任务。队列状态在服务重启后保留。
-新建分组任务时，`SQLiteJobStore.enqueue(..., queue_name=...)` 将队列归属
-与任务创建一起持久化；不要先入普通队列再单独归组。已有任务只通过上述审计操作归组，不能隐式改组。
-暂停后，已进入的 Provider 批次可能完成（一个批次可以含多次 SDK 请求）；worker 在后续 Provider 入口和任务完成处重新检查，
-未完成任务继续排队，不因此耗尽失败重试次数。队列恢复不启用任何独立的模拟或推荐自动启动器。
-
-BK 行情恢复使用 `enqueue_verified_daily_market_recovery(store, original_job_id, now=..., actor=..., reason=...)`，
-不要只给普通 `enqueue` 的 `observation_round` 添加恢复后缀。该入口保留原交易日、证券、日历和选源策略，
-在同一事务中创建确定性后继、记录唯一关联并禁止 Worker 再领取原任务，原任务的状态及历史字段不变。
-原任务可以是尚未完成的 `queued` 或可恢复的 `failed`；已领取、已成功或存在已知冲突的任务不能直接替代。
-默认继承原队列，也可以显式指定已配置的隔离队列；创建关联不恢复任何队列。
-重复调用返回同一后继，即使后继已失败也不重置它的尝试次数。关联和操作审计复用现有持久化控制表。
-BK 按原批次只读取一次后继：排队/运行中仍等待，失败仍阻塞，成功后须通过完整范围、捕获时点及双源证据重放。
-历史终态失败已存在的有效后继继续可读；排队原任务必须有显式关联，不能仅靠相似名称推断替代关系。
-上线此关联能力前须让 data worker 加载更新后的领取逻辑；没有实际恢复授权时只部署代码，不创建关联或任务。
-
 ## macOS 后台服务受管守护
 
 [`service/manage_launch_agent.sh`](service/manage_launch_agent.sh) 管理 macOS 原生 `launchd` 用户级守护进程（自动随系统自启、日志轮转与保活）：
