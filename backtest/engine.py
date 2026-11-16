@@ -35,7 +35,15 @@ from core.events import (
     RiskDecisionEvent,
     SignalEvent,
 )
-from core.types import ZERO, AssetClass, InstrumentType, OrderSide, OrderType, Symbol
+from core.types import (
+    ZERO,
+    AssetClass,
+    ExecutionModel,
+    InstrumentType,
+    OrderSide,
+    OrderType,
+    Symbol,
+)
 from data.handler import DataHandler
 from domain.a_share_limits import is_limit_down, is_limit_up, is_suspended
 from domain.instrument import Instrument
@@ -66,6 +74,7 @@ class BacktestExecutionConfig:
     availability. ``historical_snapshot`` permits explicitly exploratory replay.
     Streaming opts into distinct sorted DataHandlers whose frames stay private
     and unchanged; every row still receives preflight before strategy initialization.
+    ``execution_model`` selects whether next-session fills occur at open or close.
     """
 
     slippage_model: SlippageModel | None = None
@@ -75,6 +84,7 @@ class BacktestExecutionConfig:
         "historical_snapshot"
     )
     stream_sorted_data_handlers: bool = False
+    execution_model: ExecutionModel = ExecutionModel.NEXT_BAR_CLOSE
 
 
 def research_execution_config(
@@ -82,6 +92,7 @@ def research_execution_config(
     *,
     slippage_bps: Decimal = RESEARCH_SLIPPAGE_BPS,
     stream_sorted_data_handlers: bool = False,
+    execution_model: ExecutionModel | str = ExecutionModel.NEXT_BAR_CLOSE,
 ) -> BacktestExecutionConfig:
     """The same explicit friction assumption for automatic research consumers."""
     return BacktestExecutionConfig(
@@ -89,6 +100,7 @@ def research_execution_config(
         slippage_model=PercentSlippage(slippage_bps / Decimal("10000")),
         max_volume_participation=RESEARCH_MAX_VOLUME_PARTICIPATION,
         stream_sorted_data_handlers=stream_sorted_data_handlers,
+        execution_model=ExecutionModel.from_value(execution_model),
     )
 
 
@@ -119,6 +131,7 @@ class BacktestEngine:
         strict_event_errors: bool = False,
         session_completed: Callable[[date], None] | None = None,
         session_decision: Callable[[date], None] | None = None,
+        execution_model: ExecutionModel | str | None = None,
     ) -> None:
         if evaluation_start is not None and type(evaluation_start) is not date:
             raise ValueError("backtest_evaluation_start_invalid")
@@ -162,6 +175,18 @@ class BacktestEngine:
         )
         if self._availability_mode not in {"historical_snapshot", "observed"}:
             raise ValueError("backtest_availability_mode_unsupported")
+        if execution_model is not None:
+            self._execution_model = ExecutionModel.from_value(execution_model)
+        elif (
+            execution_config is not None
+            and execution_config.execution_model is not None
+        ):
+            self._execution_model = ExecutionModel.from_value(
+                execution_config.execution_model
+            )
+        else:
+            self._execution_model = ExecutionModel.NEXT_BAR_CLOSE
+        self._executing_at_open = False
         self._stream_sorted_data_handlers = (
             execution_config.stream_sorted_data_handlers
             if execution_config is not None
@@ -303,15 +328,19 @@ class BacktestEngine:
                 # This mode requires one simultaneous Shanghai close per symbol.
                 # Mark all prices before adding ex-date receivables, so ordering
                 # symbols cannot temporarily count both the old price and income.
-                self.portfolio.mark_to_market(
-                    {event.symbol: event.close for event in session_events}
-                )
+                pre_div_prices = {
+                    event.symbol: (
+                        event.open
+                        if self._execution_model is ExecutionModel.NEXT_BAR_OPEN
+                        else event.close
+                    )
+                    for event in session_events
+                }
+                self.portfolio.mark_to_market(pre_div_prices)
                 self._dividend_replay.before_session(current_date, self.portfolio)
                 # Awards change quantities without fills. Revalue every holding
                 # before any symbol is sized, then sync strategy position state.
-                self.portfolio.mark_to_market(
-                    {event.symbol: event.close for event in session_events}
-                )
+                self.portfolio.mark_to_market(pre_div_prices)
                 for symbol, position in self.portfolio.positions.items():
                     self.strategy.on_position_update(symbol, position.quantity)
             if self._session_decision is not None:
@@ -322,9 +351,15 @@ class BacktestEngine:
                     raise ValueError(
                         "session_portfolio_requires_simultaneous_daily_bars"
                     )
-                self.portfolio.mark_to_market(
-                    {event.symbol: event.close for event in session_events}
-                )
+                pre_session_prices = {
+                    event.symbol: (
+                        event.open
+                        if self._execution_model is ExecutionModel.NEXT_BAR_OPEN
+                        else event.close
+                    )
+                    for event in session_events
+                }
+                self.portfolio.mark_to_market(pre_session_prices)
                 session_events.sort(
                     key=lambda event: (
                         self._pending_signals.get(event.symbol) is None
@@ -334,16 +369,23 @@ class BacktestEngine:
                 )
             for market_event in session_events:
                 self.clock.advance_to(market_event.timestamp)
-                prices = {market_event.symbol: market_event.close}
-                self.portfolio.mark_to_market(prices)
+                pre_prices = {
+                    market_event.symbol: (
+                        market_event.open
+                        if self._execution_model is ExecutionModel.NEXT_BAR_OPEN
+                        else market_event.close
+                    )
+                }
+                self.portfolio.mark_to_market(pre_prices)
                 self.risk_manager.set_portfolio_value(
                     total=float(self._calculate_equity()),
                     cash=float(self.portfolio.cash),
                 )
                 self.event_bus.publish_and_process(market_event)
                 self.event_bus.drain()
-                self.portfolio.mark_to_market(prices)
-                self.portfolio.record_equity(market_event.timestamp, prices)
+                close_prices = {market_event.symbol: market_event.close}
+                self.portfolio.mark_to_market(close_prices)
+                self.portfolio.record_equity(market_event.timestamp, close_prices)
             if self._dividend_replay is not None:
                 self._dividend_replay.after_session(current_date, self.portfolio)
             if self._session_decision is not None:
@@ -371,6 +413,10 @@ class BacktestEngine:
             total=float(self._calculate_equity()), cash=float(self.portfolio.cash)
         )
 
+    @property
+    def execution_model(self) -> ExecutionModel:
+        return self._execution_model
+
     def _on_position_fill(self, event: FillEvent) -> None:
         position = self.portfolio.positions[event.symbol]
         self.strategy.on_position_update(event.symbol, position.quantity)
@@ -385,10 +431,21 @@ class BacktestEngine:
             and event.timestamp > pending.timestamp
         ):
             del self._pending_signals[event.symbol]
-            self.portfolio.on_signal(
-                replace(pending, timestamp=event.timestamp, price=event.close)
+            execution_price = (
+                event.open
+                if self._execution_model is ExecutionModel.NEXT_BAR_OPEN
+                else event.close
             )
-            self.event_bus.drain()
+            self._executing_at_open = (
+                self._execution_model is ExecutionModel.NEXT_BAR_OPEN
+            )
+            try:
+                self.portfolio.on_signal(
+                    replace(pending, timestamp=event.timestamp, price=execution_price)
+                )
+                self.event_bus.drain()
+            finally:
+                self._executing_at_open = False
         self.strategy.on_data(event)
         self.event_bus.drain()
         self._previous_close[event.symbol] = event.close
@@ -427,13 +484,18 @@ class BacktestEngine:
         previous = self._previous_close.get(event.symbol)
         if previous is None or instrument.limit_pct <= ZERO:
             return True
+        check_price = (
+            bar.open
+            if self._execution_model is ExecutionModel.NEXT_BAR_OPEN
+            else bar.close
+        )
         blocked = (
             is_limit_up(
-                bar.close, previous, instrument.limit_pct, tick=instrument.price_tick
+                check_price, previous, instrument.limit_pct, tick=instrument.price_tick
             )
             if event.side is OrderSide.BUY
             else is_limit_down(
-                bar.close, previous, instrument.limit_pct, tick=instrument.price_tick
+                check_price, previous, instrument.limit_pct, tick=instrument.price_tick
             )
         )
         if blocked:
@@ -443,7 +505,12 @@ class BacktestEngine:
     def _known_market_price(self, symbol: Symbol) -> Decimal | None:
         bar = self._current_market_event
         if bar is not None and bar.symbol == symbol:
-            return bar.close
+            return (
+                bar.open
+                if self._execution_model is ExecutionModel.NEXT_BAR_OPEN
+                and self._executing_at_open
+                else bar.close
+            )
         return self._previous_close.get(symbol)
 
     def _approved_order(self, event: OrderEvent) -> OrderEvent | None:
@@ -821,9 +888,18 @@ class BacktestEngine:
             ),
             execution_timing={
                 "schema_version": "karkinos.backtest_execution_timing.v1",
-                "policy_id": "karkinos.backtest.next_bar_close.v2",
+                "execution_model": self._execution_model.value,
+                "policy_id": (
+                    "karkinos.backtest.next_bar_open.v1"
+                    if self._execution_model is ExecutionModel.NEXT_BAR_OPEN
+                    else "karkinos.backtest.next_bar_close.v2"
+                ),
                 "signal_basis": "completed_bar",
-                "fill_basis": "strictly_later_same_instrument_bar_close",
+                "fill_basis": (
+                    "strictly_later_same_instrument_bar_open"
+                    if self._execution_model is ExecutionModel.NEXT_BAR_OPEN
+                    else "strictly_later_same_instrument_bar_close"
+                ),
                 "availability_mode": self._availability_mode,
                 "pending_signal_count": len(self._pending_signals),
                 "limit_blocked_count": self._execution_blocked["limit"],

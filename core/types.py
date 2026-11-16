@@ -156,6 +156,29 @@ class CommissionType(Enum):
     BOND_EXCHANGE = "bond_exchange"
 
 
+class ExecutionModel(Enum):
+    """回测撮合执行模型。
+
+    NEXT_BAR_OPEN: 次日开盘价撮合。T 日收盘生成信号，T+1 日开盘以 T+1 Open 撮合成交。
+    NEXT_BAR_CLOSE: 次日收盘价撮合。T 日收盘生成信号，T+1 日收盘以 T+1 Close 撮合成交。
+    """
+
+    NEXT_BAR_OPEN = "next_bar_open"
+    NEXT_BAR_CLOSE = "next_bar_close"
+
+    @classmethod
+    def from_value(cls, value: object) -> "ExecutionModel":
+        """Parse an execution model identifier leniently."""
+        if isinstance(value, cls):
+            return value
+        normalized = str(value or "").strip().lower().replace("-", "_")
+        if normalized in {"next_bar_open", "open"}:
+            return cls.NEXT_BAR_OPEN
+        if normalized in {"next_bar_close", "close"}:
+            return cls.NEXT_BAR_CLOSE
+        raise ValueError(f"unsupported execution model: {value!r}")
+
+
 # ---------- 常量 ----------
 ZERO = Decimal("0")
 ONE = Decimal("1")
