@@ -1,7 +1,7 @@
 """A-Share Corporate Actions & Price Adjustment Engine.
 
 Provides unified models, normalizers, mathematical factor calculations,
-and CAS persistence.
+CAS persistence, and OHLCV price series adjustments.
 """
 
 from data.corporate_actions.adjustment_engine import (
@@ -27,6 +27,10 @@ from data.corporate_actions.normalization import (
     normalize_facts_record,
     normalize_observation_evidence,
 )
+from data.corporate_actions.price_series import (
+    adjust_ohlcv_dataframe,
+    verify_ohlcv_invariants,
+)
 
 __all__ = [
     "CorporateActionAdjustmentEngine",
@@ -44,4 +48,6 @@ __all__ = [
     "generate_event_id",
     "normalize_facts_record",
     "normalize_observation_evidence",
+    "adjust_ohlcv_dataframe",
+    "verify_ohlcv_invariants",
 ]
