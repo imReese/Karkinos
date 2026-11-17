@@ -52,7 +52,9 @@ class Portfolio:
     def add_instrument(self, instrument: Instrument) -> None:
         self.instruments[instrument.symbol] = instrument
 
-    def on_signal(self, event: SignalEvent) -> None:
+    def on_signal(
+        self, event: SignalEvent, *, reference_equity: Decimal | None = None
+    ) -> None:
         """将目标权重转为具体股数，发布 OrderEvent。"""
         symbol = event.symbol
         instrument = self.instruments.get(symbol)
@@ -65,7 +67,11 @@ class Portfolio:
             return
 
         # 计算当前持仓权重
-        total_equity = self._calculate_equity()
+        total_equity = (
+            reference_equity
+            if reference_equity is not None
+            else self._calculate_equity()
+        )
         current_value = self._position_value(symbol, current_price)
         current_weight = current_value / total_equity if total_equity > ZERO else ZERO
 

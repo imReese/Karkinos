@@ -126,6 +126,7 @@ class FillEvent(Event):
     fee_breakdown: dict[str, Any] | None = None
     fee_rule_id: str | None = None
     fee_rule_version: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)

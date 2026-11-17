@@ -45,6 +45,10 @@ class BrokerFillReport:
             fill_quantity=self.fill_quantity,
             commission=self.commission,
             slippage=self.slippage,
+            fee_breakdown=self.metadata.get("fee_breakdown"),
+            fee_rule_id=self.metadata.get("fee_rule_id"),
+            fee_rule_version=self.metadata.get("fee_rule_version"),
+            metadata=self.metadata,
         )
 
 

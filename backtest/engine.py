@@ -10,7 +10,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from heapq import merge
 from itertools import groupby
-from typing import Literal, cast
+from typing import Any, Literal, cast
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -45,7 +45,13 @@ from core.types import (
     Symbol,
 )
 from data.handler import DataHandler
-from domain.a_share_limits import is_limit_down, is_limit_up, is_suspended
+from domain.a_share_limits import (
+    is_limit_down,
+    is_limit_up,
+    is_suspended,
+    limit_down_price,
+    limit_up_price,
+)
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
 from domain.portfolio_accounting import total_trade_fee
@@ -187,6 +193,7 @@ class BacktestEngine:
         else:
             self._execution_model = ExecutionModel.NEXT_BAR_CLOSE
         self._executing_at_open = False
+        self._session_open_equity: Decimal | None = None
         self._stream_sorted_data_handlers = (
             execution_config.stream_sorted_data_handlers
             if execution_config is not None
@@ -343,49 +350,53 @@ class BacktestEngine:
                 self.portfolio.mark_to_market(pre_div_prices)
                 for symbol, position in self.portfolio.positions.items():
                     self.strategy.on_position_update(symbol, position.quantity)
-            if self._session_decision is not None:
-                # One simultaneous daily close values the complete book before
-                # any next-session target is executed. Exits execute first but
-                # only actual proceeds can finance subsequent buys.
-                if len({event.timestamp for event in session_events}) != 1:
-                    raise ValueError(
-                        "session_portfolio_requires_simultaneous_daily_bars"
-                    )
-                pre_session_prices = {
-                    event.symbol: (
-                        event.open
-                        if self._execution_model is ExecutionModel.NEXT_BAR_OPEN
-                        else event.close
-                    )
-                    for event in session_events
-                }
-                self.portfolio.mark_to_market(pre_session_prices)
-                session_events.sort(
-                    key=lambda event: (
-                        self._pending_signals.get(event.symbol) is None
-                        or self._pending_signals[event.symbol].target_weight != 0,
-                        str(event.symbol),
-                    )
-                )
-            for market_event in session_events:
-                self.clock.advance_to(market_event.timestamp)
-                pre_prices = {
-                    market_event.symbol: (
-                        market_event.open
-                        if self._execution_model is ExecutionModel.NEXT_BAR_OPEN
-                        else market_event.close
-                    )
-                }
-                self.portfolio.mark_to_market(pre_prices)
+            if self._execution_model is ExecutionModel.NEXT_BAR_OPEN:
+                # Mark all available instruments in today's session to their open price
+                # before any order execution or target sizing occurs.
+                # Instruments without a bar today remain at their last known mark.
+                open_prices = {event.symbol: event.open for event in session_events}
+                self.portfolio.mark_to_market(open_prices)
+                self._session_open_equity = self._calculate_equity()
                 self.risk_manager.set_portfolio_value(
-                    total=float(self._calculate_equity()),
+                    total=float(self._session_open_equity),
                     cash=float(self.portfolio.cash),
                 )
+                session_events.sort(key=self._open_session_event_order)
+            else:
+                self._session_open_equity = None
+                if self._session_decision is not None:
+                    # One simultaneous daily close values the complete book before
+                    # any next-session target is executed. Exits execute first but
+                    # only actual proceeds can finance subsequent buys.
+                    if len({event.timestamp for event in session_events}) != 1:
+                        raise ValueError(
+                            "session_portfolio_requires_simultaneous_daily_bars"
+                        )
+                    self.portfolio.mark_to_market(
+                        {event.symbol: event.close for event in session_events}
+                    )
+                    session_events.sort(
+                        key=lambda event: (
+                            self._pending_signals.get(event.symbol) is None
+                            or self._pending_signals[event.symbol].target_weight != 0,
+                            str(event.symbol),
+                        )
+                    )
+            for market_event in session_events:
+                self.clock.advance_to(market_event.timestamp)
+                if self._execution_model is not ExecutionModel.NEXT_BAR_OPEN:
+                    prices = {market_event.symbol: market_event.close}
+                    self.portfolio.mark_to_market(prices)
+                    self.risk_manager.set_portfolio_value(
+                        total=float(self._calculate_equity()),
+                        cash=float(self.portfolio.cash),
+                    )
                 self.event_bus.publish_and_process(market_event)
                 self.event_bus.drain()
                 close_prices = {market_event.symbol: market_event.close}
                 self.portfolio.mark_to_market(close_prices)
                 self.portfolio.record_equity(market_event.timestamp, close_prices)
+            self._session_open_equity = None
             if self._dividend_replay is not None:
                 self._dividend_replay.after_session(current_date, self.portfolio)
             if self._session_decision is not None:
@@ -400,6 +411,23 @@ class BacktestEngine:
         if self._dividend_replay is not None:
             return event.timestamp.astimezone(ZoneInfo("Asia/Shanghai")).date()
         return event.timestamp.date()
+
+    def _open_session_event_order(self, event: MarketEvent) -> tuple[int, str]:
+        pending = self._pending_signals.get(event.symbol)
+        if pending is None:
+            return (3, str(event.symbol))
+        if pending.target_weight == ZERO:
+            return (0, str(event.symbol))
+        pos = self.portfolio.positions.get(event.symbol)
+        current_val = pos.market_value if pos is not None else ZERO
+        target_val = (
+            self._session_open_equity * pending.target_weight
+            if self._session_open_equity is not None
+            else ZERO
+        )
+        if target_val < current_val:
+            return (1, str(event.symbol))
+        return (2, str(event.symbol))
 
     def _on_portfolio_fill(self, event: FillEvent) -> None:
         market_price = self._known_market_price(event.symbol)
@@ -441,7 +469,8 @@ class BacktestEngine:
             )
             try:
                 self.portfolio.on_signal(
-                    replace(pending, timestamp=event.timestamp, price=execution_price)
+                    replace(pending, timestamp=event.timestamp, price=execution_price),
+                    reference_equity=self._session_open_equity,
                 )
                 self.event_bus.drain()
             finally:
@@ -650,8 +679,10 @@ class BacktestEngine:
     def _resolve_fill(self, event: OrderEvent) -> FillEvent | None:
         """Resolve one price and complete fee; never re-execute an accepted fill."""
         fill = self.execution.execute(event)
+        if fill is None:
+            return None
         inst = self.instruments.get(event.symbol)
-        if fill is not None and self._multi_commission is not None and inst is not None:
+        if self._multi_commission is not None and inst is not None:
             breakdown = self._multi_commission.breakdown_for(
                 inst.commission_type,
                 fill.side,
@@ -666,6 +697,36 @@ class BacktestEngine:
                 fee_rule_id=breakdown.fee_rule_id,
                 fee_rule_version=self._multi_commission.fee_rule_version,
             )
+        bar = self._current_market_event
+        previous = self._previous_close.get(event.symbol)
+        if (
+            bar is not None
+            and bar.symbol == event.symbol
+            and inst is not None
+            and previous is not None
+            and inst.limit_pct > ZERO
+            and inst.instrument_type in {InstrumentType.STOCK, InstrumentType.ETF}
+        ):
+            tick = inst.price_tick or Decimal("0.01")
+            up = limit_up_price(previous, inst.limit_pct, tick=tick)
+            down = limit_down_price(previous, inst.limit_pct, tick=tick)
+            if event.side is OrderSide.BUY and fill.fill_price > up:
+                self._execution_blocked["limit"] += 1
+                return None
+            if event.side is OrderSide.SELL and fill.fill_price < down:
+                self._execution_blocked["limit"] += 1
+                return None
+        fill_metadata: dict[str, Any] = {
+            "bar_timestamp": fill.timestamp.isoformat(),
+            "session_date": (
+                self._session_date(bar).isoformat() if bar is not None else None
+            ),
+            "execution_phase": "open" if self._executing_at_open else "close",
+            "execution_model": self._execution_model.value,
+        }
+        if fill.metadata:
+            fill_metadata.update(fill.metadata)
+        fill = replace(fill, metadata=fill_metadata)
         return fill
 
     def _cash_funded_fill(
@@ -744,6 +805,15 @@ class BacktestEngine:
             self.event_bus.publish_and_process(fill)
             return
 
+        report_metadata: dict[str, Any] = {
+            "order_execution_mode": order.execution_mode,
+            "fee_breakdown": fill.fee_breakdown,
+            "fee_rule_id": fill.fee_rule_id,
+            "fee_rule_version": fill.fee_rule_version,
+        }
+        if fill.metadata:
+            report_metadata.update(fill.metadata)
+
         self.execution_tracker.record_fill(
             BrokerFillReport(
                 fill_id=fill.fill_id,
@@ -761,12 +831,7 @@ class BacktestEngine:
                 broker_order_id=order.order_id,
                 source="backtest_execution",
                 source_ref=fill.fill_id,
-                metadata={
-                    "order_execution_mode": order.execution_mode,
-                    "fee_breakdown": fill.fee_breakdown,
-                    "fee_rule_id": fill.fee_rule_id,
-                    "fee_rule_version": fill.fee_rule_version,
-                },
+                metadata=report_metadata,
             ),
             publish=False,
         )
