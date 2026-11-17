@@ -206,7 +206,16 @@ class BacktestEngine:
         self._pending_signals: dict[Symbol, SignalEvent] = {}
         self._current_market_event: MarketEvent | None = None
         self._previous_close: dict[Symbol, Decimal] = {}
-        self._execution_blocked = {"limit": 0, "suspension": 0, "risk": 0, "cash": 0}
+        self._open_signal_context: tuple[Symbol, str] | None = None
+        self._open_authorized_intent_id: str | None = None
+        self._open_authorized_order_id: str | None = None
+        self._execution_blocked = {
+            "limit": 0,
+            "suspension": 0,
+            "risk": 0,
+            "cash": 0,
+            "timing": 0,
+        }
         self._cash_resized_count = 0
         self._max_volume_participation = (
             execution_config.max_volume_participation
@@ -399,25 +408,11 @@ class BacktestEngine:
                     pending = eligible_signals.get(market_event.symbol)
                     if pending is None:
                         continue
-                    self.clock.advance_to(market_event.timestamp)
-                    self._current_market_event = market_event
-                    self._executing_at_open = True
-                    try:
-                        self.portfolio.on_signal(
-                            replace(
-                                pending,
-                                timestamp=market_event.timestamp,
-                                price=market_event.open,
-                            ),
-                            reference_equity=self._session_open_equity,
-                        )
-                        self.event_bus.drain()
-                    finally:
-                        self._executing_at_open = False
+                    self._execute_open_signal(market_event, pending)
 
                 self._session_open_equity = None
 
-                # 4. Close Phase: Close valuation, strategy.on_data & equity recording
+                # 4. Close Phase: Close valuation, broadcast completed MarketEvent & equity recording
                 close_prices = {event.symbol: event.close for event in session_events}
                 self.portfolio.mark_to_market(close_prices)
                 self.risk_manager.set_portfolio_value(
@@ -427,10 +422,8 @@ class BacktestEngine:
 
                 for market_event in session_events:
                     self.clock.advance_to(market_event.timestamp)
-                    self._current_market_event = market_event
-                    self.strategy.on_data(market_event)
+                    self.event_bus.publish_and_process(market_event)
                     self.event_bus.drain()
-                    self._previous_close[market_event.symbol] = market_event.close
 
                 session_timestamp = session_events[0].timestamp
                 self.portfolio.record_equity(session_timestamp, close_prices)
@@ -525,9 +518,30 @@ class BacktestEngine:
         position = self.portfolio.positions[event.symbol]
         self.strategy.on_position_update(event.symbol, position.quantity)
 
-    def _on_market_event(self, event: MarketEvent) -> None:
-        """Execute prior targets, then expose this completed bar to the strategy."""
+    def _execute_open_signal(self, event: MarketEvent, pending: SignalEvent) -> None:
+        self.clock.advance_to(event.timestamp)
         self._current_market_event = event
+        self._open_signal_context = (event.symbol, uuid.uuid4().hex)
+        self._open_authorized_intent_id = None
+        self._open_authorized_order_id = None
+        self._executing_at_open = True
+        try:
+            self.portfolio.on_signal(
+                replace(
+                    pending,
+                    timestamp=event.timestamp,
+                    price=event.open,
+                ),
+                reference_equity=self._session_open_equity,
+            )
+            self.event_bus.drain()
+        finally:
+            self._executing_at_open = False
+            self._open_signal_context = None
+            self._open_authorized_intent_id = None
+            self._open_authorized_order_id = None
+
+    def _execute_close_signal(self, event: MarketEvent) -> None:
         pending = self._pending_signals.get(event.symbol)
         if (
             not self._warming_up
@@ -535,22 +549,17 @@ class BacktestEngine:
             and event.timestamp > pending.timestamp
         ):
             del self._pending_signals[event.symbol]
-            execution_price = (
-                event.open
-                if self._execution_model is ExecutionModel.NEXT_BAR_OPEN
-                else event.close
+            self.portfolio.on_signal(
+                replace(pending, timestamp=event.timestamp, price=event.close),
+                reference_equity=None,
             )
-            self._executing_at_open = (
-                self._execution_model is ExecutionModel.NEXT_BAR_OPEN
-            )
-            try:
-                self.portfolio.on_signal(
-                    replace(pending, timestamp=event.timestamp, price=execution_price),
-                    reference_equity=self._session_open_equity,
-                )
-                self.event_bus.drain()
-            finally:
-                self._executing_at_open = False
+            self.event_bus.drain()
+
+    def _on_market_event(self, event: MarketEvent) -> None:
+        """Expose this completed bar to the strategy and update market state."""
+        self._current_market_event = event
+        if self._execution_model is ExecutionModel.NEXT_BAR_CLOSE:
+            self._execute_close_signal(event)
         self.strategy.on_data(event)
         self.event_bus.drain()
         self._previous_close[event.symbol] = event.close
@@ -656,8 +665,35 @@ class BacktestEngine:
         """Build an order; the execution boundary records the actual risk decision."""
         if self._warming_up:
             return
+        if self._execution_model is ExecutionModel.NEXT_BAR_OPEN:
+            is_authorized = (
+                self._open_signal_context is not None
+                and self._open_signal_context[0] == event.symbol
+                and self._open_authorized_intent_id is None
+            )
+            if not is_authorized:
+                self._execution_blocked["timing"] += 1
+                if event.intent_id is not None:
+                    self.event_bus.publish(
+                        RiskDecisionEvent(
+                            timestamp=event.timestamp,
+                            decision_id=f"BACKTEST-RISK-{uuid.uuid4().hex[:8]}",
+                            intent_id=event.intent_id,
+                            passed=False,
+                            symbol=event.symbol,
+                            side=event.side,
+                            reasons=["next_bar_open_direct_order_unsupported"],
+                            resulting_order_id=None,
+                            severity="warning",
+                        )
+                    )
+                return
+            self._open_authorized_intent_id = event.intent_id
+
         decision_id = f"BACKTEST-RISK-{uuid.uuid4().hex[:8]}"
         order_id = f"ORD-{uuid.uuid4().hex[:8]}"
+        if self._execution_model is ExecutionModel.NEXT_BAR_OPEN:
+            self._open_authorized_order_id = order_id
         self.event_bus.publish(
             OrderEvent(
                 timestamp=event.timestamp,
@@ -677,6 +713,42 @@ class BacktestEngine:
         """Execute an approved order at the current bar's modeled close."""
         if self._warming_up:
             return
+        if self._execution_model is ExecutionModel.NEXT_BAR_OPEN:
+            is_authorized = (
+                self._open_signal_context is not None
+                and self._open_signal_context[0] == event.symbol
+                and event.order_id == self._open_authorized_order_id
+            )
+            if not is_authorized:
+                self._execution_blocked["timing"] += 1
+                if event.intent_id is not None and event.risk_decision_id is not None:
+                    self.event_bus.publish(
+                        RiskDecisionEvent(
+                            timestamp=event.timestamp,
+                            decision_id=event.risk_decision_id,
+                            intent_id=event.intent_id,
+                            passed=False,
+                            symbol=event.symbol,
+                            side=event.side,
+                            reasons=["next_bar_open_order_not_authorized"],
+                            resulting_order_id=None,
+                            severity="warning",
+                        )
+                    )
+                self.event_bus.publish(
+                    RiskAlertEvent(
+                        timestamp=event.timestamp,
+                        alert_id=f"RISK-{event.order_id}",
+                        rule_name="OrderTimingRule",
+                        severity="warning",
+                        message="Order rejected: NEXT_BAR_OPEN prohibits direct order execution outside authorized open signal context",
+                        symbol=event.symbol,
+                        order_id=event.order_id,
+                    )
+                )
+                return
+            self._open_authorized_order_id = None
+
         approved = self._approved_order(event)
         execution = None
         if approved is not None and self._tradeable_order(approved):
@@ -1048,9 +1120,24 @@ class BacktestEngine:
                 "risk_blocked_count": self._execution_blocked["risk"],
                 "cash_blocked_count": self._execution_blocked["cash"],
                 "cash_resized_count": self._cash_resized_count,
-                "capacity_model": "cumulative_bar_share_participation"
-                if self._max_volume_participation is not None
-                else "unconstrained",
+                "timing_blocked_count": self._execution_blocked.get("timing", 0),
+                "capacity_model": (
+                    "cumulative_bar_share_participation"
+                    if self._max_volume_participation is not None
+                    else (
+                        "unsimulated_open_capacity"
+                        if self._execution_model is ExecutionModel.NEXT_BAR_OPEN
+                        else "unconstrained"
+                    )
+                ),
+                "open_capacity_simulated": (
+                    False
+                    if self._execution_model is ExecutionModel.NEXT_BAR_OPEN
+                    and self._max_volume_participation is None
+                    else True
+                    if self._max_volume_participation is not None
+                    else False
+                ),
                 "max_volume_participation": str(self._max_volume_participation)
                 if self._max_volume_participation is not None
                 else None,

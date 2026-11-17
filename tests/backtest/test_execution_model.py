@@ -5,14 +5,24 @@ from decimal import Decimal
 import pandas as pd
 import pytest
 
+from backtest.distributions import StockDistribution
 from backtest.engine import (
     BacktestEngine,
     BacktestExecutionConfig,
     research_execution_config,
 )
 from core.event_bus import EventBus
-from core.events import FillEvent, MarketEvent, OrderSide, SignalEvent
-from core.types import ExecutionModel, Symbol
+from core.events import (
+    FillEvent,
+    MarketEvent,
+    OrderEvent,
+    OrderIntentEvent,
+    OrderSide,
+    RiskAlertEvent,
+    RiskDecisionEvent,
+    SignalEvent,
+)
+from core.types import ExecutionModel, OrderType, Symbol
 from data.handler import DataHandler
 from domain.instrument import make_stock
 from execution.slippage import PercentSlippage
@@ -1451,3 +1461,609 @@ class TestOpenSessionPhaseIsolation:
         )
         with pytest.raises(ValueError, match="duplicate_symbol_bar_in_session"):
             engine.run()
+
+
+class TestOrderEntryAndMarketEventContract:
+    """Verifies strict order entry timing constraints and completed MarketEvent broadcast."""
+
+    def test_on_data_direct_order_intent_rejected(self):
+        """Direct OrderIntentEvent published in on_data is rejected under NEXT_BAR_OPEN."""
+        sym = Symbol("600001")
+        frame = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 10.5,
+                    "high": 10.5,
+                    "low": 10.5,
+                    "close": 10.5,
+                    "volume": 100000,
+                },
+            ]
+        )
+
+        class DirectIntentStrategy(Strategy):
+            def __init__(self):
+                super().__init__("direct_intent", EventBus())
+
+            def on_init(self, symbols):
+                pass
+
+            def on_data(self, event: MarketEvent):
+                self._last_timestamp = event.timestamp
+                self.event_bus.publish(
+                    OrderIntentEvent(
+                        timestamp=event.timestamp,
+                        intent_id=f"INTENT-{event.symbol}",
+                        strategy_id=self.strategy_id,
+                        symbol=event.symbol,
+                        side=OrderSide.BUY,
+                        target_weight=Decimal("0.2"),
+                        quantity=Decimal("100"),
+                        reference_price=event.close,
+                    )
+                )
+
+        events_captured: list[object] = []
+        strategy = DirectIntentStrategy()
+        engine = _build_multi_engine(
+            {sym: frame},
+            strategy,
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+        )
+        engine.event_bus.subscribe(RiskDecisionEvent, events_captured.append)
+        result = engine.run()
+
+        # Direct order intent in NEXT_BAR_OPEN must NOT execute
+        assert len(result.fills) == 0
+        assert engine._execution_blocked.get("timing", 0) >= 1
+        decisions = [
+            e
+            for e in events_captured
+            if isinstance(e, RiskDecisionEvent) and not e.passed
+        ]
+        assert len(decisions) >= 1
+        assert "next_bar_open_direct_order_unsupported" in decisions[0].reasons
+
+    def test_on_data_direct_order_event_rejected(self):
+        """Direct OrderEvent published in on_data is rejected under NEXT_BAR_OPEN."""
+        sym = Symbol("600001")
+        frame = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 10.5,
+                    "high": 10.5,
+                    "low": 10.5,
+                    "close": 10.5,
+                    "volume": 100000,
+                },
+            ]
+        )
+
+        class DirectOrderStrategy(Strategy):
+            def __init__(self):
+                super().__init__("direct_order", EventBus())
+
+            def on_init(self, symbols):
+                pass
+
+            def on_data(self, event: MarketEvent):
+                self._last_timestamp = event.timestamp
+                self.event_bus.publish(
+                    OrderEvent(
+                        timestamp=event.timestamp,
+                        order_id=f"ORD-DIRECT-{event.symbol}",
+                        symbol=event.symbol,
+                        side=OrderSide.BUY,
+                        order_type=OrderType.MARKET,
+                        quantity=Decimal("100"),
+                        price=event.close,
+                    )
+                )
+
+        alerts_captured: list[object] = []
+        strategy = DirectOrderStrategy()
+        engine = _build_multi_engine(
+            {sym: frame},
+            strategy,
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+        )
+        engine.event_bus.subscribe(RiskAlertEvent, alerts_captured.append)
+        result = engine.run()
+
+        assert len(result.fills) == 0
+        assert engine._execution_blocked.get("timing", 0) >= 1
+        alerts = [e for e in alerts_captured if isinstance(e, RiskAlertEvent)]
+        assert len(alerts) >= 1
+        assert alerts[0].rule_name == "OrderTimingRule"
+
+    def test_post_close_stale_open_price_rejected(self):
+        """Order submitted after close using stale morning open price is rejected."""
+        sym = Symbol("600001")
+        frame = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 10.5,
+                    "high": 11.0,
+                    "low": 10.5,
+                    "close": 11.0,
+                    "volume": 100000,
+                },
+            ]
+        )
+
+        class StalePriceStrategy(Strategy):
+            def __init__(self):
+                super().__init__("stale_price", EventBus())
+
+            def on_init(self, symbols):
+                pass
+
+            def on_data(self, event: MarketEvent):
+                self._last_timestamp = event.timestamp
+                # Attempt to trade at open price when bar has already closed
+                self.event_bus.publish(
+                    OrderEvent(
+                        timestamp=event.timestamp,
+                        order_id=f"ORD-STALE-{event.symbol}",
+                        symbol=event.symbol,
+                        side=OrderSide.BUY,
+                        order_type=OrderType.MARKET,
+                        quantity=Decimal("100"),
+                        price=event.open,
+                    )
+                )
+
+        strategy = StalePriceStrategy()
+        engine = _build_multi_engine(
+            {sym: frame},
+            strategy,
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+        )
+        result = engine.run()
+        assert len(result.fills) == 0
+        assert engine._execution_blocked.get("timing", 0) >= 1
+
+    def test_callback_chain_order_in_on_fill_rejected(self):
+        """New order generated inside on_fill callback cannot execute in the same Open Phase."""
+        sym = Symbol("600001")
+        frame = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+            ]
+        )
+
+        class ChainedOrderStrategy(Strategy):
+            def __init__(self):
+                super().__init__("chained_order", EventBus())
+                self.attempted_chained = False
+
+            def on_init(self, symbols):
+                pass
+
+            def on_data(self, event: MarketEvent):
+                self._last_timestamp = event.timestamp
+                if "2026-01-05" in str(event.timestamp):
+                    self.emit_signal(event.symbol, Decimal("0.20"))
+
+            def on_fill(self, event: FillEvent):
+                # When the legitimate Day 2 open order fills, immediately try to place another order
+                if not self.attempted_chained:
+                    self.attempted_chained = True
+                    self.event_bus.publish(
+                        OrderIntentEvent(
+                            timestamp=event.timestamp,
+                            intent_id="CHAINED-INTENT",
+                            strategy_id=self.strategy_id,
+                            symbol=event.symbol,
+                            side=OrderSide.BUY,
+                            target_weight=Decimal("0.5"),
+                            quantity=Decimal("500"),
+                            reference_price=event.fill_price,
+                        )
+                    )
+
+        strategy = ChainedOrderStrategy()
+        engine = _build_multi_engine(
+            {sym: frame},
+            strategy,
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+        )
+        decisions: list[object] = []
+        engine.event_bus.subscribe(RiskDecisionEvent, decisions.append)
+        result = engine.run()
+
+        # Only the 1 legitimate frozen signal order fills
+        assert len(result.fills) == 1
+        assert engine._execution_blocked.get("timing", 0) == 1
+        rejected_decisions = [
+            d
+            for d in decisions
+            if isinstance(d, RiskDecisionEvent)
+            and not d.passed
+            and d.intent_id == "CHAINED-INTENT"
+        ]
+        assert len(rejected_decisions) == 1
+
+    def test_frozen_signal_executes_normally_once(self):
+        """Legitimate frozen signal derived order executes exactly once at Open."""
+        sym = Symbol("600001")
+        frame = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 10.2,
+                    "high": 10.5,
+                    "low": 10.0,
+                    "close": 10.4,
+                    "volume": 100000,
+                },
+            ]
+        )
+        strategy = StagedTargetStrategy({"2026-01-05": Decimal("0.30")})
+        engine = _build_multi_engine(
+            {sym: frame},
+            strategy,
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+        )
+        result = engine.run()
+        assert len(result.fills) == 1
+        fill = result.fills[0]
+        assert fill.fill_price == Decimal("10.2")
+        assert fill.metadata.get("execution_phase") == "open"
+        assert engine._execution_blocked.get("timing", 0) == 0
+
+    def test_market_event_broadcast_to_external_subscribers(self):
+        """External MarketEvent subscribers receive all completed bars under NEXT_BAR_OPEN."""
+        sym_a = Symbol("600001")
+        sym_b = Symbol("600002")
+        frame_a = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 10.5,
+                    "high": 10.5,
+                    "low": 10.5,
+                    "close": 10.5,
+                    "volume": 100000,
+                },
+            ]
+        )
+        frame_b = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 20.0,
+                    "high": 20.0,
+                    "low": 20.0,
+                    "close": 20.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 20.5,
+                    "high": 20.5,
+                    "low": 20.5,
+                    "close": 20.5,
+                    "volume": 100000,
+                },
+            ]
+        )
+        strategy = StagedTargetStrategy({})
+        engine = _build_multi_engine(
+            {sym_a: frame_a, sym_b: frame_b},
+            strategy,
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+        )
+        observed_bars: list[MarketEvent] = []
+        engine.event_bus.subscribe(MarketEvent, observed_bars.append)
+        engine.run()
+
+        # Total 2 symbols * 2 days = 4 completed bars broadcast
+        assert len(observed_bars) == 4
+        symbols_observed = {b.symbol for b in observed_bars}
+        assert symbols_observed == {sym_a, sym_b}
+
+    def test_open_fills_strictly_precede_market_event_broadcast(self):
+        """All open fills strictly precede completed MarketEvent broadcast on each day."""
+        sym = Symbol("600001")
+        frame = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 10.5,
+                    "high": 10.5,
+                    "low": 10.5,
+                    "close": 10.5,
+                    "volume": 100000,
+                },
+            ]
+        )
+        timeline: list[tuple[str, str]] = []
+
+        class TimelineStrategy(Strategy):
+            def __init__(self):
+                super().__init__("timeline", EventBus())
+
+            def on_init(self, symbols):
+                pass
+
+            def on_data(self, event: MarketEvent):
+                self._last_timestamp = event.timestamp
+                timeline.append(("on_data", event.timestamp.strftime("%Y-%m-%d")))
+                if "2026-01-05" in str(event.timestamp):
+                    self.emit_signal(event.symbol, Decimal("0.25"))
+
+            def on_fill(self, event: FillEvent):
+                timeline.append(("fill", event.timestamp.strftime("%Y-%m-%d")))
+
+        strategy = TimelineStrategy()
+        engine = _build_multi_engine(
+            {sym: frame},
+            strategy,
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+        )
+        engine.event_bus.subscribe(
+            MarketEvent,
+            lambda ev: timeline.append(
+                ("market_event_broadcast", ev.timestamp.strftime("%Y-%m-%d"))
+            ),
+        )
+        engine.run()
+
+        # Day 2: Open fill must precede completed bar broadcast and on_data
+        day2_events = [kind for kind, d in timeline if d == "2026-01-06"]
+        assert "fill" in day2_events
+        assert "market_event_broadcast" in day2_events
+        fill_idx = day2_events.index("fill")
+        broadcast_idx = day2_events.index("market_event_broadcast")
+        assert fill_idx < broadcast_idx, "Fill must precede MarketEvent broadcast"
+
+    def test_no_duplicate_on_data_and_no_duplicate_fills(self):
+        """Strategy on_data and fills execute exactly once per expected trigger."""
+        sym = Symbol("600001")
+        frame = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 10.5,
+                    "high": 10.5,
+                    "low": 10.5,
+                    "close": 10.5,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-07 15:00",
+                    "open": 10.8,
+                    "high": 10.8,
+                    "low": 10.8,
+                    "close": 10.8,
+                    "volume": 100000,
+                },
+            ]
+        )
+        on_data_count = 0
+
+        class CountingStrategy(Strategy):
+            def __init__(self):
+                super().__init__("counting", EventBus())
+
+            def on_init(self, symbols):
+                pass
+
+            def on_data(self, event: MarketEvent):
+                nonlocal on_data_count
+                on_data_count += 1
+                self._last_timestamp = event.timestamp
+                if "2026-01-05" in str(event.timestamp):
+                    self.emit_signal(event.symbol, Decimal("0.20"))
+
+        strategy = CountingStrategy()
+        engine = _build_multi_engine(
+            {sym: frame},
+            strategy,
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+        )
+        result = engine.run()
+        assert on_data_count == 3, "on_data must be called exactly 3 times (1 per day)"
+        assert len(result.fills) == 1, "Only 1 fill expected"
+
+    def test_warmup_to_formal_market_event_consistency(self):
+        """MarketEvent broadcasts arrive consistently across warmup and formal sessions."""
+        from datetime import date
+
+        sym = Symbol("600001")
+        frame = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 10.5,
+                    "high": 10.5,
+                    "low": 10.5,
+                    "close": 10.5,
+                    "volume": 100000,
+                },
+            ]
+        )
+        observed_bars: list[MarketEvent] = []
+        strategy = StagedTargetStrategy({"2026-01-05": Decimal("0.25")})
+        inst = make_stock(str(sym), "Stock")
+        engine = BacktestEngine(
+            strategy=strategy,
+            instruments={sym: inst},
+            data_handlers={sym: DataHandler(frame, sym)},
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+            evaluation_start=date(2026, 1, 6),
+        )
+        engine.event_bus.subscribe(MarketEvent, observed_bars.append)
+        result = engine.run()
+
+        # Both warmup (Jan 5) and formal (Jan 6) broadcast MarketEvents
+        assert len(observed_bars) == 2
+        # No fills allowed during warmup evaluation boundary
+        assert len(result.fills) == 0
+
+    def test_corporate_actions_under_next_bar_open(self):
+        """Cash dividend accounting works properly under NEXT_BAR_OPEN."""
+        from datetime import date, datetime, timezone
+
+        sym = Symbol("600001")
+        frame = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00+08:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00+08:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-07 15:00+08:00",
+                    "open": 9.5,
+                    "high": 9.5,
+                    "low": 9.5,
+                    "close": 9.5,
+                    "volume": 100000,
+                },
+            ]
+        )
+        # Ex-date on Jan 7: 0.5 cash dividend per share
+        dividend = StockDistribution(
+            action_id="DIV-600001-2026",
+            symbol=sym,
+            record_date=date(2026, 1, 6),
+            ex_date=date(2026, 1, 7),
+            pay_date=date(2026, 1, 7),
+            cash_per_share=Decimal("0.5"),
+            available_at=datetime(2026, 1, 6, 15, 0, tzinfo=timezone.utc),
+        )
+        strategy = StagedTargetStrategy({"2026-01-05": Decimal("0.50")})
+        inst = make_stock(str(sym), "Stock")
+        engine = BacktestEngine(
+            strategy=strategy,
+            instruments={sym: inst},
+            data_handlers={sym: DataHandler(frame, sym)},
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+            cash_dividends=(dividend,),
+        )
+        result = engine.run()
+        assert len(result.fills) == 1
+        assert result.cash_dividend_accounting is not None
+        assert Decimal(result.cash_dividend_accounting["cash_paid"]) > Decimal("0")
+
+    def test_unconstrained_capacity_metadata_flags_unsimulated_open_capacity(self):
+        """Unconstrained capacity in NEXT_BAR_OPEN explicitly flags unsimulated open capacity."""
+        sym = Symbol("600001")
+        frame = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+            ]
+        )
+        strategy = StagedTargetStrategy({})
+        engine = _build_multi_engine(
+            {sym: frame},
+            strategy,
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+        )
+        result = engine.run()
+        evidence = result.execution_timing
+        assert evidence is not None
+        assert evidence["capacity_model"] == "unsimulated_open_capacity"
+        assert evidence["open_capacity_simulated"] is False
