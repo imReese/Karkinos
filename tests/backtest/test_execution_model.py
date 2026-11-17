@@ -11,7 +11,7 @@ from backtest.engine import (
     research_execution_config,
 )
 from core.event_bus import EventBus
-from core.events import MarketEvent, OrderSide, SignalEvent
+from core.events import FillEvent, MarketEvent, OrderSide, SignalEvent
 from core.types import ExecutionModel, Symbol
 from data.handler import DataHandler
 from domain.instrument import make_stock
@@ -963,3 +963,491 @@ class TestFillMetadataTimeSemantics:
         assert event.metadata == report.metadata
         assert event.metadata["execution_phase"] == "open"
         assert event.metadata["execution_model"] == "next_bar_open"
+
+
+class TrackingPhaseStrategy(Strategy):
+    """Strategy that logs the sequence of fills vs on_data callbacks."""
+
+    def __init__(self, targets_by_date: dict[str, dict[Symbol, Decimal]]) -> None:
+        super().__init__("tracking_phase_strategy", EventBus())
+        self._targets_by_date = targets_by_date
+        self.timeline: list[tuple[str, Symbol, str]] = []
+
+    def on_init(self, symbols: list[Symbol]) -> None:
+        pass
+
+    def on_fill(self, event: FillEvent) -> None:
+        self.timeline.append(
+            ("fill", event.symbol, event.timestamp.strftime("%Y-%m-%d"))
+        )
+
+    def on_data(self, event: MarketEvent) -> None:
+        self._last_timestamp = event.timestamp
+        session_str = event.timestamp.strftime("%Y-%m-%d")
+        self.timeline.append(("on_data", event.symbol, session_str))
+        if session_str in self._targets_by_date:
+            session_targets = self._targets_by_date[session_str]
+            if event.symbol in session_targets:
+                self.emit_signal(event.symbol, session_targets[event.symbol])
+
+
+class InterferingSignalStrategy(Strategy):
+    """Strategy that attempts to overwrite B's signal when A's bar data arrives."""
+
+    def __init__(self, sym_a: Symbol, sym_b: Symbol) -> None:
+        super().__init__("interfering_signal_strategy", EventBus())
+        self.sym_a = sym_a
+        self.sym_b = sym_b
+
+    def on_init(self, symbols: list[Symbol]) -> None:
+        pass
+
+    def on_data(self, event: MarketEvent) -> None:
+        self._last_timestamp = event.timestamp
+        session_str = event.timestamp.strftime("%Y-%m-%d")
+        if session_str == "2026-01-05":
+            # Stage buy signals for both on Day 1
+            self.emit_signal(self.sym_a, Decimal("0.3"))
+            self.emit_signal(self.sym_b, Decimal("0.3"))
+        elif session_str == "2026-01-06" and event.symbol == self.sym_a:
+            # When A's data arrives on Day 2, attempt to cancel B's signal
+            self.emit_signal(self.sym_b, Decimal("0.0"))
+
+
+class TestOpenSessionPhaseIsolation:
+    def test_multi_asset_future_close_isolation(self):
+        """A's future Close price crash must not leak into B's open risk check."""
+        from risk.limits import ConcentrationRule
+
+        sym_a = Symbol("600001")
+        sym_b = Symbol("600002")
+
+        # Day 1: Both trade at 10.0. Cash = 100,000.
+        # Day 2:
+        # A opens at 10.0, but closes at 1.0 (90% crash).
+        # B opens at 10.0, closes at 10.0.
+        frame_a = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 1.0,
+                    "close": 1.0,
+                    "volume": 100000,
+                },
+            ]
+        )
+        frame_b = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+            ]
+        )
+        # Stage target weights on Day 1: A -> 0.30, B -> 0.30
+        strategy = MultiAssetTargetStrategy(
+            {"2026-01-05": {sym_a: Decimal("0.30"), sym_b: Decimal("0.30")}}
+        )
+        engine = _build_multi_engine(
+            {sym_a: frame_a, sym_b: frame_b},
+            strategy,
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+            initial_cash=Decimal("100000"),
+        )
+        # Concentration rule: max 32% of total equity
+        # At Open: total equity is ~100,000. B's order is 30,000 / 100,000 = 30% <= 32% -> PASS
+        # If A's Close (1.0) leaks: total equity is ~73,000. B's order is 30,000 / 73,000 = 41% > 32% -> REJECTED
+        engine.risk_manager.add_rule(ConcentrationRule(Decimal("0.32")))
+        result = engine.run()
+
+        # Both A and B must fill at Open because at Open A is valued at 10.0, not 1.0!
+        fills_by_symbol = {f.symbol: f for f in result.fills}
+        assert sym_a in fills_by_symbol, "Sym A must fill"
+        assert sym_b in fills_by_symbol, (
+            "Sym B must not be rejected due to Sym A's future close crash"
+        )
+
+    def test_cross_symbol_signal_isolation(self):
+        """A's on_data callback on Day 2 cannot overwrite B's pending Day 2 open signal."""
+        sym_a = Symbol("600001")
+        sym_b = Symbol("600002")
+
+        frame_a = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+            ]
+        )
+        frame_b = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+            ]
+        )
+        strategy = InterferingSignalStrategy(sym_a, sym_b)
+        engine = _build_multi_engine(
+            {sym_a: frame_a, sym_b: frame_b},
+            strategy,
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+            initial_cash=Decimal("100000"),
+        )
+        result = engine.run()
+
+        # B must fill on Day 2 Open, not be wiped out by A's on_data
+        fills_by_symbol = {f.symbol: f for f in result.fills}
+        assert sym_b in fills_by_symbol, (
+            "Sym B must execute at Open despite A's on_data"
+        )
+
+    def test_all_open_fills_precede_strategy_on_data(self):
+        """All open fills across all symbols must execute before any strategy on_data is called."""
+        sym_a = Symbol("600001")
+        sym_b = Symbol("600002")
+
+        frame_a = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+            ]
+        )
+        frame_b = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+            ]
+        )
+        strategy = TrackingPhaseStrategy(
+            {"2026-01-05": {sym_a: Decimal("0.3"), sym_b: Decimal("0.3")}}
+        )
+        engine = _build_multi_engine(
+            {sym_a: frame_a, sym_b: frame_b},
+            strategy,
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+            initial_cash=Decimal("100000"),
+        )
+        engine.run()
+
+        day2_timeline = [item for item in strategy.timeline if item[2] == "2026-01-06"]
+        # Find index of last fill and index of first on_data
+        fill_indices = [i for i, item in enumerate(day2_timeline) if item[0] == "fill"]
+        on_data_indices = [
+            i for i, item in enumerate(day2_timeline) if item[0] == "on_data"
+        ]
+
+        assert fill_indices, "Must have fills on Day 2"
+        assert on_data_indices, "Must have on_data on Day 2"
+        # Every fill must happen before the FIRST on_data
+        assert max(fill_indices) < min(on_data_indices), (
+            f"All fills must precede all on_data calls, got timeline: {day2_timeline}"
+        )
+
+    def test_next_bar_open_with_volume_participation_unsupported(self):
+        """Strict NEXT_BAR_OPEN rejects max_volume_participation as full-day volume cannot fund open capacity."""
+        sym = Symbol("600000")
+        frame = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                }
+            ]
+        )
+        strategy = StagedTargetStrategy({})
+        config = research_execution_config(execution_model=ExecutionModel.NEXT_BAR_OPEN)
+        assert config.max_volume_participation is not None
+
+        with pytest.raises(
+            ValueError, match="next_bar_open_volume_participation_unsupported"
+        ):
+            BacktestEngine(
+                strategy=strategy,
+                instruments={sym: make_stock(str(sym), "Stock")},
+                data_handlers={sym: DataHandler(frame, sym)},
+                execution_config=config,
+            )
+
+    def test_existing_position_open_valuation_with_missing_bar_symbol(self):
+        """Pre-existing positions in multiple symbols are valued at Open, while a symbol
+        missing a bar on Day 3 retains its Day 2 valuation mark without price fabrication."""
+        sym_a = Symbol("600001")
+        sym_b = Symbol("600002")
+        sym_c = Symbol("600003")
+
+        # Day 1: Signal generation
+        # Day 2: Execution establishing positions (A=20%, B=20%, C=20%)
+        # Day 3: A and B trade, C has NO bar. Sells (B) execute before buys (A).
+        frame_a = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-07 15:00",
+                    "open": 10.5,
+                    "high": 10.5,
+                    "low": 10.5,
+                    "close": 10.5,
+                    "volume": 100000,
+                },
+            ]
+        )
+        frame_b = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 20.0,
+                    "high": 20.0,
+                    "low": 20.0,
+                    "close": 20.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 20.0,
+                    "high": 20.0,
+                    "low": 20.0,
+                    "close": 20.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-07 15:00",
+                    "open": 19.0,
+                    "high": 19.0,
+                    "low": 19.0,
+                    "close": 19.0,
+                    "volume": 100000,
+                },
+            ]
+        )
+        # Sym C trades on Day 1 and Day 2, but has NO bar on Day 3 (suspended / missing bar)
+        frame_c = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 30.0,
+                    "high": 30.0,
+                    "low": 30.0,
+                    "close": 30.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 30.0,
+                    "high": 30.0,
+                    "low": 30.0,
+                    "close": 30.0,
+                    "volume": 100000,
+                },
+            ]
+        )
+
+        strategy = MultiAssetTargetStrategy(
+            {
+                # Day 1: Target equal 20% in A, B, C (fills at Day 2 Open)
+                "2026-01-05": {
+                    sym_a: Decimal("0.20"),
+                    sym_b: Decimal("0.20"),
+                    sym_c: Decimal("0.20"),
+                },
+                # Day 2: Rebalance targets: B down to 10%, A up to 35%, C unchanged (0.20)
+                "2026-01-06": {
+                    sym_a: Decimal("0.35"),
+                    sym_b: Decimal("0.10"),
+                    sym_c: Decimal("0.20"),
+                },
+            }
+        )
+        engine = _build_multi_engine(
+            {sym_a: frame_a, sym_b: frame_b, sym_c: frame_c},
+            strategy,
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+            initial_cash=Decimal("100000"),
+        )
+        result = engine.run()
+
+        # Check positions exist for all 3 symbols
+        assert sym_a in result.positions
+        assert sym_b in result.positions
+        assert sym_c in result.positions
+
+        # C's quantity must remain exactly what was established on Day 2 (600 shares)
+        # because C had no bar on Day 3 to execute rebalancing
+        assert result.positions[sym_c].quantity == Decimal("600")
+
+        # Day 3 fills: B must sell first (reduction), A must buy (increase)
+        day3_fills = [f for f in result.fills if "2026-01-07" in str(f.timestamp)]
+        assert len(day3_fills) == 2
+        assert day3_fills[0].symbol == sym_b
+        assert day3_fills[0].side is OrderSide.SELL
+        assert day3_fills[1].symbol == sym_a
+        assert day3_fills[1].side is OrderSide.BUY
+
+        # C has no fill on Day 3
+        assert all(f.symbol != sym_c for f in day3_fills)
+
+    def test_inconsistent_bar_timestamps_in_session_rejected(self):
+        """Multiple bars in the same session with different timestamps must be rejected."""
+        sym_a = Symbol("600001")
+        sym_b = Symbol("600002")
+
+        frame_a = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 14:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                }
+            ]
+        )
+        frame_b = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                }
+            ]
+        )
+        strategy = StagedTargetStrategy({})
+        engine = _build_multi_engine(
+            {sym_a: frame_a, sym_b: frame_b},
+            strategy,
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+        )
+        with pytest.raises(ValueError, match="session_bars_timestamp_inconsistent"):
+            engine.run()
+
+    def test_duplicate_symbol_bars_in_session_rejected(self):
+        """Duplicate bars for the same symbol in a daily session must be rejected."""
+        sym = Symbol("600000")
+        frame = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.5,
+                    "high": 10.5,
+                    "low": 10.5,
+                    "close": 10.5,
+                    "volume": 100000,
+                },
+            ]
+        )
+        strategy = StagedTargetStrategy({})
+        inst = make_stock(str(sym), "Stock")
+        engine = BacktestEngine(
+            strategy=strategy,
+            instruments={sym: inst},
+            data_handlers={sym: DataHandler(frame, sym)},
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+        )
+        with pytest.raises(ValueError, match="duplicate_symbol_bar_in_session"):
+            engine.run()

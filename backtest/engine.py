@@ -97,16 +97,18 @@ def research_execution_config(
     commission_calc: CommissionCalculator | None = None,
     *,
     slippage_bps: Decimal = RESEARCH_SLIPPAGE_BPS,
+    max_volume_participation: Decimal | None = RESEARCH_MAX_VOLUME_PARTICIPATION,
     stream_sorted_data_handlers: bool = False,
     execution_model: ExecutionModel | str = ExecutionModel.NEXT_BAR_CLOSE,
 ) -> BacktestExecutionConfig:
     """The same explicit friction assumption for automatic research consumers."""
+    model = ExecutionModel.from_value(execution_model)
     return BacktestExecutionConfig(
         commission_calc=commission_calc,
         slippage_model=PercentSlippage(slippage_bps / Decimal("10000")),
-        max_volume_participation=RESEARCH_MAX_VOLUME_PARTICIPATION,
+        max_volume_participation=max_volume_participation,
         stream_sorted_data_handlers=stream_sorted_data_handlers,
-        execution_model=ExecutionModel.from_value(execution_model),
+        execution_model=model,
     )
 
 
@@ -216,6 +218,11 @@ class BacktestEngine:
             or not ZERO < self._max_volume_participation <= Decimal("1")
         ):
             raise ValueError("backtest_volume_participation_invalid")
+        if (
+            self._execution_model is ExecutionModel.NEXT_BAR_OPEN
+            and self._max_volume_participation is not None
+        ):
+            raise ValueError("next_bar_open_volume_participation_unsupported")
         self._bar_filled_quantity: dict[tuple[Symbol, object], Decimal] = {}
         self._capacity_resized_count = 0
         self._capacity_unfilled_quantity = ZERO
@@ -313,6 +320,17 @@ class BacktestEngine:
         for current_date, session in groupby(events(), key=self._session_date):
             self._bar_filled_quantity.clear()
             session_events = list(session)
+            if self._execution_model is ExecutionModel.NEXT_BAR_OPEN:
+                seen_symbols: set[Symbol] = set()
+                session_timestamps: set[datetime] = set()
+                for ev in session_events:
+                    if ev.symbol in seen_symbols:
+                        raise ValueError("duplicate_symbol_bar_in_session")
+                    seen_symbols.add(ev.symbol)
+                    session_timestamps.add(ev.timestamp)
+                if len(session_timestamps) != 1:
+                    raise ValueError("session_bars_timestamp_inconsistent")
+
             self._warming_up = (
                 self.evaluation_start is not None
                 and current_date < self.evaluation_start
@@ -351,8 +369,15 @@ class BacktestEngine:
                 for symbol, position in self.portfolio.positions.items():
                     self.strategy.on_position_update(symbol, position.quantity)
             if self._execution_model is ExecutionModel.NEXT_BAR_OPEN:
-                # Mark all available instruments in today's session to their open price
-                # before any order execution or target sizing occurs.
+                # 1. Snapshot and extract eligible pending signals prior to today's open
+                eligible_signals: dict[Symbol, SignalEvent] = {}
+                for event in session_events:
+                    pending = self._pending_signals.get(event.symbol)
+                    if pending is not None and event.timestamp > pending.timestamp:
+                        eligible_signals[event.symbol] = pending
+                        del self._pending_signals[event.symbol]
+
+                # 2. Mark all session symbols to Open before any order execution
                 # Instruments without a bar today remain at their last known mark.
                 open_prices = {event.symbol: event.open for event in session_events}
                 self.portfolio.mark_to_market(open_prices)
@@ -361,7 +386,54 @@ class BacktestEngine:
                     total=float(self._session_open_equity),
                     cash=float(self.portfolio.cash),
                 )
-                session_events.sort(key=self._open_session_event_order)
+
+                # 3. Open Phase: Order execution & matching (sells before buys)
+                open_session_events = list(session_events)
+                open_session_events.sort(
+                    key=lambda ev: self._open_session_event_order(
+                        ev, signals=eligible_signals
+                    )
+                )
+
+                for market_event in open_session_events:
+                    pending = eligible_signals.get(market_event.symbol)
+                    if pending is None:
+                        continue
+                    self.clock.advance_to(market_event.timestamp)
+                    self._current_market_event = market_event
+                    self._executing_at_open = True
+                    try:
+                        self.portfolio.on_signal(
+                            replace(
+                                pending,
+                                timestamp=market_event.timestamp,
+                                price=market_event.open,
+                            ),
+                            reference_equity=self._session_open_equity,
+                        )
+                        self.event_bus.drain()
+                    finally:
+                        self._executing_at_open = False
+
+                self._session_open_equity = None
+
+                # 4. Close Phase: Close valuation, strategy.on_data & equity recording
+                close_prices = {event.symbol: event.close for event in session_events}
+                self.portfolio.mark_to_market(close_prices)
+                self.risk_manager.set_portfolio_value(
+                    total=float(self._calculate_equity()),
+                    cash=float(self.portfolio.cash),
+                )
+
+                for market_event in session_events:
+                    self.clock.advance_to(market_event.timestamp)
+                    self._current_market_event = market_event
+                    self.strategy.on_data(market_event)
+                    self.event_bus.drain()
+                    self._previous_close[market_event.symbol] = market_event.close
+
+                session_timestamp = session_events[0].timestamp
+                self.portfolio.record_equity(session_timestamp, close_prices)
             else:
                 self._session_open_equity = None
                 if self._session_decision is not None:
@@ -382,20 +454,19 @@ class BacktestEngine:
                             str(event.symbol),
                         )
                     )
-            for market_event in session_events:
-                self.clock.advance_to(market_event.timestamp)
-                if self._execution_model is not ExecutionModel.NEXT_BAR_OPEN:
+                for market_event in session_events:
+                    self.clock.advance_to(market_event.timestamp)
                     prices = {market_event.symbol: market_event.close}
                     self.portfolio.mark_to_market(prices)
                     self.risk_manager.set_portfolio_value(
                         total=float(self._calculate_equity()),
                         cash=float(self.portfolio.cash),
                     )
-                self.event_bus.publish_and_process(market_event)
-                self.event_bus.drain()
-                close_prices = {market_event.symbol: market_event.close}
-                self.portfolio.mark_to_market(close_prices)
-                self.portfolio.record_equity(market_event.timestamp, close_prices)
+                    self.event_bus.publish_and_process(market_event)
+                    self.event_bus.drain()
+                    close_prices = {market_event.symbol: market_event.close}
+                    self.portfolio.mark_to_market(close_prices)
+                    self.portfolio.record_equity(market_event.timestamp, close_prices)
             self._session_open_equity = None
             if self._dividend_replay is not None:
                 self._dividend_replay.after_session(current_date, self.portfolio)
@@ -412,8 +483,13 @@ class BacktestEngine:
             return event.timestamp.astimezone(ZoneInfo("Asia/Shanghai")).date()
         return event.timestamp.date()
 
-    def _open_session_event_order(self, event: MarketEvent) -> tuple[int, str]:
-        pending = self._pending_signals.get(event.symbol)
+    def _open_session_event_order(
+        self,
+        event: MarketEvent,
+        signals: dict[Symbol, SignalEvent] | None = None,
+    ) -> tuple[int, str]:
+        source = signals if signals is not None else self._pending_signals
+        pending = source.get(event.symbol)
         if pending is None:
             return (3, str(event.symbol))
         if pending.target_weight == ZERO:
