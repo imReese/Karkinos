@@ -52,19 +52,22 @@ class Portfolio:
     def add_instrument(self, instrument: Instrument) -> None:
         self.instruments[instrument.symbol] = instrument
 
-    def on_signal(
-        self, event: SignalEvent, *, reference_equity: Decimal | None = None
-    ) -> None:
-        """将目标权重转为具体股数，发布 OrderEvent。"""
+    def build_order_intent(
+        self,
+        event: SignalEvent,
+        *,
+        reference_equity: Decimal | None = None,
+    ) -> OrderIntentEvent | None:
+        """根据目标权重调整持仓，构造并返回 OrderIntentEvent，不向事件总线发布。"""
         symbol = event.symbol
         instrument = self.instruments.get(symbol)
         if instrument is None:
             logger.warning("Unknown instrument: %s", symbol)
-            return
+            return None
 
         current_price = event.price or Decimal("0")
         if current_price == ZERO:
-            return
+            return None
 
         # 计算当前持仓权重
         total_equity = (
@@ -83,7 +86,7 @@ class Portfolio:
         )
 
         if not liquidate and abs(weight_diff) < Decimal("0.01"):
-            return  # 差异太小，不交易
+            return None  # 差异太小，不交易
 
         # 计算目标金额
         target_value = total_equity * target_weight
@@ -95,7 +98,7 @@ class Portfolio:
                 instrument, current_price, value_diff
             )
             if quantity > ZERO:
-                self._publish_order_intent(
+                return self._create_order_intent(
                     event=event,
                     side=OrderSide.BUY,
                     quantity=quantity,
@@ -112,7 +115,7 @@ class Portfolio:
                 liquidate=liquidate,
             )
             if quantity > ZERO:
-                self._publish_order_intent(
+                return self._create_order_intent(
                     event=event,
                     side=OrderSide.SELL,
                     quantity=quantity,
@@ -120,8 +123,9 @@ class Portfolio:
                     current_weight=current_weight,
                     value_diff=value_diff,
                 )
+        return None
 
-    def _publish_order_intent(
+    def _create_order_intent(
         self,
         *,
         event: SignalEvent,
@@ -130,27 +134,35 @@ class Portfolio:
         reference_price: Decimal,
         current_weight: Decimal,
         value_diff: Decimal,
-    ) -> None:
-        """发布交易意图，由风控闸门决定是否转换为 OrderEvent。"""
+    ) -> OrderIntentEvent:
         instrument = self.instruments.get(event.symbol)
-        self.event_bus.publish(
-            OrderIntentEvent(
-                timestamp=event.timestamp,
-                intent_id=f"INTENT-{uuid.uuid4().hex[:8]}",
-                strategy_id=event.strategy_id,
-                symbol=event.symbol,
-                side=side,
-                target_weight=event.target_weight,
-                quantity=quantity,
-                reference_price=reference_price,
-                asset_class=instrument.asset_class if instrument is not None else None,
-                reason="target_weight_rebalance",
-                metadata={
-                    "current_weight": str(current_weight),
-                    "value_diff": str(value_diff),
-                },
-            )
+        return OrderIntentEvent(
+            timestamp=event.timestamp,
+            intent_id=f"INTENT-{uuid.uuid4().hex[:8]}",
+            strategy_id=event.strategy_id,
+            symbol=event.symbol,
+            side=side,
+            target_weight=event.target_weight,
+            quantity=quantity,
+            reference_price=reference_price,
+            asset_class=instrument.asset_class if instrument is not None else None,
+            reason="target_weight_rebalance",
+            metadata={
+                "current_weight": str(current_weight),
+                "value_diff": str(value_diff),
+            },
         )
+
+    def on_signal(
+        self,
+        event: SignalEvent,
+        *,
+        reference_equity: Decimal | None = None,
+    ) -> None:
+        """根据目标权重调整持仓，生成并发布 OrderIntentEvent。"""
+        intent = self.build_order_intent(event, reference_equity=reference_equity)
+        if intent is not None:
+            self.event_bus.publish(intent)
 
     def on_fill(self, event: FillEvent) -> None:
         """更新持仓和资金。"""

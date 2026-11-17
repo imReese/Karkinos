@@ -526,14 +526,18 @@ class BacktestEngine:
         self._open_authorized_order_id = None
         self._executing_at_open = True
         try:
-            self.portfolio.on_signal(
-                replace(
-                    pending,
-                    timestamp=event.timestamp,
-                    price=event.open,
-                ),
+            target_signal = replace(
+                pending,
+                timestamp=event.timestamp,
+                price=event.open,
+            )
+            intent = self.portfolio.build_order_intent(
+                target_signal,
                 reference_equity=self._session_open_equity,
             )
+            if intent is not None:
+                self._open_authorized_intent_id = intent.intent_id
+                self.event_bus.publish(intent)
             self.event_bus.drain()
         finally:
             self._executing_at_open = False
@@ -669,7 +673,8 @@ class BacktestEngine:
             is_authorized = (
                 self._open_signal_context is not None
                 and self._open_signal_context[0] == event.symbol
-                and self._open_authorized_intent_id is None
+                and self._open_authorized_intent_id is not None
+                and event.intent_id == self._open_authorized_intent_id
             )
             if not is_authorized:
                 self._execution_blocked["timing"] += 1
@@ -688,12 +693,22 @@ class BacktestEngine:
                         )
                     )
                 return
-            self._open_authorized_intent_id = event.intent_id
+            self._open_authorized_intent_id = None
 
         decision_id = f"BACKTEST-RISK-{uuid.uuid4().hex[:8]}"
         order_id = f"ORD-{uuid.uuid4().hex[:8]}"
         if self._execution_model is ExecutionModel.NEXT_BAR_OPEN:
             self._open_authorized_order_id = order_id
+        price = (
+            self._current_market_event.open
+            if (
+                self._execution_model is ExecutionModel.NEXT_BAR_OPEN
+                and self._executing_at_open
+                and self._current_market_event is not None
+                and self._current_market_event.symbol == event.symbol
+            )
+            else event.reference_price
+        )
         self.event_bus.publish(
             OrderEvent(
                 timestamp=event.timestamp,
@@ -702,7 +717,7 @@ class BacktestEngine:
                 side=event.side,
                 order_type=OrderType.MARKET,
                 quantity=event.quantity,
-                price=event.reference_price,
+                price=price,
                 intent_id=event.intent_id,
                 risk_decision_id=decision_id,
                 execution_mode="paper",
@@ -717,6 +732,7 @@ class BacktestEngine:
             is_authorized = (
                 self._open_signal_context is not None
                 and self._open_signal_context[0] == event.symbol
+                and self._open_authorized_order_id is not None
                 and event.order_id == self._open_authorized_order_id
             )
             if not is_authorized:
@@ -748,6 +764,12 @@ class BacktestEngine:
                 )
                 return
             self._open_authorized_order_id = None
+            if (
+                self._executing_at_open
+                and self._current_market_event is not None
+                and self._current_market_event.symbol == event.symbol
+            ):
+                event = replace(event, price=self._current_market_event.open)
 
         approved = self._approved_order(event)
         execution = None

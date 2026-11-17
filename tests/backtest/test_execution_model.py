@@ -2067,3 +2067,412 @@ class TestOrderEntryAndMarketEventContract:
         assert evidence is not None
         assert evidence["capacity_model"] == "unsimulated_open_capacity"
         assert evidence["open_capacity_simulated"] is False
+
+    def test_prequeued_direct_intent_in_on_position_update_rejected_and_legitimate_signal_fills(
+        self,
+    ):
+        """Pre-queued direct intent in on_position_update callback must NOT steal authorization
+
+        from the legitimate frozen signal. The direct intent must be rejected, and the
+        legitimate frozen signal must fill at open price with the correct quantity.
+        """
+        from datetime import date, datetime, timezone
+
+        sym = Symbol("600001")
+        frame = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00+08:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00+08:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-07 15:00+08:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-08 15:00+08:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+            ]
+        )
+
+        class PrequeuedIntentStrategy(Strategy):
+            def __init__(self):
+                super().__init__("prequeued_intent", EventBus())
+                self.rogue_emitted = False
+
+            def on_init(self, symbols):
+                pass
+
+            def on_data(self, event: MarketEvent):
+                self._last_timestamp = event.timestamp
+                # Day 1 (Jan 5): stage initial buy (30% weight) -> fills on Jan 6 open
+                if "2026-01-05" in str(event.timestamp):
+                    self.emit_signal(event.symbol, Decimal("0.30"))
+                # Day 2 (Jan 6): stage legitimate rebalance (60% weight) -> expected to fill on Jan 7 open
+                elif "2026-01-06" in str(event.timestamp):
+                    self.emit_signal(event.symbol, Decimal("0.60"))
+
+            def on_position_update(self, symbol: Symbol, quantity: Decimal):
+                # On Day 3 (Jan 7) morning, dividend replay syncs positions before session
+                # and invokes strategy.on_position_update for held positions.
+                if (
+                    self._last_timestamp
+                    and "2026-01-06" in str(self._last_timestamp)
+                    and not self.rogue_emitted
+                    and quantity > Decimal("0")
+                ):
+                    self.rogue_emitted = True
+                    self.event_bus.publish(
+                        OrderIntentEvent(
+                            timestamp=self._last_timestamp,
+                            intent_id="ROGUE-PREQUEUED",
+                            strategy_id=self.strategy_id,
+                            symbol=symbol,
+                            side=OrderSide.BUY,
+                            target_weight=Decimal("0.90"),
+                            quantity=Decimal("200"),
+                            reference_price=Decimal("1.00"),  # Stale / wrong price!
+                        )
+                    )
+
+        dividend = StockDistribution(
+            action_id="DIV-600001-2026",
+            symbol=sym,
+            record_date=date(2026, 1, 7),
+            ex_date=date(2026, 1, 8),
+            pay_date=date(2026, 1, 8),
+            cash_per_share=Decimal("0.5"),
+            available_at=datetime(2026, 1, 7, 15, 0, tzinfo=timezone.utc),
+        )
+        strategy = PrequeuedIntentStrategy()
+        engine = BacktestEngine(
+            strategy=strategy,
+            instruments={sym: make_stock(str(sym), "Stock")},
+            data_handlers={sym: DataHandler(frame, sym)},
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+            cash_dividends=(dividend,),
+        )
+        decisions: list[RiskDecisionEvent] = []
+        engine.event_bus.subscribe(
+            RiskDecisionEvent,
+            lambda e: decisions.append(e) if isinstance(e, RiskDecisionEvent) else None,
+        )
+        result = engine.run()
+
+        # Jan 7 must have exactly 1 fill, and it must be the legitimate rebalance fill (2900 shares @ 10.0 due to 100-share lot size)
+        jan7_fills = [f for f in result.fills if "2026-01-07" in str(f.timestamp)]
+        assert len(jan7_fills) == 1, f"Expected 1 fill on Jan 7, got {len(jan7_fills)}"
+        legit_fill = jan7_fills[0]
+        assert legit_fill.fill_quantity == Decimal("2900"), (
+            f"Expected legitimate quantity 2900, got {legit_fill.fill_quantity}"
+        )
+        assert legit_fill.fill_price == Decimal("10.0"), (
+            f"Expected open price 10.0, got {legit_fill.fill_price}"
+        )
+
+        # The rogue pre-queued intent must be rejected with next_bar_open_direct_order_unsupported
+        rogue_decisions = [d for d in decisions if d.intent_id == "ROGUE-PREQUEUED"]
+        assert len(rogue_decisions) >= 1, "Expected risk decision for ROGUE-PREQUEUED"
+        assert not rogue_decisions[0].passed
+        assert "next_bar_open_direct_order_unsupported" in rogue_decisions[0].reasons, (
+            f"Wrong reasons: {rogue_decisions[0].reasons}"
+        )
+
+    def test_prequeued_direct_intent_rejected_when_frozen_signal_needs_no_trade(self):
+        """When a legitimate frozen signal requires no trade (value_diff == 0),
+
+        a pre-queued direct intent in the queue must still be rejected and cannot execute.
+        """
+        from datetime import date, datetime, timezone
+
+        sym = Symbol("600001")
+        frame = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00+08:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00+08:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-07 15:00+08:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-08 15:00+08:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+            ]
+        )
+
+        class PrequeuedNoTradeStrategy(Strategy):
+            def __init__(self):
+                super().__init__("prequeued_no_trade", EventBus())
+                self.rogue_emitted = False
+
+            def on_init(self, symbols):
+                pass
+
+            def on_data(self, event: MarketEvent):
+                self._last_timestamp = event.timestamp
+                # Day 1 (Jan 5): stage initial buy (30% weight) -> fills on Jan 6 open (3000 shares)
+                if "2026-01-05" in str(event.timestamp):
+                    self.emit_signal(event.symbol, Decimal("0.30"))
+                # Day 2 (Jan 6): target weight is STILL 30% -> no trade needed on Jan 7 open!
+                elif "2026-01-06" in str(event.timestamp):
+                    self.emit_signal(event.symbol, Decimal("0.30"))
+
+            def on_position_update(self, symbol: Symbol, quantity: Decimal):
+                if (
+                    self._last_timestamp
+                    and "2026-01-06" in str(self._last_timestamp)
+                    and not self.rogue_emitted
+                    and quantity > Decimal("0")
+                ):
+                    self.rogue_emitted = True
+                    self.event_bus.publish(
+                        OrderIntentEvent(
+                            timestamp=self._last_timestamp,
+                            intent_id="ROGUE-NO-TRADE",
+                            strategy_id=self.strategy_id,
+                            symbol=symbol,
+                            side=OrderSide.BUY,
+                            target_weight=Decimal("0.50"),
+                            quantity=Decimal("200"),
+                            reference_price=Decimal("10.00"),
+                        )
+                    )
+
+        dividend = StockDistribution(
+            action_id="DIV-600001-2026",
+            symbol=sym,
+            record_date=date(2026, 1, 7),
+            ex_date=date(2026, 1, 8),
+            pay_date=date(2026, 1, 8),
+            cash_per_share=Decimal("0.5"),
+            available_at=datetime(2026, 1, 7, 15, 0, tzinfo=timezone.utc),
+        )
+        strategy = PrequeuedNoTradeStrategy()
+        engine = BacktestEngine(
+            strategy=strategy,
+            instruments={sym: make_stock(str(sym), "Stock")},
+            data_handlers={sym: DataHandler(frame, sym)},
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+            cash_dividends=(dividend,),
+        )
+        decisions: list[RiskDecisionEvent] = []
+        engine.event_bus.subscribe(
+            RiskDecisionEvent,
+            lambda e: decisions.append(e) if isinstance(e, RiskDecisionEvent) else None,
+        )
+        result = engine.run()
+
+        # On Jan 7, 0 fills expected (frozen signal needed 0 shares, rogue intent must not fill)
+        jan7_fills = [f for f in result.fills if "2026-01-07" in str(f.timestamp)]
+        assert len(jan7_fills) == 0, f"Expected 0 fills on Jan 7, got {len(jan7_fills)}"
+
+        # ROGUE-NO-TRADE must be rejected
+        rogue_decisions = [d for d in decisions if d.intent_id == "ROGUE-NO-TRADE"]
+        assert len(rogue_decisions) >= 1
+        assert not rogue_decisions[0].passed
+        assert "next_bar_open_direct_order_unsupported" in rogue_decisions[0].reasons
+
+    def test_cross_symbol_authorization_isolation(self):
+        """When Symbol A is executing its open signal, an intent for Symbol B cannot be authorized."""
+        sym_a = Symbol("600001")
+        sym_b = Symbol("600002")
+
+        frame_a = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+            ]
+        )
+        frame_b = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 20.0,
+                    "high": 20.0,
+                    "low": 20.0,
+                    "close": 20.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 20.0,
+                    "high": 20.0,
+                    "low": 20.0,
+                    "close": 20.0,
+                    "volume": 100000,
+                },
+            ]
+        )
+
+        class CrossSymbolRogueStrategy(Strategy):
+            def __init__(self):
+                super().__init__("cross_symbol_rogue", EventBus())
+                self.b_emitted = False
+
+            def on_init(self, symbols):
+                pass
+
+            def on_data(self, event: MarketEvent):
+                self._last_timestamp = event.timestamp
+                # Day 1: Only Sym A has a signal
+                if "2026-01-05" in str(event.timestamp) and event.symbol == sym_a:
+                    self.emit_signal(sym_a, Decimal("0.30"))
+
+            def on_fill(self, event: FillEvent):
+                # When A fills on Day 2 open, try to emit a direct intent for Sym B
+                if event.symbol == sym_a and not self.b_emitted:
+                    self.b_emitted = True
+                    self.event_bus.publish(
+                        OrderIntentEvent(
+                            timestamp=event.timestamp,
+                            intent_id="ROGUE-SYM-B",
+                            strategy_id=self.strategy_id,
+                            symbol=sym_b,
+                            side=OrderSide.BUY,
+                            target_weight=Decimal("0.30"),
+                            quantity=Decimal("100"),
+                            reference_price=Decimal("20.00"),
+                        )
+                    )
+
+        strategy = CrossSymbolRogueStrategy()
+        engine = _build_multi_engine(
+            {sym_a: frame_a, sym_b: frame_b},
+            strategy,
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+        )
+        decisions: list[RiskDecisionEvent] = []
+        engine.event_bus.subscribe(
+            RiskDecisionEvent,
+            lambda e: decisions.append(e) if isinstance(e, RiskDecisionEvent) else None,
+        )
+        result = engine.run()
+
+        # Sym A fills, Sym B does not fill
+        fills_by_sym = {f.symbol: f for f in result.fills}
+        assert sym_a in fills_by_sym
+        assert sym_b not in fills_by_sym
+
+        rogue_b = [d for d in decisions if d.intent_id == "ROGUE-SYM-B"]
+        assert len(rogue_b) >= 1
+        assert not rogue_b[0].passed
+        assert "next_bar_open_direct_order_unsupported" in rogue_b[0].reasons
+
+    def test_authorization_single_use_and_finally_cleaned(self):
+        """Authorization cannot leak across session or be reused after context closes."""
+        sym = Symbol("600001")
+        frame = _make_ohlcv_frame(
+            [
+                {
+                    "timestamp": "2026-01-05 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": "2026-01-06 15:00",
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+            ]
+        )
+        strategy = StagedTargetStrategy({"2026-01-05": Decimal("0.30")})
+        engine = _build_multi_engine(
+            {sym: frame},
+            strategy,
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+        )
+        result = engine.run()
+
+        assert len(result.fills) == 1
+        # Internal context variables are cleaned
+        assert engine._open_signal_context is None
+        assert engine._open_authorized_intent_id is None
+        assert engine._open_authorized_order_id is None
+        assert engine._executing_at_open is False
+
+        # If a direct intent is submitted after the run, it must be rejected
+        decisions: list[RiskDecisionEvent] = []
+        engine.event_bus.subscribe(
+            RiskDecisionEvent,
+            lambda e: decisions.append(e) if isinstance(e, RiskDecisionEvent) else None,
+        )
+        engine._on_order_intent_event(
+            OrderIntentEvent(
+                timestamp=frame.index[-1],
+                intent_id="POST-RUN-INTENT",
+                strategy_id="test",
+                symbol=sym,
+                side=OrderSide.BUY,
+                target_weight=Decimal("0.50"),
+                quantity=Decimal("100"),
+                reference_price=Decimal("10.00"),
+            )
+        )
+        engine.event_bus.drain()
+        assert len(decisions) == 1
+        assert not decisions[0].passed
+        assert "next_bar_open_direct_order_unsupported" in decisions[0].reasons
