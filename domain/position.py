@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from decimal import Decimal, DecimalException, Inexact, localcontext
 
 from core.types import ZERO, Money, Settlement, Symbol
@@ -23,7 +24,12 @@ class Position:
     - 持仓成本与均价计算
     """
 
-    def __init__(self, symbol: Symbol) -> None:
+    def __init__(
+        self,
+        symbol: Symbol,
+        *,
+        last_settlement_date: date | None = None,
+    ) -> None:
         self.symbol = symbol
         self.quantity: Decimal = ZERO  # 总持仓
         self.frozen_qty: Decimal = ZERO  # T+1 冻结数量（当日买入）
@@ -34,6 +40,15 @@ class Position:
         # Legacy public field name; value is the cumulative complete trade fee.
         self.commission_paid: Decimal = ZERO
         self.market_value: Decimal = ZERO  # 当前市值
+        self._last_settlement_date: date | None = (
+            last_settlement_date.date()
+            if isinstance(last_settlement_date, datetime)
+            else last_settlement_date
+        )
+
+    @property
+    def last_settlement_date(self) -> date | None:
+        return self._last_settlement_date
 
     @property
     def available_qty(self) -> Decimal:
@@ -117,9 +132,34 @@ class Position:
         if self.quantity == ZERO:
             self.avg_cost = ZERO
 
-    def advance_settlement_day(self) -> None:
-        """结算日推进：将冻结数量解冻到可卖数量。"""
-        self.frozen_qty = ZERO
+    def advance_settlement_day(
+        self, session_date: date | datetime | None = None
+    ) -> None:
+        """结算日推进：将冻结数量解冻到可卖数量。
+
+        如果传入 session_date:
+        - 若日期倒退，抛出 ValueError("settlement_date_regressed")
+        - 若日期与当前结算日相同，幂等无操作（不重复解冻当日新买入）
+        - 若日期严格晚于当前结算日（或尚未设置），解冻此前买入并记录新结算日
+        - 尚未上市的送转权益（unlisted_qty）不在此解冻，仅在上市日通过 release_share_distribution 释放
+        """
+        if session_date is not None:
+            resolved_date = (
+                session_date.date()
+                if isinstance(session_date, datetime)
+                else session_date
+            )
+            if not isinstance(resolved_date, date):
+                raise TypeError("settlement_date_invalid")
+            if self._last_settlement_date is not None:
+                if resolved_date < self._last_settlement_date:
+                    raise ValueError("settlement_date_regressed")
+                if resolved_date == self._last_settlement_date:
+                    return
+            self.frozen_qty = ZERO
+            self._last_settlement_date = resolved_date
+        else:
+            self.frozen_qty = ZERO
 
     def accrue_share_distribution(self, quantity: Decimal) -> None:
         """Recognize an integer share entitlement without releasing it for sale."""

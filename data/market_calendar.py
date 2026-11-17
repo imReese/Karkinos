@@ -109,6 +109,33 @@ class MarketCalendarSnapshot:
     def closed_day_count(self) -> int:
         return sum(1 for day in self.days if not day.is_trading_day)
 
+    def explain_date(self, value: str | date | datetime) -> MarketCalendarDay:
+        day = _parse_calendar_date(value)
+        if day.year != self.year:
+            raise ValueError(
+                f"market_calendar_snapshot_year_mismatch:{day.year}_vs_{self.year}"
+            )
+        date_text = day.isoformat()
+        for d in self.days:
+            if d.date == date_text:
+                return d
+        raise ValueError(f"market_calendar_snapshot_date_missing:{date_text}")
+
+    def is_trading_day(self, value: str | date | datetime) -> bool:
+        return self.explain_date(value).is_trading_day
+
+    def trading_days(self, start_date: date, end_date: date) -> tuple[date, ...]:
+        if start_date > end_date:
+            raise ValueError("trading_days_start_date_exceeds_end_date")
+        if start_date.year != self.year or end_date.year != self.year:
+            raise ValueError("trading_calendar_coverage_incomplete")
+        days_in_range = []
+        for d in self.days:
+            parsed = _parse_calendar_date(d.date)
+            if start_date <= parsed <= end_date and d.is_trading_day:
+                days_in_range.append(parsed)
+        return tuple(sorted(days_in_range))
+
     def to_payload(self) -> dict[str, object]:
         return {
             "schema_version": self.schema_version,
@@ -353,6 +380,20 @@ class MarketCalendar:
             reason="Trading day",
             is_trading_day=True,
         )
+
+    def is_trading_day(self, value: str | date | datetime) -> bool:
+        return self.explain_date(value).is_trading_day
+
+    def trading_days(self, start_date: date, end_date: date) -> tuple[date, ...]:
+        if start_date > end_date:
+            raise ValueError("trading_days_start_date_exceeds_end_date")
+        cur = start_date
+        result = []
+        while cur <= end_date:
+            if self.is_trading_day(cur):
+                result.append(cur)
+            cur += timedelta(days=1)
+        return tuple(result)
 
 
 def build_static_market_calendar_snapshot(

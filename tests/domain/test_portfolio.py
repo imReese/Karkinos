@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 import pytest
@@ -368,3 +368,55 @@ def test_zero_target_liquidates_whole_lots_with_the_entire_odd_remainder() -> No
     assert portfolio._calculate_sell_quantity(
         instrument, Decimal("10"), Decimal("1300")
     ) == Decimal("100")
+
+
+def test_portfolio_advance_settlement_day_date_aware_and_idempotent():
+    bus = EventBus()
+    portfolio = Portfolio(bus, initial_cash=Decimal("1000000"))
+    day1 = date(2023, 1, 3)
+    day2 = date(2023, 1, 4)
+    symbol = Symbol("600519")
+    instrument = make_stock("600519", "贵州茅台")
+    portfolio.add_instrument(instrument)
+
+    portfolio.advance_settlement_day(day1)
+    assert portfolio.last_settlement_date == day1
+
+    # Buy fill arrives on Day 1
+    portfolio.on_fill(
+        FillEvent(
+            timestamp=datetime(2023, 1, 3, 9, 30),
+            fill_id="f1",
+            order_id="o1",
+            symbol=symbol,
+            side=OrderSide.BUY,
+            fill_price=Decimal("1800"),
+            fill_quantity=Decimal("100"),
+            commission=Decimal("5"),
+            slippage=Decimal("0"),
+        )
+    )
+    pos = portfolio.positions[symbol]
+    assert pos.quantity == Decimal("100")
+    assert pos.frozen_qty == Decimal("100")
+    assert pos.available_qty == Decimal("0")
+    assert pos.last_settlement_date == day1
+
+    # Same-day repeated call must be idempotent, cannot unfreeze
+    portfolio.advance_settlement_day(day1)
+    assert pos.frozen_qty == Decimal("100")
+    assert pos.available_qty == Decimal("0")
+
+    # Advance to Day 2
+    portfolio.advance_settlement_day(day2)
+    assert portfolio.last_settlement_date == day2
+    assert pos.frozen_qty == Decimal("0")
+    assert pos.available_qty == Decimal("100")
+
+    # Regression raises
+    with pytest.raises(ValueError, match="portfolio_settlement_date_regressed"):
+        portfolio.advance_settlement_day(day1)
+
+    # Invalid type raises
+    with pytest.raises(TypeError, match="portfolio_settlement_date_invalid"):
+        portfolio.advance_settlement_day(12345)  # type: ignore[arg-type]

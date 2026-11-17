@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from decimal import Decimal
 
 import pytest
@@ -185,3 +186,68 @@ def test_share_award_errors_do_not_change_position(pos: Position):
     assert pos.quantity == pos.frozen_qty == Decimal("100")
     assert pos.unlisted_qty == Decimal("0")
     assert pos.avg_cost == Decimal("10")
+
+
+def test_position_advance_settlement_day_idempotent_and_date_aware(pos: Position):
+    day1 = date(2023, 1, 3)
+    day2 = date(2023, 1, 4)
+    day3 = date(2023, 1, 5)
+
+    pos.advance_settlement_day(day1)
+    assert pos.last_settlement_date == day1
+
+    pos.update_on_fill("buy", Decimal("500"), Decimal("10"))
+    assert pos.quantity == Decimal("500")
+    assert pos.frozen_qty == Decimal("500")
+    assert pos.available_qty == Decimal("0")
+
+    # Calling same day multiple times must be an idempotent NO-OP: cannot unfreeze same-day buys!
+    pos.advance_settlement_day(day1)
+    assert pos.frozen_qty == Decimal("500")
+    assert pos.available_qty == Decimal("0")
+
+    # Day 2 advances: prior buy is now unfrozen and available
+    pos.advance_settlement_day(day2)
+    assert pos.last_settlement_date == day2
+    assert pos.frozen_qty == Decimal("0")
+    assert pos.available_qty == Decimal("500")
+
+    # Same day call on Day 2 is idempotent
+    pos.advance_settlement_day(day2)
+    assert pos.frozen_qty == Decimal("0")
+    assert pos.available_qty == Decimal("500")
+
+    # Buying on Day 2 freezes new shares, previous shares remain available
+    pos.update_on_fill("buy", Decimal("300"), Decimal("12"))
+    assert pos.quantity == Decimal("800")
+    assert pos.frozen_qty == Decimal("300")
+    assert pos.available_qty == Decimal("500")
+
+    # Another same-day call on Day 2 does not unfreeze the Day 2 buy
+    pos.advance_settlement_day(day2)
+    assert pos.frozen_qty == Decimal("300")
+    assert pos.available_qty == Decimal("500")
+
+    # Day 3 unfreezes Day 2 buys
+    pos.advance_settlement_day(day3)
+    assert pos.frozen_qty == Decimal("0")
+    assert pos.available_qty == Decimal("800")
+
+
+def test_position_advance_settlement_day_date_regression_raises(pos: Position):
+    day1 = date(2023, 1, 3)
+    day2 = date(2023, 1, 4)
+
+    pos.advance_settlement_day(day2)
+    with pytest.raises(ValueError, match="settlement_date_regressed"):
+        pos.advance_settlement_day(day1)
+
+
+def test_position_advance_settlement_day_invalid_type_raises(pos: Position):
+    with pytest.raises(TypeError, match="settlement_date_invalid"):
+        pos.advance_settlement_day("2023-01-03")  # type: ignore[arg-type]
+
+
+def test_position_advance_settlement_day_datetime_normalized(pos: Position):
+    pos.advance_settlement_day(datetime(2023, 1, 4, 15, 0))
+    assert pos.last_settlement_date == date(2023, 1, 4)

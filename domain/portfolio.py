@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import date, datetime
 from decimal import Decimal, DecimalException, localcontext
 
 from core.event_bus import EventBus
@@ -43,11 +44,16 @@ class Portfolio:
             str, tuple[Symbol, Decimal, Decimal, Decimal]
         ] = {}
         self._released_share_distributions: set[str] = set()
+        self._last_settlement_date: date | None = None
 
         # 订阅 SignalEvent
         event_bus.subscribe(SignalEvent, self.on_signal)
         # 订阅 FillEvent 更新持仓和资金
         event_bus.subscribe(FillEvent, self.on_fill)
+
+    @property
+    def last_settlement_date(self) -> date | None:
+        return self._last_settlement_date
 
     def add_instrument(self, instrument: Instrument) -> None:
         self.instruments[instrument.symbol] = instrument
@@ -168,7 +174,9 @@ class Portfolio:
         """更新持仓和资金。"""
         symbol = event.symbol
         if symbol not in self.positions:
-            self.positions[symbol] = Position(symbol)
+            self.positions[symbol] = Position(
+                symbol, last_settlement_date=self._last_settlement_date
+            )
 
         total_fee = total_trade_fee(
             commission=event.commission,
@@ -190,10 +198,26 @@ class Portfolio:
         else:
             self.cash += event.fill_price * event.fill_quantity - total_fee
 
-    def advance_settlement_day(self) -> None:
+    def advance_settlement_day(
+        self, session_date: date | datetime | None = None
+    ) -> None:
         """每日结算：解冻 T+1。"""
+        if session_date is not None:
+            resolved_date = (
+                session_date.date()
+                if isinstance(session_date, datetime)
+                else session_date
+            )
+            if not isinstance(resolved_date, date):
+                raise TypeError("portfolio_settlement_date_invalid")
+            if (
+                self._last_settlement_date is not None
+                and resolved_date < self._last_settlement_date
+            ):
+                raise ValueError("portfolio_settlement_date_regressed")
+            self._last_settlement_date = resolved_date
         for pos in self.positions.values():
-            pos.advance_settlement_day()
+            pos.advance_settlement_day(session_date=session_date)
 
     def accrue_cash_dividend(
         self,
@@ -280,7 +304,9 @@ class Portfolio:
                 raise ValueError("portfolio_share_distribution_conflict")
             return previous[3]
         if quantity > ZERO:
-            position = self.positions.get(symbol) or Position(symbol)
+            position = self.positions.get(symbol) or Position(
+                symbol, last_settlement_date=self._last_settlement_date
+            )
             position.accrue_share_distribution(quantity)
             self.positions[symbol] = position
         # A zero entitlement still binds its facts and may be released once.

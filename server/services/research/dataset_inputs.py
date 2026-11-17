@@ -154,6 +154,7 @@ def load_dataset_backtest_inputs(root: Path, request):
         "offline_replay": True,
         "point_in_time_verified": False,
         "decision_availability": decision_availability,
+        "trading_rule_policy_id": "karkinos.a_share.trading_rules.v1",
         "limitations": [
             "Historical backfill is a frozen research snapshot, not proof of historical availability.",
             "Unadjusted prices do not model corporate-action cash flows or total returns."
