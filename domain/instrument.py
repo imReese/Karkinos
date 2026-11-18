@@ -211,9 +211,9 @@ def make_etf(symbol: str, name: str, *, limit_pct: Decimal | None = None) -> Ins
 
     if limit_pct is None:
         clean = normalize_code(symbol)
-        if clean.startswith("588"):
+        if clean.startswith("588") or clean.startswith("589"):
             limit_pct = Decimal("0.20")
-        elif clean.startswith("51") or clean.startswith("159"):
+        else:
             from domain.trading_rules import SUPPORTED_ETF_UNDERLYING
 
             underlying = SUPPORTED_ETF_UNDERLYING.get(clean)
@@ -221,10 +221,10 @@ def make_etf(symbol: str, name: str, *, limit_pct: Decimal | None = None) -> Ins
                 limit_pct = Decimal("0.20")
             elif underlying == "main":
                 limit_pct = Decimal("0.10")
+            elif underlying == "star":
+                limit_pct = Decimal("0.20")
             else:
                 limit_pct = ZERO
-        else:
-            limit_pct = Decimal("0.10")
 
     return Instrument(
         symbol=Symbol(symbol),

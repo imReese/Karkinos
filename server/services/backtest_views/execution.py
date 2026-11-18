@@ -258,8 +258,45 @@ def run_single_backtest(
                 for k, v in raw_nt.items()
             }
         strict_status = bool(ctx.get("strict_security_status", strict_status))
-        trading_cal = ctx.get("trading_calendar")
-        sec_status = ctx.get("security_status")
+        trading_cal_raw = ctx.get("trading_calendar")
+        if trading_cal_raw is not None:
+            if isinstance(trading_cal_raw, dict):
+                from data.market_calendar import market_calendar_from_payload
+
+                trading_cal = market_calendar_from_payload(trading_cal_raw)
+            else:
+                trading_cal = trading_cal_raw
+
+        sec_status_raw = ctx.get("security_status")
+        if sec_status_raw is not None:
+            if isinstance(sec_status_raw, dict):
+                parsed_sec_status = {}
+                for date_key, sym_dict in sec_status_raw.items():
+                    s_date = (
+                        date.fromisoformat(date_key)
+                        if isinstance(date_key, str)
+                        else date_key
+                    )
+                    if isinstance(sym_dict, dict):
+                        for sym_str, info in sym_dict.items():
+                            symbol_obj = Symbol(str(sym_str))
+                            item_dict = dict(info) if isinstance(info, dict) else {}
+                            if item_dict.get("listing_date") and isinstance(
+                                item_dict["listing_date"], str
+                            ):
+                                item_dict["listing_date"] = date.fromisoformat(
+                                    item_dict["listing_date"]
+                                )
+                            if item_dict.get("delist_date") and isinstance(
+                                item_dict["delist_date"], str
+                            ):
+                                item_dict["delist_date"] = date.fromisoformat(
+                                    item_dict["delist_date"]
+                                )
+                            parsed_sec_status[(symbol_obj, s_date)] = item_dict
+                sec_status = parsed_sec_status
+            else:
+                sec_status = sec_status_raw
     elif dataset_binding and "nontrading_instruments" in dataset_binding:
         raw_nt = dataset_binding["nontrading_instruments"]
         if raw_nt:

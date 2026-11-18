@@ -467,6 +467,70 @@ class MultiYearMarketCalendar:
         return tuple(sorted(result))
 
 
+def market_calendar_day_from_payload(payload: dict[str, Any]) -> MarketCalendarDay:
+    return MarketCalendarDay(
+        date=str(payload["date"]),
+        day_type=MarketCalendarDayType(str(payload["day_type"])),
+        reason_code=str(payload["reason_code"]),
+        reason=str(payload["reason"]),
+        is_trading_day=bool(payload["is_trading_day"]),
+        schema_version=str(
+            payload.get("schema_version", MARKET_CALENDAR_SCHEMA_VERSION)
+        ),
+    )
+
+
+def market_calendar_snapshot_from_payload(
+    payload: dict[str, Any],
+) -> MarketCalendarSnapshot:
+    days_val = payload.get("days", payload.get("days_json", ()))
+    if isinstance(days_val, str):
+        try:
+            days_val = json.loads(days_val)
+        except Exception:
+            days_val = ()
+    days = tuple(
+        market_calendar_day_from_payload(d) if isinstance(d, dict) else d
+        for d in days_val
+    )
+    limitations_val = payload.get("limitations", payload.get("limitations_json", ()))
+    if isinstance(limitations_val, str):
+        try:
+            limitations_val = json.loads(limitations_val)
+        except Exception:
+            limitations_val = ()
+    return MarketCalendarSnapshot(
+        exchange=str(payload["exchange"]),
+        year=int(payload["year"]),
+        provider=str(payload["provider"]),
+        days=days,
+        source_fingerprint=str(payload["source_fingerprint"]),
+        fetched_at=str(payload["fetched_at"]),
+        status=str(payload.get("status", "available")),
+        official_verification_status=str(
+            payload.get("official_verification_status", "unverified")
+        ),
+        official_source_url=payload.get("official_source_url"),
+        official_verified_at=payload.get("official_verified_at"),
+        official_verified_by=payload.get("official_verified_by"),
+        limitations=tuple(str(x) for x in limitations_val),
+        schema_version=str(
+            payload.get("schema_version", MARKET_CALENDAR_SCHEMA_VERSION)
+        ),
+    )
+
+
+def market_calendar_from_payload(
+    payload: dict[str, Any],
+) -> MarketCalendarSnapshot | MultiYearMarketCalendar:
+    if "snapshots" in payload:
+        snaps = tuple(
+            market_calendar_snapshot_from_payload(s) for s in payload["snapshots"]
+        )
+        return MultiYearMarketCalendar(snaps)
+    return market_calendar_snapshot_from_payload(payload)
+
+
 def validate_calendar_coverage(
     calendar: Any,
     start_date: date,

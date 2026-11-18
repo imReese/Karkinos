@@ -66,8 +66,8 @@ def resolve_etf_limit_pct(
     Returns (limit_pct, blocker_reason).
     If unverified in strict mode, returns (None, 'etf_underlying_unverified').
     """
-    # 1. SSE STAR Market ETFs (all 588xxx series officially track STAR market indices)
-    if clean_code.startswith("588"):
+    # 1. SSE STAR Market ETFs (all 588xxx and 589xxx series officially track STAR market indices)
+    if clean_code.startswith("588") or clean_code.startswith("589"):
         return Decimal("0.20"), None
 
     # 2. Supported / authoritative ETF classification registry
@@ -82,13 +82,17 @@ def resolve_etf_limit_pct(
     elif underlying == "star":
         return Decimal("0.20"), None
 
-    # 3. Explicit instrument limit_pct if provided
-    if instrument is not None and instrument.limit_pct > ZERO:
-        return instrument.limit_pct, None
-
-    # 4. Unknown / unverified underlying
+    # 3. In strict mode, unverified underlying is blocked and cannot be overridden by unverified instrument attributes
     if strict_security_status:
         return None, "etf_underlying_unverified"
+
+    # 4. Exploratory mode: explicit instrument limit_pct if provided, else default 10%
+    if (
+        instrument is not None
+        and instrument.limit_pct is not None
+        and instrument.limit_pct > ZERO
+    ):
+        return instrument.limit_pct, None
     return Decimal("0.10"), None
 
 
@@ -336,6 +340,43 @@ def resolve_trading_rules(
                     allow_sell=False,
                 )
 
+            # In strict mode, ST status and listing status must be explicitly verified
+            if is_st is None:
+                return TradingRule(
+                    rule_id=A_SHARE_TRADING_RULES_POLICY_ID,
+                    symbol=symbol,
+                    exchange=exchange,
+                    board=board,
+                    is_tradable=False,
+                    status="unverified_state",
+                    blocker_reason="st_status_unverified",
+                    limit_pct=None,
+                    has_price_limit=False,
+                    price_tick=Decimal("0.01"),
+                    min_order_qty=Decimal("200") if board == "star" else Decimal("100"),
+                    qty_step=Decimal("1") if board == "star" else Decimal("100"),
+                    allow_buy=False,
+                    allow_sell=False,
+                )
+
+            if listing_session_count is None and listing_date is None:
+                return TradingRule(
+                    rule_id=A_SHARE_TRADING_RULES_POLICY_ID,
+                    symbol=symbol,
+                    exchange=exchange,
+                    board=board,
+                    is_tradable=False,
+                    status="unverified_state",
+                    blocker_reason="listing_status_unverified",
+                    limit_pct=None,
+                    has_price_limit=False,
+                    price_tick=Decimal("0.01"),
+                    min_order_qty=Decimal("200") if board == "star" else Decimal("100"),
+                    qty_step=Decimal("1") if board == "star" else Decimal("100"),
+                    allow_buy=False,
+                    allow_sell=False,
+                )
+
     # Listing & Delisting checks
     if listing_date is not None and session_date < listing_date:
         return TradingRule(
@@ -444,7 +485,8 @@ def resolve_trading_rules(
         has_price_limit = False
         limit_pct = None
     elif (
-        instrument is not None
+        not strict_security_status
+        and instrument is not None
         and instrument.limit_pct is not None
         and instrument.limit_pct <= ZERO
     ):

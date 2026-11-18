@@ -7,7 +7,7 @@ from decimal import Decimal
 
 import pytest
 
-from core.types import OrderSide
+from core.types import ZERO, OrderSide
 from domain.instrument import make_etf, make_stock
 from domain.trading_rules import (
     CHINEXT_REFORM_DATE,
@@ -165,9 +165,34 @@ class TestTradingRuleResolution:
         assert rule_unverified.status == "unverified_state"
         assert rule_unverified.blocker_reason == "trading_state_unverified"
 
-        # With status evidence in strict mode -> tradable
-        rule_verified = resolve_trading_rules(
+        # Missing ST evidence in strict mode -> st_status_unverified
+        rule_no_st = resolve_trading_rules(
+            "600519",
+            d,
+            trade_status="1",
+            listing_date=date(2001, 8, 27),
+            strict_security_status=True,
+        )
+        assert rule_no_st.is_tradable is False
+        assert rule_no_st.status == "unverified_state"
+        assert rule_no_st.blocker_reason == "st_status_unverified"
+
+        # Missing listing evidence in strict mode -> listing_status_unverified
+        rule_no_listing = resolve_trading_rules(
             "600519", d, is_st=False, trade_status="1", strict_security_status=True
+        )
+        assert rule_no_listing.is_tradable is False
+        assert rule_no_listing.status == "unverified_state"
+        assert rule_no_listing.blocker_reason == "listing_status_unverified"
+
+        # With complete verified evidence in strict mode -> tradable
+        rule_verified = resolve_trading_rules(
+            "600519",
+            d,
+            is_st=False,
+            trade_status="1",
+            listing_date=date(2001, 8, 27),
+            strict_security_status=True,
         )
         assert rule_verified.is_tradable is True
         assert rule_verified.status == "tradable"
@@ -396,3 +421,100 @@ class TestPriceLimits:
         assert is_price_within_limits(Decimal("90.00"), ref_price, rule) is True
         assert is_price_within_limits(Decimal("110.01"), ref_price, rule) is False
         assert is_price_within_limits(Decimal("89.99"), ref_price, rule) is False
+
+    def test_etf_classification_and_star_589_series(self):
+        d = date(2025, 3, 5)
+        # 1. 589800 (Huatai-PB SSE STAR Innovative Drug ETF) & 589000 are STAR ETFs -> 20%
+        etf_589800 = make_etf("589800", "STAR Drug ETF")
+        assert etf_589800.limit_pct == Decimal("0.20")
+        rule_589800 = resolve_trading_rules(
+            "589800",
+            d,
+            instrument=etf_589800,
+            trade_status="1",
+            strict_security_status=True,
+        )
+        assert rule_589800.is_tradable is True
+        assert rule_589800.has_price_limit is True
+        assert rule_589800.limit_pct == Decimal("0.20")
+
+        etf_589000 = make_etf("589000", "STAR ETF")
+        assert etf_589000.limit_pct == Decimal("0.20")
+
+        # 2. Unregistered ETFs across prefixes (159999, 512999) get ZERO in factory
+        etf_159999 = make_etf("159999", "Unknown ETF")
+        assert etf_159999.limit_pct == ZERO
+
+        etf_512999 = make_etf("512999", "Unknown Sector ETF")
+        assert etf_512999.limit_pct == ZERO
+
+        # In strict mode, unverified ETF is blocked
+        rule_159999 = resolve_trading_rules(
+            "159999",
+            d,
+            instrument=etf_159999,
+            trade_status="1",
+            strict_security_status=True,
+        )
+        assert rule_159999.is_tradable is False
+        assert rule_159999.status == "unverified_state"
+        assert rule_159999.blocker_reason == "etf_underlying_unverified"
+
+        # Even if instrument had an explicit limit_pct passed to factory, strict mode refuses unverified underlying
+        custom_etf = make_etf("159999", "Unknown", limit_pct=Decimal("0.10"))
+        rule_custom_strict = resolve_trading_rules(
+            "159999",
+            d,
+            instrument=custom_etf,
+            trade_status="1",
+            strict_security_status=True,
+        )
+        assert rule_custom_strict.is_tradable is False
+        assert rule_custom_strict.blocker_reason == "etf_underlying_unverified"
+
+        # In exploratory mode, custom limit is accepted
+        rule_custom_exploratory = resolve_trading_rules(
+            "159999",
+            d,
+            instrument=custom_etf,
+            trade_status="1",
+            strict_security_status=False,
+        )
+        assert rule_custom_exploratory.is_tradable is True
+        assert rule_custom_exploratory.limit_pct == Decimal("0.10")
+
+    def test_mature_stock_limit_pct_zero_cannot_bypass_in_strict_mode(self):
+        d = date(2025, 3, 5)
+        # Mature stock with limit_pct=0
+        mature_stock_zero_limit = make_stock(
+            "600000", "SPD Bank", limit_pct=Decimal("0")
+        )
+        assert mature_stock_zero_limit.limit_pct == Decimal("0")
+
+        # In strict mode, mature stock MUST respect statutory 10% limit; cannot bypass via limit_pct=0
+        rule_strict = resolve_trading_rules(
+            "600000",
+            d,
+            instrument=mature_stock_zero_limit,
+            trade_status="1",
+            is_st=False,
+            listing_date=date(1999, 11, 10),
+            strict_security_status=True,
+        )
+        assert rule_strict.is_tradable is True
+        assert rule_strict.has_price_limit is True
+        assert rule_strict.limit_pct == Decimal("0.10")
+
+        # In exploratory mode, limit_pct=0 is accepted for compatibility / custom testing
+        rule_exploratory = resolve_trading_rules(
+            "600000",
+            d,
+            instrument=mature_stock_zero_limit,
+            trade_status="1",
+            is_st=False,
+            listing_date=date(1999, 11, 10),
+            strict_security_status=False,
+        )
+        assert rule_exploratory.is_tradable is True
+        assert rule_exploratory.has_price_limit is False
+        assert rule_exploratory.limit_pct is None

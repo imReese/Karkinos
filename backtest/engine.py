@@ -1190,16 +1190,16 @@ class BacktestEngine:
                     if self._strict_security_status:
                         self._execution_blocked["unverified_state"] += 1
                         return None
-                    return fill
-                down, up = calculate_price_limits(previous, rule)
-                # Post-slippage price legality validation:
-                # Fill price cannot be outside legal [down, up] for ANY trade direction
-                if down is not None and fill.fill_price < down:
-                    self._execution_blocked["limit"] += 1
-                    return None
-                if up is not None and fill.fill_price > up:
-                    self._execution_blocked["limit"] += 1
-                    return None
+                else:
+                    down, up = calculate_price_limits(previous, rule)
+                    # Post-slippage price legality validation:
+                    # Fill price cannot be outside legal [down, up] for ANY trade direction
+                    if down is not None and fill.fill_price < down:
+                        self._execution_blocked["limit"] += 1
+                        return None
+                    if up is not None and fill.fill_price > up:
+                        self._execution_blocked["limit"] += 1
+                        return None
         fill_metadata: dict[str, Any] = {
             "bar_timestamp": fill.timestamp.isoformat(),
             "session_date": (

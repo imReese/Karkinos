@@ -111,6 +111,7 @@ def run_chronological_sweep(
         "selection_basis": "training_only",
         "tie_break": "normalized_parameters_in_canonical_json_order",
         "selected_params": dict(normalized[winner].params or {}),
+        "strict_security_status": getattr(request, "strict_security_status", False),
         "tested_count": len(training),
         "training_trials": [
             {"params": dict(candidate.params or {}), "score": score}

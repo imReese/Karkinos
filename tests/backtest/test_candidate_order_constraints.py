@@ -9,7 +9,7 @@ import pytest
 
 from backtest.engine import BacktestEngine, ExecutionModel
 from core.event_bus import EventBus
-from core.events import SignalEvent
+from core.events import MarketEvent, SignalEvent
 from core.types import ZERO, OrderSide, Symbol
 from data.handler import DataHandler
 from domain.instrument import make_stock
@@ -572,8 +572,18 @@ def test_next_bar_open_future_volume_perturbation():
                     )
 
         sec_status = {
-            (symbol, day0): {"trade_status": "1", "is_suspended": False},
-            (symbol, day1): {"trade_status": "1", "is_suspended": False},
+            (symbol, day0): {
+                "trade_status": "1",
+                "is_suspended": False,
+                "is_st": False,
+                "listing_date": date(2001, 8, 27),
+            },
+            (symbol, day1): {
+                "trade_status": "1",
+                "is_suspended": False,
+                "is_st": False,
+                "listing_date": date(2001, 8, 27),
+            },
         }
 
         engine = BacktestEngine(
@@ -703,11 +713,13 @@ def test_mature_stock_does_not_require_historical_calendar_back_to_ipo():
             "listing_date": date(2001, 8, 27),
             "trade_status": "1",
             "is_suspended": False,
+            "is_st": False,
         },
         (symbol, date(2024, 1, 3)): {
             "listing_date": date(2001, 8, 27),
             "trade_status": "1",
             "is_suspended": False,
+            "is_st": False,
         },
     }
     engine = BacktestEngine(
@@ -722,3 +734,167 @@ def test_mature_stock_does_not_require_historical_calendar_back_to_ipo():
     res = engine.run()
     # Runs smoothly and fills on day 3
     assert len(res.fills) == 1
+
+
+def test_fill_metadata_populated_on_all_branches():
+    """All successful fill branches must have execution metadata populated,
+    even on the first bar in compatibility mode where previous close is None.
+    """
+    symbol = Symbol("600000")
+    inst = make_stock(str(symbol), "SPD Bank")
+    day0 = date(2024, 1, 2)
+    # 1 bar only: previous is None
+    frame = pd.DataFrame(
+        [
+            {
+                "timestamp": datetime(2024, 1, 2, 15, tzinfo=SHANGHAI),
+                "available_at": datetime(2024, 1, 2, 15, tzinfo=SHANGHAI),
+                "open": 10.0,
+                "high": 10.0,
+                "low": 10.0,
+                "close": 10.0,
+                "volume": 100000,
+            }
+        ]
+    )
+    handler = DataHandler(frame, symbol)
+
+    class FirstBarSignalStrategy(Strategy):
+        def __init__(self):
+            super().__init__("first_bar_sig", EventBus())
+            self.fired = False
+
+        def on_init(self, symbols: list[Symbol]):
+            pass
+
+        def on_data(self, event: MarketEvent):
+            if not self.fired:
+                self.fired = True
+                from core.events import OrderEvent
+                from core.types import OrderType
+
+                self.event_bus.publish(
+                    OrderEvent(
+                        order_id="test_ord_1",
+                        timestamp=event.timestamp,
+                        symbol=symbol,
+                        side=OrderSide.BUY,
+                        order_type=OrderType.MARKET,
+                        quantity=Decimal("100"),
+                        price=Decimal("10.0"),
+                    )
+                )
+
+    # Branch A: Compatibility mode, previous is None -> fills successfully AND has metadata!
+    engine_compat = BacktestEngine(
+        FirstBarSignalStrategy(),
+        {symbol: inst},
+        {symbol: handler},
+        initial_cash=Decimal("100000.00"),
+        execution_model=ExecutionModel.NEXT_BAR_CLOSE,
+        commission_calc=StockACommission(),
+        slippage_model=FixedSlippage(ZERO),
+        strict_security_status=False,
+    )
+    res_compat = engine_compat.run()
+    assert len(res_compat.fills) == 1
+    fill_compat = res_compat.fills[0]
+    assert fill_compat.metadata is not None
+    assert fill_compat.metadata["execution_phase"] == "close"
+    assert fill_compat.metadata["execution_model"] == "next_bar_close"
+    assert fill_compat.metadata["session_date"] == "2024-01-02"
+    assert "bar_timestamp" in fill_compat.metadata
+
+    # Branch B: Strict mode, previous is None -> rejected with unverified_state
+    engine_strict = BacktestEngine(
+        FirstBarSignalStrategy(),
+        {symbol: inst},
+        {symbol: handler},
+        initial_cash=Decimal("100000.00"),
+        execution_model=ExecutionModel.NEXT_BAR_CLOSE,
+        commission_calc=StockACommission(),
+        slippage_model=FixedSlippage(ZERO),
+        strict_security_status=True,
+    )
+    res_strict = engine_strict.run()
+    assert len(res_strict.fills) == 0
+    assert engine_strict._execution_blocked["unverified_state"] >= 1
+
+
+def test_mature_stock_zero_limit_blocked_in_strict_mode_backtest():
+    """In BacktestEngine with strict_security_status=True, a mature stock configured
+    with limit_pct=0 CANNOT bypass statutory price limits. A -20% drop from 10 to 8 is blocked.
+    In strict_security_status=False, it is permitted.
+    """
+    symbol = Symbol("600000")
+    # Mature stock with explicit limit_pct=0
+    inst_zero = make_stock(str(symbol), "SPD Bank", limit_pct=Decimal("0"))
+
+    day0 = date(2024, 1, 2)
+    day1 = date(2024, 1, 3)
+    frame = pd.DataFrame(
+        [
+            {
+                "timestamp": datetime(2024, 1, 2, 15, tzinfo=SHANGHAI),
+                "available_at": datetime(2024, 1, 2, 15, tzinfo=SHANGHAI),
+                "open": 10.0,
+                "high": 10.0,
+                "low": 10.0,
+                "close": 10.0,
+                "volume": 100000,
+            },
+            {
+                "timestamp": datetime(2024, 1, 3, 15, tzinfo=SHANGHAI),
+                "available_at": datetime(2024, 1, 3, 15, tzinfo=SHANGHAI),
+                "open": 8.0,
+                "high": 8.0,
+                "low": 8.0,
+                "close": 8.0,
+                "volume": 100000,
+            },
+        ]
+    )
+
+    sec_status = {
+        (symbol, day0): {
+            "listing_date": date(1999, 11, 10),
+            "trade_status": "1",
+            "is_suspended": False,
+            "is_st": False,
+        },
+        (symbol, day1): {
+            "listing_date": date(1999, 11, 10),
+            "trade_status": "1",
+            "is_suspended": False,
+            "is_st": False,
+        },
+    }
+
+    # Strict mode: 8.0 is below 10.0 * 0.90 = 9.00 limit down -> BLOCKED!
+    engine_strict = BacktestEngine(
+        OneShotSignalStrategy(Decimal("0.5"), symbol),
+        {symbol: inst_zero},
+        {symbol: DataHandler(frame, symbol)},
+        initial_cash=Decimal("100000.00"),
+        execution_model=ExecutionModel.NEXT_BAR_CLOSE,
+        security_status=sec_status,
+        strict_security_status=True,
+    )
+    res_strict = engine_strict.run()
+    assert len(res_strict.fills) == 0
+    assert engine_strict._execution_blocked["limit"] >= 1
+
+    # Exploratory mode: limit_pct=0 allows trading at 8.0
+    engine_exploratory = BacktestEngine(
+        OneShotSignalStrategy(Decimal("0.5"), symbol),
+        {symbol: inst_zero},
+        {symbol: DataHandler(frame, symbol)},
+        initial_cash=Decimal("100000.00"),
+        execution_model=ExecutionModel.NEXT_BAR_CLOSE,
+        security_status=sec_status,
+        strict_security_status=False,
+    )
+    res_exploratory = engine_exploratory.run()
+    assert len(res_exploratory.fills) == 1
+    assert res_exploratory.fills[0].fill_price == Decimal("8.00")
+    assert res_exploratory.fills[0].metadata is not None

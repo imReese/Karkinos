@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -21,7 +22,7 @@ from server.services.research.dataset_policy import (
 )
 
 
-def load_dataset_backtest_inputs(root: Path, request):
+def load_dataset_backtest_inputs(root: Path, request, db=None):
     store = ContentAddressedObjectStore(root / "objects")
     try:
         ref = DatasetRef(store.resolve_ref(request.dataset_id))
@@ -149,6 +150,47 @@ def load_dataset_backtest_inputs(root: Path, request):
     from data.dataset.reader import dataset_session_nontrading_instruments
 
     strict_status = getattr(request, "strict_security_status", False)
+
+    # 1. Trading calendar restoration from db or request
+    calendar_snapshots = []
+    years_needed = list(range(snapshot.start_date.year, snapshot.end_date.year + 1))
+    if db is not None and hasattr(db, "get_market_calendar_snapshot_sync"):
+        for y in years_needed:
+            row = db.get_market_calendar_snapshot_sync(exchange="SSE", year=y)
+            if row is not None:
+                from data.market_calendar import market_calendar_snapshot_from_payload
+
+                calendar_snapshots.append(market_calendar_snapshot_from_payload(row))
+    elif hasattr(request, "trading_calendar") and request.trading_calendar is not None:
+        tc = request.trading_calendar
+        if hasattr(tc, "snapshots"):
+            calendar_snapshots.extend(tc.snapshots)
+        elif hasattr(tc, "year"):
+            calendar_snapshots.append(tc)
+
+    trading_calendar_payload = None
+    if calendar_snapshots:
+        covered_years = {s.year for s in calendar_snapshots}
+        if set(years_needed) <= covered_years:
+            if len(calendar_snapshots) == 1:
+                trading_calendar_payload = calendar_snapshots[0].to_payload()
+            else:
+                from data.market_calendar import MultiYearMarketCalendar
+
+                multi_cal = MultiYearMarketCalendar(tuple(calendar_snapshots))
+                trading_calendar_payload = {
+                    "schema_version": "karkinos.market_calendar.multi_year.v1",
+                    "source_fingerprint": multi_cal.source_fingerprint,
+                    "snapshots": [s.to_payload() for s in multi_cal.snapshots],
+                }
+        elif strict_status:
+            raise ResearchDatasetError("dataset_calendar_coverage_incomplete")
+    elif strict_status:
+        raise ResearchDatasetError("dataset_calendar_evidence_unverified")
+
+    # 2. Non-trading evidence & Security Status restoration
+    from data.dataset.reader import dataset_session_nontrading_instruments
+
     nontrading_map_iso: dict[str, list[str]] = {}
     try:
         raw_nontrading = dataset_session_nontrading_instruments(store, snapshot)
@@ -160,11 +202,99 @@ def load_dataset_backtest_inputs(root: Path, request):
                 f"dataset_nontrading_evidence_unreadable:{exc}"
             ) from exc
 
+    security_status_payload = None
+    if getattr(snapshot, "session_memberships", ()):
+        from data.dataset.reader import _validate_membership_evidence
+
+        evidence: dict[
+            date,
+            tuple[
+                tuple[dict[str, Any], ...],
+                dict[InstrumentKey, str],
+                dict[InstrumentKey, str],
+            ],
+        ] = {}
+        try:
+            nontrading_evidence = _validate_membership_evidence(
+                store, snapshot, cross_section_evidence=evidence
+            )
+        except Exception as exc:
+            if strict_status:
+                raise ResearchDatasetError(
+                    f"dataset_security_status_evidence_unreadable:{exc}"
+                ) from exc
+            evidence = {}
+            nontrading_evidence = {}
+
+        if evidence:
+            sec_status_map: dict[str, dict[str, Any]] = {}
+            for s_date, (masters, hist_status, special_treatment) in evidence.items():
+                s_date_str = s_date.isoformat()
+                day_map: dict[str, Any] = {}
+                meta_by_sym: dict[str, dict[str, Any]] = {}
+                src_caps: list[str] = []
+                for master in masters:
+                    if master.get("source_capture_ids"):
+                        src_caps.extend(master["source_capture_ids"])
+                    for m in master.get("member_metadata", ()):
+                        sym = str(m.get("symbol") or "")
+                        if sym and sym not in meta_by_sym:
+                            meta_by_sym[sym] = m
+
+                for inst_key in snapshot.instruments:
+                    sym = inst_key.symbol
+                    meta = meta_by_sym.get(sym)
+                    is_susp = (
+                        inst_key in nontrading_evidence.get(s_date, ())
+                        or hist_status.get(inst_key) == "0"
+                        or (meta is not None and meta.get("trade_status") == "0")
+                    )
+                    trade_status = (
+                        "0"
+                        if is_susp
+                        else (
+                            "1"
+                            if (
+                                hist_status.get(inst_key) == "1"
+                                or (
+                                    meta is not None and meta.get("trade_status") == "1"
+                                )
+                            )
+                            else None
+                        )
+                    )
+                    is_st = None
+                    if inst_key in special_treatment:
+                        is_st = special_treatment[inst_key] == "1"
+                    elif meta is not None and "is_st" in meta:
+                        is_st = bool(meta["is_st"])
+
+                    list_date = meta.get("list_date") if meta else None
+                    delist_date = meta.get("delist_date") if meta else None
+                    disp_name = meta.get("display_name") if meta else None
+                    src_ref = src_caps[0] if src_caps else None
+
+                    day_map[sym] = {
+                        "trade_status": trade_status,
+                        "is_suspended": is_susp if trade_status is not None else None,
+                        "is_st": is_st,
+                        "listing_date": list_date,
+                        "delist_date": delist_date,
+                        "display_name": disp_name,
+                        "source_ref": src_ref,
+                    }
+                if day_map:
+                    sec_status_map[s_date_str] = day_map
+            if sec_status_map:
+                security_status_payload = sec_status_map
+    elif strict_status:
+        raise ResearchDatasetError("dataset_security_status_evidence_missing")
+
     research_mode = "strict_research" if strict_status else "exploratory_compatible"
     execution_context_payload = {
-        "trading_calendar": None,
+        "trading_calendar": trading_calendar_payload,
         "nontrading_instruments": nontrading_map_iso if nontrading_map_iso else None,
-        "security_status": None,
+        "security_status": security_status_payload,
         "strict_security_status": strict_status,
         "research_mode": research_mode,
         "limitations": [
@@ -285,7 +415,7 @@ def prepare_dataset_backtest_inputs(
         if db is not None
         else Path(resolve_data_dir()).resolve()
     ) / "research"
-    instruments, handlers, binding = load_dataset_backtest_inputs(root, request)
+    instruments, handlers, binding = load_dataset_backtest_inputs(root, request, db=db)
     sources = binding["source_names"]
     snapshot = build_backtest_dataset_snapshot(
         start_date=request.start_date,
