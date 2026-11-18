@@ -303,17 +303,20 @@ class DistributionReplay:
                 )
         return None
 
-    def blocks_execution(self, symbol: Symbol, day: date) -> bool:
-        if self.allow_ex_date_trading:
-            return False
-        # The dividend table does not supply an authoritative ex-date price-limit
-        # reference. Never compare its unadjusted close to the prior raw close.
-        blocked = any(
+    def blocks_execution(
+        self, symbol: Symbol, day: date, *, pre_close: Decimal | None = None
+    ) -> bool:
+        is_ex_date = any(
             item.symbol == symbol and item.ex_date == day for item in self.distributions
         )
-        if blocked:
-            self.execution_blocked_count += 1
-        return blocked
+        if not is_ex_date:
+            return False
+        if self.allow_ex_date_trading and pre_close is not None:
+            ex_ref = self.ex_reference_price(symbol, day, pre_close)
+            if ex_ref is not None and ex_ref > ZERO:
+                return False
+        self.execution_blocked_count += 1
+        return True
 
     def evidence(self, portfolio: Portfolio) -> dict[str, Any]:
         result = {

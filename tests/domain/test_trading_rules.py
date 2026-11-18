@@ -78,7 +78,7 @@ class TestTradingRuleResolution:
         assert rule.exchange == "SSE"
         assert rule.limit_pct == Decimal("0.20")
         assert rule.min_order_qty == Decimal("200")
-        assert rule.qty_step == Decimal("200")
+        assert rule.qty_step == Decimal("1")
 
     def test_beijing_exchange_rules(self):
         d = date(2022, 1, 10)
@@ -188,15 +188,96 @@ class TestTradingRuleResolution:
         rule_star_etf = resolve_trading_rules("588000", d, instrument=star_etf)
         assert rule_star_etf.limit_pct == Decimal("0.20")
 
-        # ChiNext ETF (159915) -> 20%
+        # ChiNext ETF (159915) -> 20% post reform
         gem_etf = make_etf("159915", "ChiNextETF")
         rule_gem_etf = resolve_trading_rules("159915", d, instrument=gem_etf)
         assert rule_gem_etf.limit_pct == Decimal("0.20")
+
+        # ChiNext ETF (159915) before reform (2020-08-24) -> 10%
+        before_gem_date = date(2020, 8, 20)
+        rule_gem_before = resolve_trading_rules(
+            "159915", before_gem_date, instrument=gem_etf
+        )
+        assert rule_gem_before.limit_pct == Decimal("0.10")
+
+        # Main Board / Cross-market ETF with 1599 prefix: 159919 (嘉实沪深300ETF) -> 10% (NOT 20%!)
+        hs300_etf = make_etf("159919", "嘉实沪深300ETF")
+        rule_hs300_etf = resolve_trading_rules("159919", d, instrument=hs300_etf)
+        assert rule_hs300_etf.limit_pct == Decimal("0.10")
+
+        # Main Board SZSE 159901 (深证100ETF) -> 10%
+        sz100_etf = make_etf("159901", "易方达深证100ETF")
+        rule_sz100_etf = resolve_trading_rules("159901", d, instrument=sz100_etf)
+        assert rule_sz100_etf.limit_pct == Decimal("0.10")
 
         # Main Board 50 ETF (510050) -> 10%
         main_etf = make_etf("510050", "SSE50ETF")
         rule_main_etf = resolve_trading_rules("510050", d, instrument=main_etf)
         assert rule_main_etf.limit_pct == Decimal("0.10")
+
+        # Unknown ETF in strict mode -> unverified_state
+        unknown_etf = make_etf("159999", "UnknownETF")
+        rule_unknown = resolve_trading_rules(
+            "159999",
+            d,
+            instrument=unknown_etf,
+            trade_status="1",
+            strict_security_status=True,
+        )
+        assert rule_unknown.is_tradable is False
+        assert rule_unknown.status == "unverified_state"
+        assert rule_unknown.blocker_reason == "etf_underlying_unverified"
+
+        # Strict security status on ETF without trading evidence -> unverified_state
+        rule_etf_no_ev = resolve_trading_rules(
+            "510050", d, instrument=main_etf, strict_security_status=True
+        )
+        assert rule_etf_no_ev.is_tradable is False
+        assert rule_etf_no_ev.status == "unverified_state"
+        assert rule_etf_no_ev.blocker_reason == "trading_state_unverified"
+
+    def test_star_market_sell_lot_validation(self):
+        d = date(2023, 1, 3)
+        rule_star = resolve_trading_rules("688001", d)
+
+        # 1. available=360, sell=160: rejected because holding >= 200, cannot sell < 200
+        ok, reason = validate_order_lot_size(
+            rule_star, OrderSide.SELL, Decimal("160"), available_qty=Decimal("360")
+        )
+        assert ok is False
+        assert reason == "order_below_minimum_lot"
+
+        # 2. available=160, sell=160: whole holding < 200, must sell all at once -> legal
+        ok, reason = validate_order_lot_size(
+            rule_star, OrderSide.SELL, Decimal("160"), available_qty=Decimal("160")
+        )
+        assert ok is True
+        assert reason is None
+
+        # 3. available=160, sell=80: whole holding < 200, cannot partially sell -> rejected
+        ok, reason = validate_order_lot_size(
+            rule_star, OrderSide.SELL, Decimal("80"), available_qty=Decimal("160")
+        )
+        assert ok is False
+        assert reason == "odd_lot_remainder_must_sell_all"
+
+        # 4. available=360, sell=200: legal minimum order
+        ok, reason = validate_order_lot_size(
+            rule_star, OrderSide.SELL, Decimal("200"), available_qty=Decimal("360")
+        )
+        assert ok is True
+
+        # 5. available=360, sell=201: legal, statutory increment is 1 share
+        ok, reason = validate_order_lot_size(
+            rule_star, OrderSide.SELL, Decimal("201"), available_qty=Decimal("360")
+        )
+        assert ok is True
+
+        # 6. available=360, sell=360: legal full liquidation
+        ok, reason = validate_order_lot_size(
+            rule_star, OrderSide.SELL, Decimal("360"), available_qty=Decimal("360")
+        )
+        assert ok is True
 
 
 class TestLotSizeValidation:

@@ -204,8 +204,28 @@ def make_stock(
     )
 
 
-def make_etf(symbol: str, name: str) -> Instrument:
+def make_etf(symbol: str, name: str, *, limit_pct: Decimal | None = None) -> Instrument:
     """创建 ETF 标的。"""
+    from core.types import ZERO
+    from domain.a_share_limits import normalize_code
+
+    if limit_pct is None:
+        clean = normalize_code(symbol)
+        if clean.startswith("588"):
+            limit_pct = Decimal("0.20")
+        elif clean.startswith("51") or clean.startswith("159"):
+            from domain.trading_rules import SUPPORTED_ETF_UNDERLYING
+
+            underlying = SUPPORTED_ETF_UNDERLYING.get(clean)
+            if underlying == "chinext":
+                limit_pct = Decimal("0.20")
+            elif underlying == "main":
+                limit_pct = Decimal("0.10")
+            else:
+                limit_pct = ZERO
+        else:
+            limit_pct = Decimal("0.10")
+
     return Instrument(
         symbol=Symbol(symbol),
         name=name,
@@ -215,7 +235,7 @@ def make_etf(symbol: str, name: str) -> Instrument:
         settlement=Settlement.T_PLUS_1,
         lot_size=Decimal("100"),
         price_tick=Decimal("0.001"),
-        limit_pct=Decimal("0.10"),
+        limit_pct=limit_pct,
     )
 
 

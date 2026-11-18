@@ -29,6 +29,68 @@ BSE_OPEN_DATE = date(2021, 11, 15)
 MAIN_BOARD_REFORM_DATE = date(2023, 4, 10)
 SSE_SZSE_ST_REFORM_DATE = date(2026, 7, 6)
 
+SUPPORTED_ETF_UNDERLYING: dict[str, str] = {
+    # ChiNext ETFs -> 20% on/after 2020-08-24, 10% before
+    "159915": "chinext",  # 易方达创业板ETF
+    "159949": "chinext",  # 广发创业板ETF
+    "159952": "chinext",  # 广发创业板200ETF
+    "159977": "chinext",  # 天弘创业板300ETF
+    # Main Board / Cross-market SZSE ETFs -> 10%
+    "159919": "main",  # 嘉实沪深300ETF
+    "159901": "main",  # 易方达深证100ETF
+    "159902": "main",  # 华夏中小企业板ETF / 中小100ETF
+    "159903": "main",  # 南方深证成份ETF
+    "159905": "main",  # 工银瑞信深证红利ETF
+    "159906": "main",  # 大成深证成长40ETF
+    "159907": "main",  # 广发中小板300ETF
+    "159908": "main",  # 博时深证基本面200ETF
+    "159910": "main",  # 嘉实深证基本面120ETF
+    "159920": "main",  # 华安MSCI中国A股ETF
+    # Main Board / Cross-market SSE ETFs -> 10%
+    "510050": "main",  # 华夏上证50ETF
+    "510300": "main",  # 华泰柏瑞沪深300ETF
+    "510500": "main",  # 南方中证500ETF
+    "510880": "main",  # 华泰柏瑞红利ETF
+}
+
+
+def resolve_etf_limit_pct(
+    clean_code: str,
+    session_date: date,
+    *,
+    instrument: Instrument | None = None,
+    strict_security_status: bool = False,
+) -> tuple[Decimal | None, str | None]:
+    """Resolve ETF price limit rate and classification status.
+
+    Returns (limit_pct, blocker_reason).
+    If unverified in strict mode, returns (None, 'etf_underlying_unverified').
+    """
+    # 1. SSE STAR Market ETFs (all 588xxx series officially track STAR market indices)
+    if clean_code.startswith("588"):
+        return Decimal("0.20"), None
+
+    # 2. Supported / authoritative ETF classification registry
+    underlying = SUPPORTED_ETF_UNDERLYING.get(clean_code)
+    if underlying == "chinext":
+        rate = (
+            Decimal("0.20") if session_date >= CHINEXT_REFORM_DATE else Decimal("0.10")
+        )
+        return rate, None
+    elif underlying == "main":
+        return Decimal("0.10"), None
+    elif underlying == "star":
+        return Decimal("0.20"), None
+
+    # 3. Explicit instrument limit_pct if provided
+    if instrument is not None and instrument.limit_pct > ZERO:
+        return instrument.limit_pct, None
+
+    # 4. Unknown / unverified underlying
+    if strict_security_status:
+        return None, "etf_underlying_unverified"
+    return Decimal("0.10"), None
+
 
 @dataclass(frozen=True)
 class TradingRule:
@@ -74,40 +136,133 @@ def resolve_trading_rules(
     if identity is None:
         # Non-stock or non-A-share instrument fallback
         if instrument is not None and instrument.instrument_type is InstrumentType.ETF:
-            # ETF price limit depends on underlying market
-            etf_limit_pct: Decimal | None
-            if clean_code.startswith("588"):
-                etf_limit_pct = Decimal("0.20")
-            elif clean_code.startswith("1599"):
-                etf_limit_pct = (
-                    Decimal("0.20")
-                    if session_date >= CHINEXT_REFORM_DATE
-                    else Decimal("0.10")
-                )
-            elif instrument.limit_pct > ZERO:
-                etf_limit_pct = instrument.limit_pct
-            else:
-                etf_limit_pct = Decimal("0.10")
+            exchange = "SSE" if clean_code.startswith("5") else "SZSE"
+            price_tick = instrument.price_tick or Decimal("0.001")
+            min_order_qty = instrument.lot_size or Decimal("100")
+            qty_step = instrument.lot_size or Decimal("100")
 
-            has_limit = etf_limit_pct > ZERO
+            # In strict mode, verify explicit tradable status
+            if strict_security_status:
+                has_tradable_evidence = (
+                    trade_status in ("1", "trade", "trading")
+                    or is_suspended_override is False
+                )
+                if not has_tradable_evidence and (
+                    is_suspended_override is not True and trade_status != "0"
+                ):
+                    return TradingRule(
+                        rule_id=A_SHARE_TRADING_RULES_POLICY_ID,
+                        symbol=symbol,
+                        exchange=exchange,
+                        board="etf",
+                        is_tradable=False,
+                        status="unverified_state",
+                        blocker_reason="trading_state_unverified",
+                        limit_pct=None,
+                        has_price_limit=False,
+                        price_tick=price_tick,
+                        min_order_qty=min_order_qty,
+                        qty_step=qty_step,
+                        allow_buy=False,
+                        allow_sell=False,
+                    )
+
+            if listing_date is not None and session_date < listing_date:
+                return TradingRule(
+                    rule_id=A_SHARE_TRADING_RULES_POLICY_ID,
+                    symbol=symbol,
+                    exchange=exchange,
+                    board="etf",
+                    is_tradable=False,
+                    status="not_yet_listed",
+                    blocker_reason="not_yet_listed_excluded",
+                    limit_pct=None,
+                    has_price_limit=False,
+                    price_tick=price_tick,
+                    min_order_qty=min_order_qty,
+                    qty_step=qty_step,
+                    allow_buy=False,
+                    allow_sell=False,
+                )
+
+            if delist_date is not None and session_date >= delist_date:
+                return TradingRule(
+                    rule_id=A_SHARE_TRADING_RULES_POLICY_ID,
+                    symbol=symbol,
+                    exchange=exchange,
+                    board="etf",
+                    is_tradable=False,
+                    status="delisted",
+                    blocker_reason="inactive_listing_excluded",
+                    limit_pct=None,
+                    has_price_limit=False,
+                    price_tick=price_tick,
+                    min_order_qty=min_order_qty,
+                    qty_step=qty_step,
+                    allow_buy=False,
+                    allow_sell=False,
+                )
+
+            if is_suspended_override is True or trade_status == "0":
+                return TradingRule(
+                    rule_id=A_SHARE_TRADING_RULES_POLICY_ID,
+                    symbol=symbol,
+                    exchange=exchange,
+                    board="etf",
+                    is_tradable=False,
+                    status="suspended",
+                    blocker_reason="nontrading_session_excluded",
+                    limit_pct=Decimal("0.10"),
+                    has_price_limit=True,
+                    price_tick=price_tick,
+                    min_order_qty=min_order_qty,
+                    qty_step=qty_step,
+                    allow_buy=False,
+                    allow_sell=False,
+                )
+
+            etf_limit_pct, etf_blocker = resolve_etf_limit_pct(
+                clean_code,
+                session_date,
+                instrument=instrument,
+                strict_security_status=strict_security_status,
+            )
+            if etf_blocker is not None:
+                return TradingRule(
+                    rule_id=A_SHARE_TRADING_RULES_POLICY_ID,
+                    symbol=symbol,
+                    exchange=exchange,
+                    board="etf",
+                    is_tradable=False,
+                    status="unverified_state",
+                    blocker_reason=etf_blocker,
+                    limit_pct=None,
+                    has_price_limit=False,
+                    price_tick=price_tick,
+                    min_order_qty=min_order_qty,
+                    qty_step=qty_step,
+                    allow_buy=False,
+                    allow_sell=False,
+                )
+
+            has_limit = etf_limit_pct is not None and etf_limit_pct > ZERO
             return TradingRule(
                 rule_id=A_SHARE_TRADING_RULES_POLICY_ID,
                 symbol=symbol,
-                exchange="SSE" if clean_code.startswith("5") else "SZSE",
+                exchange=exchange,
                 board="etf",
-                is_tradable=not is_suspended_override,
-                status="suspended" if is_suspended_override else "tradable",
-                blocker_reason="nontrading_session_excluded"
-                if is_suspended_override
-                else None,
+                is_tradable=True,
+                status="tradable",
+                blocker_reason=None,
                 limit_pct=etf_limit_pct,
                 has_price_limit=has_limit,
-                price_tick=instrument.price_tick or Decimal("0.001"),
-                min_order_qty=instrument.lot_size or Decimal("100"),
-                qty_step=instrument.lot_size or Decimal("100"),
-                allow_buy=not is_suspended_override,
-                allow_sell=not is_suspended_override,
+                price_tick=price_tick,
+                min_order_qty=min_order_qty,
+                qty_step=qty_step,
+                allow_buy=True,
+                allow_sell=True,
             )
+
         if instrument is not None:
             has_limit = instrument.limit_pct > ZERO
             return TradingRule(
@@ -150,30 +305,36 @@ def resolve_trading_rules(
 
     # In strict security status mode, unverified status blocks execution
     if strict_security_status:
-        has_evidence = (
-            trade_status is not None
-            or is_st is not None
-            or listing_date is not None
-            or delist_date is not None
-            or is_suspended_override is not None
-        )
-        if not has_evidence:
-            return TradingRule(
-                rule_id=A_SHARE_TRADING_RULES_POLICY_ID,
-                symbol=symbol,
-                exchange=exchange,
-                board=board,
-                is_tradable=False,
-                status="unverified_state",
-                blocker_reason="trading_state_unverified",
-                limit_pct=None,
-                has_price_limit=False,
-                price_tick=Decimal("0.01"),
-                min_order_qty=Decimal("200") if board == "star" else Decimal("100"),
-                qty_step=Decimal("200") if board == "star" else Decimal("100"),
-                allow_buy=False,
-                allow_sell=False,
+        # Negative evidence takes precedence and will be processed below
+        if is_suspended_override is True or trade_status == "0":
+            pass
+        elif delist_date is not None and session_date >= delist_date:
+            pass
+        elif listing_date is not None and session_date < listing_date:
+            pass
+        else:
+            # Positive trading evidence required: trade_status == "1" or is_suspended_override is False
+            has_tradable_evidence = (
+                trade_status in ("1", "trade", "trading")
+                or is_suspended_override is False
             )
+            if not has_tradable_evidence:
+                return TradingRule(
+                    rule_id=A_SHARE_TRADING_RULES_POLICY_ID,
+                    symbol=symbol,
+                    exchange=exchange,
+                    board=board,
+                    is_tradable=False,
+                    status="unverified_state",
+                    blocker_reason="trading_state_unverified",
+                    limit_pct=None,
+                    has_price_limit=False,
+                    price_tick=Decimal("0.01"),
+                    min_order_qty=Decimal("200") if board == "star" else Decimal("100"),
+                    qty_step=Decimal("1") if board == "star" else Decimal("100"),
+                    allow_buy=False,
+                    allow_sell=False,
+                )
 
     # Listing & Delisting checks
     if listing_date is not None and session_date < listing_date:
@@ -281,7 +442,14 @@ def resolve_trading_rules(
     # Price limit rate calculation
     if is_initial_period:
         has_price_limit = False
-        limit_pct: Decimal | None = None
+        limit_pct = None
+    elif (
+        instrument is not None
+        and instrument.limit_pct is not None
+        and instrument.limit_pct <= ZERO
+    ):
+        has_price_limit = False
+        limit_pct = None
     else:
         has_price_limit = True
         if board in {"sse_main", "szse_main"}:
@@ -308,7 +476,7 @@ def resolve_trading_rules(
     # Lot size & Step
     if board == "star":
         min_order_qty = Decimal("200")
-        qty_step = Decimal("200")
+        qty_step = Decimal("1")
     else:
         min_order_qty = Decimal("100")
         qty_step = Decimal("100")
@@ -342,15 +510,27 @@ def validate_order_lot_size(
 
     Returns (passed, blocker_reason).
     """
-    if quantity <= ZERO:
+    if not quantity.is_finite() or quantity <= ZERO:
         return False, "quantity_must_be_positive"
+
+    # Quantities must be integer shares
+    if quantity % Decimal("1") != ZERO:
+        return False, "quantity_must_be_integer"
+
+    is_star = rule.board == "star"
 
     if side is OrderSide.BUY:
         if quantity < rule.min_order_qty:
             return False, "order_below_minimum_lot"
-        if (quantity % rule.qty_step) != ZERO:
-            return False, "order_not_multiple_of_lot_step"
-        return True, None
+        if is_star:
+            # STAR statutory rule: minimum 200 shares, increment by 1 share
+            if (quantity - Decimal("200")) % rule.qty_step != ZERO:
+                return False, "order_not_multiple_of_lot_step"
+            return True, None
+        else:
+            if (quantity % rule.qty_step) != ZERO:
+                return False, "order_not_multiple_of_lot_step"
+            return True, None
 
     if side is OrderSide.SELL:
         if available_qty is not None:
@@ -359,39 +539,61 @@ def validate_order_lot_size(
             # Selling all available shares is always allowed even if not round lots
             if quantity == available_qty:
                 return True, None
-            # Odd-lot liquidation: If available is less than minimum lot,
-            # must sell the entire available remainder in one order.
-            if available_qty < rule.min_order_qty:
-                if quantity != available_qty:
+
+            if is_star:
+                # STAR statutory rules (SSE trading rules section 6.6):
+                # 1. "单笔申报数量应当不小于200股"
+                # 2. "卖出时，余额不足200股的部分，应当一次性申报卖出"
+                if available_qty < Decimal("200"):
+                    # Whole holding is less than 200 shares: must sell all at once!
+                    if quantity != available_qty:
+                        return False, "odd_lot_remainder_must_sell_all"
+                    return True, None
+                else:
+                    # Holding is >= 200 shares. Cannot submit a sell order < 200 shares!
+                    if quantity < Decimal("200"):
+                        return False, "order_below_minimum_lot"
+                    # For quantity >= 200, statutory increment is 1 share
+                    if (quantity - Decimal("200")) % rule.qty_step != ZERO:
+                        return False, "order_not_multiple_of_lot_step"
+                    return True, None
+            else:
+                # Main Board / ChiNext / BSE / ETF: 100-lot markets
+                if available_qty < rule.min_order_qty:
+                    if quantity != available_qty:
+                        return False, "odd_lot_remainder_must_sell_all"
+                    return True, None
+
+                remainder = available_qty % rule.qty_step
+                if remainder > ZERO:
+                    # Holding contains an odd-lot remainder (< 100).
+                    # Valid statutory sell cases:
+                    # 1. Selling the exact odd-lot remainder alone
+                    if quantity == remainder:
+                        return True, None
+                    # 2. Selling odd-lot remainder + integer round lots
+                    if (
+                        quantity > remainder
+                        and ((quantity - remainder) % rule.qty_step) == ZERO
+                    ):
+                        return True, None
+                    # 3. Selling integer round lots only, leaving odd-lot remainder intact
+                    if (quantity % rule.qty_step) == ZERO and quantity <= (
+                        available_qty - remainder
+                    ):
+                        return True, None
+                    # Any other partial split of the odd-lot remainder is illegal
                     return False, "odd_lot_remainder_must_sell_all"
-                return True, None
 
-            remainder = available_qty % rule.qty_step
-            if remainder > ZERO:
-                # Holding contains an odd-lot remainder.
-                # Valid cases:
-                # 1. Selling the exact odd-lot remainder alone
-                if quantity == remainder:
-                    return True, None
-                # 2. Selling odd-lot remainder + integer round lots
-                if (
-                    quantity > remainder
-                    and ((quantity - remainder) % rule.qty_step) == ZERO
-                ):
-                    return True, None
-                # 3. Selling integer round lots only, leaving odd-lot remainder intact
-                if (quantity % rule.qty_step) == ZERO and quantity <= (
-                    available_qty - remainder
-                ):
-                    return True, None
-                # Any other partial split of the odd-lot remainder is illegal
-                return False, "odd_lot_remainder_must_sell_all"
-
-        # Partial sell without odd-lot remainder in available_qty
+        # Partial sell without odd-lot remainder in available_qty (or available_qty not provided)
         if quantity < rule.min_order_qty:
             return False, "order_below_minimum_lot"
-        if (quantity % rule.qty_step) != ZERO:
-            return False, "order_not_multiple_of_lot_step"
+        if is_star:
+            if (quantity - Decimal("200")) % rule.qty_step != ZERO:
+                return False, "order_not_multiple_of_lot_step"
+        else:
+            if (quantity % rule.qty_step) != ZERO:
+                return False, "order_not_multiple_of_lot_step"
         return True, None
 
 

@@ -130,12 +130,20 @@ class MarketCalendarSnapshot:
             raise ValueError("trading_days_start_date_exceeds_end_date")
         if start_date.year != self.year or end_date.year != self.year:
             raise ValueError("trading_calendar_coverage_incomplete")
-        days_in_range = []
-        for d in self.days:
-            parsed = _parse_calendar_date(d.date)
-            if start_date <= parsed <= end_date and d.is_trading_day:
-                days_in_range.append(parsed)
-        return tuple(sorted(days_in_range))
+        day_map = {d.date: d for d in self.days}
+        if len(day_map) != len(self.days):
+            raise ValueError("trading_calendar_duplicate_dates")
+        days_in_range: list[date] = []
+        curr = start_date
+        while curr <= end_date:
+            date_text = curr.isoformat()
+            d = day_map.get(date_text)
+            if d is None:
+                raise ValueError(f"trading_calendar_coverage_incomplete:{date_text}")
+            if d.is_trading_day:
+                days_in_range.append(curr)
+            curr += timedelta(days=1)
+        return tuple(days_in_range)
 
     def to_payload(self) -> dict[str, object]:
         return {
@@ -464,21 +472,45 @@ def validate_calendar_coverage(
     start_date: date,
     end_date: date,
 ) -> None:
-    """Validate that calendar completely covers the window [start_date, end_date]."""
+    """Validate that calendar completely and continuously covers the window [start_date, end_date]."""
     if start_date > end_date:
         raise ValueError("trading_days_start_date_exceeds_end_date")
-    if isinstance(calendar, MarketCalendarSnapshot):
-        if start_date.year != calendar.year or end_date.year != calendar.year:
+    if calendar is None:
+        raise ValueError("trading_calendar_coverage_incomplete:calendar_is_none")
+    # Verify every single calendar day in [start_date, end_date] has an explicit entry
+    curr = start_date
+    while curr <= end_date:
+        try:
+            calendar.explain_date(curr)
+        except Exception as exc:
             raise ValueError(
-                f"trading_calendar_coverage_incomplete:window_{start_date}_to_{end_date}_exceeds_year_{calendar.year}"
-            )
-    elif isinstance(calendar, MultiYearMarketCalendar):
-        covered_years = {s.year for s in calendar.snapshots}
-        for y in range(start_date.year, end_date.year + 1):
-            if y not in covered_years:
-                raise ValueError(
-                    f"trading_calendar_coverage_incomplete:year_{y}_not_covered"
-                )
+                f"trading_calendar_coverage_incomplete:date_{curr.isoformat()}_missing"
+            ) from exc
+        curr += timedelta(days=1)
+
+
+def calculate_listing_session_count(
+    calendar: Any,
+    listing_date: date,
+    session_date: date,
+) -> int:
+    """Count trading days from listing_date to session_date (1-based).
+
+    For mature stocks listed years ago (> 365 calendar days), avoid
+    unconditionally counting from historical IPO; return a safe mature count (1000).
+    For securities truly close to listing (<= 365 calendar days), require
+    complete calendar coverage and count exact trading days.
+    """
+    if session_date < listing_date:
+        return 0
+    if session_date == listing_date:
+        return 1
+    if (session_date - listing_date).days > 365:
+        return 1000
+    if calendar is None:
+        raise ValueError("trading_calendar_coverage_incomplete:calendar_is_none")
+    tds = calendar.trading_days(listing_date, session_date)
+    return len(tds)
 
 
 def build_static_market_calendar_snapshot(

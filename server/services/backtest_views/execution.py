@@ -238,6 +238,48 @@ def run_single_backtest(
     execution_config, cost_assumptions = resolve_backtest_costs(
         request.cost_assumptions
     )
+    from dataclasses import replace
+
+    from core.types import Symbol
+
+    ctx = (dataset_binding or {}).get("execution_context")
+    nontrading_mapping: dict[date, tuple[Symbol, ...]] | None = None
+    strict_status = bool(getattr(request, "strict_security_status", False))
+    trading_cal = None
+    sec_status = None
+
+    if ctx is not None:
+        raw_nt = ctx.get("nontrading_instruments")
+        if raw_nt:
+            nontrading_mapping = {
+                (date.fromisoformat(k) if isinstance(k, str) else k): tuple(
+                    Symbol(s) for s in v
+                )
+                for k, v in raw_nt.items()
+            }
+        strict_status = bool(ctx.get("strict_security_status", strict_status))
+        trading_cal = ctx.get("trading_calendar")
+        sec_status = ctx.get("security_status")
+    elif dataset_binding and "nontrading_instruments" in dataset_binding:
+        raw_nt = dataset_binding["nontrading_instruments"]
+        if raw_nt:
+            nontrading_mapping = {
+                (date.fromisoformat(k) if isinstance(k, str) else k): tuple(
+                    Symbol(s) for s in v
+                )
+                for k, v in raw_nt.items()
+            }
+        strict_status = bool(
+            dataset_binding.get("strict_security_status", strict_status)
+        )
+
+    execution_config = replace(
+        execution_config,
+        trading_calendar=trading_cal or execution_config.trading_calendar,
+        nontrading_instruments=nontrading_mapping,
+        security_status=sec_status or execution_config.security_status,
+        strict_security_status=strict_status,
+    )
     engine = BacktestEngine(
         strategy=strategy,
         instruments=instruments,
@@ -287,6 +329,11 @@ def run_single_backtest(
     metrics_json = metrics.to_json_dict()
     metrics_json["execution_timing"] = result.execution_timing
     metrics_json["cost_assumptions"] = cost_assumptions
+    metrics_json["research_mode"] = (
+        "strict_research"
+        if getattr(execution_config, "strict_security_status", False)
+        else "exploratory_compatible"
+    )
     # Two explicit adverse scenarios reuse the frozen bars, rules and fresh book;
     # stress replay never persists additional Orders/Fills or tunes parameters.
     inputs = request.cost_assumptions or BacktestCostAssumptions()
@@ -300,6 +347,13 @@ def run_single_backtest(
             continue
         stress_config, stress_assumptions = resolve_backtest_costs(
             inputs.model_copy(update={"slippage_bps": bps})
+        )
+        stress_config = replace(
+            stress_config,
+            trading_calendar=execution_config.trading_calendar,
+            nontrading_instruments=execution_config.nontrading_instruments,
+            security_status=execution_config.security_status,
+            strict_security_status=execution_config.strict_security_status,
         )
         stressed_strategy = build_strategy(strategy_config, event_bus_placeholder)
         stressed = BacktestEngine(

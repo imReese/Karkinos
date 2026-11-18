@@ -226,3 +226,52 @@ def test_input_bar_visits_stay_bounded_as_instrument_count_grows(tmp_path, monke
     assert len(observed) == 1
     # Include the availability audit, but never scan all bars for each symbol.
     assert observed[0].visits <= 3 * len(result.bars)
+
+
+def test_prepare_dataset_inputs_wires_execution_context_and_strict_security_status(
+    tmp_path,
+):
+    from server.contracts.http.strategy_models import BacktestRequest
+    from server.services.backtest_views.execution import run_single_backtest
+
+    root = tmp_path / "research"
+    result = _mixed(root)
+    req = BacktestRequest(
+        strategy="dual_ma",
+        dataset_id=result.ref.dataset_id,
+        start_date=result.snapshot.start_date.isoformat(),
+        end_date=result.snapshot.end_date.isoformat(),
+        initial_cash=1000000.0,
+        assets=[
+            {"symbol": key.symbol, "instrument_type": key.instrument_type.value}
+            for key in result.snapshot.instruments
+        ],
+        strict_security_status=True,
+    )
+    mock_db = SimpleNamespace(path=tmp_path / "app.db")
+    prepared = inputs.prepare_dataset_backtest_inputs(req, db=mock_db)
+    instruments, handlers, binding, snapshot = prepared
+
+    assert binding["strict_security_status"] is True
+    assert binding["research_mode"] == "strict_research"
+    assert binding["execution_context"]["strict_security_status"] is True
+
+    # Run single backtest and verify execution context propagation and JSON serializability
+    out = run_single_backtest(
+        req,
+        SimpleNamespace(),
+        db=mock_db,
+        preloaded_dataset_inputs=prepared,
+    )
+    assert out["metrics_json"]["dataset_binding"]["strict_security_status"] is True
+    assert (
+        out["metrics_json"]["dataset_binding"]["execution_context"][
+            "strict_security_status"
+        ]
+        is True
+    )
+    # Ensure JSON serializable without error
+    import json
+
+    dumped = json.dumps(out["metrics_json"], ensure_ascii=False)
+    assert result.ref.dataset_id in dumped

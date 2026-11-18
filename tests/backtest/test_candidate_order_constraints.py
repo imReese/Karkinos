@@ -115,7 +115,7 @@ class DirectOrderStrategy(Strategy):
         pass
 
     def on_data(self, event) -> None:
-        if not self.fired:
+        if event.timestamp.date() > DAYS[0] and not self.fired:
             self.fired = True
             from core.events import OrderEvent
             from core.types import OrderType
@@ -369,3 +369,356 @@ def test_trading_calendar_coverage_incomplete_raises():
 
     with pytest.raises(ValueError, match="trading_calendar_coverage_incomplete"):
         engine.run()
+
+
+def test_buy_below_limit_down_is_blocked():
+    """Previous close = 10.0, limit_pct = 0.10 => [9.00, 11.00].
+    Next day Open = 8.00 (below limit down).
+    BUY order must be strictly blocked by price limit validation with limit_blocked_count >= 1!
+    """
+    symbol = Symbol("600519")
+    inst = make_stock(str(symbol), "Stock")
+    day0 = date(2024, 1, 2)
+    day1 = date(2024, 1, 3)
+    frame = pd.DataFrame(
+        [
+            {
+                "timestamp": _close(day0),
+                "available_at": _close(day0),
+                "open": 10.0,
+                "high": 10.0,
+                "low": 10.0,
+                "close": 10.0,
+                "volume": 100000,
+            },
+            {
+                "timestamp": _close(day1),
+                "available_at": _close(day1),
+                "open": 8.0,  # Below limit down 9.00!
+                "high": 8.0,
+                "low": 8.0,
+                "close": 8.0,
+                "volume": 100000,
+            },
+        ]
+    )
+    handler = DataHandler(frame, symbol)
+
+    class BuySignalAtDay0(Strategy):
+        def __init__(self) -> None:
+            super().__init__("buy_day0", EventBus())
+            self.fired = False
+
+        def on_init(self, symbols) -> None:
+            pass
+
+        def on_data(self, event) -> None:
+            if not self.fired and event.timestamp.date() == day0:
+                self.fired = True
+                self.event_bus.publish(
+                    SignalEvent(
+                        timestamp=event.timestamp,
+                        strategy_id=self.strategy_id,
+                        symbol=symbol,
+                        target_weight=Decimal("0.5"),
+                        price=event.close,
+                    )
+                )
+
+    engine = BacktestEngine(
+        BuySignalAtDay0(),
+        {symbol: inst},
+        {symbol: handler},
+        initial_cash=Decimal("100000.00"),
+        execution_model=ExecutionModel.NEXT_BAR_OPEN,
+        commission_calc=StockACommission(),
+        slippage_model=FixedSlippage(ZERO),
+    )
+
+    result = engine.run()
+    assert len(result.fills) == 0
+    assert result.execution_timing["limit_blocked_count"] >= 1
+
+
+def test_sell_above_limit_up_is_blocked():
+    """Previous close = 10.0, limit_pct = 0.10 => [9.00, 11.00].
+    Next day Open = 12.00 (above limit up).
+    SELL order must be strictly blocked by price limit validation with limit_blocked_count >= 1!
+    """
+    symbol = Symbol("600519")
+    inst = make_stock(str(symbol), "Stock")
+    day0 = date(2024, 1, 2)
+    day1 = date(2024, 1, 3)
+    frame = pd.DataFrame(
+        [
+            {
+                "timestamp": _close(day0),
+                "available_at": _close(day0),
+                "open": 10.0,
+                "high": 10.0,
+                "low": 10.0,
+                "close": 10.0,
+                "volume": 100000,
+            },
+            {
+                "timestamp": _close(day1),
+                "available_at": _close(day1),
+                "open": 12.0,  # Above limit up 11.00!
+                "high": 12.0,
+                "low": 12.0,
+                "close": 12.0,
+                "volume": 100000,
+            },
+        ]
+    )
+    handler = DataHandler(frame, symbol)
+
+    class SellSignalAtDay0(Strategy):
+        def __init__(self) -> None:
+            super().__init__("sell_day0", EventBus())
+            self.fired = False
+
+        def on_init(self, symbols) -> None:
+            pass
+
+        def on_data(self, event) -> None:
+            if not self.fired and event.timestamp.date() == day0:
+                self.fired = True
+                self.event_bus.publish(
+                    SignalEvent(
+                        timestamp=event.timestamp,
+                        strategy_id=self.strategy_id,
+                        symbol=symbol,
+                        target_weight=Decimal("0.0"),  # liquidate to 0
+                        price=event.close,
+                    )
+                )
+
+    engine = BacktestEngine(
+        SellSignalAtDay0(),
+        {symbol: inst},
+        {symbol: handler},
+        initial_cash=Decimal("100000.00"),
+        execution_model=ExecutionModel.NEXT_BAR_OPEN,
+        commission_calc=StockACommission(),
+        slippage_model=FixedSlippage(ZERO),
+    )
+    # Seed position on day 0
+    from domain.position import Position
+
+    pos = Position(symbol)
+    pos.quantity = Decimal("1000")
+    engine.portfolio.positions[symbol] = pos
+
+    result = engine.run()
+    assert len(result.fills) == 0
+    assert result.execution_timing["limit_blocked_count"] >= 1
+
+
+def test_next_bar_open_future_volume_perturbation():
+    """Future volume perturbation test:
+    Under NEXT_BAR_OPEN, changing day 2 full-day volume from 100,000 to 0
+    must NOT change the open trading permission when open-visible status is normal!
+    """
+    symbol = Symbol("600519")
+    inst = make_stock(str(symbol), "Stock")
+    day0 = date(2024, 1, 2)
+    day1 = date(2024, 1, 3)
+
+    def _run_with_volume(v: int) -> int:
+        frame = pd.DataFrame(
+            [
+                {
+                    "timestamp": _close(day0),
+                    "available_at": _close(day0),
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": 100000,
+                },
+                {
+                    "timestamp": _close(day1),
+                    "available_at": _close(day1),
+                    "open": 10.0,
+                    "high": 10.0,
+                    "low": 10.0,
+                    "close": 10.0,
+                    "volume": v,
+                },
+            ]
+        )
+        handler = DataHandler(frame, symbol)
+
+        class OpenSignalStrategy(Strategy):
+            def __init__(self) -> None:
+                super().__init__("strat", EventBus())
+                self.fired = False
+
+            def on_init(self, symbols) -> None:
+                pass
+
+            def on_data(self, event) -> None:
+                if not self.fired and event.timestamp.date() == day0:
+                    self.fired = True
+                    self.event_bus.publish(
+                        SignalEvent(
+                            timestamp=event.timestamp,
+                            strategy_id=self.strategy_id,
+                            symbol=symbol,
+                            target_weight=Decimal("0.5"),
+                            price=event.close,
+                        )
+                    )
+
+        sec_status = {
+            (symbol, day0): {"trade_status": "1", "is_suspended": False},
+            (symbol, day1): {"trade_status": "1", "is_suspended": False},
+        }
+
+        engine = BacktestEngine(
+            OpenSignalStrategy(),
+            {symbol: inst},
+            {symbol: handler},
+            initial_cash=Decimal("100000.00"),
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+            security_status=sec_status,
+            strict_security_status=True,
+            commission_calc=StockACommission(),
+            slippage_model=FixedSlippage(ZERO),
+        )
+        res = engine.run()
+        return len(res.fills)
+
+    fills_with_volume = _run_with_volume(100000)
+    fills_zero_volume = _run_with_volume(0)
+
+    # Both must succeed and execute open fill because open-visible status is normal!
+    assert fills_with_volume == 1
+    assert fills_zero_volume == 1
+
+
+def test_calendar_same_year_hole_blocks_execution():
+    """A calendar snapshot missing a date within the backtest year must fail-closed."""
+    from data.market_calendar import (
+        MarketCalendarDay,
+        MarketCalendarDayType,
+        MarketCalendarSnapshot,
+    )
+
+    d4 = MarketCalendarDay(
+        "2024-03-04",
+        MarketCalendarDayType.TRADING_DAY,
+        "trading_day",
+        "Trading day",
+        True,
+    )
+    d6 = MarketCalendarDay(
+        "2024-03-06",
+        MarketCalendarDayType.TRADING_DAY,
+        "trading_day",
+        "Trading day",
+        True,
+    )
+    # 2024-03-05 is missing!
+    snap = MarketCalendarSnapshot("SSE", 2024, "test", (d4, d6), "fp", "now")
+
+    symbol = Symbol("600001")
+    inst = make_stock(str(symbol), "Stock")
+    frame = pd.DataFrame(
+        [
+            {
+                "timestamp": datetime(2024, 3, 4, 15, tzinfo=SHANGHAI),
+                "available_at": datetime(2024, 3, 4, 15, tzinfo=SHANGHAI),
+                "open": 10.0,
+                "high": 10.0,
+                "low": 10.0,
+                "close": 10.0,
+                "volume": 100000,
+            },
+            {
+                "timestamp": datetime(2024, 3, 6, 15, tzinfo=SHANGHAI),
+                "available_at": datetime(2024, 3, 6, 15, tzinfo=SHANGHAI),
+                "open": 10.0,
+                "high": 10.0,
+                "low": 10.0,
+                "close": 10.0,
+                "volume": 100000,
+            },
+        ]
+    )
+    handler = DataHandler(frame, symbol)
+    engine = BacktestEngine(
+        OneShotSignalStrategy(Decimal("0.5"), symbol),
+        {symbol: inst},
+        {symbol: handler},
+        initial_cash=Decimal("100000.00"),
+        trading_calendar=snap,
+    )
+    with pytest.raises(
+        ValueError, match="trading_calendar_coverage_incomplete:date_2024-03-05_missing"
+    ):
+        engine.run()
+
+
+def test_mature_stock_does_not_require_historical_calendar_back_to_ipo():
+    """A stock listed years ago (e.g. 600519 listed in 2001) does NOT require
+    the trading calendar to backfill back to 2001. It safely recognizes mature status.
+    """
+    from data.market_calendar import build_static_market_calendar_snapshot
+
+    snap_2024 = build_static_market_calendar_snapshot(
+        exchange="SSE",
+        year=2024,
+        provider="test",
+        open_dates=["2024-01-02", "2024-01-03"],
+    )
+    symbol = Symbol("600519")
+    inst = make_stock(str(symbol), "Moutai")
+    frame = pd.DataFrame(
+        [
+            {
+                "timestamp": datetime(2024, 1, 2, 15, tzinfo=SHANGHAI),
+                "available_at": datetime(2024, 1, 2, 15, tzinfo=SHANGHAI),
+                "open": 100.0,
+                "high": 100.0,
+                "low": 100.0,
+                "close": 100.0,
+                "volume": 100000,
+            },
+            {
+                "timestamp": datetime(2024, 1, 3, 15, tzinfo=SHANGHAI),
+                "available_at": datetime(2024, 1, 3, 15, tzinfo=SHANGHAI),
+                "open": 100.0,
+                "high": 100.0,
+                "low": 100.0,
+                "close": 100.0,
+                "volume": 100000,
+            },
+        ]
+    )
+    handler = DataHandler(frame, symbol)
+    sec_status = {
+        (symbol, date(2024, 1, 2)): {
+            "listing_date": date(2001, 8, 27),
+            "trade_status": "1",
+            "is_suspended": False,
+        },
+        (symbol, date(2024, 1, 3)): {
+            "listing_date": date(2001, 8, 27),
+            "trade_status": "1",
+            "is_suspended": False,
+        },
+    }
+    engine = BacktestEngine(
+        OneShotSignalStrategy(Decimal("0.5"), symbol),
+        {symbol: inst},
+        {symbol: handler},
+        initial_cash=Decimal("100000.00"),
+        trading_calendar=snap_2024,
+        security_status=sec_status,
+        strict_security_status=True,
+    )
+    res = engine.run()
+    # Runs smoothly and fills on day 3
+    assert len(res.fills) == 1

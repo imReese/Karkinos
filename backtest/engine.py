@@ -596,7 +596,9 @@ class BacktestEngine:
             listing_session_count = status_info.get("listing_session_count")
             trade_status = status_info.get("trade_status")
             display_name = status_info.get("display_name") or status_info.get("name")
-        elif self._nontrading_instruments is not None:
+
+        # Explicit negative evidence from nontrading_instruments is never masked by sparse status_info
+        if self._nontrading_instruments is not None:
             if symbol in self._nontrading_instruments.get(session_date, ()):
                 is_suspended = True
 
@@ -605,10 +607,11 @@ class BacktestEngine:
             and listing_date is not None
             and self._trading_calendar is not None
         ):
-            if session_date >= listing_date:
-                listing_session_count = len(
-                    self._trading_calendar.trading_days(listing_date, session_date)
-                )
+            from data.market_calendar import calculate_listing_session_count
+
+            listing_session_count = calculate_listing_session_count(
+                self._trading_calendar, listing_date, session_date
+            )
 
         return resolve_trading_rules(
             str(symbol),
@@ -750,7 +753,7 @@ class BacktestEngine:
                 else None
             )
         if self._dividend_replay is not None and self._dividend_replay.blocks_execution(
-            event.symbol, session_date
+            event.symbol, session_date, pre_close=pre_close
         ):
             return False
         if instrument.instrument_type not in {InstrumentType.STOCK, InstrumentType.ETF}:
@@ -766,32 +769,52 @@ class BacktestEngine:
                 self._execution_blocked["risk"] += 1
             return False
 
-        if is_suspended(bar.volume):
+        # Full-day volume suspension is observable only at bar close, not at open
+        if self._execution_model is ExecutionModel.NEXT_BAR_CLOSE and is_suspended(
+            bar.volume
+        ):
             self._execution_blocked["suspension"] += 1
             return False
 
         if (
-            previous is None
-            or not rule.has_price_limit
-            or rule.limit_pct is None
-            or rule.limit_pct <= ZERO
+            rule.has_price_limit
+            and rule.limit_pct is not None
+            and rule.limit_pct > ZERO
         ):
-            return True
+            if previous is None:
+                if self._strict_security_status:
+                    # Finite price limit applies, but missing credible reference price
+                    self._execution_blocked["unverified_state"] += 1
+                    return False
+                return True
 
-        check_price = (
-            bar.open
-            if self._execution_model is ExecutionModel.NEXT_BAR_OPEN
-            else bar.close
-        )
-        down, up = calculate_price_limits(previous, rule)
-        blocked = (
-            (up is not None and check_price >= up)
-            if event.side is OrderSide.BUY
-            else (down is not None and check_price <= down)
-        )
-        if blocked:
-            self._execution_blocked["limit"] += 1
-        return not blocked
+            down, up = calculate_price_limits(previous, rule)
+            check_price = (
+                bar.open
+                if self._execution_model is ExecutionModel.NEXT_BAR_OPEN
+                else bar.close
+            )
+            # 1. Price legality validation (price cannot be outside [down, up] for ANY direction)
+            if down is not None and check_price < down:
+                self._execution_blocked["limit"] += 1
+                return False
+            if up is not None and check_price > up:
+                self._execution_blocked["limit"] += 1
+                return False
+
+            # 2. Directional liquidity blockage at limit (cannot buy at limit-up or sell at limit-down)
+            if event.side is OrderSide.BUY and up is not None and check_price >= up:
+                self._execution_blocked["limit"] += 1
+                return False
+            if (
+                event.side is OrderSide.SELL
+                and down is not None
+                and check_price <= down
+            ):
+                self._execution_blocked["limit"] += 1
+                return False
+
+        return True
 
     def _known_market_price(self, symbol: Symbol) -> Decimal | None:
         bar = self._current_market_event
@@ -1073,22 +1096,51 @@ class BacktestEngine:
                 quantity = min(order.quantity, allowed)
         else:
             # SELL
+            position = self.portfolio.positions.get(order.symbol)
+            available = position.available_qty if position is not None else ZERO
             if order.quantity <= remaining:
                 quantity = order.quantity
             else:
-                position = self.portfolio.positions.get(order.symbol)
-                available = position.available_qty if position is not None else ZERO
-                remainder = available % rule.qty_step
-                if remainder > ZERO and remaining >= remainder:
-                    extra = remaining - remainder
-                    quantity = remainder + (extra // rule.qty_step) * rule.qty_step
-                    quantity = min(order.quantity, quantity)
-                else:
-                    allowed = (remaining // rule.qty_step) * rule.qty_step
-                    if allowed < rule.min_order_qty:
-                        quantity = ZERO
+                if rule.board == "star":
+                    # STAR market statutory rules:
+                    # 1. Single order cannot be < 200 shares if available >= 200
+                    # 2. If available < 200, must sell entire holding at once
+                    if available < Decimal("200"):
+                        quantity = available if remaining >= available else ZERO
                     else:
-                        quantity = min(order.quantity, allowed)
+                        if remaining < Decimal("200"):
+                            quantity = ZERO
+                        else:
+                            allowed = (
+                                Decimal("200")
+                                + ((remaining - Decimal("200")) // rule.qty_step)
+                                * rule.qty_step
+                            )
+                            quantity = min(order.quantity, allowed)
+                else:
+                    remainder = available % rule.qty_step
+                    if remainder > ZERO:
+                        if remaining >= remainder:
+                            extra = remaining - remainder
+                            quantity = (
+                                remainder + (extra // rule.qty_step) * rule.qty_step
+                            )
+                            quantity = min(order.quantity, quantity)
+                        else:
+                            quantity = ZERO
+                    else:
+                        allowed = (remaining // rule.qty_step) * rule.qty_step
+                        if allowed < rule.min_order_qty:
+                            quantity = ZERO
+                        else:
+                            quantity = min(order.quantity, allowed)
+
+            if quantity > ZERO:
+                passed, _ = validate_order_lot_size(
+                    rule, order.side, quantity, available_qty=available
+                )
+                if not passed:
+                    quantity = ZERO
 
         if quantity < order.quantity:
             self._capacity_unfilled_quantity += order.quantity - quantity
@@ -1127,29 +1179,27 @@ class BacktestEngine:
             and inst.instrument_type in {InstrumentType.STOCK, InstrumentType.ETF}
         ):
             session_date = self._session_date(bar)
-            previous = self._reference_price_for_limits(event.symbol, session_date)
-            if previous is not None:
-                rule = self._resolve_rule_for_symbol(event.symbol, session_date)
-                if (
-                    rule.has_price_limit
-                    and rule.limit_pct is not None
-                    and rule.limit_pct > ZERO
-                ):
-                    down, up = calculate_price_limits(previous, rule)
-                    if (
-                        event.side is OrderSide.BUY
-                        and up is not None
-                        and fill.fill_price > up
-                    ):
-                        self._execution_blocked["limit"] += 1
+            rule = self._resolve_rule_for_symbol(event.symbol, session_date)
+            if (
+                rule.has_price_limit
+                and rule.limit_pct is not None
+                and rule.limit_pct > ZERO
+            ):
+                previous = self._reference_price_for_limits(event.symbol, session_date)
+                if previous is None:
+                    if self._strict_security_status:
+                        self._execution_blocked["unverified_state"] += 1
                         return None
-                    if (
-                        event.side is OrderSide.SELL
-                        and down is not None
-                        and fill.fill_price < down
-                    ):
-                        self._execution_blocked["limit"] += 1
-                        return None
+                    return fill
+                down, up = calculate_price_limits(previous, rule)
+                # Post-slippage price legality validation:
+                # Fill price cannot be outside legal [down, up] for ANY trade direction
+                if down is not None and fill.fill_price < down:
+                    self._execution_blocked["limit"] += 1
+                    return None
+                if up is not None and fill.fill_price > up:
+                    self._execution_blocked["limit"] += 1
+                    return None
         fill_metadata: dict[str, Any] = {
             "bar_timestamp": fill.timestamp.isoformat(),
             "session_date": (

@@ -148,13 +148,33 @@ def load_dataset_backtest_inputs(root: Path, request):
 
     from data.dataset.reader import dataset_session_nontrading_instruments
 
-    nontrading_map: dict[str, list[str]] = {}
+    strict_status = getattr(request, "strict_security_status", False)
+    nontrading_map_iso: dict[str, list[str]] = {}
     try:
         raw_nontrading = dataset_session_nontrading_instruments(store, snapshot)
         for s_date, keys in raw_nontrading.items():
-            nontrading_map[s_date.isoformat()] = [k.symbol for k in keys]
-    except Exception:
-        pass
+            nontrading_map_iso[s_date.isoformat()] = [k.symbol for k in keys]
+    except Exception as exc:
+        if strict_status:
+            raise ResearchDatasetError(
+                f"dataset_nontrading_evidence_unreadable:{exc}"
+            ) from exc
+
+    research_mode = "strict_research" if strict_status else "exploratory_compatible"
+    execution_context_payload = {
+        "trading_calendar": None,
+        "nontrading_instruments": nontrading_map_iso if nontrading_map_iso else None,
+        "security_status": None,
+        "strict_security_status": strict_status,
+        "research_mode": research_mode,
+        "limitations": [
+            (
+                "Strict research mode: unverified security status, missing status evidence, or unclassified instruments block trading."
+                if strict_status
+                else "Exploratory mode: unverified status evidence defaults to ordinary session permissions."
+            ),
+        ],
+    }
 
     binding = {
         "dataset_id": ref.dataset_id,
@@ -166,12 +186,18 @@ def load_dataset_backtest_inputs(root: Path, request):
         "point_in_time_verified": False,
         "decision_availability": decision_availability,
         "trading_rule_policy_id": "karkinos.a_share.trading_rules.v1",
-        **({"nontrading_instruments": nontrading_map} if nontrading_map else {}),
+        "strict_security_status": strict_status,
+        "research_mode": research_mode,
+        "execution_context": execution_context_payload,
+        **(
+            {"nontrading_instruments": nontrading_map_iso} if nontrading_map_iso else {}
+        ),
         "limitations": [
             "Historical backfill is a frozen research snapshot, not proof of historical availability.",
             "Unadjusted prices do not model corporate-action cash flows or total returns."
             if price_basis == "unadjusted"
             else f"Adjusted price basis '{price_basis}' normalizes corporate actions for signals, but trades execute on unadjusted prices.",
+            *execution_context_payload["limitations"],
         ],
         **(
             {"corporate_action_evidence": restored.corporate_action_evidence}

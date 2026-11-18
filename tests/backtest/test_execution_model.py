@@ -1,6 +1,7 @@
 """ExecutionModel timing, data visibility, and limit conformance tests."""
 
 from decimal import Decimal
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -73,6 +74,7 @@ def _build_engine(
     initial_cash: Decimal = Decimal("100000"),
     slippage_pct: Decimal = Decimal("0"),
     limit_pct: Decimal = Decimal("0.10"),
+    nontrading_instruments: Any = None,
 ) -> BacktestEngine:
     symbol = Symbol("600000")
     inst = make_stock(str(symbol), "浦发银行", limit_pct=limit_pct)
@@ -80,6 +82,7 @@ def _build_engine(
     config = BacktestExecutionConfig(
         execution_model=ExecutionModel.from_value(execution_model),
         slippage_model=slippage_model,
+        nontrading_instruments=nontrading_instruments,
     )
     engine = BacktestEngine(
         strategy=strategy,
@@ -378,7 +381,7 @@ class TestNextBarOpenVsClose:
         assert result.execution_timing["limit_blocked_count"] == 1
 
     def test_suspension_blocks_next_bar_open(self):
-        """Volume == 0 represents suspension and blocks next bar open."""
+        """Suspension known at open blocks next bar open execution."""
         frame = _make_ohlcv_frame(
             [
                 {
@@ -395,13 +398,18 @@ class TestNextBarOpenVsClose:
                     "high": 10.0,
                     "low": 10.0,
                     "close": 10.0,
-                    "volume": 0,
+                    "volume": 100000,
                 },
             ]
         )
         strategy = StagedTargetStrategy({"2026-01-05": Decimal("1.0")})
+        from datetime import date
+
         engine = _build_engine(
-            frame, strategy, execution_model=ExecutionModel.NEXT_BAR_OPEN
+            frame,
+            strategy,
+            execution_model=ExecutionModel.NEXT_BAR_OPEN,
+            nontrading_instruments={date(2026, 1, 6): (Symbol("600000"),)},
         )
         result = engine.run()
         assert len(result.fills) == 0

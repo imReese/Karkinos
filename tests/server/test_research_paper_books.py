@@ -186,7 +186,7 @@ def prepare_trade(paper, tmp_path, *, records=(), health_policy=None):
     client, service, current, observation, path = paper
     created, start_request = create(client, path, health_policy=health_policy)
     current[0] += timedelta(seconds=1)
-    closes = dict(zip(DAYS[:5], ("12", "11", "10", "9", "12"), strict=True))
+    closes = dict(zip(DAYS[:5], ("10.0", "10.0", "10.0", "9.7", "10.4"), strict=True))
     ref = bound_dataset(tmp_path, count=5, now=current[0], closes=closes)
     publication = publish(client, observation, ref)
     current[0] = datetime(2026, 9, 21, 8, tzinfo=timezone.utc)
@@ -520,7 +520,7 @@ def test_pause_race_aborts_computed_settlement_and_retry_preserves_cutoff(
 
 def test_prestart_publication_is_not_a_paper_holding(paper, tmp_path):
     client, _, current, observation, path = paper
-    closes = dict(zip(DAYS[:5], ("12", "11", "10", "9", "12"), strict=True))
+    closes = dict(zip(DAYS[:5], ("10.0", "10.0", "10.0", "9.7", "10.4"), strict=True))
     ref = bound_dataset(tmp_path, count=5, now=current[0], closes=closes)
     publish(client, observation, ref)
     current[0] += timedelta(seconds=1)
@@ -741,7 +741,7 @@ def test_book_start_clock_cannot_reclassify_existing_publication_as_future(
     client, _, current, observation, path = paper
     start_clock = current[0]
     current[0] += timedelta(minutes=10)
-    closes = dict(zip(DAYS[:5], ("12", "11", "10", "9", "12"), strict=True))
+    closes = dict(zip(DAYS[:5], ("10.0", "10.0", "10.0", "9.7", "10.4"), strict=True))
     publish(
         client,
         observation,
@@ -982,7 +982,7 @@ def test_waiting_cash_cannot_earn_health_excess_against_an_early_benchmark(
         created["policy"]["benchmark"]["activation"]
         == "first_real_published_target_accepted_after_book_start"
     )
-    closes = dict(zip(DAYS[:5], ("12", "11", "10", "9", "12"), strict=True))
+    closes = dict(zip(DAYS[:5], ("10.0", "10.0", "10.0", "9.7", "10.4"), strict=True))
     current[0] = datetime(2026, 9, 21, 8, tzinfo=timezone.utc)
     closes[DAYS[5]] = "10"
     first, _ = settle(

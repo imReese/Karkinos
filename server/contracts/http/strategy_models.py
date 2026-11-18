@@ -75,6 +75,7 @@ class BacktestRequest(BaseModel):
     oos_test_window_points: int = 3
     oos_step_points: int = 1
     benchmark_return: float | None = None
+    strict_security_status: bool = False
 
 
 class BacktestMetrics(BaseModel):
