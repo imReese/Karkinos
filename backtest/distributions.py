@@ -190,9 +190,11 @@ class DistributionReplay:
         distributions: Sequence[StockDistribution],
         *,
         include_shares: bool = False,
+        allow_ex_date_trading: bool = False,
     ) -> None:
         self.distributions = tuple(distributions)
         self.include_shares = include_shares
+        self.allow_ex_date_trading = allow_ex_date_trading
         if not include_shares and any(
             item.shares_per_share > ZERO for item in distributions
         ):
@@ -284,7 +286,26 @@ class DistributionReplay:
                     )
                 self.eligible[item.action_id] = quantity
 
+    def ex_reference_price(
+        self, symbol: Symbol, session_date: date, pre_close: Decimal
+    ) -> Decimal | None:
+        """Calculate the theoretical ex-rights/ex-dividend price on ex_date."""
+        for item in self.distributions:
+            if item.symbol == symbol and item.ex_date == session_date:
+                from data.corporate_actions.adjustment_engine import (
+                    compute_ex_reference_price,
+                )
+
+                return compute_ex_reference_price(
+                    pre_close,
+                    cash_dividend=item.cash_per_share,
+                    bonus_ratio=item.shares_per_share,
+                )
+        return None
+
     def blocks_execution(self, symbol: Symbol, day: date) -> bool:
+        if self.allow_ex_date_trading:
+            return False
         # The dividend table does not supply an authoritative ex-date price-limit
         # reference. Never compare its unadjusted close to the prior raw close.
         blocked = any(

@@ -27,6 +27,7 @@ STAR_LAUNCH_DATE = date(2019, 7, 22)
 CHINEXT_REFORM_DATE = date(2020, 8, 24)
 BSE_OPEN_DATE = date(2021, 11, 15)
 MAIN_BOARD_REFORM_DATE = date(2023, 4, 10)
+SSE_SZSE_ST_REFORM_DATE = date(2026, 7, 6)
 
 
 @dataclass(frozen=True)
@@ -61,6 +62,7 @@ def resolve_trading_rules(
     is_suspended_override: bool | None = None,
     trade_status: str | None = None,
     display_name: str | None = None,
+    strict_security_status: bool = False,
 ) -> TradingRule:
     """Resolve applicable trading rules for a security on a trading date."""
     if isinstance(session_date, datetime):
@@ -72,6 +74,22 @@ def resolve_trading_rules(
     if identity is None:
         # Non-stock or non-A-share instrument fallback
         if instrument is not None and instrument.instrument_type is InstrumentType.ETF:
+            # ETF price limit depends on underlying market
+            etf_limit_pct: Decimal | None
+            if clean_code.startswith("588"):
+                etf_limit_pct = Decimal("0.20")
+            elif clean_code.startswith("1599"):
+                etf_limit_pct = (
+                    Decimal("0.20")
+                    if session_date >= CHINEXT_REFORM_DATE
+                    else Decimal("0.10")
+                )
+            elif instrument.limit_pct > ZERO:
+                etf_limit_pct = instrument.limit_pct
+            else:
+                etf_limit_pct = Decimal("0.10")
+
+            has_limit = etf_limit_pct > ZERO
             return TradingRule(
                 rule_id=A_SHARE_TRADING_RULES_POLICY_ID,
                 symbol=symbol,
@@ -82,10 +100,8 @@ def resolve_trading_rules(
                 blocker_reason="nontrading_session_excluded"
                 if is_suspended_override
                 else None,
-                limit_pct=instrument.limit_pct
-                if instrument.limit_pct > ZERO
-                else Decimal("0.10"),
-                has_price_limit=instrument.limit_pct > ZERO,
+                limit_pct=etf_limit_pct,
+                has_price_limit=has_limit,
                 price_tick=instrument.price_tick or Decimal("0.001"),
                 min_order_qty=instrument.lot_size or Decimal("100"),
                 qty_step=instrument.lot_size or Decimal("100"),
@@ -131,6 +147,33 @@ def resolve_trading_rules(
 
     board = identity["board"]
     exchange = identity["exchange"]
+
+    # In strict security status mode, unverified status blocks execution
+    if strict_security_status:
+        has_evidence = (
+            trade_status is not None
+            or is_st is not None
+            or listing_date is not None
+            or delist_date is not None
+            or is_suspended_override is not None
+        )
+        if not has_evidence:
+            return TradingRule(
+                rule_id=A_SHARE_TRADING_RULES_POLICY_ID,
+                symbol=symbol,
+                exchange=exchange,
+                board=board,
+                is_tradable=False,
+                status="unverified_state",
+                blocker_reason="trading_state_unverified",
+                limit_pct=None,
+                has_price_limit=False,
+                price_tick=Decimal("0.01"),
+                min_order_qty=Decimal("200") if board == "star" else Decimal("100"),
+                qty_step=Decimal("200") if board == "star" else Decimal("100"),
+                allow_buy=False,
+                allow_sell=False,
+            )
 
     # Listing & Delisting checks
     if listing_date is not None and session_date < listing_date:
@@ -242,7 +285,14 @@ def resolve_trading_rules(
     else:
         has_price_limit = True
         if board in {"sse_main", "szse_main"}:
-            limit_pct = ST_RATE if is_st else MAIN_BOARD_RATE
+            if is_st:
+                limit_pct = (
+                    ST_RATE
+                    if session_date < SSE_SZSE_ST_REFORM_DATE
+                    else MAIN_BOARD_RATE
+                )
+            else:
+                limit_pct = MAIN_BOARD_RATE
         elif board == "chinext":
             if session_date < CHINEXT_REFORM_DATE:
                 limit_pct = ST_RATE if is_st else MAIN_BOARD_RATE
@@ -306,17 +356,38 @@ def validate_order_lot_size(
         if available_qty is not None:
             if quantity > available_qty:
                 return False, "quantity_exceeds_available"
+            # Selling all available shares is always allowed even if not round lots
+            if quantity == available_qty:
+                return True, None
             # Odd-lot liquidation: If available is less than minimum lot,
             # must sell the entire available remainder in one order.
             if available_qty < rule.min_order_qty:
                 if quantity != available_qty:
                     return False, "odd_lot_remainder_must_sell_all"
                 return True, None
-            # Selling all available shares is always allowed even if not round lots
-            if quantity == available_qty:
-                return True, None
 
-        # Partial sell
+            remainder = available_qty % rule.qty_step
+            if remainder > ZERO:
+                # Holding contains an odd-lot remainder.
+                # Valid cases:
+                # 1. Selling the exact odd-lot remainder alone
+                if quantity == remainder:
+                    return True, None
+                # 2. Selling odd-lot remainder + integer round lots
+                if (
+                    quantity > remainder
+                    and ((quantity - remainder) % rule.qty_step) == ZERO
+                ):
+                    return True, None
+                # 3. Selling integer round lots only, leaving odd-lot remainder intact
+                if (quantity % rule.qty_step) == ZERO and quantity <= (
+                    available_qty - remainder
+                ):
+                    return True, None
+                # Any other partial split of the odd-lot remainder is illegal
+                return False, "odd_lot_remainder_must_sell_all"
+
+        # Partial sell without odd-lot remainder in available_qty
         if quantity < rule.min_order_qty:
             return False, "order_below_minimum_lot"
         if (quantity % rule.qty_step) != ZERO:

@@ -132,8 +132,21 @@ class Position:
         if self.quantity == ZERO:
             self.avg_cost = ZERO
 
+    def initialize_settlement_date(self, session_date: date | datetime) -> None:
+        """初始化结算日，不解冻或推进。"""
+        resolved_date = (
+            session_date.date() if isinstance(session_date, datetime) else session_date
+        )
+        if not isinstance(resolved_date, date):
+            raise TypeError("settlement_date_invalid")
+        if self._last_settlement_date is None:
+            self._last_settlement_date = resolved_date
+
     def advance_settlement_day(
-        self, session_date: date | datetime | None = None
+        self,
+        session_date: date | datetime | None = None,
+        *,
+        strict: bool = False,
     ) -> None:
         """结算日推进：将冻结数量解冻到可卖数量。
 
@@ -142,7 +155,14 @@ class Position:
         - 若日期与当前结算日相同，幂等无操作（不重复解冻当日新买入）
         - 若日期严格晚于当前结算日（或尚未设置），解冻此前买入并记录新结算日
         - 尚未上市的送转权益（unlisted_qty）不在此解冻，仅在上市日通过 release_share_distribution 释放
+
+        严格模式或已跟踪结算日时：
+        - session_date 为必填项，严禁用无参调用绕过日期约束。
         """
+        if strict or self._last_settlement_date is not None:
+            if session_date is None:
+                raise ValueError("settlement_date_required")
+
         if session_date is not None:
             resolved_date = (
                 session_date.date()

@@ -7,7 +7,7 @@ from decimal import Decimal
 
 import pytest
 
-from core.types import Settlement, Symbol
+from core.types import ZERO, Settlement, Symbol
 from domain.position import Position
 
 
@@ -251,3 +251,36 @@ def test_position_advance_settlement_day_invalid_type_raises(pos: Position):
 def test_position_advance_settlement_day_datetime_normalized(pos: Position):
     pos.advance_settlement_day(datetime(2023, 1, 4, 15, 0))
     assert pos.last_settlement_date == date(2023, 1, 4)
+
+
+def test_position_parameterless_advance_blocked_when_date_tracking_active(
+    pos: Position,
+):
+    day1 = date(2023, 1, 3)
+    pos.initialize_settlement_date(day1)
+    assert pos.last_settlement_date == day1
+
+    # Once date tracking is initialized, parameterless advance is forbidden
+    with pytest.raises(ValueError, match="settlement_date_required"):
+        pos.advance_settlement_day()
+
+
+def test_position_same_day_buy_after_advance_not_unfrozen(pos: Position):
+    day1 = date(2023, 1, 3)
+    pos.initialize_settlement_date(day1)
+
+    # Buy on day1
+    pos.update_on_fill("buy", Decimal("100"), Decimal("10.0"))
+    assert pos.frozen_qty == Decimal("100")
+    assert pos.available_qty == ZERO
+
+    # Advance to day1 again (idempotent call on same session)
+    pos.advance_settlement_day(day1)
+    assert pos.frozen_qty == Decimal("100")
+    assert pos.available_qty == ZERO
+
+    # Advance to day2
+    day2 = date(2023, 1, 4)
+    pos.advance_settlement_day(day2)
+    assert pos.frozen_qty == ZERO
+    assert pos.available_qty == Decimal("100")

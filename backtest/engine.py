@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal
@@ -101,6 +101,9 @@ class BacktestExecutionConfig:
     stream_sorted_data_handlers: bool = False
     execution_model: ExecutionModel = ExecutionModel.NEXT_BAR_CLOSE
     trading_calendar: MarketCalendar | MarketCalendarSnapshot | None = None
+    security_status: Mapping[tuple[Symbol, date], Mapping[str, Any]] | None = None
+    nontrading_instruments: Mapping[date, Sequence[Symbol]] | None = None
+    strict_security_status: bool = False
 
 
 def research_execution_config(
@@ -111,6 +114,9 @@ def research_execution_config(
     stream_sorted_data_handlers: bool = False,
     execution_model: ExecutionModel | str = ExecutionModel.NEXT_BAR_CLOSE,
     trading_calendar: MarketCalendar | MarketCalendarSnapshot | None = None,
+    security_status: Mapping[tuple[Symbol, date], Mapping[str, Any]] | None = None,
+    nontrading_instruments: Mapping[date, Sequence[Symbol]] | None = None,
+    strict_security_status: bool = False,
 ) -> BacktestExecutionConfig:
     """The same explicit friction assumption for automatic research consumers."""
     model = ExecutionModel.from_value(execution_model)
@@ -121,6 +127,9 @@ def research_execution_config(
         stream_sorted_data_handlers=stream_sorted_data_handlers,
         execution_model=model,
         trading_calendar=trading_calendar,
+        security_status=security_status,
+        nontrading_instruments=nontrading_instruments,
+        strict_security_status=strict_security_status,
     )
 
 
@@ -153,6 +162,10 @@ class BacktestEngine:
         session_decision: Callable[[date], None] | None = None,
         execution_model: ExecutionModel | str | None = None,
         trading_calendar: MarketCalendar | MarketCalendarSnapshot | None = None,
+        security_status: Mapping[tuple[Symbol, date], Mapping[str, Any]] | None = None,
+        nontrading_instruments: Mapping[date, Sequence[Symbol]] | None = None,
+        strict_security_status: bool = False,
+        allow_ex_date_trading: bool = False,
     ) -> None:
         if evaluation_start is not None and type(evaluation_start) is not date:
             raise ValueError("backtest_evaluation_start_invalid")
@@ -178,7 +191,9 @@ class BacktestEngine:
         self.db = db
         self._dividend_replay = (
             DistributionReplay(
-                cash_dividends, include_shares=include_share_distributions
+                cash_dividends,
+                include_shares=include_share_distributions,
+                allow_ex_date_trading=allow_ex_date_trading,
             )
             if cash_dividends is not None
             else None
@@ -219,6 +234,20 @@ class BacktestEngine:
         self._trading_calendar = trading_calendar or (
             execution_config.trading_calendar if execution_config is not None else None
         )
+        self._security_status = security_status or (
+            execution_config.security_status if execution_config is not None else None
+        )
+        self._nontrading_instruments = nontrading_instruments or (
+            execution_config.nontrading_instruments
+            if execution_config is not None
+            else None
+        )
+        self._strict_security_status = strict_security_status or (
+            execution_config.strict_security_status
+            if execution_config is not None
+            else False
+        )
+        self._stale_valuation_symbols: set[Symbol] = set()
         self._pending_signals: dict[Symbol, SignalEvent] = {}
         self._current_market_event: MarketEvent | None = None
         self._previous_close: dict[Symbol, Decimal] = {}
@@ -345,6 +374,18 @@ class BacktestEngine:
         if self.evaluation_start is not None:
             self.event_bus.drain()
 
+        if self._trading_calendar is not None:
+            from data.market_calendar import validate_calendar_coverage
+
+            first_pass = list(events())
+            if first_pass:
+                dates = [self._session_date(ev) for ev in first_pass]
+                min_d = min(dates)
+                max_d = max(dates)
+                if self.evaluation_start is not None and self.evaluation_start < min_d:
+                    min_d = self.evaluation_start
+                validate_calendar_coverage(self._trading_calendar, min_d, max_d)
+
         # 主循环
         for current_date, session in groupby(events(), key=self._session_date):
             self._bar_filled_quantity.clear()
@@ -382,7 +423,9 @@ class BacktestEngine:
                     self._session_decision(current_date)
                     self.event_bus.drain()
                 continue
-            if self.portfolio.equity_curve:
+            if self.portfolio.last_settlement_date is None:
+                self.portfolio.initialize_settlement_date(current_date)
+            elif self.portfolio.last_settlement_date < current_date:
                 self.portfolio.advance_settlement_day(current_date)
             if self._dividend_replay is not None:
                 # This mode requires one simultaneous Shanghai close per symbol.
@@ -415,6 +458,11 @@ class BacktestEngine:
                 # 2. Mark all session symbols to Open before any order execution
                 # Instruments without a bar today remain at their last known mark.
                 open_prices = {event.symbol: event.open for event in session_events}
+                session_symbols = {event.symbol for event in session_events}
+                for sym in self.portfolio.positions:
+                    if sym not in session_symbols:
+                        self._stale_valuation_symbols.add(sym)
+                self.portfolio.mark_to_market(open_prices)
                 self.portfolio.mark_to_market(open_prices)
                 self._session_open_equity = self._calculate_equity()
                 self.risk_manager.set_portfolio_value(
@@ -503,11 +551,78 @@ class BacktestEngine:
                 return event.timestamp.astimezone(ZoneInfo("Asia/Shanghai")).date()
         return event.timestamp.date()
 
+    def _reference_price_for_limits(
+        self, symbol: Symbol, session_date: date
+    ) -> Decimal | None:
+        """Resolve authoritative reference price for session price limits.
+
+        On ex-rights/ex-dividend dates, calculates the theoretical ex-reference
+        price rather than blindly using prior raw close.
+        """
+        previous = self._previous_close.get(symbol)
+        if previous is None:
+            return None
+        if self._dividend_replay is not None:
+            ex_ref = self._dividend_replay.ex_reference_price(
+                symbol, session_date, previous
+            )
+            if ex_ref is not None:
+                return ex_ref
+        return previous
+
     def _resolve_rule_for_symbol(
         self, symbol: Symbol, session_date: date
     ) -> TradingRule:
         inst = self.instruments.get(symbol)
-        return resolve_trading_rules(str(symbol), session_date, instrument=inst)
+        status_info = None
+        if self._security_status is not None:
+            status_info = self._security_status.get((symbol, session_date))
+
+        is_suspended = None
+        is_st = None
+        listing_date = None
+        delist_date = None
+        listing_session_count = None
+        trade_status = None
+        display_name = None
+
+        if status_info is not None:
+            is_suspended = status_info.get("is_suspended")
+            is_st = status_info.get("is_st")
+            listing_date = status_info.get("listing_date") or status_info.get(
+                "list_date"
+            )
+            delist_date = status_info.get("delist_date")
+            listing_session_count = status_info.get("listing_session_count")
+            trade_status = status_info.get("trade_status")
+            display_name = status_info.get("display_name") or status_info.get("name")
+        elif self._nontrading_instruments is not None:
+            if symbol in self._nontrading_instruments.get(session_date, ()):
+                is_suspended = True
+
+        if (
+            listing_session_count is None
+            and listing_date is not None
+            and self._trading_calendar is not None
+        ):
+            if session_date >= listing_date:
+                listing_session_count = len(
+                    self._trading_calendar.trading_days(listing_date, session_date)
+                )
+
+        return resolve_trading_rules(
+            str(symbol),
+            session_date,
+            instrument=inst,
+            is_st=is_st,
+            listing_date=listing_date,
+            delist_date=delist_date,
+            listing_session_count=listing_session_count,
+            is_suspended_override=is_suspended,
+            trade_status=trade_status,
+            display_name=display_name,
+            strict_security_status=self._strict_security_status,
+        )
 
     def _open_session_event_order(
         self,
@@ -624,6 +739,16 @@ class BacktestEngine:
         if bar is None or instrument is None or bar.symbol != event.symbol:
             return True
         session_date = self._session_date(bar)
+        previous = self._reference_price_for_limits(event.symbol, session_date)
+        if self._dividend_replay is not None:
+            pre_close = self._previous_close.get(event.symbol)
+            ex_ref = (
+                self._dividend_replay.ex_reference_price(
+                    event.symbol, session_date, pre_close
+                )
+                if pre_close is not None
+                else None
+            )
         if self._dividend_replay is not None and self._dividend_replay.blocks_execution(
             event.symbol, session_date
         ):
@@ -645,7 +770,6 @@ class BacktestEngine:
             self._execution_blocked["suspension"] += 1
             return False
 
-        previous = self._previous_close.get(event.symbol)
         if (
             previous is None
             or not rule.has_price_limit
@@ -847,6 +971,35 @@ class BacktestEngine:
             capacity_order = self._capacity_order(approved)
             if capacity_order is not None:
                 execution = self._cash_funded_fill(capacity_order)
+                if execution is not None:
+                    candidate_order, fill = execution
+                    bar = self._current_market_event
+                    session_date = (
+                        self._session_date(bar)
+                        if bar is not None
+                        else (
+                            self.portfolio.last_settlement_date
+                            or event.timestamp.date()
+                        )
+                    )
+                    cand_rule = self._resolve_rule_for_symbol(
+                        candidate_order.symbol, session_date
+                    )
+                    cand_pos = self.portfolio.positions.get(candidate_order.symbol)
+                    cand_avail = (
+                        cand_pos.available_qty if cand_pos is not None else ZERO
+                    )
+                    valid, _ = validate_order_lot_size(
+                        cand_rule,
+                        candidate_order.side,
+                        candidate_order.quantity,
+                        available_qty=cand_avail
+                        if candidate_order.side is OrderSide.SELL
+                        else None,
+                    )
+                    if not valid:
+                        self._execution_blocked["lot_size"] += 1
+                        execution = None
         if event.intent_id is not None and event.risk_decision_id is not None:
             passed = execution is not None
             self.event_bus.publish(
@@ -904,10 +1057,39 @@ class BacktestEngine:
                 volume * self._max_volume_participation
                 - self._bar_filled_quantity.get((bar.symbol, bar.timestamp), ZERO),
             )
-        quantity = min(order.quantity, (remaining // inst.lot_size) * inst.lot_size)
-        # A complete odd-lot liquidation is legal if it fits the share budget.
-        if order.side is OrderSide.SELL and order.quantity <= remaining:
-            quantity = order.quantity
+
+        session_date = self._session_date(bar)
+        rule = self._resolve_rule_for_symbol(order.symbol, session_date)
+
+        if order.side is OrderSide.BUY:
+            if remaining < rule.min_order_qty:
+                quantity = ZERO
+            else:
+                allowed = (
+                    rule.min_order_qty
+                    + ((remaining - rule.min_order_qty) // rule.qty_step)
+                    * rule.qty_step
+                )
+                quantity = min(order.quantity, allowed)
+        else:
+            # SELL
+            if order.quantity <= remaining:
+                quantity = order.quantity
+            else:
+                position = self.portfolio.positions.get(order.symbol)
+                available = position.available_qty if position is not None else ZERO
+                remainder = available % rule.qty_step
+                if remainder > ZERO and remaining >= remainder:
+                    extra = remaining - remainder
+                    quantity = remainder + (extra // rule.qty_step) * rule.qty_step
+                    quantity = min(order.quantity, quantity)
+                else:
+                    allowed = (remaining // rule.qty_step) * rule.qty_step
+                    if allowed < rule.min_order_qty:
+                        quantity = ZERO
+                    else:
+                        quantity = min(order.quantity, allowed)
+
         if quantity < order.quantity:
             self._capacity_unfilled_quantity += order.quantity - quantity
             self._capacity_resized_count += 1
@@ -938,36 +1120,36 @@ class BacktestEngine:
                 fee_rule_version=self._multi_commission.fee_rule_version,
             )
         bar = self._current_market_event
-        previous = self._previous_close.get(event.symbol)
         if (
             bar is not None
             and bar.symbol == event.symbol
             and inst is not None
-            and previous is not None
             and inst.instrument_type in {InstrumentType.STOCK, InstrumentType.ETF}
         ):
             session_date = self._session_date(bar)
-            rule = self._resolve_rule_for_symbol(event.symbol, session_date)
-            if (
-                rule.has_price_limit
-                and rule.limit_pct is not None
-                and rule.limit_pct > ZERO
-            ):
-                down, up = calculate_price_limits(previous, rule)
+            previous = self._reference_price_for_limits(event.symbol, session_date)
+            if previous is not None:
+                rule = self._resolve_rule_for_symbol(event.symbol, session_date)
                 if (
-                    event.side is OrderSide.BUY
-                    and up is not None
-                    and fill.fill_price > up
+                    rule.has_price_limit
+                    and rule.limit_pct is not None
+                    and rule.limit_pct > ZERO
                 ):
-                    self._execution_blocked["limit"] += 1
-                    return None
-                if (
-                    event.side is OrderSide.SELL
-                    and down is not None
-                    and fill.fill_price < down
-                ):
-                    self._execution_blocked["limit"] += 1
-                    return None
+                    down, up = calculate_price_limits(previous, rule)
+                    if (
+                        event.side is OrderSide.BUY
+                        and up is not None
+                        and fill.fill_price > up
+                    ):
+                        self._execution_blocked["limit"] += 1
+                        return None
+                    if (
+                        event.side is OrderSide.SELL
+                        and down is not None
+                        and fill.fill_price < down
+                    ):
+                        self._execution_blocked["limit"] += 1
+                        return None
         fill_metadata: dict[str, Any] = {
             "bar_timestamp": fill.timestamp.isoformat(),
             "session_date": (
@@ -993,10 +1175,29 @@ class BacktestEngine:
         inst = self.instruments.get(order.symbol)
         if inst is None or not order.quantity.is_finite() or order.quantity <= ZERO:
             return None
+
+        bar = self._current_market_event
+        session_date = (
+            self._session_date(bar)
+            if bar is not None
+            else (self.portfolio.last_settlement_date or order.timestamp.date())
+        )
+        rule = self._resolve_rule_for_symbol(order.symbol, session_date)
+
         quantity = order.quantity
         if order.side is OrderSide.BUY:
-            quantity = (quantity // inst.lot_size) * inst.lot_size
-        while quantity > ZERO:
+            if quantity < rule.min_order_qty:
+                self._execution_blocked["cash"] += 1
+                return None
+            quantity = (
+                rule.min_order_qty
+                + ((quantity - rule.min_order_qty) // rule.qty_step) * rule.qty_step
+            )
+
+        min_loop_qty = (
+            rule.min_order_qty if order.side is OrderSide.BUY else Decimal("1")
+        )
+        while quantity >= min_loop_qty:
             candidate = replace(order, quantity=quantity)
             fill = self._resolve_fill(candidate)
             if fill is None:
@@ -1015,16 +1216,34 @@ class BacktestEngine:
                 notional + fee if order.side is OrderSide.BUY else fee - notional
             )
             if cash_debit <= self.portfolio.cash:
+                position = self.portfolio.positions.get(order.symbol)
+                available = position.available_qty if position is not None else ZERO
+                passed, _ = validate_order_lot_size(
+                    rule,
+                    candidate.side,
+                    candidate.quantity,
+                    available_qty=available
+                    if candidate.side is OrderSide.SELL
+                    else None,
+                )
+                if not passed:
+                    self._execution_blocked["lot_size"] += 1
+                    return None
                 if quantity != order.quantity:
                     self._cash_resized_count += 1
                 return candidate, fill
             if order.side is OrderSide.SELL:
                 break
-            quantity = min(
-                quantity - inst.lot_size,
-                ((self.portfolio.cash - fee) / fill.fill_price // inst.lot_size)
-                * inst.lot_size,
-            )
+            affordable_shares = (self.portfolio.cash - fee) / fill.fill_price
+            if affordable_shares < rule.min_order_qty:
+                quantity = ZERO
+            else:
+                affordable_rounded = (
+                    rule.min_order_qty
+                    + ((affordable_shares - rule.min_order_qty) // rule.qty_step)
+                    * rule.qty_step
+                )
+                quantity = min(quantity - rule.qty_step, affordable_rounded)
         self._execution_blocked["cash"] += 1
         return None
 
@@ -1220,9 +1439,7 @@ class BacktestEngine:
                 "availability_mode": self._availability_mode,
                 "calendar_snapshot_ref": (
                     self._trading_calendar.source_fingerprint
-                    if isinstance(self._trading_calendar, MarketCalendarSnapshot)
-                    else "market_calendar.static.v1"
-                    if self._trading_calendar is not None
+                    if hasattr(self._trading_calendar, "source_fingerprint")
                     else None
                 ),
                 "trading_rule_policy_id": A_SHARE_TRADING_RULES_POLICY_ID,
@@ -1238,6 +1455,9 @@ class BacktestEngine:
                 "unverified_state_blocked_count": self._execution_blocked[
                     "unverified_state"
                 ],
+                "stale_valuation_symbols": sorted(
+                    str(s) for s in self._stale_valuation_symbols
+                ),
                 "capacity_model": (
                     "cumulative_bar_share_participation"
                     if self._max_volume_participation is not None

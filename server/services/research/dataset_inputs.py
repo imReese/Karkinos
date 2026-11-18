@@ -145,6 +145,17 @@ def load_dataset_backtest_inputs(root: Path, request):
             asset_class=instruments[symbol].asset_class,
             instrument_type=key.instrument_type,
         )
+
+    from data.dataset.reader import dataset_session_nontrading_instruments
+
+    nontrading_map: dict[str, list[str]] = {}
+    try:
+        raw_nontrading = dataset_session_nontrading_instruments(store, snapshot)
+        for s_date, keys in raw_nontrading.items():
+            nontrading_map[s_date.isoformat()] = [k.symbol for k in keys]
+    except Exception:
+        pass
+
     binding = {
         "dataset_id": ref.dataset_id,
         "cutoff": snapshot.cutoff.isoformat(),
@@ -155,6 +166,7 @@ def load_dataset_backtest_inputs(root: Path, request):
         "point_in_time_verified": False,
         "decision_availability": decision_availability,
         "trading_rule_policy_id": "karkinos.a_share.trading_rules.v1",
+        **({"nontrading_instruments": nontrading_map} if nontrading_map else {}),
         "limitations": [
             "Historical backfill is a frozen research snapshot, not proof of historical availability.",
             "Unadjusted prices do not model corporate-action cash flows or total returns."

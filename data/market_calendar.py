@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -337,6 +338,17 @@ class MarketCalendar:
             MappingProxyType(dict(self.closed_days)),
         )
 
+    @property
+    def source_fingerprint(self) -> str:
+        payload = {
+            "schema_version": MARKET_CALENDAR_SCHEMA_VERSION,
+            "holidays": dict(sorted(self.holidays.items())),
+            "extra_trading_days": sorted(self.extra_trading_days),
+            "closed_days": dict(sorted(self.closed_days.items())),
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
     def explain_date(self, value: str | date | datetime) -> MarketCalendarDay:
         day = _parse_calendar_date(value)
         date_text = day.isoformat()
@@ -394,6 +406,79 @@ class MarketCalendar:
                 result.append(cur)
             cur += timedelta(days=1)
         return tuple(result)
+
+
+@dataclass(frozen=True)
+class MultiYearMarketCalendar:
+    """Multi-year composite of official MarketCalendarSnapshots."""
+
+    snapshots: tuple[MarketCalendarSnapshot, ...]
+
+    def __post_init__(self) -> None:
+        if not self.snapshots:
+            raise ValueError("multi_year_calendar_empty")
+        years = [s.year for s in self.snapshots]
+        if len(years) != len(set(years)):
+            raise ValueError("multi_year_calendar_duplicate_years")
+        object.__setattr__(
+            self,
+            "snapshots",
+            tuple(sorted(self.snapshots, key=lambda s: s.year)),
+        )
+
+    @property
+    def source_fingerprint(self) -> str:
+        parts = [s.source_fingerprint for s in self.snapshots]
+        encoded = json.dumps(parts, sort_keys=True).encode()
+        return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+    def explain_date(self, value: str | date | datetime) -> MarketCalendarDay:
+        day = _parse_calendar_date(value)
+        for s in self.snapshots:
+            if s.year == day.year:
+                return s.explain_date(day)
+        raise ValueError(
+            f"market_calendar_snapshot_year_mismatch:{day.year}_not_covered"
+        )
+
+    def is_trading_day(self, value: str | date | datetime) -> bool:
+        return self.explain_date(value).is_trading_day
+
+    def trading_days(self, start_date: date, end_date: date) -> tuple[date, ...]:
+        if start_date > end_date:
+            raise ValueError("trading_days_start_date_exceeds_end_date")
+        result: list[date] = []
+        for s in self.snapshots:
+            year_start = max(start_date, date(s.year, 1, 1))
+            year_end = min(end_date, date(s.year, 12, 31))
+            if year_start <= year_end:
+                result.extend(s.trading_days(year_start, year_end))
+        for y in range(start_date.year, end_date.year + 1):
+            if not any(s.year == y for s in self.snapshots):
+                raise ValueError("trading_calendar_coverage_incomplete")
+        return tuple(sorted(result))
+
+
+def validate_calendar_coverage(
+    calendar: Any,
+    start_date: date,
+    end_date: date,
+) -> None:
+    """Validate that calendar completely covers the window [start_date, end_date]."""
+    if start_date > end_date:
+        raise ValueError("trading_days_start_date_exceeds_end_date")
+    if isinstance(calendar, MarketCalendarSnapshot):
+        if start_date.year != calendar.year or end_date.year != calendar.year:
+            raise ValueError(
+                f"trading_calendar_coverage_incomplete:window_{start_date}_to_{end_date}_exceeds_year_{calendar.year}"
+            )
+    elif isinstance(calendar, MultiYearMarketCalendar):
+        covered_years = {s.year for s in calendar.snapshots}
+        for y in range(start_date.year, end_date.year + 1):
+            if y not in covered_years:
+                raise ValueError(
+                    f"trading_calendar_coverage_incomplete:year_{y}_not_covered"
+                )
 
 
 def build_static_market_calendar_snapshot(

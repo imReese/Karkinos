@@ -12,6 +12,7 @@ from domain.instrument import make_etf, make_stock
 from domain.trading_rules import (
     CHINEXT_REFORM_DATE,
     MAIN_BOARD_REFORM_DATE,
+    SSE_SZSE_ST_REFORM_DATE,
     STAR_LAUNCH_DATE,
     calculate_price_limits,
     is_price_within_limits,
@@ -40,6 +41,24 @@ class TestTradingRuleResolution:
         # Infer ST from display_name
         rule_name_st = resolve_trading_rules("600519", d, display_name="*ST 茅台")
         assert rule_name_st.limit_pct == Decimal("0.05")
+
+    def test_main_board_st_2026_reform_dates(self):
+        # Before reform: 5%
+        before_date = date(2026, 7, 3)
+        rule_sse_before = resolve_trading_rules("600519", before_date, is_st=True)
+        assert rule_sse_before.limit_pct == Decimal("0.05")
+
+        rule_szse_before = resolve_trading_rules("000001", before_date, is_st=True)
+        assert rule_szse_before.limit_pct == Decimal("0.05")
+
+        # On and after 2026-07-06 reform: 10%
+        reform_date = SSE_SZSE_ST_REFORM_DATE
+        assert reform_date == date(2026, 7, 6)
+        rule_sse_after = resolve_trading_rules("600519", reform_date, is_st=True)
+        assert rule_sse_after.limit_pct == Decimal("0.10")
+
+        rule_szse_after = resolve_trading_rules("000001", reform_date, is_st=True)
+        assert rule_szse_after.limit_pct == Decimal("0.10")
 
     def test_chinext_reform_transition(self):
         # Before reform: 10%
@@ -136,6 +155,23 @@ class TestTradingRuleResolution:
         assert rule_delist_period.is_tradable is False
         assert rule_delist_period.status == "delisting"
 
+    def test_strict_security_status_blocks_unverified(self):
+        d = date(2023, 1, 3)
+        # Without status evidence in strict mode -> unverified_state
+        rule_unverified = resolve_trading_rules(
+            "600519", d, strict_security_status=True
+        )
+        assert rule_unverified.is_tradable is False
+        assert rule_unverified.status == "unverified_state"
+        assert rule_unverified.blocker_reason == "trading_state_unverified"
+
+        # With status evidence in strict mode -> tradable
+        rule_verified = resolve_trading_rules(
+            "600519", d, is_st=False, trade_status="1", strict_security_status=True
+        )
+        assert rule_verified.is_tradable is True
+        assert rule_verified.status == "tradable"
+
     def test_etf_compatibility(self):
         d = date(2023, 1, 3)
         etf = make_etf("510300", "300ETF")
@@ -144,6 +180,23 @@ class TestTradingRuleResolution:
         assert rule.is_tradable is True
         assert rule.price_tick == Decimal("0.001")
         assert rule.limit_pct == Decimal("0.10")
+
+    def test_etf_differential_price_limits(self):
+        d = date(2023, 1, 3)
+        # STAR ETF (588xxx) -> 20%
+        star_etf = make_etf("588000", "STAR50ETF")
+        rule_star_etf = resolve_trading_rules("588000", d, instrument=star_etf)
+        assert rule_star_etf.limit_pct == Decimal("0.20")
+
+        # ChiNext ETF (159915) -> 20%
+        gem_etf = make_etf("159915", "ChiNextETF")
+        rule_gem_etf = resolve_trading_rules("159915", d, instrument=gem_etf)
+        assert rule_gem_etf.limit_pct == Decimal("0.20")
+
+        # Main Board 50 ETF (510050) -> 10%
+        main_etf = make_etf("510050", "SSE50ETF")
+        rule_main_etf = resolve_trading_rules("510050", d, instrument=main_etf)
+        assert rule_main_etf.limit_pct == Decimal("0.10")
 
 
 class TestLotSizeValidation:
@@ -201,25 +254,50 @@ class TestLotSizeValidation:
         assert ok is False
         assert reason == "odd_lot_remainder_must_sell_all"
 
-        # Available is 360 shares
-        # Selling all 360 shares at once is allowed
+        # Available is 360 shares: 300 round + 60 odd remainder
+        # 1. Selling all 360 shares (complete holding liquidation) -> Legal
         ok, reason = validate_order_lot_size(
             rule_main, OrderSide.SELL, Decimal("360"), available_qty=Decimal("360")
         )
         assert ok is True
 
-        # Selling round 100 or 200 or 300 shares is allowed
+        # 2. Selling 60 shares (selling the odd-lot remainder alone, leaving 300 round) -> Legal
         ok, reason = validate_order_lot_size(
-            rule_main, OrderSide.SELL, Decimal("200"), available_qty=Decimal("360")
+            rule_main, OrderSide.SELL, Decimal("60"), available_qty=Decimal("360")
         )
         assert ok is True
 
-        # Selling 250 shares is rejected (not round lot and not selling all)
+        # 3. Selling 160 shares (selling 100 round + 60 odd, leaving 200 round) -> Legal
+        ok, reason = validate_order_lot_size(
+            rule_main, OrderSide.SELL, Decimal("160"), available_qty=Decimal("360")
+        )
+        assert ok is True
+
+        # 4. Selling 260 shares (selling 200 round + 60 odd, leaving 100 round) -> Legal
+        ok, reason = validate_order_lot_size(
+            rule_main, OrderSide.SELL, Decimal("260"), available_qty=Decimal("360")
+        )
+        assert ok is True
+
+        # 5. Selling round lots only (100, 200, 300) leaving odd remainder intact -> Legal
+        for round_qty in (Decimal("100"), Decimal("200"), Decimal("300")):
+            ok, reason = validate_order_lot_size(
+                rule_main, OrderSide.SELL, round_qty, available_qty=Decimal("360")
+            )
+            assert ok is True, f"Failed for round_qty={round_qty}"
+
+        # 6. Selling partial odd lot (30) or breaking odd remainder (250) -> Illegal
+        ok, reason = validate_order_lot_size(
+            rule_main, OrderSide.SELL, Decimal("30"), available_qty=Decimal("360")
+        )
+        assert ok is False
+        assert reason == "odd_lot_remainder_must_sell_all"
+
         ok, reason = validate_order_lot_size(
             rule_main, OrderSide.SELL, Decimal("250"), available_qty=Decimal("360")
         )
         assert ok is False
-        assert reason == "order_not_multiple_of_lot_step"
+        assert reason == "odd_lot_remainder_must_sell_all"
 
 
 class TestPriceLimits:

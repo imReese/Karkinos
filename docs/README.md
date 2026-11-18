@@ -13,6 +13,7 @@
 
 ## Guides
 
+- [A-share trading rules & constraints](guides/trading-rules.md)
 - [Built-in strategies library](strategies/README.md)
 - [Configuration](guides/configuration.md)
 - [Financial workbench UI patterns](guides/financial-workbench.md)

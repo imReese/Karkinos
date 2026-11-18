@@ -198,10 +198,29 @@ class Portfolio:
         else:
             self.cash += event.fill_price * event.fill_quantity - total_fee
 
+    def initialize_settlement_date(self, session_date: date | datetime) -> None:
+        """在首次交易/撮合前初始化结算日，不解冻现有持仓。"""
+        resolved_date = (
+            session_date.date() if isinstance(session_date, datetime) else session_date
+        )
+        if not isinstance(resolved_date, date):
+            raise TypeError("portfolio_settlement_date_invalid")
+        if self._last_settlement_date is None:
+            self._last_settlement_date = resolved_date
+        for pos in self.positions.values():
+            pos.initialize_settlement_date(resolved_date)
+
     def advance_settlement_day(
-        self, session_date: date | datetime | None = None
+        self,
+        session_date: date | datetime | None = None,
+        *,
+        strict: bool = False,
     ) -> None:
         """每日结算：解冻 T+1。"""
+        if strict or self._last_settlement_date is not None:
+            if session_date is None:
+                raise ValueError("portfolio_settlement_date_required")
+
         if session_date is not None:
             resolved_date = (
                 session_date.date()
@@ -217,7 +236,7 @@ class Portfolio:
                 raise ValueError("portfolio_settlement_date_regressed")
             self._last_settlement_date = resolved_date
         for pos in self.positions.values():
-            pos.advance_settlement_day(session_date=session_date)
+            pos.advance_settlement_day(session_date=session_date, strict=strict)
 
     def accrue_cash_dividend(
         self,

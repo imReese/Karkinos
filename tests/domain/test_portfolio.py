@@ -379,6 +379,13 @@ def test_portfolio_advance_settlement_day_date_aware_and_idempotent():
     instrument = make_stock("600519", "贵州茅台")
     portfolio.add_instrument(instrument)
 
+    portfolio.initialize_settlement_date(day1)
+    assert portfolio.last_settlement_date == day1
+
+    # Parameterless advance blocked once initialized
+    with pytest.raises(ValueError, match="portfolio_settlement_date_required"):
+        portfolio.advance_settlement_day()
+
     portfolio.advance_settlement_day(day1)
     assert portfolio.last_settlement_date == day1
 
