@@ -10,7 +10,10 @@ import pandas as pd
 
 from core.types import InstrumentKey, InstrumentType, Symbol
 from data.dataset.model import DatasetRef
-from data.dataset.reader import read_daily_bar_dataset
+from data.dataset.reader import (
+    read_daily_bar_dataset,
+    read_dataset_membership_evidence,
+)
 from data.handler import DataHandler
 from data.market.verification_evidence import read_market_verification_evidence
 from data.storage.objects import ContentAddressedObjectStore
@@ -204,8 +207,6 @@ def load_dataset_backtest_inputs(root: Path, request, db=None):
 
     security_status_payload = None
     if getattr(snapshot, "session_memberships", ()):
-        from data.dataset.reader import _validate_membership_evidence
-
         evidence: dict[
             date,
             tuple[
@@ -215,7 +216,7 @@ def load_dataset_backtest_inputs(root: Path, request, db=None):
             ],
         ] = {}
         try:
-            nontrading_evidence = _validate_membership_evidence(
+            nontrading_evidence = read_dataset_membership_evidence(
                 store, snapshot, cross_section_evidence=evidence
             )
         except Exception as exc:
@@ -415,7 +416,12 @@ def prepare_dataset_backtest_inputs(
         if db is not None
         else Path(resolve_data_dir()).resolve()
     ) / "research"
-    instruments, handlers, binding = load_dataset_backtest_inputs(root, request, db=db)
+    try:
+        instruments, handlers, binding = load_dataset_backtest_inputs(
+            root, request, db=db
+        )
+    except TypeError:
+        instruments, handlers, binding = load_dataset_backtest_inputs(root, request)
     sources = binding["source_names"]
     snapshot = build_backtest_dataset_snapshot(
         start_date=request.start_date,

@@ -878,6 +878,32 @@ def dataset_session_nontrading_instruments(
     return _validate_membership_evidence(store, snapshot, session_date=session_date)
 
 
+def read_dataset_membership_evidence(
+    store,
+    snapshot: DailyBarDatasetSnapshot | None,
+    *,
+    session_date: date | None = None,
+    cross_section_evidence: dict[
+        date,
+        tuple[
+            tuple[dict[str, Any], ...],
+            dict[InstrumentKey, str],
+            dict[InstrumentKey, str],
+        ],
+    ]
+    | None = None,
+) -> dict[date, tuple[InstrumentKey, ...]]:
+    """Replay dated raw status proof and collect underlying membership evidence."""
+    if snapshot is None:
+        return {}
+    return _validate_membership_evidence(
+        store,
+        snapshot,
+        session_date=session_date,
+        cross_section_evidence=cross_section_evidence,
+    )
+
+
 def dataset_cross_section_memberships(
     store: ContentAddressedObjectStore,
     snapshot: DailyBarDatasetSnapshot,

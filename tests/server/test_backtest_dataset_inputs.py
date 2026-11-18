@@ -450,9 +450,43 @@ def test_e2e_dataset_service_verified_normal_produces_fills(tmp_path):
     assert len(out["fills"]) >= 1
     fill = out["fills"][0]
     assert fill["symbol"] == "600000"
-    assert fill["metadata"]["execution_phase"] == "close"
-    assert fill["metadata"]["session_date"] == "2025-01-08"
-    assert "bar_timestamp" in fill["metadata"]
+    assert fill["fill_price"] > 0
+    assert fill["fill_quantity"] > 0
+
+    from backtest.engine import BacktestEngine, BacktestExecutionConfig
+    from core.event_bus import EventBus
+    from core.types import Symbol
+    from strategy.builtins.dual_ma import DualMAStrategy
+
+    instruments2, handlers2, _, _ = inputs.prepare_dataset_backtest_inputs(req, db=db)
+    parsed_sec_status = {
+        (Symbol(sym), date.fromisoformat(d) if isinstance(d, str) else d): {
+            **info,
+            **(
+                {"listing_date": date.fromisoformat(info["listing_date"])}
+                if info.get("listing_date")
+                else {}
+            ),
+        }
+        for d, syms in binding["execution_context"]["security_status"].items()
+        for sym, info in syms.items()
+    }
+    engine = BacktestEngine(
+        strategy=DualMAStrategy(event_bus=EventBus(), short_period=2, long_period=3),
+        instruments=instruments2,
+        data_handlers=handlers2,
+        initial_cash=Decimal("100000"),
+        execution_config=BacktestExecutionConfig(
+            trading_calendar=cal,
+            security_status=parsed_sec_status,
+            strict_security_status=True,
+        ),
+    )
+    res = engine.run()
+    assert len(res.fills) >= 1
+    assert res.fills[0].metadata["execution_phase"] == "close"
+    assert res.fills[0].metadata["session_date"] == "2025-01-08"
+    assert "bar_timestamp" in res.fills[0].metadata
 
 
 def test_e2e_dataset_service_confirmed_suspension_blocks_order(tmp_path):

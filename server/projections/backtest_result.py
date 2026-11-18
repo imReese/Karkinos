@@ -48,7 +48,6 @@ def fill_to_response(fill: Any) -> dict[str, Any]:
         "fee_breakdown": getattr(fill, "fee_breakdown", None),
         "fee_rule_id": getattr(fill, "fee_rule_id", None),
         "fee_rule_version": getattr(fill, "fee_rule_version", None),
-        "metadata": getattr(fill, "metadata", None) or {},
     }
 
 
