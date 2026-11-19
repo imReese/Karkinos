@@ -28,6 +28,19 @@ class MarketDailyProviderBudgetDeferred(RuntimeError):
         super().__init__(BUDGET_DEFERRED_CODE)
 
 
+class MarketDailyProviderBudgetExhausted(RuntimeError):
+    """This upstream has no budget; the job lease remains valid for fallback."""
+
+    def __init__(
+        self, upstream_group: str, available_at: datetime, used: int, limit: int
+    ) -> None:
+        self.upstream_group = upstream_group
+        self.available_at = available_at
+        self.used = used
+        self.limit = limit
+        super().__init__(BUDGET_DEFERRED_CODE)
+
+
 def reserve_market_daily_provider_call(
     db_path: str | Path,
     lease: JobLease,
@@ -36,12 +49,15 @@ def reserve_market_daily_provider_call(
     now: datetime,
     daily_limit: int = DEFAULT_DAILY_PROVIDER_ATTEMPT_LIMIT,
     guard: Callable[[sqlite3.Connection], None] | None = None,
+    defer_job: bool = True,
 ) -> None:
-    """Count one canonical fetch attempt before I/O, or defer under the same lock.
+    """Count one canonical fetch attempt before I/O under the admission lock.
 
     A reservation remains spent when Provider I/O fails, times out, or the process
     exits. Daily bars count canonical fetch calls; the prospective dividend
     adapter explicitly reserves each of its four actual date-query SDK calls.
+    Verified selection sets ``defer_job=False``: exhaustion leaves its lease
+    intact so the caller can exhaust eligible pairs before deferring the job.
     """
     if not isinstance(lease, JobLease):
         raise TypeError("market_daily_provider_budget_lease_invalid")
@@ -77,7 +93,7 @@ def reserve_market_daily_provider_call(
             "WHERE shanghai_date=? AND upstream_group=?",
             (local_day, group),
         ).fetchone()[0]
-        if used >= daily_limit:
+        if used >= daily_limit and defer_job:
             # Keep attempt monotonic for lease fencing. One budget deferral adds
             # one claim slot, preserving the existing finite failure allowance.
             conn.execute(
@@ -92,7 +108,7 @@ def reserve_market_daily_provider_call(
                 ),
             )
             deferred = True
-        else:
+        elif used < daily_limit:
             conn.execute(
                 "INSERT INTO market_daily_provider_call_reservations "
                 "(shanghai_date, upstream_group, job_id, job_attempt, reserved_at) "
@@ -107,6 +123,8 @@ def reserve_market_daily_provider_call(
         conn.close()
     if deferred:
         raise MarketDailyProviderBudgetDeferred(group, available_at)
+    if used >= daily_limit:
+        raise MarketDailyProviderBudgetExhausted(group, available_at, used, daily_limit)
 
 
 def market_daily_provider_call_budget_status(
@@ -164,6 +182,7 @@ __all__ = [
     "BUDGET_DEFERRED_CODE",
     "DEFAULT_DAILY_PROVIDER_ATTEMPT_LIMIT",
     "MarketDailyProviderBudgetDeferred",
+    "MarketDailyProviderBudgetExhausted",
     "market_daily_provider_call_budget_status",
     "reserve_market_daily_provider_call",
 ]

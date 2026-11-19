@@ -36,6 +36,7 @@ class JobRun:
     error: str | None
     failure_evidence_ref: str | None
     available_at: str | None = None
+    queue_name: str | None = None
 
     @property
     def lease(self) -> JobLease:

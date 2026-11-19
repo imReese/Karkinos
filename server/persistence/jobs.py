@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
+from collections import Counter
 from collections.abc import Callable, Iterable
 from contextlib import closing, contextmanager
 from datetime import datetime, timedelta
@@ -13,10 +15,53 @@ from typing import Any
 
 from server.contracts.jobs import JobLease, JobRun, job_time
 from server.persistence.connection import connect_sqlite
+from server.persistence.event_log import insert_event_sync
+
+_QUEUE_KEY_PREFIX = "job_queue:"
+_QUEUE_MEMBER_PREFIX = "job_queue_member:"
+_SUCCESSOR_KEY_PREFIX = "job_successor:"
+_JOB_SELECT = """
+ SELECT job_runs.*, (
+    SELECT CASE WHEN json_valid(member.value_json) THEN
+        CASE WHEN json_type(member.value_json, '$.queue_name') = 'text'
+             THEN json_extract(member.value_json, '$.queue_name') ELSE '' END
+        ELSE '' END
+    FROM runtime_controls AS member
+    WHERE member.key = 'job_queue_member:' || job_runs.job_id
+ ) AS queue_name FROM job_runs
+"""
+# A missing or malformed control blocks only its assigned jobs. Ordinary jobs
+# retain their existing scheduling. Apply this inside the claim transaction.
+_ACTIVE_QUEUE_FILTER = """
+ AND NOT EXISTS (
+    SELECT 1 FROM runtime_controls AS member
+    WHERE member.key = 'job_queue_member:' || job_runs.job_id
+      AND NOT EXISTS (
+        SELECT 1 FROM runtime_controls AS control
+        WHERE control.key = 'job_queue:' || CASE WHEN json_valid(member.value_json)
+            THEN json_extract(member.value_json, '$.queue_name') ELSE '' END
+        AND CASE WHEN json_valid(control.value_json) THEN
+          json_type(control.value_json, '$.paused') = 'false'
+          AND json_type(control.value_json, '$.revision') = 'integer'
+          AND json_extract(control.value_json, '$.revision') > 0
+          ELSE 0 END
+      )
+ )
+"""
+_UNREPLACED_JOB_FILTER = """
+ AND NOT EXISTS (
+    SELECT 1 FROM runtime_controls AS successor
+    WHERE successor.key = 'job_successor:' || job_runs.job_id
+ )
+"""
 
 
 class JobIdentityConflictError(ValueError):
     """Persisted job identity or payload no longer matches its durable key."""
+
+
+class JobQueuePaused(ValueError):
+    """The assigned queue is paused or its scheduling control is unavailable."""
 
 
 def require_job_lease(
@@ -84,7 +129,7 @@ class SQLiteJobStore:
             with closing(connect_sqlite(self.path, readonly=True)) as conn:
                 conn.row_factory = sqlite3.Row
                 row = conn.execute(
-                    "SELECT * FROM job_runs WHERE job_id=?", (job_id,)
+                    _JOB_SELECT + " WHERE job_id=?", (job_id,)
                 ).fetchone()
         except sqlite3.Error as exc:
             raise OSError("job_store_read_unavailable") from exc
@@ -104,8 +149,252 @@ class SQLiteJobStore:
         except (KeyError, TypeError, ValueError) as exc:
             raise JobIdentityConflictError("job_identity_conflict") from exc
 
-    def enqueue(self, kind, payload, *, now):
-        return self.enqueue_many(kind, (payload,), now=now)[0]
+    def enqueue(self, kind, payload, *, now, queue_name=None):
+        return self.enqueue_many(kind, (payload,), now=now, queue_name=queue_name)[0]
+
+    def get_successor(self, job_id: str) -> JobRun | None:
+        """Read an explicit replacement; a broken link never revives its parent."""
+        if self.get(job_id) is None:
+            raise ValueError("job_not_found")
+        with closing(connect_sqlite(self.path, readonly=True)) as conn:
+            row = conn.execute(
+                "SELECT value_json FROM runtime_controls WHERE key=?",
+                (_SUCCESSOR_KEY_PREFIX + job_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            identity = json.loads(row[0])["successor_id"]
+            if identity == job_id:
+                raise ValueError("job_successor_cycle")
+            successor = self.get(identity)
+            if successor is None:
+                raise ValueError("job_successor_missing")
+        except (KeyError, TypeError, ValueError) as exc:
+            raise JobIdentityConflictError("job_successor_invalid") from exc
+        return successor
+
+    def enqueue_successor(
+        self,
+        original: JobRun,
+        payload: dict[str, Any],
+        *,
+        now: datetime,
+        actor: str,
+        reason: str,
+        queue_name: str | None = None,
+    ) -> JobRun:
+        """Atomically enqueue one replacement and fence its unchanged parent.
+
+        The caller owns payload semantics. The relation is immutable, one-to-one
+        and single-level; even a failed successor keeps the parent unclaimable.
+        Claim and association share the SQLite write lock, so an already claimed
+        parent must finish or relinquish its lease before it can be replaced.
+        """
+        if (
+            original.status not in {"queued", "failed"}
+            or original.lease_owner is not None
+            or original.lease_expires_at is not None
+            or not isinstance(actor, str)
+            or not actor.strip()
+            or not isinstance(reason, str)
+            or not reason.strip()
+        ):
+            raise ValueError("job_successor_request_invalid")
+        identity = job_id_for(original.kind, payload)
+        if identity == original.job_id:
+            raise ValueError("job_successor_cycle")
+        key = _SUCCESSOR_KEY_PREFIX + original.job_id
+        at = job_time(now)
+
+        def associate(conn):
+            row = conn.execute(
+                _JOB_SELECT + " WHERE job_id=?", (original.job_id,)
+            ).fetchone()
+            if row is None or _job(row) != original:
+                raise ValueError("job_successor_original_changed")
+            if _job_identity(original.kind, original.payload) != (
+                original.job_id,
+                original.input_fingerprint,
+                row["payload_json"],
+            ):
+                raise JobIdentityConflictError("job_identity_conflict")
+            existing = conn.execute(
+                "SELECT value_json FROM runtime_controls WHERE key=?", (key,)
+            ).fetchone()
+            if existing is not None:
+                try:
+                    same = json.loads(existing[0])["successor_id"] == identity
+                except (KeyError, TypeError, ValueError):
+                    same = False
+                if not same:
+                    raise JobIdentityConflictError("job_successor_conflict")
+                if (
+                    conn.execute(
+                        "SELECT 1 FROM job_runs WHERE job_id=?", (identity,)
+                    ).fetchone()
+                    is None
+                ):
+                    raise JobIdentityConflictError("job_successor_invalid")
+                return
+            if conn.execute(
+                "SELECT 1 FROM runtime_controls WHERE key=? OR (key GLOB 'job_successor:*' "
+                "AND CASE WHEN json_valid(value_json) THEN "
+                "json_extract(value_json, '$.successor_id') IN (?,?) ELSE 0 END)",
+                (_SUCCESSOR_KEY_PREFIX + identity, original.job_id, identity),
+            ).fetchone():
+                raise JobIdentityConflictError("job_successor_conflict")
+            value = {
+                "successor_id": identity,
+                "actor": actor.strip(),
+                "reason": reason.strip(),
+                "created_at": at,
+            }
+            conn.execute(
+                "INSERT INTO runtime_controls(key,value_json,updated_at) VALUES (?,?,?)",
+                (key, json.dumps(value, sort_keys=True), at),
+            )
+            insert_event_sync(
+                conn,
+                event_type="jobs.successor_associated",
+                timestamp=at,
+                entity_type="job",
+                entity_id=original.job_id,
+                source="job_store",
+                source_ref=identity,
+                payload={**value, "original_status": original.status},
+            )
+
+        return self.enqueue_many(
+            original.kind,
+            (payload,),
+            now=now,
+            queue_name=original.queue_name if queue_name is None else queue_name,
+            guard=associate,
+        )[0]
+
+    def set_queue_paused(
+        self,
+        queue_name: str,
+        *,
+        paused: bool,
+        expected_revision: int,
+        now: datetime,
+        actor: str,
+        reason: str,
+        job_ids: Iterable[str] = (),
+    ) -> dict[str, Any]:
+        """Atomically assign exact jobs and audit a scheduling-only transition.
+
+        Execution status, attempt allowance, retry times and failure evidence are
+        untouched. Resuming a queue never revives terminal jobs or creates work.
+        """
+        key = _queue_key(queue_name)
+        if (
+            not isinstance(paused, bool)
+            or type(expected_revision) is not int
+            or expected_revision < 0
+            or not isinstance(actor, str)
+            or not actor.strip()
+            or not isinstance(reason, str)
+            or not reason.strip()
+        ):
+            raise ValueError("job_queue_transition_invalid")
+        identities = tuple(sorted(set(job_ids)))
+        at = job_time(now)
+        with self._transaction() as conn:
+            previous = _queue_control(conn, queue_name)
+            revision = 0 if previous is None else previous["revision"]
+            if revision != expected_revision:
+                raise ValueError("job_queue_revision_changed")
+            assigned = []
+            for identity in identities:
+                row = conn.execute(
+                    _JOB_SELECT + " WHERE job_id=?", (identity,)
+                ).fetchone()
+                if row is None:
+                    raise ValueError("job_queue_job_not_found")
+                job = _job(row)
+                if _job_identity(job.kind, job.payload) != (
+                    job.job_id,
+                    job.input_fingerprint,
+                    row["payload_json"],
+                ):
+                    raise JobIdentityConflictError("job_identity_conflict")
+                if job.queue_name not in (None, queue_name):
+                    raise ValueError("job_queue_assignment_conflict")
+                if job.queue_name is None:
+                    conn.execute(
+                        "INSERT INTO runtime_controls(key,value_json,updated_at) VALUES (?,?,?)",
+                        (
+                            _QUEUE_MEMBER_PREFIX + identity,
+                            json.dumps({"queue_name": queue_name}),
+                            at,
+                        ),
+                    )
+                    assigned.append(identity)
+            value = {
+                "paused": paused,
+                "revision": revision + 1,
+                "updated_at": at,
+                "actor": actor.strip(),
+                "reason": reason.strip(),
+            }
+            conn.execute(
+                "INSERT INTO runtime_controls(key,value_json,updated_at) VALUES (?,?,?) "
+                "ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json, "
+                "updated_at=excluded.updated_at",
+                (key, json.dumps(value, sort_keys=True), at),
+            )
+            cursor = insert_event_sync(
+                conn,
+                event_type="jobs.queue_paused" if paused else "jobs.queue_resumed",
+                timestamp=at,
+                entity_type="job_queue",
+                entity_id=queue_name,
+                source="job_store",
+                source_ref=str(value["revision"]),
+                payload={
+                    **value,
+                    "previous_paused": previous["paused"] if previous else None,
+                    "assigned_job_ids": assigned,
+                },
+            )
+            return {"queue_name": queue_name, **value, "event_id": cursor.lastrowid}
+
+    def queue_status(self, queue_name: str) -> dict[str, Any]:
+        _queue_key(queue_name)
+        with closing(connect_sqlite(self.path, readonly=True)) as conn:
+            conn.row_factory = sqlite3.Row
+            try:
+                value = _queue_control(conn, queue_name)
+            except ValueError:
+                value = None
+            jobs = [
+                dict(row)
+                for row in conn.execute(
+                    "SELECT job_id,kind,status,attempt,available_at,lease_owner,"
+                    "lease_expires_at,error,result_ref,failure_evidence_ref "
+                    "FROM job_runs WHERE EXISTS (SELECT 1 FROM runtime_controls AS member "
+                    "WHERE member.key='job_queue_member:' || job_runs.job_id AND "
+                    "CASE WHEN json_valid(member.value_json) THEN "
+                    "json_extract(member.value_json, '$.queue_name')=? ELSE 0 END) "
+                    "ORDER BY created_at,job_id",
+                    (queue_name,),
+                )
+            ]
+        return {
+            "queue_name": queue_name,
+            "control_available": value is not None,
+            **(value or {"paused": True, "revision": 0}),
+            "execution_counts": dict(Counter(job["status"] for job in jobs)),
+            "jobs": jobs,
+        }
+
+    def require_queue_active(self, job_id: str) -> None:
+        with closing(connect_sqlite(self.path, readonly=True)) as conn:
+            conn.row_factory = sqlite3.Row
+            _require_queue_active(conn, job_id)
 
     def stop_queued(
         self,
@@ -141,9 +430,7 @@ class SQLiteJobStore:
             raise ValueError("job_stop_reason_invalid")
         at = job_time(now)
         with self._transaction() as conn:
-            row = conn.execute(
-                "SELECT * FROM job_runs WHERE job_id=?", (job_id,)
-            ).fetchone()
+            row = conn.execute(_JOB_SELECT + " WHERE job_id=?", (job_id,)).fetchone()
             if row is None:
                 return None
             encoded = row["payload_json"]
@@ -189,9 +476,7 @@ class SQLiteJobStore:
                 ),
             )
             return _job(
-                conn.execute(
-                    "SELECT * FROM job_runs WHERE job_id=?", (job_id,)
-                ).fetchone()
+                conn.execute(_JOB_SELECT + " WHERE job_id=?", (job_id,)).fetchone()
             )
 
     def resume_queued(
@@ -228,9 +513,7 @@ class SQLiteJobStore:
             raise ValueError("job_expected_error_invalid")
         at = job_time(now)
         with self._transaction() as conn:
-            row = conn.execute(
-                "SELECT * FROM job_runs WHERE job_id=?", (job_id,)
-            ).fetchone()
+            row = conn.execute(_JOB_SELECT + " WHERE job_id=?", (job_id,)).fetchone()
             if row is None:
                 return None
             try:
@@ -275,9 +558,7 @@ class SQLiteJobStore:
                 (at, at, job_id, expected_input_fingerprint, expected_error),
             )
             return _job(
-                conn.execute(
-                    "SELECT * FROM job_runs WHERE job_id=?", (job_id,)
-                ).fetchone()
+                conn.execute(_JOB_SELECT + " WHERE job_id=?", (job_id,)).fetchone()
             )
 
     def enqueue_many(
@@ -287,6 +568,7 @@ class SQLiteJobStore:
         *,
         now: datetime,
         guard: Callable[[sqlite3.Connection], None] | None = None,
+        queue_name: str | None = None,
     ) -> tuple[JobRun, ...]:
         """Enqueue an entire explicit batch in one transaction or none of it."""
         prepared = tuple(_job_identity(kind, payload) for payload in payloads)
@@ -294,17 +576,28 @@ class SQLiteJobStore:
             return ()
         at = job_time(now)
         with self._transaction() as conn:
+            if queue_name is not None and _queue_control(conn, queue_name) is None:
+                raise ValueError("job_queue_not_configured")
             if guard is not None:
                 guard(conn)
             jobs: list[JobRun] = []
             for job_id, fingerprint, encoded in prepared:
-                conn.execute(
+                inserted = conn.execute(
                     "INSERT INTO job_runs(job_id,kind,input_fingerprint,payload_json,status,available_at,created_at,updated_at) "
                     "VALUES (?,?,?,?,'queued',?,?,?) ON CONFLICT(job_id) DO NOTHING",
                     (job_id, kind, fingerprint, encoded, at, at, at),
                 )
+                if queue_name is not None and inserted.rowcount:
+                    conn.execute(
+                        "INSERT INTO runtime_controls(key,value_json,updated_at) VALUES (?,?,?)",
+                        (
+                            _QUEUE_MEMBER_PREFIX + job_id,
+                            json.dumps({"queue_name": queue_name}),
+                            at,
+                        ),
+                    )
                 row = conn.execute(
-                    "SELECT * FROM job_runs WHERE job_id=?", (job_id,)
+                    _JOB_SELECT + " WHERE job_id=?", (job_id,)
                 ).fetchone()
                 if (
                     row is None
@@ -313,6 +606,19 @@ class SQLiteJobStore:
                     or row["input_fingerprint"] != fingerprint
                 ):
                     raise JobIdentityConflictError("job_identity_conflict")
+                if queue_name is not None and row["queue_name"] != queue_name:
+                    raise ValueError("job_queue_assignment_conflict")
+                if queue_name is not None and inserted.rowcount:
+                    insert_event_sync(
+                        conn,
+                        event_type="jobs.queue_job_enqueued",
+                        timestamp=at,
+                        entity_type="job_queue",
+                        entity_id=queue_name,
+                        source="job_store",
+                        source_ref=job_id,
+                        payload={"job_id": job_id, "kind": kind},
+                    )
                 jobs.append(_job(row))
             return tuple(jobs)
 
@@ -349,13 +655,17 @@ class SQLiteJobStore:
                 "UPDATE job_runs SET status='failed', error='lease_expired_attempts_exhausted', "
                 "lease_owner=NULL, lease_expires_at=NULL, updated_at=? "
                 "WHERE kind=? AND status='running' AND lease_expires_at<=? AND attempt>=max_attempts"
-                + identity_filter,
+                + identity_filter
+                + _ACTIVE_QUEUE_FILTER
+                + _UNREPLACED_JOB_FILTER,
                 (at, kind, at, *identity_values),
             )
             row = conn.execute(
-                "SELECT * FROM job_runs WHERE kind=? AND attempt<max_attempts AND "
+                _JOB_SELECT + " WHERE kind=? AND attempt<max_attempts AND "
                 "((status='queued' AND available_at<=?) OR (status='running' AND lease_expires_at<=?)) "
                 + identity_filter
+                + _ACTIVE_QUEUE_FILTER
+                + _UNREPLACED_JOB_FILTER
                 + " ORDER BY created_at, job_id LIMIT 1",
                 (kind, at, at, *identity_values),
             ).fetchone()
@@ -374,7 +684,7 @@ class SQLiteJobStore:
             )
             return _job(
                 conn.execute(
-                    "SELECT * FROM job_runs WHERE job_id=?", (row["job_id"],)
+                    _JOB_SELECT + " WHERE job_id=?", (row["job_id"],)
                 ).fetchone()
             )
 
@@ -398,6 +708,7 @@ class SQLiteJobStore:
             raise ValueError("job_result_ref_required")
         with self._transaction() as conn:
             require_job_lease(conn, lease, now=now)
+            _require_queue_active(conn, lease.job_id)
             if guard is not None:
                 guard(conn)
             conn.execute(
@@ -454,6 +765,49 @@ class SQLiteJobStore:
                     lease.job_id,
                 ),
             )
+
+
+def _queue_key(queue_name: str) -> str:
+    if (
+        not isinstance(queue_name, str)
+        or re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", queue_name) is None
+    ):
+        raise ValueError("job_queue_name_invalid")
+    return _QUEUE_KEY_PREFIX + queue_name
+
+
+def _queue_control(conn, queue_name):
+    row = conn.execute(
+        "SELECT value_json FROM runtime_controls WHERE key=?", (_queue_key(queue_name),)
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        value = json.loads(row[0])
+        if (
+            not isinstance(value, dict)
+            or type(value.get("paused")) is not bool
+            or type(value.get("revision")) is not int
+            or value["revision"] <= 0
+        ):
+            raise ValueError("job_queue_control_invalid")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("job_queue_control_invalid") from exc
+    return value
+
+
+def _require_queue_active(conn, job_id):
+    row = conn.execute(_JOB_SELECT + " WHERE job_id=?", (job_id,)).fetchone()
+    if row is None:
+        raise ValueError("job_not_found")
+    if row["queue_name"] is None:
+        return
+    try:
+        value = _queue_control(conn, row["queue_name"])
+    except ValueError as exc:
+        raise JobQueuePaused("job_queue_control_unavailable") from exc
+    if value is None or value["paused"]:
+        raise JobQueuePaused("job_queue_paused")
 
 
 def _job(row):

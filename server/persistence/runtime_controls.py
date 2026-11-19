@@ -30,6 +30,10 @@ class RuntimeControlRepository:
         self._database_path = Path(database_path)
 
     def set_value(self, key: str, value: dict[str, Any]) -> None:
+        if key.startswith(("job_queue:", "job_queue_member:")):
+            raise ValueError("job queue control requires the audited job store")
+        if key.startswith("job_successor:"):
+            raise ValueError("job successor control requires the audited job store")
         if key == AUTOMATIC_TRADING_CONTROL_KEY:
             raise ValueError(
                 "automatic trading control requires the dedicated audited CAS"
