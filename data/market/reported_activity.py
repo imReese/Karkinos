@@ -17,7 +17,7 @@ from data.providers.bse_sina_history import (
     require_capture_before,
 )
 from data.providers.eastmoney import _daily_event_time
-from data.providers.tushare import _request_target
+from data.providers.tushare import TUSHARE_MARKET_DAILY_PAYLOAD_FORMAT, _request_target
 
 REPORTED_ACTIVITY_KIND = "karkinos.tushare_eastmoney.reported_activity"
 
@@ -54,9 +54,17 @@ def require_native_reported_activity(store, materialization, bars, checked_at):
     require_capture_before(capture, checked_at)
     raw = json.loads(read_provider_raw_payload(store, capture))
     request = json.loads(capture.request_json)
+    market_batch = (
+        capture.provider == "tushare"
+        and capture.payload_format == TUSHARE_MARKET_DAILY_PAYLOAD_FORMAT
+    )
     if capture.provider == "tushare":
         version = "karkinos.tushare.daily_bar.v2"
-        schema = "tushare.pro.daily_bar.dataframe.v1"
+        schema = (
+            TUSHARE_MARKET_DAILY_PAYLOAD_FORMAT
+            if market_batch
+            else "tushare.pro.daily_bar.dataframe.v1"
+        )
         columns = ("open", "high", "low", "close", "vol", "amount")
     elif capture.provider == "akshare":
         version = "karkinos.akshare.daily_bar.v2"
@@ -83,8 +91,33 @@ def require_native_reported_activity(store, materialization, bars, checked_at):
     }
     if not set(wanted) <= requested or not start <= day <= end:
         raise ValueError("market_reported_activity_request_mismatch")
+    calls = raw["calls"]
+    if market_batch:
+        if (
+            start != end
+            or len(calls) != 1
+            or calls[0]["endpoint"] != "daily"
+            or calls[0]["request"] != {"trade_date": start.strftime("%Y%m%d")}
+        ):
+            raise ValueError("market_reported_activity_request_mismatch")
+        frame = calls[0]["frame"]
+        if len(frame["columns"]) != len(set(frame["columns"])):
+            raise ValueError("market_reported_activity_duplicate_columns")
+        grouped: dict[str, list[list[object]]] = {}
+        for values in frame["data"]:
+            row = dict(zip(frame["columns"], values, strict=True))
+            grouped.setdefault(row["ts_code"], []).append(values)
+        # Project the captured market table into the same exact per-stock checks.
+        calls = [
+            {
+                "endpoint": "daily",
+                "ts_code": code,
+                "frame": {"columns": frame["columns"], "data": values},
+            }
+            for code, values in grouped.items()
+        ]
     found = set()
-    for call in raw["calls"]:
+    for call in calls:
         is_tushare = capture.provider == "tushare"
         symbol = call["ts_code"].split(".")[0] if is_tushare else call["symbol"]
         if symbol not in wanted:

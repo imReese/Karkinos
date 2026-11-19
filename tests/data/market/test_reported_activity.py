@@ -75,7 +75,16 @@ def eastmoney_raw(bar):
 
 
 def market_pair(
-    p, *, symbol, tu_vol, em_vol, tu_amount, em_amount, forged_volume=False
+    p,
+    *,
+    symbol,
+    tu_vol,
+    em_vol,
+    tu_amount,
+    em_amount,
+    forged_volume=False,
+    market_batch=False,
+    market_request=None,
 ):
     key = InstrumentKey(symbol, InstrumentType.STOCK)
     trade = DAY.strftime("%Y%m%d")
@@ -130,6 +139,17 @@ def market_pair(
                     }
                 ],
             }
+            if market_batch:
+                schema = "tushare.pro.market_daily.dataframe.v2"
+                raw["schema"] = schema
+                call = raw["calls"][0]
+                del call["ts_code"]
+                call["request"] = (
+                    {"trade_date": trade} if market_request is None else market_request
+                )
+                call["frame"]["data"].append(
+                    ["600000.SH", trade, 10, 11, 9, 10, "100", "100"]
+                )
         else:
             raw = eastmoney_raw(bar)
             schema = raw["schema"]
@@ -165,7 +185,10 @@ def market_pair(
     return replay
 
 
-def test_star_whole_hands_need_exact_projection_and_original_cells(native_pair):
+@pytest.mark.parametrize("market_batch", [False, True])
+def test_star_whole_hands_need_exact_projection_and_original_cells(
+    native_pair, market_batch
+):
     assert REPORTED_ACTIVITY_KIND == "karkinos.tushare_eastmoney.reported_activity"
     p = native_pair()
     args = dict(
@@ -174,6 +197,7 @@ def test_star_whole_hands_need_exact_projection_and_original_cells(native_pair):
         em_vol=123500,
         tu_amount="1000.49",
         em_amount="1000.49",
+        market_batch=market_batch,
     )
     replay = market_pair(p, **args)
     relation = TushareEastmoneyActivity()
@@ -182,9 +206,15 @@ def test_star_whole_hands_need_exact_projection_and_original_cells(native_pair):
         market_pair(p, **{**args, "em_vol": 123400})(relation)
     with pytest.raises(ValueError, match="native_row_mismatch"):
         market_pair(p, **args, forged_volume=True)(relation)
+    if market_batch:
+        with pytest.raises(ValueError, match="request_mismatch"):
+            market_pair(p, **args, market_request={"trade_date": "20200101"})(relation)
 
 
-def test_bse_requires_both_official_totals_and_full_published_blocks(native_pair):
+@pytest.mark.parametrize("market_batch", [False, True])
+def test_bse_requires_both_official_totals_and_full_published_blocks(
+    native_pair, market_batch
+):
     p = native_pair()
     refs = p["relation"]
     relation = TushareEastmoneyActivity(
@@ -198,6 +228,7 @@ def test_bse_requires_both_official_totals_and_full_published_blocks(native_pair
         em_vol=100,
         tu_amount="1000.49",
         em_amount="1100.49",
+        market_batch=market_batch,
     )
     replay = market_pair(p, **args)
     assert not replay(None).matched and replay(relation).matched

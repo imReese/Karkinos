@@ -8,6 +8,7 @@ from datetime import date, datetime, timezone
 
 from core.types import InstrumentKey
 from data.dataset.resolver import DailyBarResolutionCandidate
+from data.market.capture import ProviderCapture
 from data.market.contracts import (
     DailyBarProvider,
     DailyBarProviderUnavailableError,
@@ -59,9 +60,12 @@ class CrossSourceDailyBarIntegrityError(CrossSourceDailyBarError):
 class CrossSourceDailyBarUnavailableError(CrossSourceDailyBarError):
     """One source could not produce a usable observation in this attempt."""
 
-    def __init__(self, provider: str, reason: str) -> None:
+    def __init__(
+        self, provider: str, reason: str, *, capture: ProviderCapture | None = None
+    ) -> None:
         self.provider = str(provider).strip()
         self.reason = str(reason).strip()
+        self.capture = capture
         super().__init__(
             f"cross_source_daily_bar_unavailable:{self.provider}:{self.reason}"
         )
@@ -321,6 +325,7 @@ def _ingest_provider(
         raise CrossSourceDailyBarUnavailableError(
             provider.descriptor.provider,
             "no_data",
+            capture=exc.capture,
         ) from exc
     except DailyBarProviderUnavailableError as exc:
         raise CrossSourceDailyBarUnavailableError(
@@ -438,7 +443,7 @@ def ingest_cross_source_daily_bars_range(
                 )
         except DailyBarIngestionNoData as exc:
             raise CrossSourceDailyBarUnavailableError(
-                provider.descriptor.provider, "no_data"
+                provider.descriptor.provider, "no_data", capture=exc.capture
             ) from exc
         except DailyBarProviderUnavailableError as exc:
             raise CrossSourceDailyBarUnavailableError(
