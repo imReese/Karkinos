@@ -167,189 +167,248 @@ class BacktestEngine:
         strict_security_status: bool = False,
         allow_ex_date_trading: bool = False,
     ) -> None:
-        if evaluation_start is not None and type(evaluation_start) is not date:
-            raise ValueError("backtest_evaluation_start_invalid")
-        self.event_bus = EventBus(raise_handler_errors=strict_event_errors)
-        self._session_completed = session_completed
-        self._session_decision = session_decision
-        self.clock = SimulatedClock()
+        self._executed: bool = False
+        self._running: bool = False
+        self._closed: bool = False
         self.strategy = strategy
-        self.instruments = instruments
-        self.data_handlers = data_handlers
-        self.initial_cash = initial_cash
-        self.evaluation_start = evaluation_start
-        if type(warmup_final_bar_targets) is not bool or (
-            warmup_final_bar_targets and evaluation_start is None
-        ):
-            raise ValueError("backtest_warmup_targets_require_evaluation_window")
-        self._warmup_final_bar_targets = warmup_final_bar_targets
-        self._warmup_target_timestamps = {}
-        # Earlier bars initialize strategy history, never a carried trading book.
-        # Initialization emissions are also discarded for an evaluation window.
-        self._warming_up = evaluation_start is not None
-        self.fills: list[FillEvent] = []
-        self.db = db
-        self._dividend_replay = (
-            DistributionReplay(
-                cash_dividends,
-                include_shares=include_share_distributions,
-                allow_ex_date_trading=allow_ex_date_trading,
-            )
-            if cash_dividends is not None
-            else None
-        )
-        if cash_dividends is not None and any(
-            item.symbol not in instruments
-            or instruments[item.symbol].instrument_type is not InstrumentType.STOCK
-            for item in cash_dividends
-        ):
-            raise ValueError("cash_dividend_stock_required")
-        self._availability_mode = (
-            execution_config.availability_mode
-            if execution_config is not None
-            else "historical_snapshot"
-        )
-        if self._availability_mode not in {"historical_snapshot", "observed"}:
-            raise ValueError("backtest_availability_mode_unsupported")
-        if execution_model is not None:
-            self._execution_model = ExecutionModel.from_value(execution_model)
-        elif (
-            execution_config is not None
-            and execution_config.execution_model is not None
-        ):
-            self._execution_model = ExecutionModel.from_value(
-                execution_config.execution_model
-            )
-        else:
-            self._execution_model = ExecutionModel.NEXT_BAR_CLOSE
-        self._executing_at_open = False
-        self._session_open_equity: Decimal | None = None
-        self._stream_sorted_data_handlers = (
-            execution_config.stream_sorted_data_handlers
-            if execution_config is not None
-            else False
-        )
-        if type(self._stream_sorted_data_handlers) is not bool:
-            raise ValueError("backtest_streaming_data_handlers_flag_invalid")
-        self._trading_calendar = trading_calendar or (
-            execution_config.trading_calendar if execution_config is not None else None
-        )
-        self._security_status = security_status or (
-            execution_config.security_status if execution_config is not None else None
-        )
-        self._nontrading_instruments = nontrading_instruments or (
-            execution_config.nontrading_instruments
-            if execution_config is not None
-            else None
-        )
-        self._strict_security_status = strict_security_status or (
-            execution_config.strict_security_status
-            if execution_config is not None
-            else False
-        )
-        self._stale_valuation_symbols: set[Symbol] = set()
-        self._pending_signals: dict[Symbol, SignalEvent] = {}
-        self._current_market_event: MarketEvent | None = None
-        self._previous_close: dict[Symbol, Decimal] = {}
-        self._open_signal_context: tuple[Symbol, str] | None = None
-        self._open_authorized_intent_id: str | None = None
-        self._open_authorized_order_id: str | None = None
-        self._execution_blocked = {
-            "limit": 0,
-            "suspension": 0,
-            "risk": 0,
-            "cash": 0,
-            "timing": 0,
-            "capacity": 0,
-            "lot_size": 0,
-            "available_qty": 0,
-            "unverified_state": 0,
-        }
-        self._cash_resized_count = 0
-        self._max_volume_participation = (
-            execution_config.max_volume_participation
-            if execution_config is not None
-            else None
-        )
-        if self._max_volume_participation is not None and (
-            not self._max_volume_participation.is_finite()
-            or not ZERO < self._max_volume_participation <= Decimal("1")
-        ):
-            raise ValueError("backtest_volume_participation_invalid")
+
+        active_engine = getattr(strategy, "_bound_engine", None)
         if (
-            self._execution_model is ExecutionModel.NEXT_BAR_OPEN
-            and self._max_volume_participation is not None
+            active_engine is not None
+            and active_engine is not self
+            and not getattr(active_engine, "_closed", False)
         ):
-            raise ValueError("next_bar_open_volume_participation_unsupported")
-        self._bar_filled_quantity: dict[tuple[Symbol, object], Decimal] = {}
-        self._capacity_resized_count = 0
-        self._capacity_unfilled_quantity = ZERO
-        self._execution_blocked["capacity"] = 0
-        self.execution_tracker = (
-            ExecutionOrderTracker(event_bus=self.event_bus, db=db)
-            if db is not None
-            else None
-        )
+            raise ValueError("strategy_already_bound_to_active_engine")
+        strategy._bound_engine = self
 
-        # 将策略的 event_bus 指向引擎内部总线
-        self.strategy.event_bus = self.event_bus
-        self.strategy.fill_tracking_enabled = True
-
-        # 创建组件
-        self.portfolio = Portfolio(self.event_bus, initial_cash=initial_cash)
-        # Finish the research book's cash, quantities and marks before strategy
-        # callbacks can synchronously publish another order.
-        self.event_bus.unsubscribe(FillEvent, self.portfolio.on_fill)
-        self.event_bus.subscribe(FillEvent, self._on_portfolio_fill)
-        # Portfolio sizes a target only when the later execution bar is known.
-        self.event_bus.unsubscribe(SignalEvent, self.portfolio.on_signal)
-        self.event_bus.subscribe(SignalEvent, self._on_signal)
-        self.event_bus.subscribe(FillEvent, self.strategy.on_fill)
-        self.event_bus.subscribe(FillEvent, self._on_position_fill)
-        for inst in instruments.values():
-            self.portfolio.add_instrument(inst)
-
-        configured_slippage = slippage_model or (
-            execution_config.slippage_model if execution_config is not None else None
-        )
-        configured_commission = commission_calc or (
-            execution_config.commission_calc if execution_config is not None else None
-        )
-
-        # 多资产佣金调度
-        if configured_commission is None or isinstance(
-            configured_commission, MultiAssetCommission
-        ):
-            self._multi_commission = configured_commission or MultiAssetCommission()
-            self.execution = SimulatedExecution(
-                slippage_model=configured_slippage,
-                commission_calc=self._multi_commission,
+        try:
+            if evaluation_start is not None and type(evaluation_start) is not date:
+                raise ValueError("backtest_evaluation_start_invalid")
+            self.event_bus = EventBus(raise_handler_errors=strict_event_errors)
+            self._session_completed = session_completed
+            self._session_decision = session_decision
+            self.clock = SimulatedClock()
+            self.strategy = strategy
+            self.instruments = instruments
+            self.data_handlers = data_handlers
+            self.initial_cash = initial_cash
+            self.evaluation_start = evaluation_start
+            if type(warmup_final_bar_targets) is not bool or (
+                warmup_final_bar_targets and evaluation_start is None
+            ):
+                raise ValueError("backtest_warmup_targets_require_evaluation_window")
+            self._warmup_final_bar_targets = warmup_final_bar_targets
+            self._warmup_target_timestamps = {}
+            # Earlier bars initialize strategy history, never a carried trading book.
+            # Initialization emissions are also discarded for an evaluation window.
+            self._warming_up = evaluation_start is not None
+            self.fills: list[FillEvent] = []
+            self.db = db
+            self._dividend_replay = (
+                DistributionReplay(
+                    cash_dividends,
+                    include_shares=include_share_distributions,
+                    allow_ex_date_trading=allow_ex_date_trading,
+                )
+                if cash_dividends is not None
+                else None
             )
-        else:
-            self._multi_commission = None
-            self.execution = SimulatedExecution(
-                slippage_model=configured_slippage,
-                commission_calc=configured_commission,
+            if cash_dividends is not None and any(
+                item.symbol not in instruments
+                or instruments[item.symbol].instrument_type is not InstrumentType.STOCK
+                for item in cash_dividends
+            ):
+                raise ValueError("cash_dividend_stock_required")
+            self._availability_mode = (
+                execution_config.availability_mode
+                if execution_config is not None
+                else "historical_snapshot"
+            )
+            if self._availability_mode not in {"historical_snapshot", "observed"}:
+                raise ValueError("backtest_availability_mode_unsupported")
+            if execution_model is not None:
+                self._execution_model = ExecutionModel.from_value(execution_model)
+            elif (
+                execution_config is not None
+                and execution_config.execution_model is not None
+            ):
+                self._execution_model = ExecutionModel.from_value(
+                    execution_config.execution_model
+                )
+            else:
+                self._execution_model = ExecutionModel.NEXT_BAR_CLOSE
+            self._executing_at_open = False
+            self._session_open_equity: Decimal | None = None
+            self._stream_sorted_data_handlers = (
+                execution_config.stream_sorted_data_handlers
+                if execution_config is not None
+                else False
+            )
+            if type(self._stream_sorted_data_handlers) is not bool:
+                raise ValueError("backtest_streaming_data_handlers_flag_invalid")
+            self._trading_calendar = trading_calendar or (
+                execution_config.trading_calendar
+                if execution_config is not None
+                else None
+            )
+            self._security_status = security_status or (
+                execution_config.security_status
+                if execution_config is not None
+                else None
+            )
+            self._nontrading_instruments = nontrading_instruments or (
+                execution_config.nontrading_instruments
+                if execution_config is not None
+                else None
+            )
+            self._strict_security_status = strict_security_status or (
+                execution_config.strict_security_status
+                if execution_config is not None
+                else False
+            )
+            self._stale_valuation_symbols: set[Symbol] = set()
+            self._pending_signals: dict[Symbol, SignalEvent] = {}
+            self._current_market_event: MarketEvent | None = None
+            self._previous_close: dict[Symbol, Decimal] = {}
+            self._open_signal_context: tuple[Symbol, str] | None = None
+            self._open_authorized_intent_id: str | None = None
+            self._open_authorized_order_id: str | None = None
+            self._execution_blocked = {
+                "limit": 0,
+                "suspension": 0,
+                "risk": 0,
+                "cash": 0,
+                "timing": 0,
+                "capacity": 0,
+                "lot_size": 0,
+                "available_qty": 0,
+                "unverified_state": 0,
+            }
+            self._cash_resized_count = 0
+            self._max_volume_participation = (
+                execution_config.max_volume_participation
+                if execution_config is not None
+                else None
+            )
+            if self._max_volume_participation is not None and (
+                not self._max_volume_participation.is_finite()
+                or not ZERO < self._max_volume_participation <= Decimal("1")
+            ):
+                raise ValueError("backtest_volume_participation_invalid")
+            if (
+                self._execution_model is ExecutionModel.NEXT_BAR_OPEN
+                and self._max_volume_participation is not None
+            ):
+                raise ValueError("next_bar_open_volume_participation_unsupported")
+            self._bar_filled_quantity: dict[tuple[Symbol, object], Decimal] = {}
+            self._capacity_resized_count = 0
+            self._capacity_unfilled_quantity = ZERO
+            self._execution_blocked["capacity"] = 0
+            self.execution_tracker = (
+                ExecutionOrderTracker(event_bus=self.event_bus, db=db)
+                if db is not None
+                else None
             )
 
-        self.risk_manager = RiskManager(self.event_bus)
-        # Portfolio owns this research book. Risk reads the same positions and
-        # must not reconstruct a second fill-only book that misses share awards.
-        self.event_bus.unsubscribe(FillEvent, self.risk_manager.on_fill)
-        self.risk_manager.positions = self.portfolio.positions
-        # EventBus broadcasts to every subscriber; enforce risk before execution
-        # here so a rejected/modified order cannot also execute its original form.
-        self.event_bus.unsubscribe(OrderEvent, self.risk_manager.on_order)
+            # 将策略的 event_bus 指向引擎内部总线
+            self.strategy.event_bus = self.event_bus
+            self.strategy.fill_tracking_enabled = True
 
-        # 订阅 MarketEvent
-        self.event_bus.subscribe(MarketEvent, self._on_market_event)
-        # 订阅 OrderIntentEvent — 回测兼容胶水，默认批准并转换为 OrderEvent
-        self.event_bus.subscribe(OrderIntentEvent, self._on_order_intent_event)
-        # 订阅 OrderEvent — 执行
-        self.event_bus.subscribe(OrderEvent, self._on_order_event)
+            # 创建组件
+            self.portfolio = Portfolio(self.event_bus, initial_cash=initial_cash)
+            # Finish the research book's cash, quantities and marks before strategy
+            # callbacks can synchronously publish another order.
+            self.event_bus.unsubscribe(FillEvent, self.portfolio.on_fill)
+            self.event_bus.subscribe(FillEvent, self._on_portfolio_fill)
+            # Portfolio sizes a target only when the later execution bar is known.
+            self.event_bus.unsubscribe(SignalEvent, self.portfolio.on_signal)
+            self.event_bus.subscribe(SignalEvent, self._on_signal)
+            self.event_bus.subscribe(FillEvent, self.strategy.on_fill)
+            self.event_bus.subscribe(FillEvent, self._on_position_fill)
+            for inst in instruments.values():
+                self.portfolio.add_instrument(inst)
+
+            configured_slippage = slippage_model or (
+                execution_config.slippage_model
+                if execution_config is not None
+                else None
+            )
+            configured_commission = commission_calc or (
+                execution_config.commission_calc
+                if execution_config is not None
+                else None
+            )
+
+            # 多资产佣金调度
+            if configured_commission is None or isinstance(
+                configured_commission, MultiAssetCommission
+            ):
+                self._multi_commission = configured_commission or MultiAssetCommission()
+                self.execution = SimulatedExecution(
+                    slippage_model=configured_slippage,
+                    commission_calc=self._multi_commission,
+                )
+            else:
+                self._multi_commission = None
+                self.execution = SimulatedExecution(
+                    slippage_model=configured_slippage,
+                    commission_calc=configured_commission,
+                )
+
+            self.risk_manager = RiskManager(self.event_bus)
+            # Portfolio owns this research book. Risk reads the same positions and
+            # must not reconstruct a second fill-only book that misses share awards.
+            self.event_bus.unsubscribe(FillEvent, self.risk_manager.on_fill)
+            self.risk_manager.positions = self.portfolio.positions
+            # EventBus broadcasts to every subscriber; enforce risk before execution
+            # here so a rejected/modified order cannot also execute its original form.
+            self.event_bus.unsubscribe(OrderEvent, self.risk_manager.on_order)
+
+            # 订阅 MarketEvent
+            self.event_bus.subscribe(MarketEvent, self._on_market_event)
+            # 订阅 OrderIntentEvent — 回测兼容胶水，默认批准并转换为 OrderEvent
+            self.event_bus.subscribe(OrderIntentEvent, self._on_order_intent_event)
+            # 订阅 OrderEvent — 执行
+            self.event_bus.subscribe(OrderEvent, self._on_order_event)
+        except Exception:
+            if getattr(self.strategy, "_bound_engine", None) is self:
+                self.strategy._bound_engine = None
+            self._closed = True
+            raise
+
+    def close(self) -> None:
+        """Release engine-owned resources and unbind strategy."""
+        if self._closed:
+            return
+        self._closed = True
+        if getattr(self.strategy, "_bound_engine", None) is self:
+            self.strategy._bound_engine = None
+        self._pending_signals.clear()
+        self._bar_filled_quantity.clear()
+
+    def __enter__(self) -> BacktestEngine:
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        self.close()
 
     def run(self) -> BacktestResult:
         """运行回测，返回 BacktestResult。"""
+        if self._executed:
+            raise RuntimeError("backtest_engine_already_executed")
+        if self._running:
+            raise RuntimeError("backtest_engine_reentrant_call_blocked")
+        if self._closed:
+            raise RuntimeError("backtest_engine_already_closed")
+        self._running = True
+        try:
+            return self._run_loop()
+        finally:
+            self._running = False
+            self._executed = True
+            self.close()
+
+    def _run_loop(self) -> BacktestResult:
         # Validate availability before any strategy state can observe the input.
         events: Callable[[], Iterable[MarketEvent]]
         if self._stream_sorted_data_handlers:

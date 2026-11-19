@@ -362,13 +362,9 @@ def run_single_backtest(
         cash_dividends=cash_dividends,
         include_share_distributions=cash_dividend_mode
         == "reported_distributions_gross",
-        # This multi-asset strategy rejects misaligned bars and unsolved risk
-        # budgets. A failed calculation must not become a successful cash report.
+        strict_event_errors=True,
         **(
-            {
-                "strict_event_errors": True,
-                "session_completed": strategy.require_complete_session,
-            }
+            {"session_completed": strategy.require_complete_session}
             if request.strategy == "risk_parity_macro"
             else {}
         ),
@@ -438,11 +434,9 @@ def run_single_backtest(
             include_share_distributions=cash_dividend_mode
             == "reported_distributions_gross",
             evaluation_start=evaluation_start,
+            strict_event_errors=True,
             **(
-                {
-                    "strict_event_errors": True,
-                    "session_completed": stressed_strategy.require_complete_session,
-                }
+                {"session_completed": stressed_strategy.require_complete_session}
                 if request.strategy == "risk_parity_macro"
                 else {}
             ),

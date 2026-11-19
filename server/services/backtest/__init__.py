@@ -14,6 +14,7 @@ from server.services.backtest.costs import (
     resolve_backtest_costs,
     resolve_paper_book_costs,
 )
+from server.services.backtest.deterministic_replay import compare_backtest_runs
 from server.services.backtest.result_projection import (
     backtest_evidence_from_payload,
     build_backtest_report_metrics_json,
@@ -24,6 +25,7 @@ from server.services.backtest.result_projection import (
 __all__ = [
     "backtest_evidence_from_payload",
     "build_backtest_report_metrics_json",
+    "compare_backtest_runs",
     "fill_to_response",
     "quote_formula_purchase",
     "resolve_backtest_costs",
