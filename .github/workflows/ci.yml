@@ -137,8 +137,11 @@ jobs:
       - name: Check documentation integrity
         run: python scripts/ci/check_docs_integrity.py
       - name: Check commit message conventions
+        env:
+          INCOMING_BASE: ${{ needs.plan.outputs.incoming_base_sha }}
+          COMMIT_SHA: ${{ needs.plan.outputs.commit_sha }}
         run: |
-          python scripts/ci/check_commit_msg.py --range "${{ needs.plan.outputs.incoming_base_sha }}" "${{ needs.plan.outputs.commit_sha }}"
+          python scripts/ci/check_commit_msg.py --range "${INCOMING_BASE}" "${COMMIT_SHA}"
       - name: Check tracked private artifacts
         shell: bash
         run: |
