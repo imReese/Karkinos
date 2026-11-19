@@ -36,6 +36,7 @@ from server.services.backtest_views.execution import (
 from server.services.research import dataset_inputs
 from server.services.research.dataset_inputs import (
     ResearchDatasetError,
+    compute_execution_context_id,
     prepare_dataset_backtest_inputs,
 )
 from server.services.research.dataset_policy import (
@@ -937,3 +938,270 @@ def test_c_legacy_report_file_compatibility(tmp_path, monkeypatch):
     data = read_backtest_report_file(9999)
     assert data["id"] == 9999
     assert data["fill_execution_audits"] == []
+
+
+def test_r1_legacy_context_lacking_dataset_id_rejected(tmp_path):
+    """R1: Legacy execution context lacking dataset_id must be rejected without fallback to DB."""
+    from tests.server.test_backtest_dataset_inputs import (
+        MockCalendarDb,
+        _make_dataset_with_evidence,
+    )
+
+    prices = [10.0, 10.0, 10.0, 10.8, 10.8]
+    cal = build_static_market_calendar_snapshot(
+        exchange="SSE",
+        year=2025,
+        provider="test",
+        open_dates=[d.isoformat() for d in DATES],
+    )
+    db = MockCalendarDb(tmp_path, cal)
+
+    # 1. Dataset A
+    dataset_a = _make_dataset_with_evidence(tmp_path, DATES, prices)
+    req_a = BacktestRequest(
+        strategy="dual_ma",
+        dataset_id=dataset_a.ref.dataset_id,
+        start_date=DATES[0].isoformat(),
+        end_date=DATES[-1].isoformat(),
+        strict_security_status=False,
+    )
+    _, _, binding_a, _ = prepare_dataset_backtest_inputs(req_a, db=db)
+    valid_ctx_id = binding_a["execution_context_id"]
+
+    # 2. Construct legacy c12 production context (strip dataset_id)
+    legacy_ctx = dict(binding_a["execution_context"])
+    legacy_ctx.pop("dataset_id", None)
+    legacy_ctx.pop("execution_context_id", None)
+    legacy_ctx.pop("content_hash", None)
+    legacy_id, _ = compute_execution_context_id(legacy_ctx)
+    store = ContentAddressedObjectStore(tmp_path / "research" / "objects")
+    store.put_bytes(
+        json.dumps(legacy_ctx, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    )
+
+    # Mock DB calendar getter to ensure no fallback query
+    def fail_if_db_called(*args, **kwargs):
+        raise RuntimeError("latest_db_must_not_be_queried_during_pinned_replay")
+
+    db.get_market_calendar_snapshot_sync = fail_if_db_called
+
+    # 3. Dataset B tries to use legacy context (cross-dataset reuse of legacy context)
+    dataset_b = _make_dataset_with_evidence(
+        tmp_path / "d_b", DATES, [11.0, 11.0, 11.0, 11.5, 11.5]
+    )
+    req_b = BacktestRequest(
+        strategy="dual_ma",
+        dataset_id=dataset_b.ref.dataset_id,
+        start_date=DATES[0].isoformat(),
+        end_date=DATES[-1].isoformat(),
+        execution_context_id=legacy_id,
+    )
+    store_b = ContentAddressedObjectStore(tmp_path / "d_b" / "research" / "objects")
+    store_b.put_bytes(
+        json.dumps(legacy_ctx, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    )
+
+    with pytest.raises(
+        ResearchDatasetError, match="execution_context_dataset_unverified"
+    ):
+        prepare_dataset_backtest_inputs(req_b, db=MockCalendarDb(tmp_path / "d_b", cal))
+
+    # 4. Dataset A itself trying to use legacy context is also rejected (unverified domain)
+    req_a_legacy = req_a.model_copy(update={"execution_context_id": legacy_id})
+    with pytest.raises(
+        ResearchDatasetError, match="execution_context_dataset_unverified"
+    ):
+        prepare_dataset_backtest_inputs(req_a_legacy, db=db)
+
+    # 5. Positive control: modern context with dataset_id replays successfully on same dataset
+    req_a_valid = req_a.model_copy(update={"execution_context_id": valid_ctx_id})
+    _, _, binding_replay, _ = prepare_dataset_backtest_inputs(req_a_valid, db=db)
+    assert binding_replay["execution_context_id"] == valid_ctx_id
+
+    # 6. Negative control: modern context with dataset_id rejected on different dataset
+    req_b_cross = req_b.model_copy(update={"execution_context_id": valid_ctx_id})
+    canonical_dict = {
+        k: v
+        for k, v in binding_a["execution_context"].items()
+        if k not in ("execution_context_id", "content_hash")
+    }
+    store_b.put_bytes(
+        json.dumps(canonical_dict, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    )
+    with pytest.raises(
+        ResearchDatasetError, match="execution_context_dataset_incompatible"
+    ):
+        prepare_dataset_backtest_inputs(
+            req_b_cross, db=MockCalendarDb(tmp_path / "d_b", cal)
+        )
+
+
+def test_r2_invalid_payload_rejected_without_fallback(tmp_path):
+    """R2: Pinned execution context with invalid payload (e.g. b'null') rejected without falling into initial generation."""
+    from tests.server.test_backtest_dataset_inputs import (
+        MockCalendarDb,
+        _make_dataset_with_evidence,
+    )
+
+    prices = [10.0, 10.0, 10.0, 10.8, 10.8]
+    cal = build_static_market_calendar_snapshot(
+        exchange="SSE",
+        year=2025,
+        provider="test",
+        open_dates=[d.isoformat() for d in DATES],
+    )
+    db = MockCalendarDb(tmp_path, cal)
+    dataset = _make_dataset_with_evidence(tmp_path, DATES, prices)
+    store = ContentAddressedObjectStore(tmp_path / "research" / "objects")
+
+    # Mock DB calendar getter to ensure no fallback query
+    def fail_if_db_called(*args, **kwargs):
+        raise RuntimeError("latest_db_must_not_be_queried_on_pinned_payload_error")
+
+    db.get_market_calendar_snapshot_sync = fail_if_db_called
+
+    # 1. Real null object in store
+    null_ref = store.put_bytes(b"null")
+    req_null = BacktestRequest(
+        strategy="dual_ma",
+        dataset_id=dataset.ref.dataset_id,
+        start_date=DATES[0].isoformat(),
+        end_date=DATES[-1].isoformat(),
+        execution_context_id=f"ctx-{null_ref.object_id}",
+    )
+    with pytest.raises(ResearchDatasetError, match="execution_context_invalid_payload"):
+        prepare_dataset_backtest_inputs(req_null, db=db)
+
+    # 2. Real array object in store
+    array_ref = store.put_bytes(b'["not", "a", "dict"]')
+    req_array = req_null.model_copy(
+        update={"execution_context_id": f"ctx-{array_ref.object_id}"}
+    )
+    with pytest.raises(ResearchDatasetError, match="execution_context_invalid_payload"):
+        prepare_dataset_backtest_inputs(req_array, db=db)
+
+    # 3. Positive control: when execution_context_id is None, initial generation succeeds
+    db.get_market_calendar_snapshot_sync = MockCalendarDb(
+        tmp_path, cal
+    ).get_market_calendar_snapshot_sync
+    req_gen = BacktestRequest(
+        strategy="dual_ma",
+        dataset_id=dataset.ref.dataset_id,
+        start_date=DATES[0].isoformat(),
+        end_date=DATES[-1].isoformat(),
+        execution_context_id=None,
+    )
+    _, _, binding_gen, _ = prepare_dataset_backtest_inputs(req_gen, db=db)
+    assert binding_gen["execution_context_id"] is not None
+
+
+def test_r3_preloaded_inputs_must_respect_requested_context_identity(
+    tmp_path, monkeypatch
+):
+    """R3: run_single_backtest preloaded inputs must reject mismatched context identity before engine run."""
+    from tests.server.test_backtest_dataset_inputs import (
+        MockCalendarDb,
+        _make_dataset_with_evidence,
+    )
+
+    prices = [10.0, 10.0, 10.0, 10.8, 10.8]
+    cal = build_static_market_calendar_snapshot(
+        exchange="SSE",
+        year=2025,
+        provider="test",
+        open_dates=[d.isoformat() for d in DATES],
+    )
+    db = MockCalendarDb(tmp_path, cal)
+    dataset = _make_dataset_with_evidence(tmp_path, DATES, prices)
+    store = ContentAddressedObjectStore(tmp_path / "research" / "objects")
+
+    # Prepare inputs for context A
+    req_a = BacktestRequest(
+        strategy="dual_ma",
+        dataset_id=dataset.ref.dataset_id,
+        start_date=DATES[0].isoformat(),
+        end_date=DATES[-1].isoformat(),
+        initial_cash=100000.0,
+        params={"short_period": 2, "long_period": 3},
+        strict_security_status=False,
+    )
+    prepared_a = prepare_dataset_backtest_inputs(req_a, db=db)
+    ctx_a_id = prepared_a[2]["execution_context_id"]
+
+    # Create another valid context B for the same dataset
+    ctx_b_payload = dict(prepared_a[2]["execution_context"])
+    ctx_b_payload["trading_calendar"] = {
+        **ctx_b_payload["trading_calendar"],
+        "provider": "context_b_provider",
+    }
+    ctx_b_payload.pop("execution_context_id", None)
+    ctx_b_payload.pop("content_hash", None)
+    ctx_b_id, ctx_b_hash = compute_execution_context_id(ctx_b_payload)
+    canonical_b = {
+        k: v
+        for k, v in ctx_b_payload.items()
+        if k not in ("execution_context_id", "content_hash")
+    }
+    store.put_bytes(
+        json.dumps(canonical_b, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    )
+
+    # Mock BacktestEngine.run to prove rejection happens BEFORE engine run
+    def fail_if_engine_run(*args, **kwargs):
+        raise RuntimeError("engine_must_not_run_when_context_mismatched")
+
+    from backtest.engine import BacktestEngine
+
+    monkeypatch.setattr(BacktestEngine, "run", fail_if_engine_run)
+
+    # 1. Request B + prepared A: mismatch rejected before engine execution
+    req_b = req_a.model_copy(update={"execution_context_id": ctx_b_id})
+    with pytest.raises(
+        ResearchDatasetError, match="preloaded_execution_context_mismatch"
+    ):
+        run_single_backtest(
+            req_b,
+            SimpleNamespace(),
+            db=db,
+            preloaded_dataset_inputs=prepared_a,
+        )
+
+    # Restore engine run
+    monkeypatch.undo()
+
+    # 2. Positive case: matching ID (ctx- prefixed) succeeds
+    req_match = req_a.model_copy(update={"execution_context_id": ctx_a_id})
+    out_match = run_single_backtest(
+        req_match,
+        SimpleNamespace(),
+        db=db,
+        preloaded_dataset_inputs=prepared_a,
+    )
+    assert (
+        out_match["metrics_json"]["dataset_binding"]["execution_context_id"] == ctx_a_id
+    )
+
+    # 3. Positive case: matching ID (raw content hash without ctx-) succeeds
+    raw_hash = ctx_a_id.removeprefix("ctx-")
+    req_raw = req_a.model_copy(update={"execution_context_id": raw_hash})
+    out_raw = run_single_backtest(
+        req_raw,
+        SimpleNamespace(),
+        db=db,
+        preloaded_dataset_inputs=prepared_a,
+    )
+    assert (
+        out_raw["metrics_json"]["dataset_binding"]["execution_context_id"] == ctx_a_id
+    )
+
+    # 4. Positive case: omitted ID (None) inherits prepared context identity
+    req_none = req_a.model_copy(update={"execution_context_id": None})
+    out_none = run_single_backtest(
+        req_none,
+        SimpleNamespace(),
+        db=db,
+        preloaded_dataset_inputs=prepared_a,
+    )
+    assert (
+        out_none["metrics_json"]["dataset_binding"]["execution_context_id"] == ctx_a_id
+    )

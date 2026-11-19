@@ -221,6 +221,14 @@ def run_single_backtest(
         inputs = prepare_retrieved_dataset_backtest_inputs(request, config)
 
     instruments, data_handlers, dataset_binding, dataset_snapshot_json = inputs
+    if (
+        getattr(request, "execution_context_id", None) is None
+        and dataset_binding
+        and dataset_binding.get("execution_context_id")
+    ):
+        request = request.model_copy(
+            update={"execution_context_id": dataset_binding["execution_context_id"]}
+        )
     data_handlers, execution_window = _windowed_data_handlers(
         request,
         data_handlers,
@@ -619,6 +627,26 @@ def _require_preloaded_dataset_request(request, inputs):
             matches = False
     if not matches:
         raise ResearchDatasetError("backtest_preloaded_dataset_request_mismatch")
+
+    req_ctx_id = getattr(request, "execution_context_id", None)
+    if req_ctx_id is not None and str(req_ctx_id).strip():
+        req_id_str = str(req_ctx_id).strip()
+        prepared_ctx_id = binding.get("execution_context_id")
+        ctx_payload = binding.get("execution_context") or {}
+        content_hash = ctx_payload.get("content_hash")
+
+        valid_ids: set[str] = set()
+        for cand in (prepared_ctx_id, content_hash):
+            if cand is not None and isinstance(cand, str) and cand.strip():
+                clean_cand = cand.strip()
+                valid_ids.add(clean_cand)
+                valid_ids.add(clean_cand.removeprefix("ctx-"))
+
+        req_raw = req_id_str.removeprefix("ctx-")
+        if req_id_str not in valid_ids and req_raw not in valid_ids:
+            raise ResearchDatasetError(
+                f"preloaded_execution_context_mismatch:request_{req_ctx_id}_vs_preloaded_{prepared_ctx_id}"
+            )
 
 
 def _windowed_data_handlers(

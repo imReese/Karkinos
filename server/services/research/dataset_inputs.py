@@ -365,36 +365,46 @@ def load_dataset_backtest_inputs(root: Path, request, db=None):
     from data.dataset.reader import dataset_session_nontrading_instruments
 
     req_ctx_id = getattr(request, "execution_context_id", None)
-    pinned_context_payload = None
-    if req_ctx_id:
-        obj_id = req_ctx_id.removeprefix("ctx-")
+    if req_ctx_id is not None and str(req_ctx_id).strip():
+        req_ctx_id_str = str(req_ctx_id).strip()
+        obj_id = req_ctx_id_str.removeprefix("ctx-")
         try:
             pinned_ref = store.resolve_ref(obj_id)
         except Exception as exc:
             raise ResearchDatasetError(
-                f"execution_context_not_found:{req_ctx_id}"
+                f"execution_context_not_found:{req_ctx_id_str}"
             ) from exc
         try:
             pinned_bytes = store.read_bytes(pinned_ref)
         except Exception as exc:
             raise ResearchDatasetError(
-                f"execution_context_unreadable:{req_ctx_id}"
+                f"execution_context_unreadable:{req_ctx_id_str}"
             ) from exc
         try:
             pinned_context_payload = json.loads(pinned_bytes.decode("utf-8"))
         except Exception as exc:
             raise ResearchDatasetError(
-                f"execution_context_corrupted:{req_ctx_id}"
+                f"execution_context_corrupted:{req_ctx_id_str}"
             ) from exc
 
-    if pinned_context_payload is not None:
-        ctx_id, c_hash = compute_execution_context_id(pinned_context_payload)
-        if req_ctx_id not in (ctx_id, c_hash):
+        if pinned_context_payload is None or not isinstance(
+            pinned_context_payload, dict
+        ):
             raise ResearchDatasetError(
-                f"execution_context_content_hash_mismatch:expected_{req_ctx_id}_got_{ctx_id}"
+                f"execution_context_invalid_payload:{req_ctx_id_str}"
+            )
+
+        ctx_id, c_hash = compute_execution_context_id(pinned_context_payload)
+        if req_ctx_id_str not in (ctx_id, c_hash):
+            raise ResearchDatasetError(
+                f"execution_context_content_hash_mismatch:expected_{req_ctx_id_str}_got_{ctx_id}"
             )
         pinned_dataset_id = pinned_context_payload.get("dataset_id")
-        if pinned_dataset_id is not None and pinned_dataset_id != ref.dataset_id:
+        if not pinned_dataset_id or not isinstance(pinned_dataset_id, str):
+            raise ResearchDatasetError(
+                f"execution_context_dataset_unverified:missing_dataset_scope_{req_ctx_id_str}"
+            )
+        if pinned_dataset_id != ref.dataset_id:
             raise ResearchDatasetError(
                 f"execution_context_dataset_incompatible:context_for_{pinned_dataset_id}_cannot_apply_to_{ref.dataset_id}"
             )
