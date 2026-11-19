@@ -262,11 +262,19 @@ def run_single_backtest(
 
     ctx = (dataset_binding or {}).get("execution_context")
     nontrading_mapping: dict[date, tuple[Symbol, ...]] | None = None
-    strict_status = bool(getattr(request, "strict_security_status", False))
+    req_strict = getattr(request, "strict_security_status", None)
     trading_cal = None
     sec_status = None
 
     if ctx is not None:
+        ctx_strict = bool(ctx.get("strict_security_status", False))
+        if req_strict is not None and req_strict != ctx_strict:
+            from server.services.research.dataset_policy import ResearchDatasetError
+
+            raise ResearchDatasetError(
+                f"execution_context_strict_mode_conflict:request_{req_strict}_vs_context_{ctx_strict}"
+            )
+        strict_status = ctx_strict
         raw_nt = ctx.get("nontrading_instruments")
         if raw_nt:
             nontrading_mapping = {
@@ -275,7 +283,6 @@ def run_single_backtest(
                 )
                 for k, v in raw_nt.items()
             }
-        strict_status = bool(ctx.get("strict_security_status", strict_status))
         trading_cal_raw = ctx.get("trading_calendar")
         if trading_cal_raw is not None:
             if isinstance(trading_cal_raw, dict):
@@ -325,8 +332,10 @@ def run_single_backtest(
                 for k, v in raw_nt.items()
             }
         strict_status = bool(
-            dataset_binding.get("strict_security_status", strict_status)
+            dataset_binding.get("strict_security_status", bool(req_strict))
         )
+    else:
+        strict_status = bool(req_strict)
 
     execution_config = replace(
         execution_config,

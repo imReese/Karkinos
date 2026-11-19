@@ -15,13 +15,19 @@ from data.dataset.model import (
     DailyBarDatasetSnapshot,
 )
 from data.dataset.reader import read_daily_bar_dataset
+from data.market.capture import capture_provider_payload
+from data.market.contracts import DailyBarRequest
 from data.market.schema import DAILY_BAR_SCHEMA_VERSION
 from data.market_calendar import (
     build_static_market_calendar_snapshot,
     market_calendar_day_from_payload,
 )
 from data.storage.objects import ContentAddressedObjectStore
-from server.contracts.http.strategy_models import BacktestRequest
+from server.contracts.http.strategy_models import (
+    BacktestRequest,
+    BacktestSweepRequest,
+)
+from server.routes import backtest as backtest_routes
 from server.services.backtest_views.execution import (
     read_backtest_report_file,
     run_single_backtest,
@@ -183,6 +189,235 @@ def test_a1_master_future_date_does_not_supply_normal_status_when_hist_status_em
     assert len(out["fills"]) == 0
 
 
+def test_a_future_master_does_not_override_active_session_status_or_supply_st(
+    tmp_path,
+):
+    """Task A: Future master (2025-02-10) with omitted status_session_date must not supply ST or override verified active session (2025-01-08)."""
+    from tests.server.test_backtest_dataset_inputs import (
+        MockCalendarDb,
+        _verified_day,
+    )
+
+    day5 = DATES[-1]
+    cal = build_static_market_calendar_snapshot(
+        exchange="SSE",
+        year=2025,
+        provider="test",
+        open_dates=[d.isoformat() for d in DATES],
+    )
+
+    for is_st_val, trade_status_val in [(False, "1"), (True, "1"), (False, "0")]:
+        sub_root = tmp_path / f"st_{is_st_val}_ts_{trade_status_val}"
+        root = sub_root / "research"
+        store = ContentAddressedObjectStore(root / "objects")
+        partitions = []
+        memberships = []
+
+        day_prices = ["10.0", "10.0", "10.0", "10.8"]
+        for day, p_close in zip(DATES[:-1], day_prices):
+            ref = _verified_day(root, day, instruments=(STOCK,), close=p_close)
+            daily = read_daily_bar_dataset(store, ref)
+            partitions.extend(
+                replace(p, instruments=(STOCK,)) for p in daily.snapshot.partitions
+            )
+            master_at = datetime(
+                day.year, day.month, day.day, 8, 0, tzinfo=timezone.utc
+            )
+            meta_row = {
+                "symbol": "600000",
+                "display_name": "浦发银行",
+                "list_status": "L",
+                "list_date": "1999-11-10",
+                "trade_status": "1",
+                "status_session_date": str(day),
+                "is_st": False,
+            }
+            master = {
+                "schema_version": "karkinos.market_universe_snapshot.v2",
+                "trade_date": str(day),
+                "membership_basis": "current_active_stock_master",
+                "availability_basis": "capture_completed_at",
+                "observation_basis": "adapter_response",
+                "capture_started_at": master_at.isoformat(),
+                "capture_completed_at": master_at.isoformat(),
+                "available_at": master_at.isoformat(),
+                "members": [{"symbol": "600000"}],
+                "member_metadata": [meta_row],
+            }
+            m_ref = store.put_bytes(json.dumps(master).encode())
+            memberships.append(
+                DailyBarDatasetMembership(day, (STOCK,), master_at, (m_ref.object_id,))
+            )
+
+        ref5 = _verified_day(root, day5, instruments=(STOCK,), close="10.8")
+        daily5 = read_daily_bar_dataset(store, ref5)
+        partitions.extend(
+            replace(p, instruments=(STOCK,)) for p in daily5.snapshot.partitions
+        )
+
+        master_at5 = datetime(
+            day5.year, day5.month, day5.day, 8, 0, tzinfo=timezone.utc
+        )
+        cap_request = DailyBarRequest((STOCK,), day5, day5).to_capture_request()
+        cap_payload = {
+            "schema": "baostock.history_k_data_plus.rows.v2",
+            "request": {
+                "frequency": "d",
+                "adjustflag": "3",
+                "start_date": str(day5),
+                "end_date": str(day5),
+                "fields": [
+                    "date",
+                    "code",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "amount",
+                    "adjustflag",
+                    "tradestatus",
+                ],
+            },
+            "calls": [
+                {
+                    "code": "sh.600000",
+                    "fields": [
+                        "date",
+                        "code",
+                        "open",
+                        "high",
+                        "low",
+                        "close",
+                        "volume",
+                        "amount",
+                        "adjustflag",
+                        "tradestatus",
+                    ],
+                    "rows": [
+                        [
+                            str(day5),
+                            "sh.600000",
+                            "10.8",
+                            "10.8",
+                            "10.8",
+                            "10.8",
+                            "100",
+                            "1000",
+                            "3",
+                            "1",
+                        ]
+                    ],
+                }
+            ],
+        }
+        cap = capture_provider_payload(
+            store,
+            provider="baostock",
+            operation="daily_bars",
+            request=cap_request,
+            raw_payload=json.dumps(cap_payload).encode(),
+            payload_format="baostock.history_k_data_plus.rows.v2",
+            adapter_version="karkinos.baostock.daily_bar.v2",
+            started_at=master_at5,
+            completed_at=master_at5,
+            record_count=1,
+        )
+
+        future_meta_row = {
+            "symbol": "600000",
+            "display_name": "浦发银行",
+            "list_status": "L",
+            "list_date": "1999-11-10",
+            "trade_status": trade_status_val,
+            "is_st": is_st_val,
+        }
+        future_master = {
+            "schema_version": "karkinos.market_universe_snapshot.v2",
+            "trade_date": "2025-02-10",
+            "membership_basis": "current_active_stock_master",
+            "availability_basis": "capture_completed_at",
+            "observation_basis": "adapter_response",
+            "capture_started_at": master_at5.isoformat(),
+            "capture_completed_at": master_at5.isoformat(),
+            "available_at": master_at5.isoformat(),
+            "members": [{"symbol": "600000"}],
+            "member_metadata": [future_meta_row],
+        }
+        fut_ref = store.put_bytes(json.dumps(future_master).encode())
+        memberships.append(
+            DailyBarDatasetMembership(
+                day5, (STOCK,), master_at5, (fut_ref.object_id, cap.capture_id)
+            )
+        )
+
+        snapshot = DailyBarDatasetSnapshot(
+            start_date=DATES[0],
+            end_date=DATES[-1],
+            cutoff=datetime(2025, 2, 10, 16, 0, tzinfo=timezone.utc),
+            instruments=(STOCK,),
+            resolver_policy_id=EXPLICIT_VERIFIED_SOURCE_UNION_POLICY_ID,
+            market_schema_version=DAILY_BAR_SCHEMA_VERSION,
+            partitions=tuple(partitions),
+            session_memberships=tuple(memberships),
+            universe_policy_id="fixture.policy.v1",
+        )
+        dataset_ref = publish_daily_bar_dataset_manifest(store, snapshot)
+        db = MockCalendarDb(sub_root, cal)
+
+        req_strict = BacktestRequest(
+            strategy="dual_ma",
+            dataset_id=dataset_ref.dataset_id,
+            start_date=DATES[0].isoformat(),
+            end_date=DATES[-1].isoformat(),
+            initial_cash=100000.0,
+            params={"short_period": 2, "long_period": 3},
+            strict_security_status=True,
+        )
+        prepared_strict = prepare_dataset_backtest_inputs(req_strict, db=db)
+        sec_status = prepared_strict[2]["execution_context"]["security_status"]
+        day5_str = day5.isoformat()
+        assert sec_status[day5_str]["600000"]["trade_status"] == "1"
+        assert sec_status[day5_str]["600000"]["is_suspended"] is False
+        assert sec_status[day5_str]["600000"]["is_st"] is None
+
+        out_strict = run_single_backtest(
+            req_strict,
+            SimpleNamespace(),
+            db=db,
+            preloaded_dataset_inputs=prepared_strict,
+        )
+        assert (
+            out_strict["metrics_json"]["execution_timing"][
+                "unverified_state_blocked_count"
+            ]
+            >= 1
+        )
+        assert len(out_strict["fills"]) == 0
+
+        req_exp = BacktestRequest(
+            strategy="dual_ma",
+            dataset_id=dataset_ref.dataset_id,
+            start_date=DATES[0].isoformat(),
+            end_date=DATES[-1].isoformat(),
+            initial_cash=100000.0,
+            params={"short_period": 2, "long_period": 3},
+            strict_security_status=False,
+        )
+        prepared_exp = prepare_dataset_backtest_inputs(req_exp, db=db)
+        out_exp = run_single_backtest(
+            req_exp,
+            SimpleNamespace(),
+            db=db,
+            preloaded_dataset_inputs=prepared_exp,
+        )
+        assert len(out_exp["fills"]) >= 1
+        fill = out_exp["fills"][0]
+        # Price is 10.8 + 5 bps slippage = 10.8054. Exceeds 5% ST limit (10.5), verifying 10% limit applies
+        assert abs(fill["fill_price"] - 10.8054) < 1e-4
+        assert fill["fill_price"] > 10.5
+
+
 def test_a2_is_st_null_remains_unknown_and_blocks_in_strict_mode(tmp_path):
     """A2: metadata.is_st=null must remain unknown, not bool(None)=False, blocking in strict mode."""
     prices = [10.0, 10.0, 10.0, 10.8, 10.8]
@@ -336,7 +571,12 @@ def test_b4_fixed_execution_identity_replays_original_calendar_not_db_latest(tmp
         provider="altered_db_provider",
         open_dates=[DATES[0].isoformat()],
     )
-    setattr(db, "_calendar", cal2)
+    setattr(db, "_cal", cal2)
+
+    def fail_if_db_called(*args, **kwargs):
+        raise RuntimeError("latest_db_must_not_be_queried_during_pinned_replay")
+
+    db.get_market_calendar_snapshot_sync = fail_if_db_called
 
     # Replay with execution_context_id pinned
     req2 = req1.model_copy(update={"execution_context_id": ctx_id})
@@ -353,8 +593,132 @@ def test_b4_fixed_execution_identity_replays_original_calendar_not_db_latest(tmp
     )
 
 
-def test_b5_content_changed_with_old_execution_identity_detected(tmp_path):
-    """B5: Mismatch between requested execution_context_id and actual context content fails closed."""
+def test_b5_execution_context_failure_modes_and_scope_rejection(tmp_path, monkeypatch):
+    """B5: Exhaustive coverage of execution context failure modes and scope rejection."""
+    from tests.server.test_backtest_dataset_inputs import (
+        MockCalendarDb,
+        _make_dataset_with_evidence,
+    )
+
+    prices = [10.0, 10.0, 10.0, 10.8, 10.8]
+    cal = build_static_market_calendar_snapshot(
+        exchange="SSE",
+        year=2025,
+        provider="test",
+        open_dates=[d.isoformat() for d in DATES],
+    )
+    db = MockCalendarDb(tmp_path, cal)
+    dataset1 = _make_dataset_with_evidence(tmp_path, DATES, prices)
+
+    # 1. Non-existent ID fails closed
+    fake_ctx_id = (
+        "ctx-sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    )
+    req_fake = BacktestRequest(
+        strategy="dual_ma",
+        dataset_id=dataset1.ref.dataset_id,
+        start_date=DATES[0].isoformat(),
+        end_date=DATES[-1].isoformat(),
+        execution_context_id=fake_ctx_id,
+    )
+    with pytest.raises(ResearchDatasetError, match="execution_context_not_found"):
+        prepare_dataset_backtest_inputs(req_fake, db=db)
+
+    # Prepare a valid context
+    req_valid = BacktestRequest(
+        strategy="dual_ma",
+        dataset_id=dataset1.ref.dataset_id,
+        start_date=DATES[0].isoformat(),
+        end_date=DATES[-1].isoformat(),
+        strict_security_status=False,
+    )
+    _, _, binding_valid, _ = prepare_dataset_backtest_inputs(req_valid, db=db)
+    valid_ctx_id = binding_valid["execution_context_id"]
+    assert valid_ctx_id is not None
+
+    # 2. Corrupted stored object (non-JSON object in store)
+    store = ContentAddressedObjectStore(tmp_path / "research" / "objects")
+    corrupted_ref = store.put_bytes(b"invalid_corrupted_json{{{")
+    with pytest.raises(ResearchDatasetError, match="execution_context_corrupted"):
+        prepare_dataset_backtest_inputs(
+            req_valid.model_copy(
+                update={"execution_context_id": f"ctx-{corrupted_ref.object_id}"}
+            ),
+            db=db,
+        )
+
+    # 3. Content hash mismatch: valid JSON object with non-canonical formatting
+    non_canonical_ref = store.put_bytes(b'{\n  "dataset_id": "test"\n}')
+    with pytest.raises(
+        ResearchDatasetError, match="execution_context_content_hash_mismatch"
+    ):
+        prepare_dataset_backtest_inputs(
+            req_valid.model_copy(
+                update={"execution_context_id": f"ctx-{non_canonical_ref.object_id}"}
+            ),
+            db=db,
+        )
+
+    # 4. Strict mode conflict: exploratory context (False) vs explicit request (True)
+    req_conflict = req_valid.model_copy(
+        update={
+            "execution_context_id": valid_ctx_id,
+            "strict_security_status": True,
+        }
+    )
+    with pytest.raises(
+        ResearchDatasetError, match="execution_context_strict_mode_conflict"
+    ):
+        prepare_dataset_backtest_inputs(req_conflict, db=db)
+
+    # 5. Dataset incompatibility: context from Dataset 1 cannot apply to Dataset 2
+    dataset2 = _make_dataset_with_evidence(
+        tmp_path / "d2", DATES, [11.0, 11.0, 11.0, 11.5, 11.5]
+    )
+    req_d2 = BacktestRequest(
+        strategy="dual_ma",
+        dataset_id=dataset2.ref.dataset_id,
+        start_date=DATES[0].isoformat(),
+        end_date=DATES[-1].isoformat(),
+        execution_context_id=valid_ctx_id,
+    )
+    canonical_dict = {
+        k: v
+        for k, v in binding_valid["execution_context"].items()
+        if k not in ("execution_context_id", "content_hash")
+    }
+    store2 = ContentAddressedObjectStore(tmp_path / "d2" / "research" / "objects")
+    store2.put_bytes(
+        json.dumps(canonical_dict, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    )
+    with pytest.raises(
+        ResearchDatasetError, match="execution_context_dataset_incompatible"
+    ):
+        prepare_dataset_backtest_inputs(req_d2, db=MockCalendarDb(tmp_path / "d2", cal))
+
+    # 6. First-time store write failure fails immediately without claiming pinned context
+    def fail_put_bytes(*args, **kwargs):
+        raise IOError("simulated_disk_full")
+
+    monkeypatch.setattr(ContentAddressedObjectStore, "put_bytes", fail_put_bytes)
+    req_new = BacktestRequest(
+        strategy="dual_ma",
+        dataset_id=dataset1.ref.dataset_id,
+        start_date=DATES[0].isoformat(),
+        end_date=DATES[-1].isoformat(),
+    )
+    with pytest.raises(
+        ResearchDatasetError, match="execution_context_persistence_failed"
+    ):
+        prepare_dataset_backtest_inputs(req_new, db=db)
+
+
+def test_b_sweep_and_chronological_pass_through_execution_context_and_strict_mode(
+    tmp_path, monkeypatch
+):
+    """Task B-c: Public /sweep endpoint carries execution_context_id and strict_security_status to all candidates and chronological runs."""
+    import asyncio
+
     from tests.server.test_backtest_dataset_inputs import (
         MockCalendarDb,
         _make_dataset_with_evidence,
@@ -370,21 +734,81 @@ def test_b5_content_changed_with_old_execution_identity_detected(tmp_path):
     db = MockCalendarDb(tmp_path, cal)
     dataset_res = _make_dataset_with_evidence(tmp_path, DATES, prices)
 
-    # Fake context id passed
-    fake_ctx_id = (
-        "ctx-sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-    )
-    req = BacktestRequest(
+    req_init = BacktestRequest(
         strategy="dual_ma",
         dataset_id=dataset_res.ref.dataset_id,
         start_date=DATES[0].isoformat(),
         end_date=DATES[-1].isoformat(),
-        execution_context_id=fake_ctx_id,
+        strict_security_status=True,
     )
-    with pytest.raises(
-        ResearchDatasetError, match="execution_context_content_hash_mismatch"
-    ):
-        prepare_dataset_backtest_inputs(req, db=db)
+    _, _, binding_init, _ = prepare_dataset_backtest_inputs(req_init, db=db)
+    ctx_id = binding_init["execution_context_id"]
+    assert ctx_id is not None
+
+    router = backtest_routes.create_router()
+    endpoint = next(
+        r.endpoint
+        for r in router.routes
+        if getattr(r, "path", None) == "/api/backtest/sweep"
+    )
+
+    saved_configs = []
+
+    class FakeDb:
+        def __init__(self, cal_db):
+            self.path = cal_db.path
+            self._cal = cal_db._cal
+            self.get_market_calendar_snapshot_sync = (
+                cal_db.get_market_calendar_snapshot_sync
+            )
+
+        async def save_backtest_result(self, **kwargs):
+            saved_configs.append(json.loads(kwargs["config_json"]))
+            return 900 + len(saved_configs)
+
+    fake_state = SimpleNamespace(
+        config=SimpleNamespace(assets=[]),
+        db=FakeDb(db),
+    )
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+
+    # 1. Standard sweep: candidates inherit execution_context_id and strict_security_status
+    sweep_req = BacktestSweepRequest(
+        strategy="dual_ma",
+        dataset_id=dataset_res.ref.dataset_id,
+        start_date=DATES[0].isoformat(),
+        end_date=DATES[-1].isoformat(),
+        param_grid={"short_period": [2], "long_period": [3, 4]},
+        execution_context_id=ctx_id,
+        strict_security_status=True,
+    )
+    resp = asyncio.run(endpoint(sweep_req))
+    assert resp.tested_count == 2
+    assert len(saved_configs) == 2
+    for cfg in saved_configs:
+        assert cfg["execution_context_id"] == ctx_id
+        assert cfg["strict_security_status"] is True
+
+    # 2. Chronological sweep with test_start_date
+    saved_configs.clear()
+    chrono_sweep_req = BacktestSweepRequest(
+        strategy="dual_ma",
+        dataset_id=dataset_res.ref.dataset_id,
+        start_date=DATES[0].isoformat(),
+        end_date=DATES[-1].isoformat(),
+        test_start_date=DATES[3],
+        param_grid={"short_period": [1], "long_period": [2]},
+        execution_context_id=ctx_id,
+        strict_security_status=True,
+    )
+    resp_chrono = asyncio.run(endpoint(chrono_sweep_req))
+    assert resp_chrono.chronological_validation is not None
+    assert resp_chrono.chronological_validation["execution_context_id"] == ctx_id
+    assert resp_chrono.chronological_validation["strict_security_status"] is True
+    assert len(saved_configs) >= 1
+    for cfg in saved_configs:
+        assert cfg["execution_context_id"] == ctx_id
+        assert cfg["strict_security_status"] is True
 
 
 def test_b6_typeerror_in_load_inputs_not_swallowed(monkeypatch, tmp_path):

@@ -63,7 +63,7 @@ def run_chronological_sweep(
     }
     normalized = [by_params[key] for key in sorted(by_params)]
     prepared = prepare_dataset_backtest_inputs(normalized[0], db)
-    _, handlers, _, snapshot = prepared
+    instruments, handlers, binding, snapshot = prepared
     longest = max(item.long_period for item in normalized)
     for handler in handlers.values():
         sessions = [
@@ -112,7 +112,8 @@ def run_chronological_sweep(
         "selection_basis": "training_only",
         "tie_break": "normalized_parameters_in_canonical_json_order",
         "selected_params": dict(normalized[winner].params or {}),
-        "strict_security_status": getattr(request, "strict_security_status", False),
+        "strict_security_status": binding.get("strict_security_status", False),
+        "execution_context_id": binding.get("execution_context_id"),
         "tested_count": len(training),
         "training_trials": [
             {"params": dict(candidate.params or {}), "score": score}

@@ -75,7 +75,7 @@ class BacktestRequest(BaseModel):
     oos_test_window_points: int = 3
     oos_step_points: int = 1
     benchmark_return: float | None = None
-    strict_security_status: bool = False
+    strict_security_status: bool | None = None
     execution_context_id: str | None = None
 
 
@@ -147,7 +147,7 @@ class BacktestSweepRequest(BaseModel):
     rank_by: str = "total_return"
     max_combinations: int = Field(default=25, ge=1, le=100)
     test_start_date: date | None = None
-    strict_security_status: bool = False
+    strict_security_status: bool | None = None
     execution_context_id: str | None = None
 
 

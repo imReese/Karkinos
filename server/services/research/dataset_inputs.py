@@ -154,51 +154,68 @@ def _resolve_security_status_and_nontrading(
             ) in evidence.items():
                 s_date_str = s_date.isoformat()
                 day_map: dict[str, Any] = {}
-                meta_by_sym: dict[str, dict[str, Any]] = {}
+                session_meta_by_sym: dict[str, dict[str, Any]] = {}
+                static_meta_by_sym: dict[str, dict[str, Any]] = {}
                 src_caps: list[str] = []
                 for master in masters:
                     if master.get("source_capture_ids"):
                         src_caps.extend(master["source_capture_ids"])
+                    master_date = master.get("trade_date")
+                    if master_date is not None:
+                        master_date = str(master_date).strip()
                     for m in master.get("member_metadata", ()):
                         sym = str(m.get("symbol") or "")
-                        if sym and sym not in meta_by_sym:
-                            meta_by_sym[sym] = m
+                        if not sym:
+                            continue
+                        if sym not in static_meta_by_sym:
+                            static_meta_by_sym[sym] = m
+                        m_sess = m.get("status_session_date")
+                        effective_date = (
+                            str(m_sess).strip() if m_sess is not None else master_date
+                        )
+                        if (
+                            effective_date == s_date_str
+                            and sym not in session_meta_by_sym
+                        ):
+                            session_meta_by_sym[sym] = m
 
                 for inst_key in snapshot.instruments:
                     sym = inst_key.symbol
-                    meta = meta_by_sym.get(sym)
+                    session_meta = session_meta_by_sym.get(sym)
+                    static_meta = session_meta or static_meta_by_sym.get(sym)
 
                     # A1: Verified trading status for s_date:
-                    same_date_meta = meta is not None and meta.get(
-                        "status_session_date"
-                    ) in (None, s_date_str)
                     is_susp = (
                         inst_key in nontrading_evidence.get(s_date, ())
                         or hist_status.get(inst_key) == "0"
-                        or (same_date_meta and meta.get("trade_status") == "0")
+                        or (
+                            session_meta is not None
+                            and session_meta.get("trade_status") == "0"
+                        )
                     )
                     trade_status: str | None = None
                     if is_susp:
                         trade_status = "0"
                     elif hist_status.get(inst_key) == "1":
                         trade_status = "1"
-                    elif same_date_meta and meta.get("trade_status") == "1":
-                        # A raw universe master from another date cannot supply normal trading status
-                        if meta.get("status_session_date") == s_date_str:
-                            trade_status = "1"
+                    elif (
+                        session_meta is not None
+                        and session_meta.get("trade_status") == "1"
+                    ):
+                        trade_status = "1"
 
                     # A2 & A3: Parse ST status preserving True/False/None 3-state
                     is_st: bool | None = None
                     if inst_key in special_treatment:
                         is_st = parse_is_st(special_treatment[inst_key])
-                    elif meta is not None and "is_st" in meta:
-                        meta_sess = meta.get("status_session_date")
-                        if meta_sess is None or meta_sess == s_date_str:
-                            is_st = parse_is_st(meta.get("is_st"))
+                    elif session_meta is not None and "is_st" in session_meta:
+                        is_st = parse_is_st(session_meta.get("is_st"))
 
-                    list_date = meta.get("list_date") if meta else None
-                    delist_date = meta.get("delist_date") if meta else None
-                    disp_name = meta.get("display_name") if meta else None
+                    list_date = static_meta.get("list_date") if static_meta else None
+                    delist_date = (
+                        static_meta.get("delist_date") if static_meta else None
+                    )
+                    disp_name = static_meta.get("display_name") if static_meta else None
                     src_ref = src_caps[0] if src_caps else None
 
                     day_map[sym] = {
@@ -347,17 +364,28 @@ def load_dataset_backtest_inputs(root: Path, request, db=None):
 
     from data.dataset.reader import dataset_session_nontrading_instruments
 
-    strict_status = getattr(request, "strict_security_status", False)
     req_ctx_id = getattr(request, "execution_context_id", None)
     pinned_context_payload = None
     if req_ctx_id:
         obj_id = req_ctx_id.removeprefix("ctx-")
         try:
             pinned_ref = store.resolve_ref(obj_id)
+        except Exception as exc:
+            raise ResearchDatasetError(
+                f"execution_context_not_found:{req_ctx_id}"
+            ) from exc
+        try:
             pinned_bytes = store.read_bytes(pinned_ref)
+        except Exception as exc:
+            raise ResearchDatasetError(
+                f"execution_context_unreadable:{req_ctx_id}"
+            ) from exc
+        try:
             pinned_context_payload = json.loads(pinned_bytes.decode("utf-8"))
-        except Exception:
-            pinned_context_payload = None
+        except Exception as exc:
+            raise ResearchDatasetError(
+                f"execution_context_corrupted:{req_ctx_id}"
+            ) from exc
 
     if pinned_context_payload is not None:
         ctx_id, c_hash = compute_execution_context_id(pinned_context_payload)
@@ -365,16 +393,27 @@ def load_dataset_backtest_inputs(root: Path, request, db=None):
             raise ResearchDatasetError(
                 f"execution_context_content_hash_mismatch:expected_{req_ctx_id}_got_{ctx_id}"
             )
+        pinned_dataset_id = pinned_context_payload.get("dataset_id")
+        if pinned_dataset_id is not None and pinned_dataset_id != ref.dataset_id:
+            raise ResearchDatasetError(
+                f"execution_context_dataset_incompatible:context_for_{pinned_dataset_id}_cannot_apply_to_{ref.dataset_id}"
+            )
+        ctx_strict = bool(pinned_context_payload.get("strict_security_status", False))
+        req_strict = getattr(request, "strict_security_status", None)
+        if req_strict is not None and req_strict != ctx_strict:
+            raise ResearchDatasetError(
+                f"execution_context_strict_mode_conflict:request_{req_strict}_vs_context_{ctx_strict}"
+            )
+        strict_status = ctx_strict
         trading_calendar_payload = pinned_context_payload.get("trading_calendar")
         security_status_payload = pinned_context_payload.get("security_status")
         nontrading_map_iso = pinned_context_payload.get("nontrading_instruments") or {}
-        strict_status = bool(
-            pinned_context_payload.get("strict_security_status", strict_status)
-        )
         execution_context_payload = dict(pinned_context_payload)
         execution_context_payload["execution_context_id"] = ctx_id
         execution_context_payload["content_hash"] = c_hash
     else:
+        req_strict = getattr(request, "strict_security_status", None)
+        strict_status = bool(req_strict)
         trading_calendar_payload = _resolve_trading_calendar_payload(
             snapshot, request, db, strict_status
         )
@@ -385,6 +424,7 @@ def load_dataset_backtest_inputs(root: Path, request, db=None):
 
         research_mode = "strict_research" if strict_status else "exploratory_compatible"
         execution_context_payload = {
+            "dataset_id": ref.dataset_id,
             "trading_calendar": trading_calendar_payload,
             "nontrading_instruments": nontrading_map_iso
             if nontrading_map_iso
@@ -402,25 +442,22 @@ def load_dataset_backtest_inputs(root: Path, request, db=None):
         }
 
         ctx_id, c_hash = compute_execution_context_id(execution_context_payload)
-        if req_ctx_id is not None and req_ctx_id not in (ctx_id, c_hash):
-            raise ResearchDatasetError(
-                f"execution_context_content_hash_mismatch:expected_{req_ctx_id}_got_{ctx_id}"
-            )
-        execution_context_payload["execution_context_id"] = ctx_id
-        execution_context_payload["content_hash"] = c_hash
-
+        canonical_dict = {
+            k: v
+            for k, v in execution_context_payload.items()
+            if k not in ("execution_context_id", "content_hash")
+        }
+        raw_ctx_bytes = json.dumps(
+            canonical_dict, sort_keys=True, ensure_ascii=False
+        ).encode("utf-8")
         try:
-            canonical_dict = {
-                k: v
-                for k, v in execution_context_payload.items()
-                if k not in ("execution_context_id", "content_hash")
-            }
-            raw_ctx_bytes = json.dumps(
-                canonical_dict, sort_keys=True, ensure_ascii=False
-            ).encode("utf-8")
             store.put_bytes(raw_ctx_bytes)
-        except Exception:
-            pass
+            execution_context_payload["execution_context_id"] = ctx_id
+            execution_context_payload["content_hash"] = c_hash
+        except Exception as exc:
+            raise ResearchDatasetError(
+                f"execution_context_persistence_failed:{exc}"
+            ) from exc
 
     research_mode = "strict_research" if strict_status else "exploratory_compatible"
     ctx_id = execution_context_payload.get("execution_context_id")

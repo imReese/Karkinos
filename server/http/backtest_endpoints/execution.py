@@ -149,8 +149,9 @@ def create_router(dependencies: ExecutionEndpointDependencies) -> APIRouter:
                     assets=request.assets,
                     params=params,
                     strict_security_status=getattr(
-                        request, "strict_security_status", False
+                        request, "strict_security_status", None
                     ),
+                    execution_context_id=getattr(request, "execution_context_id", None),
                 )
             )
 
