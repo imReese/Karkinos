@@ -151,6 +151,10 @@ def write_backtest_report_file(
             {**bt_result, "metrics_json": metrics_json}
         ),
         "fills": bt_result.get("fills", []),
+        "fill_execution_audits": bt_result.get(
+            "fill_execution_audits",
+            metrics_json.get("fill_execution_audits", []),
+        ),
     }
     tmp_path = report_path.with_suffix(".json.tmp")
     tmp_path.write_text(
@@ -159,6 +163,20 @@ def write_backtest_report_file(
     )
     tmp_path.replace(report_path)
     return report_path
+
+
+def read_backtest_report_file(result_id: int) -> dict[str, Any]:
+    """Read saved backtest report by ID.
+
+    Backward-compatible with older report files that lack fill_execution_audits.
+    """
+    report_path = backtest_report_dir() / f"backtest-result-{result_id}.json"
+    if not report_path.exists():
+        raise FileNotFoundError(f"backtest_report_not_found:{result_id}")
+    data = json.loads(report_path.read_text(encoding="utf-8"))
+    if "fill_execution_audits" not in data:
+        data["fill_execution_audits"] = []
+    return data
 
 
 def run_single_backtest(
@@ -430,6 +448,33 @@ def run_single_backtest(
     )
     if result.cash_dividend_accounting is not None:
         metrics_json["cash_dividend_accounting"] = result.cash_dividend_accounting
+    fill_execution_audits: list[dict[str, Any]] = []
+    for fill in result.fills:
+        audit_entry = {
+            "fill_id": getattr(fill, "fill_id", None),
+            "order_id": getattr(fill, "order_id", None),
+            "symbol": str(getattr(fill, "symbol", "")),
+            "session_date": (
+                fill.metadata.get("session_date") if fill.metadata else None
+            ),
+            "bar_timestamp": (
+                fill.metadata.get("bar_timestamp") if fill.metadata else None
+            ),
+            "execution_phase": (
+                fill.metadata.get("execution_phase") if fill.metadata else None
+            ),
+            "execution_model": (
+                fill.metadata.get("execution_model") if fill.metadata else None
+            ),
+        }
+        if fill.metadata:
+            for k, v in fill.metadata.items():
+                if k not in audit_entry:
+                    audit_entry[k] = v
+        fill_execution_audits.append(audit_entry)
+
+    evidence_json["fill_execution_audits"] = fill_execution_audits
+    metrics_json["fill_execution_audits"] = fill_execution_audits
     metrics_json["evidence_bundle"] = evidence_json
     metrics_json["dataset_snapshot"] = dataset_snapshot_json
     if execution_window is not None:
@@ -457,6 +502,7 @@ def run_single_backtest(
         "evidence_json": evidence_json,
         "oos_validation_json": oos_validation_json,
         "fills": [_fill_to_response(fill) for fill in result.fills],
+        "fill_execution_audits": fill_execution_audits,
     }
 
 
@@ -623,6 +669,7 @@ __all__ = (
     "backtest_report_dir",
     "normalize_backtest_payload_from_equity_curve",
     "prepare_retrieved_dataset_backtest_inputs",
+    "read_backtest_report_file",
     "run_single_backtest",
     "write_backtest_report_file",
 )

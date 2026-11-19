@@ -453,40 +453,34 @@ def test_e2e_dataset_service_verified_normal_produces_fills(tmp_path):
     assert fill["fill_price"] > 0
     assert fill["fill_quantity"] > 0
 
-    from backtest.engine import BacktestEngine, BacktestExecutionConfig
-    from core.event_bus import EventBus
-    from core.types import Symbol
-    from strategy.builtins.dual_ma import DualMAStrategy
+    # Task C: Execution audit metadata in service output and report file
+    audits = out["metrics_json"]["fill_execution_audits"]
+    assert len(audits) >= 1
+    assert audits[0]["fill_id"] == fill["fill_id"]
+    assert audits[0]["order_id"] == fill["order_id"]
+    assert audits[0]["symbol"] == "600000"
+    assert audits[0]["execution_phase"] == "close"
+    assert audits[0]["session_date"] == "2025-01-08"
+    assert audits[0]["bar_timestamp"] is not None
 
-    instruments2, handlers2, _, _ = inputs.prepare_dataset_backtest_inputs(req, db=db)
-    parsed_sec_status = {
-        (Symbol(sym), date.fromisoformat(d) if isinstance(d, str) else d): {
-            **info,
-            **(
-                {"listing_date": date.fromisoformat(info["listing_date"])}
-                if info.get("listing_date")
-                else {}
-            ),
-        }
-        for d, syms in binding["execution_context"]["security_status"].items()
-        for sym, info in syms.items()
-    }
-    engine = BacktestEngine(
-        strategy=DualMAStrategy(event_bus=EventBus(), short_period=2, long_period=3),
-        instruments=instruments2,
-        data_handlers=handlers2,
-        initial_cash=Decimal("100000"),
-        execution_config=BacktestExecutionConfig(
-            trading_calendar=cal,
-            security_status=parsed_sec_status,
-            strict_security_status=True,
-        ),
+    # Write report and verify from report file directly without secondary manual engine construction
+    from server.services.backtest_views.execution import (
+        read_backtest_report_file,
+        write_backtest_report_file,
     )
-    res = engine.run()
-    assert len(res.fills) >= 1
-    assert res.fills[0].metadata["execution_phase"] == "close"
-    assert res.fills[0].metadata["session_date"] == "2025-01-08"
-    assert "bar_timestamp" in res.fills[0].metadata
+
+    report_path = write_backtest_report_file(
+        result_id=999, request=req, bt_result=out, metrics_json=out["metrics_json"]
+    )
+    assert report_path.exists()
+    report_data = read_backtest_report_file(999)
+    assert len(report_data["fill_execution_audits"]) >= 1
+    assert report_data["fill_execution_audits"][0]["fill_id"] == fill["fill_id"]
+    assert report_data["fill_execution_audits"][0]["session_date"] == "2025-01-08"
+    assert report_data["fill_execution_audits"][0]["execution_phase"] == "close"
+    assert (
+        report_data["fill_execution_audits"][0]["execution_model"] == "next_bar_close"
+    )
 
 
 def test_e2e_dataset_service_confirmed_suspension_blocks_order(tmp_path):

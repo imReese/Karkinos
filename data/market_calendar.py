@@ -468,7 +468,17 @@ class MultiYearMarketCalendar:
 
 
 def market_calendar_day_from_payload(payload: dict[str, Any]) -> MarketCalendarDay:
-    is_trading = bool(payload.get("is_trading_day", True))
+    if "date" not in payload or not payload["date"]:
+        raise ValueError("market_calendar_day_date_missing")
+    if "is_trading_day" not in payload:
+        raise ValueError("market_calendar_day_is_trading_day_missing")
+    raw_is_trading = payload["is_trading_day"]
+    if type(raw_is_trading) is not bool:
+        raise ValueError(
+            f"market_calendar_day_is_trading_day_invalid_type:{type(raw_is_trading).__name__}"
+        )
+    is_trading = raw_is_trading
+
     raw_type = payload.get("day_type")
     if raw_type is not None:
         try:
@@ -512,6 +522,19 @@ def market_calendar_day_from_payload(payload: dict[str, Any]) -> MarketCalendarD
 def market_calendar_snapshot_from_payload(
     payload: dict[str, Any],
 ) -> MarketCalendarSnapshot:
+    if "exchange" not in payload or not payload["exchange"]:
+        raise ValueError("market_calendar_snapshot_exchange_missing")
+    if "year" not in payload or payload["year"] is None:
+        raise ValueError("market_calendar_snapshot_year_missing")
+    try:
+        year = int(payload["year"])
+    except (ValueError, TypeError):
+        raise ValueError("market_calendar_snapshot_year_invalid")
+    provider_val = payload.get("provider") or payload.get("official_verified_by")
+    if not provider_val:
+        raise ValueError("market_calendar_snapshot_provider_missing")
+    provider = str(provider_val)
+
     days_val = payload.get("days", payload.get("days_json", ()))
     if isinstance(days_val, str):
         try:
@@ -529,9 +552,9 @@ def market_calendar_snapshot_from_payload(
         except Exception:
             limitations_val = ()
     return MarketCalendarSnapshot(
-        exchange=str(payload.get("exchange", "SSE")),
-        year=int(payload.get("year", 2025)),
-        provider=str(payload.get("provider", "test")),
+        exchange=str(payload["exchange"]),
+        year=year,
+        provider=provider,
         days=days,
         source_fingerprint=str(payload.get("source_fingerprint", "")),
         fetched_at=str(payload.get("fetched_at", "")),

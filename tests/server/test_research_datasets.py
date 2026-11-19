@@ -753,9 +753,9 @@ def test_compare_and_sweep_replay_one_dataset_without_remote_fallback(
     original_load = dataset_inputs.load_dataset_backtest_inputs
     loads = []
 
-    def counted_load(root, request):
+    def counted_load(root, request, *args, **kwargs):
         loads.append(request.dataset_id)
-        return original_load(root, request)
+        return original_load(root, request, *args, **kwargs)
 
     monkeypatch.setattr(dataset_inputs, "load_dataset_backtest_inputs", counted_load)
 
