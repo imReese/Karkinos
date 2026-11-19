@@ -210,6 +210,22 @@ workflow permissions and receives no additional secret.
 
 Applying or changing GitHub rulesets is an explicit repository-owner operation. After any change, read the server state back and require the drift verifier to pass before claiming the protection is live. Normal CI must not silently repair repository security configuration.
 
+### Commit message conventions
+
+All Git commits must strictly follow Conventional Commits:
+
+- Format: `<type>(<scope>): <subject>` or `<type>: <subject>`.
+- Language: English only.
+- Allowed types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.
+- Length limit: The first line (subject) must not exceed 72 characters total, including type, scope, punctuation, and spaces.
+- Content rules:
+  - Subject describes concrete code behavior or change, not internal process task names.
+  - Forbidden labels: Subject must never include project stages, milestones, tasks, or code review identifiers (e.g. `P0-4C`, `Task A`, `CR #1`, `Checkpoint 1`).
+  - Legitimate technical terms (e.g. `execution phase`, `stage`) are permitted when describing system mechanisms.
+- Verification:
+  - Enforced locally via `scripts/ci/check_commit_msg.py` installed in pre-commit (`commit-msg` stage).
+  - Enforced in CI via the `Repository integrity` job on incoming commit ranges.
+
 ### Python tooling authority
 
 - Ruff owns Python lint, import organization, and formatting across the repository.

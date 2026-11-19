@@ -105,6 +105,7 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ needs.plan.outputs.commit_sha }}
+          fetch-depth: 0
       - name: Check public shell entrypoints
         run: |
           set -euo pipefail
@@ -126,6 +127,9 @@ jobs:
             scripts/release/bootstrap_installer.sh
       - name: Check documentation integrity
         run: python scripts/ci/check_docs_integrity.py
+      - name: Check commit message conventions
+        run: |
+          python scripts/ci/check_commit_msg.py --range "${{ needs.plan.outputs.base_sha }}" "${{ needs.plan.outputs.commit_sha }}"
       - name: Check tracked private artifacts
         shell: bash
         run: |

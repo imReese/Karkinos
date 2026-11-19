@@ -112,6 +112,8 @@ Preserve unrelated workspace changes. Do not clean, reset, or overwrite another 
 
 Perform commits, pushes, merges, releases, tags, publishing, or PR creation only when the task explicitly requests the corresponding Git write.
 
+Commit messages must use English Conventional Commits (`<type>(<scope>): <subject>` or `<type>: <subject>`), max 72 characters total for the subject line, with no project management, task, or review labels (e.g. `P0-4C`, `Task A`, `CR #1`). Titles must describe concrete code behavior rather than task names. See canonical rules in `docs/ENGINEERING.md`.
+
 Never commit secrets, credentials, private account exports, real personal financial data, production or runtime databases, private logs, or screenshots.
 
 Use sanitized deterministic fixtures for tests and replay.

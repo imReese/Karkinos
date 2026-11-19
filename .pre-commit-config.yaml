@@ -44,6 +44,12 @@ repos:
         language: system
         pass_filenames: false
         files: '(^|/).*\.md$|^docs/|^scripts/ci/check_docs_integrity\.py$'
+      - id: check-commit-msg
+        name: Commit message convention check
+        entry: python scripts/ci/check_commit_msg.py
+        language: system
+        stages: [commit-msg]
+        always_run: true
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b # v5.0.0
