@@ -264,30 +264,17 @@ def _extract_blocked_counts(run: Any) -> dict[str, int]:
     return {}
 
 
-def compare_backtest_runs(
-    run_a: dict[str, Any] | BacktestResult,
-    run_b: dict[str, Any] | BacktestResult,
-    *,
-    float_tolerance: float = 1e-7,
-) -> dict[str, Any]:
-    """Compare two backtest runs for exact deterministic equivalence.
+class _IdBijectionChecker:
+    """Normalizes UUIDs via 1-to-1 bijection to ensure isomorphic execution graphs."""
 
-    Normalizes UUIDs via 1-to-1 bijection while strictly comparing:
-    - Fill sequence, symbol, side, price (Decimal), quantity (Decimal),
-      commission (Decimal), slippage (Decimal), execution_phase, session_date.
-    - Fill execution audits and internal order linkage integrity.
-    - Equity curve length, timestamps, and equity values.
-    - Final holdings and available quantity per symbol.
-    - Execution blocked and resized counts.
-    """
-    map_a_to_canon: dict[str, str] = {}
-    map_b_to_canon: dict[str, str] = {}
-    id_counter = 0
+    def __init__(self) -> None:
+        self.map_a_to_canon: dict[str, str] = {}
+        self.map_b_to_canon: dict[str, str] = {}
+        self.id_counter: int = 0
 
-    def check_id_bijection(
-        id_a: str | None, id_b: str | None, path: str
+    def check(
+        self, id_a: str | None, id_b: str | None, path: str
     ) -> dict[str, Any] | None:
-        nonlocal id_counter
         if id_a is None and id_b is None:
             return None
         if (id_a is None) != (id_b is None):
@@ -299,14 +286,14 @@ def compare_backtest_runs(
                 "detail": f"ID presence mismatch at {path}",
             }
         assert id_a is not None and id_b is not None
-        canon_a = map_a_to_canon.get(id_a)
-        canon_b = map_b_to_canon.get(id_b)
+        canon_a = self.map_a_to_canon.get(id_a)
+        canon_b = self.map_b_to_canon.get(id_b)
 
         if canon_a is None and canon_b is None:
-            id_counter += 1
-            new_canon = f"id_{id_counter:04d}"
-            map_a_to_canon[id_a] = new_canon
-            map_b_to_canon[id_b] = new_canon
+            self.id_counter += 1
+            new_canon = f"id_{self.id_counter:04d}"
+            self.map_a_to_canon[id_a] = new_canon
+            self.map_b_to_canon[id_b] = new_canon
         elif canon_a is not None and canon_b is not None:
             if canon_a != canon_b:
                 return {
@@ -326,7 +313,8 @@ def compare_backtest_runs(
             }
         return None
 
-    # 0. Compare Input Identity (if execution_context_id is present)
+
+def _compare_input_identity(run_a: Any, run_b: Any) -> dict[str, Any] | None:
     id_info_a = _extract_input_identity(run_a)
     id_info_b = _extract_input_identity(run_b)
     ctx_a = id_info_a.get("execution_context_id")
@@ -343,11 +331,14 @@ def compare_backtest_runs(
             },
             "summary": f"Input identity mismatch: execution_context_id {ctx_a!r} vs {ctx_b!r}",
         }
+    return None
 
-    # 1. Compare Fills
-    fills_a = _extract_fills(run_a)
-    fills_b = _extract_fills(run_b)
 
+def _compare_fills(
+    fills_a: list[dict[str, Any]],
+    fills_b: list[dict[str, Any]],
+    checker: _IdBijectionChecker,
+) -> dict[str, Any] | None:
     if len(fills_a) != len(fills_b):
         return {
             "is_identical": False,
@@ -386,7 +377,6 @@ def compare_backtest_runs(
                     "summary": f"Discrepancy at {fill_path}.{field}: expected {va!r}, got {vb!r}",
                 }
 
-        # Check fee_breakdown
         fb_a, fb_b = fa.get("fee_breakdown"), fb.get("fee_breakdown")
         if fb_a != fb_b:
             return {
@@ -401,7 +391,6 @@ def compare_backtest_runs(
                 "summary": f"Discrepancy at {fill_path}.fee_breakdown: expected {fb_a!r}, got {fb_b!r}",
             }
 
-        # Compare financial fields with exact Decimal precision
         for dec_field in ("price", "quantity", "commission", "slippage"):
             da, db = fa[dec_field], fb[dec_field]
             if da != db:
@@ -417,7 +406,6 @@ def compare_backtest_runs(
                     "summary": f"Discrepancy at {fill_path}.{dec_field}: expected {da}, got {db}",
                 }
 
-        # Check timestamp
         if fa["timestamp"] != fb["timestamp"]:
             return {
                 "is_identical": False,
@@ -431,9 +419,8 @@ def compare_backtest_runs(
                 "summary": f"Discrepancy at {fill_path}.timestamp: expected {fa['timestamp']!r}, got {fb['timestamp']!r}",
             }
 
-        # ID bijection check (order_id and fill_id)
         for id_field in ("order_id", "fill_id"):
-            diff = check_id_bijection(
+            diff = checker.check(
                 fa.get(id_field), fb.get(id_field), f"{fill_path}.{id_field}"
             )
             if diff is not None:
@@ -442,59 +429,66 @@ def compare_backtest_runs(
                     "first_difference": diff,
                     "summary": f"ID linkage discrepancy at {diff['path']}",
                 }
+    return None
 
-    # 2. Compare Fill Execution Audits (if present)
-    audits_a = _extract_audits(run_a)
-    audits_b = _extract_audits(run_b)
-    if audits_a or audits_b:
-        if len(audits_a) != len(audits_b):
-            return {
-                "is_identical": False,
-                "first_difference": {
-                    "field": "audit_count",
-                    "path": "fill_execution_audits",
-                    "expected": len(audits_a),
-                    "actual": len(audits_b),
-                    "detail": f"Audit entry counts differ: {len(audits_a)} vs {len(audits_b)}",
-                },
-                "summary": f"Audit count mismatch: expected {len(audits_a)}, got {len(audits_b)}",
-            }
-        for i, (aa, ab) in enumerate(zip(audits_a, audits_b, strict=True)):
-            audit_path = f"fill_execution_audits[{i}]"
-            for field in (
-                "symbol",
-                "session_date",
-                "bar_timestamp",
-                "execution_phase",
-                "execution_model",
-            ):
-                va, vb = aa.get(field), ab.get(field)
-                if va != vb:
-                    return {
-                        "is_identical": False,
-                        "first_difference": {
-                            "field": field,
-                            "path": f"{audit_path}.{field}",
-                            "expected": va,
-                            "actual": vb,
-                            "detail": f"Audit field {field} mismatch at index {i}",
-                        },
-                        "summary": f"Audit discrepancy at {audit_path}.{field}: expected {va!r}, got {vb!r}",
-                    }
-            for id_field in ("order_id", "fill_id"):
-                diff = check_id_bijection(
-                    aa.get(id_field), ab.get(id_field), f"{audit_path}.{id_field}"
-                )
-                if diff is not None:
-                    return {
-                        "is_identical": False,
-                        "first_difference": diff,
-                        "summary": f"Audit ID linkage discrepancy at {diff['path']}",
-                    }
 
-    # 3. Compare Equity Curve
-    curve_a = _extract_equity_curve(run_a)
-    curve_b = _extract_equity_curve(run_b)
+def _compare_audits(
+    audits_a: list[dict[str, Any]],
+    audits_b: list[dict[str, Any]],
+    checker: _IdBijectionChecker,
+) -> dict[str, Any] | None:
+    if len(audits_a) != len(audits_b):
+        return {
+            "is_identical": False,
+            "first_difference": {
+                "field": "audit_count",
+                "path": "fill_execution_audits",
+                "expected": len(audits_a),
+                "actual": len(audits_b),
+                "detail": f"Audit entry counts differ: {len(audits_a)} vs {len(audits_b)}",
+            },
+            "summary": f"Audit count mismatch: expected {len(audits_a)}, got {len(audits_b)}",
+        }
+    for i, (aa, ab) in enumerate(zip(audits_a, audits_b, strict=True)):
+        audit_path = f"fill_execution_audits[{i}]"
+        for field in (
+            "symbol",
+            "session_date",
+            "bar_timestamp",
+            "execution_phase",
+            "execution_model",
+        ):
+            va, vb = aa.get(field), ab.get(field)
+            if va != vb:
+                return {
+                    "is_identical": False,
+                    "first_difference": {
+                        "field": field,
+                        "path": f"{audit_path}.{field}",
+                        "expected": va,
+                        "actual": vb,
+                        "detail": f"Audit field {field} mismatch at index {i}",
+                    },
+                    "summary": f"Audit discrepancy at {audit_path}.{field}: expected {va!r}, got {vb!r}",
+                }
+        for id_field in ("order_id", "fill_id"):
+            diff = checker.check(
+                aa.get(id_field), ab.get(id_field), f"{audit_path}.{id_field}"
+            )
+            if diff is not None:
+                return {
+                    "is_identical": False,
+                    "first_difference": diff,
+                    "summary": f"Audit ID linkage discrepancy at {diff['path']}",
+                }
+    return None
+
+
+def _compare_equity_curve(
+    curve_a: list[tuple[str, Any]],
+    curve_b: list[tuple[str, Any]],
+    float_tolerance: float,
+) -> dict[str, Any] | None:
     if len(curve_a) != len(curve_b):
         return {
             "is_identical": False,
@@ -523,7 +517,6 @@ def compare_backtest_runs(
                 },
                 "summary": f"Equity curve timestamp mismatch at index {i}: expected {ts_a}, got {ts_b}",
             }
-        # Numeric comparison
         if isinstance(eq_a, Decimal) and isinstance(eq_b, Decimal):
             if eq_a != eq_b:
                 return {
@@ -551,8 +544,12 @@ def compare_backtest_runs(
                     },
                     "summary": f"Equity float discrepancy at index {i}: diff={diff_num} > {float_tolerance}",
                 }
+    return None
 
-    # 4. Compare Final Equity
+
+def _compare_final_equity(
+    run_a: Any, run_b: Any, float_tolerance: float
+) -> dict[str, Any] | None:
     fe_a = _extract_final_equity(run_a)
     fe_b = _extract_final_equity(run_b)
     if fe_a is not None and fe_b is not None:
@@ -583,8 +580,10 @@ def compare_backtest_runs(
                     },
                     "summary": f"Discrepancy at final_equity: expected {fe_a}, got {fe_b}",
                 }
+    return None
 
-    # 5. Compare Cost Summary
+
+def _compare_cost_summary(run_a: Any, run_b: Any) -> dict[str, Any] | None:
     cs_a = _extract_cost_summary(run_a)
     cs_b = _extract_cost_summary(run_b)
     if cs_a is not None and cs_b is not None:
@@ -608,10 +607,13 @@ def compare_backtest_runs(
                     },
                     "summary": f"Discrepancy at cost_summary.{cost_field}: expected {ca}, got {cb}",
                 }
+    return None
 
-    # 6. Compare Positions (Holdings and Available Quantity)
-    pos_a = _extract_positions(run_a)
-    pos_b = _extract_positions(run_b)
+
+def _compare_positions(
+    pos_a: dict[str, dict[str, Decimal]],
+    pos_b: dict[str, dict[str, Decimal]],
+) -> dict[str, Any] | None:
     symbols_a = sorted(pos_a.keys())
     symbols_b = sorted(pos_b.keys())
     if symbols_a != symbols_b:
@@ -642,8 +644,10 @@ def compare_backtest_runs(
                     },
                     "summary": f"Position discrepancy for {sym}.{field}: expected {pa[field]}, got {pb[field]}",
                 }
+    return None
 
-    # 5. Compare Blocked Counts
+
+def _compare_blocked_counts(run_a: Any, run_b: Any) -> dict[str, Any] | None:
     blocked_a = _extract_blocked_counts(run_a)
     blocked_b = _extract_blocked_counts(run_b)
     all_blocked_keys = sorted(set(blocked_a.keys()) | set(blocked_b.keys()))
@@ -662,6 +666,65 @@ def compare_backtest_runs(
                 },
                 "summary": f"Blocked count discrepancy for {key}: expected {ca}, got {cb}",
             }
+    return None
+
+
+def compare_backtest_runs(
+    run_a: dict[str, Any] | BacktestResult,
+    run_b: dict[str, Any] | BacktestResult,
+    *,
+    float_tolerance: float = 1e-7,
+) -> dict[str, Any]:
+    """Compare two backtest runs for exact deterministic equivalence."""
+    # 0. Input Identity
+    diff = _compare_input_identity(run_a, run_b)
+    if diff:
+        return diff
+
+    # 1. Fills
+    fills_a = _extract_fills(run_a)
+    fills_b = _extract_fills(run_b)
+    checker = _IdBijectionChecker()
+    diff = _compare_fills(fills_a, fills_b, checker)
+    if diff:
+        return diff
+
+    # 2. Audits
+    audits_a = _extract_audits(run_a)
+    audits_b = _extract_audits(run_b)
+    if audits_a or audits_b:
+        diff = _compare_audits(audits_a, audits_b, checker)
+        if diff:
+            return diff
+
+    # 3. Equity Curve
+    curve_a = _extract_equity_curve(run_a)
+    curve_b = _extract_equity_curve(run_b)
+    diff = _compare_equity_curve(curve_a, curve_b, float_tolerance)
+    if diff:
+        return diff
+
+    # 4. Final Equity
+    diff = _compare_final_equity(run_a, run_b, float_tolerance)
+    if diff:
+        return diff
+
+    # 5. Cost Summary
+    diff = _compare_cost_summary(run_a, run_b)
+    if diff:
+        return diff
+
+    # 6. Positions
+    pos_a = _extract_positions(run_a)
+    pos_b = _extract_positions(run_b)
+    diff = _compare_positions(pos_a, pos_b)
+    if diff:
+        return diff
+
+    # 7. Blocked Counts
+    diff = _compare_blocked_counts(run_a, run_b)
+    if diff:
+        return diff
 
     # All checks passed cleanly
     return {
@@ -669,13 +732,13 @@ def compare_backtest_runs(
         "first_difference": None,
         "summary": (
             f"Runs are deterministically identical: {len(fills_a)} fills, "
-            f"{len(curve_a)} equity points, {len(symbols_a)} positions."
+            f"{len(curve_a)} equity points, {len(pos_a)} positions."
         ),
         "details": {
             "fill_count": len(fills_a),
             "equity_points": len(curve_a),
             "audit_count": len(audits_a),
-            "position_count": len(symbols_a),
-            "canonical_ids_mapped": len(map_a_to_canon),
+            "position_count": len(pos_a),
+            "canonical_ids_mapped": len(checker.map_a_to_canon),
         },
     }
