@@ -473,9 +473,15 @@ def run_single_backtest(
                     audit_entry[k] = v
         fill_execution_audits.append(audit_entry)
 
+    evidence_bundle_dict = (
+        result.evidence_bundle.to_json_dict()
+        if result.evidence_bundle is not None
+        else {}
+    )
+    evidence_json = dict(evidence_bundle_dict)
     evidence_json["fill_execution_audits"] = fill_execution_audits
     metrics_json["fill_execution_audits"] = fill_execution_audits
-    metrics_json["evidence_bundle"] = evidence_json
+    metrics_json["evidence_bundle"] = evidence_bundle_dict
     metrics_json["dataset_snapshot"] = dataset_snapshot_json
     if execution_window is not None:
         metrics_json["execution_window"] = execution_window

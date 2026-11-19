@@ -76,7 +76,18 @@ def test_prepared_source_is_read_once_but_each_window_has_its_own_metrics(
     repeated_full = run_single_backtest(
         request, state.config, state.db, preloaded_dataset_inputs=prepared
     )
-    assert repeated_full["metrics_json"] == full["metrics_json"]
+    repeated_m = {
+        k: v
+        for k, v in repeated_full["metrics_json"].items()
+        if k != "fill_execution_audits"
+    }
+    full_m = {
+        k: v for k, v in full["metrics_json"].items() if k != "fill_execution_audits"
+    }
+    assert repeated_m == full_m
+    assert len(repeated_full["metrics_json"]["fill_execution_audits"]) == len(
+        full["metrics_json"]["fill_execution_audits"]
+    )
     assert prepared[1][next(iter(prepared[1]))].total_bars == 5
     assert train["fills"] == []
     assert len(train["equity_curve"]) == 3

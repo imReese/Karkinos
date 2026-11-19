@@ -14,9 +14,6 @@ from zoneinfo import ZoneInfo
 
 from server.contracts.content_identity import content_fingerprint
 from server.contracts.http.strategy_models import BacktestRequest, BacktestSweepRequest
-from server.services.backtest_views.execution import (
-    run_single_backtest,
-)
 from server.services.backtest_views.strategy_inputs import backtest_metrics_from_payload
 from server.services.research.dataset_inputs import prepare_dataset_backtest_inputs
 from server.services.research.datasets import ResearchDatasetError
@@ -36,6 +33,10 @@ def run_chronological_sweep(
     prefix reaches training engines. No test result exists when the winner is
     selected, and only that winner receives a new test book.
     """
+    from server.services.backtest_views.execution import (
+        run_single_backtest,
+    )
+
     split = request.test_start_date
     if not request.dataset_id or request.strategy != "dual_ma":
         raise ResearchDatasetError("chronological_sweep_requires_dual_ma_dataset")
