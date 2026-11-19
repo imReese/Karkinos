@@ -508,3 +508,221 @@ def test_comparator_detects_audit_mismatch():
     assert (
         comp["first_difference"]["path"] == "fill_execution_audits[0].execution_phase"
     )
+
+
+def test_comparator_detects_altered_risk_blocked_count():
+    """Comparator detects discrepancy when risk_blocked_count in execution_timing differs."""
+    res1 = _build_test_engine(SimpleStepStrategy(buy_step=1, sell_step=2)).run()
+    res2 = _build_test_engine(SimpleStepStrategy(buy_step=1, sell_step=2)).run()
+
+    timing2 = dict(res2.execution_timing)
+    timing2["risk_blocked_count"] = timing2.get("risk_blocked_count", 0) + 1
+    res2.execution_timing = timing2
+
+    comp = compare_backtest_runs(res1, res2)
+    assert comp["is_identical"] is False
+    assert comp["first_difference"]["path"] == "execution_timing.risk_blocked_count"
+
+
+def test_comparator_detects_execution_context_id_mismatch():
+    """Comparator detects discrepancy when execution_context_id differs (different input identity)."""
+    payload_a = {
+        "dataset_binding": {"execution_context_id": "ctx_alpha_111"},
+        "fills": [],
+        "equity_curve": [("2026-01-05T15:00:00", Decimal("100000"))],
+        "positions": {},
+    }
+    payload_b = {
+        "dataset_binding": {"execution_context_id": "ctx_beta_222"},
+        "fills": [],
+        "equity_curve": [("2026-01-05T15:00:00", Decimal("100000"))],
+        "positions": {},
+    }
+    comp = compare_backtest_runs(payload_a, payload_b)
+    assert comp["is_identical"] is False
+    assert comp["first_difference"]["field"] == "execution_context_id"
+    assert "execution_context_id" in comp["first_difference"]["path"]
+
+
+def test_comparator_detects_cost_summary_mismatch():
+    """Comparator detects discrepancy when cost_summary numbers differ."""
+    res1 = _build_test_engine(SimpleStepStrategy(buy_step=1, sell_step=2)).run()
+    res2 = _build_test_engine(SimpleStepStrategy(buy_step=1, sell_step=2)).run()
+
+    # Alter total_commission in cost_summary of res2
+    from dataclasses import replace
+
+    res2.cost_summary = replace(
+        res2.cost_summary,
+        total_commission=res2.cost_summary.total_commission + Decimal("10.00"),
+    )
+
+    comp = compare_backtest_runs(res1, res2)
+    assert comp["is_identical"] is False
+    assert comp["first_difference"]["path"] == "cost_summary.total_commission"
+
+
+def test_comparator_detects_final_equity_mismatch():
+    """Comparator detects discrepancy when final_equity differs."""
+    res1 = _build_test_engine(SimpleStepStrategy(buy_step=1, sell_step=2)).run()
+    res2 = _build_test_engine(SimpleStepStrategy(buy_step=1, sell_step=2)).run()
+
+    res2.final_equity = res2.final_equity + Decimal("500.00")
+
+    comp = compare_backtest_runs(res1, res2)
+    assert comp["is_identical"] is False
+    assert comp["first_difference"]["path"] == "final_equity"
+
+
+def test_comparator_detects_fill_bar_timestamp_mismatch():
+    """Comparator detects discrepancy when fill metadata bar_timestamp differs."""
+    res1 = _build_test_engine(SimpleStepStrategy(buy_step=1, sell_step=2)).run()
+    res2 = _build_test_engine(SimpleStepStrategy(buy_step=1, sell_step=2)).run()
+
+    meta = dict(res2.fills[0].metadata) if res2.fills[0].metadata else {}
+    meta["bar_timestamp"] = "2026-01-05T14:59:00"
+    res2.fills[0] = replace(res2.fills[0], metadata=meta)
+
+    comp = compare_backtest_runs(res1, res2)
+    assert comp["is_identical"] is False
+    assert comp["first_difference"]["path"] == "fills[0].bar_timestamp"
+
+
+def test_comparator_legitimate_zero_fills_and_positions():
+    """Strategies that legitimately produce zero fills/positions must compare as identical."""
+
+    class NoTradeStrategy(Strategy):
+        def on_init(self, symbols: list[Symbol]) -> None:
+            pass
+
+        def on_data(self, event: MarketEvent) -> None:
+            pass
+
+    res1 = _build_test_engine(NoTradeStrategy("no_trade_1", EventBus())).run()
+    res2 = _build_test_engine(NoTradeStrategy("no_trade_2", EventBus())).run()
+
+    assert len(res1.fills) == 0
+    assert len(res2.fills) == 0
+
+    comp = compare_backtest_runs(res1, res2)
+    assert comp["is_identical"] is True
+    assert comp["first_difference"] is None
+
+
+def test_comparator_service_payload_contract_and_perturbations():
+    """Service payload contracts: compares realistic dictionary responses from backtest services
+
+    including dataset_binding, metrics_json, cost_summary_json, and fill_execution_audits,
+    and catches perturbations across all contracts.
+    """
+    service_payload_a = {
+        "execution_context_id": "ctx_fixed_abc123",
+        "dataset_binding": {
+            "dataset_id": "ds_synth_001",
+            "execution_context_id": "ctx_fixed_abc123",
+        },
+        "initial_cash": 100000.0,
+        "final_equity": 102500.0,
+        "total_return": 0.025,
+        "equity_curve": [
+            ("2026-01-05T15:00:00", Decimal("100000.0")),
+            ("2026-01-06T15:00:00", Decimal("102500.0")),
+        ],
+        "cost_summary_json": {
+            "total_commission": 15.0,
+            "total_slippage": 5.0,
+            "gross_turnover": 25000.0,
+            "total_trades": 2,
+        },
+        "metrics_json": {
+            "execution_timing": {
+                "policy_id": "karkinos.backtest.next_bar_close.v2",
+                "risk_blocked_count": 0,
+                "limit_blocked_count": 0,
+                "suspension_blocked_count": 0,
+            },
+            "dataset_binding": {
+                "dataset_id": "ds_synth_001",
+                "execution_context_id": "ctx_fixed_abc123",
+            },
+        },
+        "fills": [
+            {
+                "symbol": "600000",
+                "side": "buy",
+                "price": Decimal("10.0"),
+                "quantity": Decimal("1000"),
+                "commission": Decimal("10.0"),
+                "slippage": Decimal("5.0"),
+                "timestamp": "2026-01-05T15:00:00",
+                "order_id": "ORD-1111",
+                "fill_id": "FILL-1111",
+                "execution_phase": "close",
+                "session_date": "2026-01-05",
+                "bar_timestamp": "2026-01-05T15:00:00",
+                "execution_model": "next_bar_close",
+                "fee_rule_id": "cn_stock_a_default_v1",
+            }
+        ],
+        "fill_execution_audits": [
+            {
+                "symbol": "600000",
+                "session_date": "2026-01-05",
+                "bar_timestamp": "2026-01-05T15:00:00",
+                "execution_phase": "close",
+                "execution_model": "next_bar_close",
+                "order_id": "ORD-1111",
+                "fill_id": "FILL-1111",
+            }
+        ],
+        "positions": {
+            "600000": {
+                "quantity": Decimal("1000"),
+                "available_qty": Decimal("1000"),
+                "unlisted_qty": Decimal("0"),
+                "cost_basis": Decimal("10015.0"),
+            }
+        },
+    }
+
+    # 1. Identical service payloads compare True
+    service_payload_b = copy.deepcopy(service_payload_a)
+    comp_clean = compare_backtest_runs(service_payload_a, service_payload_b)
+    assert comp_clean["is_identical"] is True
+
+    # 2. Perturbation on risk_blocked_count in metrics_json
+    p_risk = copy.deepcopy(service_payload_a)
+    p_risk["metrics_json"]["execution_timing"]["risk_blocked_count"] = 1
+    comp_risk = compare_backtest_runs(service_payload_a, p_risk)
+    assert comp_risk["is_identical"] is False
+    assert (
+        comp_risk["first_difference"]["path"] == "execution_timing.risk_blocked_count"
+    )
+
+    # 3. Perturbation on execution_context_id
+    p_ctx = copy.deepcopy(service_payload_a)
+    p_ctx["dataset_binding"]["execution_context_id"] = "ctx_different_999"
+    comp_ctx = compare_backtest_runs(service_payload_a, p_ctx)
+    assert comp_ctx["is_identical"] is False
+    assert "execution_context_id" in comp_ctx["first_difference"]["path"]
+
+    # 4. Perturbation on final_equity
+    p_eq = copy.deepcopy(service_payload_a)
+    p_eq["final_equity"] = 103000.0
+    comp_eq = compare_backtest_runs(service_payload_a, p_eq)
+    assert comp_eq["is_identical"] is False
+    assert comp_eq["first_difference"]["path"] == "final_equity"
+
+    # 5. Perturbation on costs
+    p_cost = copy.deepcopy(service_payload_a)
+    p_cost["cost_summary_json"]["total_commission"] = 99.0
+    comp_cost = compare_backtest_runs(service_payload_a, p_cost)
+    assert comp_cost["is_identical"] is False
+    assert comp_cost["first_difference"]["path"] == "cost_summary.total_commission"
+
+    # 6. Perturbation on bar_timestamp
+    p_bar = copy.deepcopy(service_payload_a)
+    p_bar["fills"][0]["bar_timestamp"] = "2026-01-05T14:55:00"
+    comp_bar = compare_backtest_runs(service_payload_a, p_bar)
+    assert comp_bar["is_identical"] is False
+    assert comp_bar["first_difference"]["path"] == "fills[0].bar_timestamp"

@@ -122,6 +122,11 @@ def test_conventional_commits_format_validation():
     )
     # Empty subject:
     assert any("cannot be empty" in err for err in validate_commit_subject(""))
+    # Non-ASCII characters:
+    assert any(
+        "must be in English (ASCII characters only)" in err
+        for err in validate_commit_subject("feat(core): 修复问题")
+    )
 
 
 def test_cli_reads_commit_msg_file_with_comments(tmp_path: Path):

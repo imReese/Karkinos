@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -179,6 +180,8 @@ class BacktestEngine:
             and not getattr(active_engine, "_closed", False)
         ):
             raise ValueError("strategy_already_bound_to_active_engine")
+        self._original_strategy_bus = getattr(strategy, "event_bus", None)
+        self._original_fill_tracking = getattr(strategy, "fill_tracking_enabled", False)
         strategy._bound_engine = self
 
         try:
@@ -371,9 +374,7 @@ class BacktestEngine:
             # 订阅 OrderEvent — 执行
             self.event_bus.subscribe(OrderEvent, self._on_order_event)
         except Exception:
-            if getattr(self.strategy, "_bound_engine", None) is self:
-                self.strategy._bound_engine = None
-            self._closed = True
+            self.close()
             raise
 
     def close(self) -> None:
@@ -383,8 +384,24 @@ class BacktestEngine:
         self._closed = True
         if getattr(self.strategy, "_bound_engine", None) is self:
             self.strategy._bound_engine = None
-        self._pending_signals.clear()
-        self._bar_filled_quantity.clear()
+        if hasattr(self, "_original_strategy_bus"):
+            self.strategy.event_bus = self._original_strategy_bus
+        elif getattr(self.strategy, "event_bus", None) is getattr(
+            self, "event_bus", None
+        ):
+            self.strategy.event_bus = None
+        if hasattr(self, "_original_fill_tracking"):
+            self.strategy.fill_tracking_enabled = self._original_fill_tracking
+        else:
+            self.strategy.fill_tracking_enabled = False
+
+        if hasattr(self, "event_bus") and self.event_bus is not None:
+            self.event_bus.clear()
+
+        if hasattr(self, "_pending_signals"):
+            self._pending_signals.clear()
+        if hasattr(self, "_bar_filled_quantity"):
+            self._bar_filled_quantity.clear()
 
     def __enter__(self) -> BacktestEngine:
         return self
@@ -709,6 +726,8 @@ class BacktestEngine:
         return (2, str(event.symbol))
 
     def _on_portfolio_fill(self, event: FillEvent) -> None:
+        if self._closed:
+            return
         market_price = self._known_market_price(event.symbol)
         if market_price is None:
             raise ValueError("backtest_fill_market_price_missing")
@@ -1002,7 +1021,7 @@ class BacktestEngine:
 
     def _on_order_event(self, event: OrderEvent) -> None:
         """Execute an approved order at the current bar's modeled close."""
-        if self._warming_up:
+        if self._warming_up or self._closed:
             return
         if self._execution_model is ExecutionModel.NEXT_BAR_OPEN:
             is_authorized = (
@@ -1517,9 +1536,12 @@ class BacktestEngine:
             final_equity=final_equity,
             cost_summary=cost_summary,
         )
+        snapshot_positions = {
+            sym: copy.deepcopy(pos) for sym, pos in self.portfolio.positions.items()
+        }
         return BacktestResult(
             equity_curve=equity_curve,
-            positions=self.portfolio.positions,
+            positions=snapshot_positions,
             initial_cash=self.initial_cash,
             final_equity=final_equity,
             metrics=metrics,

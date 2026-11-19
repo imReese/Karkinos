@@ -45,6 +45,11 @@ def validate_commit_subject(subject: str) -> list[str]:
             f"Commit subject exceeds 72 characters ({len(clean)} > 72): {clean!r}"
         )
 
+    if not clean.isascii():
+        errors.append(
+            f"Commit subject must be in English (ASCII characters only): {clean!r}"
+        )
+
     if not CONVENTIONAL_COMMIT_RE.match(clean):
         errors.append(
             f"Commit subject does not follow Conventional Commits format '<type>(<scope>): <subject>' or '<type>: <subject>': {clean!r}"

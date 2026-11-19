@@ -67,6 +67,8 @@ def _extract_fills(run: Any) -> list[dict[str, Any]]:
                     if metadata.get("bar_timestamp")
                     else None,
                     "execution_model": metadata.get("execution_model"),
+                    "fee_breakdown": getattr(fill, "fee_breakdown", None),
+                    "fee_rule_id": getattr(fill, "fee_rule_id", None),
                     "metadata": metadata,
                 }
             )
@@ -103,6 +105,8 @@ def _extract_fills(run: Any) -> list[dict[str, Any]]:
                     ),
                     "execution_model": fill.get("execution_model")
                     or metadata.get("execution_model"),
+                    "fee_breakdown": fill.get("fee_breakdown"),
+                    "fee_rule_id": fill.get("fee_rule_id"),
                     "metadata": metadata,
                 }
             )
@@ -170,19 +174,91 @@ def _extract_positions(run: Any) -> dict[str, dict[str, Decimal]]:
     return extracted
 
 
+def _extract_input_identity(run: Any) -> dict[str, str | None]:
+    ctx_id = None
+    dataset_id = None
+    if isinstance(run, dict):
+        binding = run.get("dataset_binding")
+        if not isinstance(binding, dict) and isinstance(run.get("metrics_json"), dict):
+            binding = run["metrics_json"].get("dataset_binding")
+        if isinstance(binding, dict):
+            ctx_id = binding.get("execution_context_id")
+            dataset_id = binding.get("dataset_id")
+        ctx_id = ctx_id or run.get("execution_context_id")
+        dataset_id = dataset_id or run.get("dataset_id")
+    else:
+        ctx_id = getattr(run, "execution_context_id", None)
+        dataset_id = getattr(run, "dataset_id", None)
+        snapshot = getattr(run, "dataset_snapshot", None)
+        if isinstance(snapshot, dict):
+            ctx_id = ctx_id or snapshot.get("execution_context_id")
+            dataset_id = dataset_id or snapshot.get("dataset_id")
+    return {"execution_context_id": ctx_id, "dataset_id": dataset_id}
+
+
+def _extract_cost_summary(run: Any) -> dict[str, Decimal] | None:
+    raw = None
+    if isinstance(run, BacktestResult):
+        raw = run.cost_summary
+    elif isinstance(run, dict):
+        raw = run.get("cost_summary_json") or run.get("cost_summary")
+        if raw is None and "metrics_json" in run:
+            raw = run["metrics_json"].get("cost_summary")
+    else:
+        raw = getattr(run, "cost_summary", None)
+    if raw is None:
+        return None
+    if hasattr(raw, "total_commission"):
+        return {
+            "total_commission": _to_decimal(raw.total_commission),
+            "total_slippage": _to_decimal(raw.total_slippage),
+            "gross_turnover": _to_decimal(raw.gross_turnover),
+            "total_trades": Decimal(str(raw.total_trades)),
+        }
+    elif isinstance(raw, dict):
+        return {
+            "total_commission": _to_decimal(raw.get("total_commission")),
+            "total_slippage": _to_decimal(raw.get("total_slippage")),
+            "gross_turnover": _to_decimal(raw.get("gross_turnover")),
+            "total_trades": Decimal(str(raw.get("total_trades", 0))),
+        }
+    return None
+
+
+def _extract_final_equity(run: Any) -> Decimal | None:
+    if isinstance(run, BacktestResult):
+        return _to_decimal(run.final_equity)
+    elif isinstance(run, dict):
+        val = run.get("final_equity")
+        if val is None and "metrics_json" in run:
+            val = run["metrics_json"].get("final_equity")
+        if val is not None:
+            return _to_decimal(val)
+    elif hasattr(run, "final_equity"):
+        return _to_decimal(run.final_equity)
+    return None
+
+
 def _extract_blocked_counts(run: Any) -> dict[str, int]:
     timing = None
     if isinstance(run, BacktestResult):
         timing = run.execution_timing
     elif isinstance(run, dict):
         timing = run.get("execution_timing")
+        if not timing and "metrics_json" in run:
+            timing = run["metrics_json"].get("execution_timing")
         if not timing and "evidence" in run:
             timing = run["evidence"].get("execution_timing")
+        if not timing and "evidence_json" in run:
+            timing = run["evidence_json"].get("execution_timing")
+    else:
+        timing = getattr(run, "execution_timing", None)
     if timing and isinstance(timing, dict):
         return {
             k: int(v)
             for k, v in timing.items()
-            if k.endswith("_blocked_count")
+            if k.endswith("_count")
+            or k.endswith("_blocked_count")
             or k in {"cash_resized_count", "capacity_resized_count"}
         }
     return {}
@@ -250,6 +326,24 @@ def compare_backtest_runs(
             }
         return None
 
+    # 0. Compare Input Identity (if execution_context_id is present)
+    id_info_a = _extract_input_identity(run_a)
+    id_info_b = _extract_input_identity(run_b)
+    ctx_a = id_info_a.get("execution_context_id")
+    ctx_b = id_info_b.get("execution_context_id")
+    if ctx_a is not None and ctx_b is not None and ctx_a != ctx_b:
+        return {
+            "is_identical": False,
+            "first_difference": {
+                "field": "execution_context_id",
+                "path": "dataset_binding.execution_context_id",
+                "expected": ctx_a,
+                "actual": ctx_b,
+                "detail": f"Execution context identity mismatch: {ctx_a!r} vs {ctx_b!r}",
+            },
+            "summary": f"Input identity mismatch: execution_context_id {ctx_a!r} vs {ctx_b!r}",
+        }
+
     # 1. Compare Fills
     fills_a = _extract_fills(run_a)
     fills_b = _extract_fills(run_b)
@@ -274,7 +368,9 @@ def compare_backtest_runs(
             "side",
             "execution_phase",
             "session_date",
+            "bar_timestamp",
             "execution_model",
+            "fee_rule_id",
         ):
             va, vb = fa.get(field), fb.get(field)
             if va != vb:
@@ -289,6 +385,21 @@ def compare_backtest_runs(
                     },
                     "summary": f"Discrepancy at {fill_path}.{field}: expected {va!r}, got {vb!r}",
                 }
+
+        # Check fee_breakdown
+        fb_a, fb_b = fa.get("fee_breakdown"), fb.get("fee_breakdown")
+        if fb_a != fb_b:
+            return {
+                "is_identical": False,
+                "first_difference": {
+                    "field": "fee_breakdown",
+                    "path": f"{fill_path}.fee_breakdown",
+                    "expected": fb_a,
+                    "actual": fb_b,
+                    "detail": f"Fill fee_breakdown mismatch at index {i}",
+                },
+                "summary": f"Discrepancy at {fill_path}.fee_breakdown: expected {fb_a!r}, got {fb_b!r}",
+            }
 
         # Compare financial fields with exact Decimal precision
         for dec_field in ("price", "quantity", "commission", "slippage"):
@@ -441,7 +552,64 @@ def compare_backtest_runs(
                     "summary": f"Equity float discrepancy at index {i}: diff={diff_num} > {float_tolerance}",
                 }
 
-    # 4. Compare Positions (Holdings and Available Quantity)
+    # 4. Compare Final Equity
+    fe_a = _extract_final_equity(run_a)
+    fe_b = _extract_final_equity(run_b)
+    if fe_a is not None and fe_b is not None:
+        if isinstance(fe_a, Decimal) and isinstance(fe_b, Decimal):
+            if fe_a != fe_b:
+                return {
+                    "is_identical": False,
+                    "first_difference": {
+                        "field": "final_equity",
+                        "path": "final_equity",
+                        "expected": str(fe_a),
+                        "actual": str(fe_b),
+                        "detail": f"Final equity Decimal mismatch: {fe_a} vs {fe_b}",
+                    },
+                    "summary": f"Discrepancy at final_equity: expected {fe_a}, got {fe_b}",
+                }
+        else:
+            diff_fe = abs(float(fe_a) - float(fe_b))
+            if diff_fe > float_tolerance:
+                return {
+                    "is_identical": False,
+                    "first_difference": {
+                        "field": "final_equity",
+                        "path": "final_equity",
+                        "expected": float(fe_a),
+                        "actual": float(fe_b),
+                        "detail": f"Final equity float discrepancy exceeds tolerance: diff={diff_fe}",
+                    },
+                    "summary": f"Discrepancy at final_equity: expected {fe_a}, got {fe_b}",
+                }
+
+    # 5. Compare Cost Summary
+    cs_a = _extract_cost_summary(run_a)
+    cs_b = _extract_cost_summary(run_b)
+    if cs_a is not None and cs_b is not None:
+        for cost_field in (
+            "total_commission",
+            "total_slippage",
+            "gross_turnover",
+            "total_trades",
+        ):
+            ca = cs_a.get(cost_field)
+            cb = cs_b.get(cost_field)
+            if ca != cb:
+                return {
+                    "is_identical": False,
+                    "first_difference": {
+                        "field": cost_field,
+                        "path": f"cost_summary.{cost_field}",
+                        "expected": str(ca),
+                        "actual": str(cb),
+                        "detail": f"Cost summary {cost_field} mismatch",
+                    },
+                    "summary": f"Discrepancy at cost_summary.{cost_field}: expected {ca}, got {cb}",
+                }
+
+    # 6. Compare Positions (Holdings and Available Quantity)
     pos_a = _extract_positions(run_a)
     pos_b = _extract_positions(run_b)
     symbols_a = sorted(pos_a.keys())
