@@ -21,6 +21,7 @@ from data.source_policy import (
 )
 from server.contracts.jobs import JobRun, JobStore
 from server.persistence.jobs import SQLiteJobStore, job_id_for
+from server.persistence.market_daily_call_budget import BUDGET_DEFERRED_CODE
 from server.services.market.calendar import (
     resolve_latest_verified_closed_trading_date,
     resolve_verified_closed_trading_dates,
@@ -34,6 +35,7 @@ from server.services.market.daily_market_collection import (
 from server.services.market.hours import get_shanghai_now
 from server.services.market.verified_daily_market_data import (
     VerifiedDailyMarketJobRequest,
+    provider_fallback_recovery_payload,
 )
 
 VERIFIED_DAILY_MARKET_JOB = "market_daily_verified"
@@ -57,6 +59,61 @@ class VerifiedDailyMarketJobPlan:
     @property
     def planned_count(self) -> int:
         return len(self.jobs)
+
+
+def can_recover_verified_daily_market_job(job: JobRun) -> bool:
+    """Fresh recovery is for missing/unavailable inputs, never known conflicts."""
+    return (
+        job.kind == VERIFIED_DAILY_MARKET_JOB
+        and job.status in {"queued", "failed"}
+        and not str(job.payload.get("observation_round", "")).endswith(
+            ".provider_fallback"
+        )
+        and not (job.failure_evidence_ref or "").startswith("verification:")
+        and (
+            job.error
+            in {"verified_daily_market_quality_blocked", "WorkerExecutionAborted"}
+            or (
+                job.status == "queued"
+                and job.error
+                in {
+                    None,
+                    BUDGET_DEFERRED_CODE,
+                    "VerifiedDailyMarketDataUnavailable",
+                    "job_queue_paused",
+                    "job_queue_control_unavailable",
+                }
+            )
+        )
+    )
+
+
+def enqueue_verified_daily_market_recovery(
+    store: SQLiteJobStore,
+    original_job_id: str,
+    *,
+    now: datetime,
+    actor: str,
+    reason: str,
+    queue_name: str | None = None,
+) -> JobRun:
+    """Append one scoped successor and prevent the original from executing again.
+
+    The original's date, universe, calendar and source policy stay exact. The
+    deterministic recovery round is reused, including when it has failed; this
+    operation neither resets attempts nor resumes either job's queue.
+    """
+    original = store.get(original_job_id)
+    if original is None or not can_recover_verified_daily_market_job(original):
+        raise ValueError("verified_daily_market_recovery_original_ineligible")
+    return store.enqueue_successor(
+        original,
+        provider_fallback_recovery_payload(original.payload),
+        now=now,
+        actor=actor,
+        reason=reason,
+        queue_name=queue_name,
+    )
 
 
 def enqueue_latest_daily_market_collection_jobs(

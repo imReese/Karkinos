@@ -29,7 +29,7 @@ from server.contracts.jobs import JobRun, JobStore
 from server.db import AppDatabase
 from server.persistence.automation_runs import AutomationRunRepository
 from server.persistence.connection import connect_sqlite
-from server.persistence.jobs import SQLiteJobStore, job_id_for
+from server.persistence.jobs import JobQueuePaused, SQLiteJobStore, job_id_for
 from server.persistence.market_daily_call_budget import (
     BUDGET_DEFERRED_CODE,
     MarketDailyProviderBudgetDeferred,
@@ -592,6 +592,8 @@ async def _execute_daily_market_job(
             raise WorkerExecutionAborted("release_activation_started")
         if aborted.is_set():
             raise WorkerExecutionAborted(f"{label}_execution_stopped")
+        if isinstance(store, SQLiteJobStore):
+            store.require_queue_active(job.job_id)
 
     def before_fetch(descriptor: MarketDataProviderDescriptor) -> None:
         require_running()
@@ -639,6 +641,8 @@ async def _execute_daily_market_job(
 
     def run():
         try:
+            if isinstance(store, SQLiteJobStore):
+                store.require_queue_active(job.job_id)
             if request_validator is not None:
                 request_validator()
             kwargs: dict[str, object] = {"before_publish": before_publish}
@@ -727,7 +731,15 @@ async def _execute_daily_market_job(
         try:
             now = datetime.now(timezone.utc)
             retry_seconds = min(60 * 2 ** min(job.attempt - 1, 6), 3600)
-            if isinstance(exc, TushareDividendRequestDeferred):
+            if isinstance(exc, JobQueuePaused):
+                store.fail(
+                    job.lease,
+                    now=now,
+                    error=str(exc),
+                    retry_seconds=0,
+                    preserve_retry_allowance=True,
+                )
+            elif isinstance(exc, TushareDividendRequestDeferred):
                 store.fail(
                     job.lease,
                     now=now,
@@ -752,8 +764,13 @@ async def _execute_daily_market_job(
                 store.fail(
                     job.lease,
                     now=now,
-                    error=type(exc).__name__,
-                    retry_seconds=retry_seconds,
+                    error=BUDGET_DEFERRED_CODE if exc.retry_at else type(exc).__name__,
+                    retry_seconds=max(
+                        0, math.ceil((exc.retry_at - now).total_seconds())
+                    )
+                    if exc.retry_at
+                    else retry_seconds,
+                    failure_evidence_ref=exc.failure_evidence_ref,
                     preserve_retry_allowance=True,
                 )
             elif isinstance(exc, VerifiedDailyMarketDataNotPublishable):
@@ -766,6 +783,9 @@ async def _execute_daily_market_job(
                     in {
                         "verified_daily_market_quality_blocked",
                         "verified_daily_market_cross_source_conflict",
+                        "verified_daily_market_trade_coverage_conflict",
+                        "verified_daily_market_suspension_requires_status",
+                        "verified_daily_market_quality_integrity_blocked",
                         "verified_daily_market_dataset_not_verification_bound",
                         "verified_daily_market_range_dataset_not_verification_bound",
                     }
@@ -895,6 +915,7 @@ async def run_data_worker(config) -> None:
                 market_job.lease,
                 descriptor,
                 now=datetime.now(timezone.utc),
+                defer_job=False,
             )
 
         def record_source_resolution(payload: dict[str, object]) -> None:

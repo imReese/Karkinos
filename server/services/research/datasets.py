@@ -1445,7 +1445,7 @@ def _forward_seed_jobs(
     )
     job_store = SQLiteJobStore(db.path)
     jobs = _forward_seed_replacement_jobs(job_store, jobs, replacements)
-    jobs = tuple(_reported_activity_successor(job_store, job) for job in jobs)
+    jobs = tuple(verified_daily_job_successor(job_store, job) for job in jobs)
     if any(job.status != "succeeded" for job in jobs):
         from server.persistence.market_daily_call_budget import BUDGET_DEFERRED_CODE
 
@@ -1464,6 +1464,134 @@ def _forward_seed_jobs(
             else {"code": "forward_seed_verified_jobs_incomplete"},
         }
     return jobs
+
+
+def verified_daily_job_successor(store, original_job):
+    """Resolve an explicit recovery only after replaying its exact scope and sources."""
+    from data.market.quality import MarketQualityDiagnosticKind
+    from data.market.quality_evidence import read_market_quality_evidence
+    from data.source_policy import MarketDataUseCase, resolve_market_source_policy
+    from server.persistence.jobs import job_id_for
+    from server.services.market.verified_daily_market_data import (
+        provider_fallback_recovery_payload,
+    )
+    from server.services.market.verified_daily_market_jobs import (
+        can_recover_verified_daily_market_job,
+    )
+    from server.services.research.research_observation_inputs import (
+        require_research_dataset_agreement,
+    )
+
+    if original_job.kind != VERIFIED_DAILY_MARKET_JOB:
+        return original_job
+    linked = store.get_successor(original_job.job_id)
+    if (
+        linked is None
+        and original_job.error == "verified_daily_market_cross_source_conflict"
+    ):
+        return _reported_activity_successor(store, original_job)
+    if not can_recover_verified_daily_market_job(original_job):
+        if linked is not None:
+            raise ResearchDatasetError("forward_seed_replacement_original_ineligible")
+        return original_job
+    payload = provider_fallback_recovery_payload(original_job.payload)
+    replacement = linked
+    if replacement is None:
+        # Historical terminal failures already fence their original jobs. Keep
+        # accepting their existing fully verified recoveries without a migration.
+        # A queued original needs the explicit atomic association before its
+        # successor can be used; a matching name alone does not fence a worker.
+        if original_job.status != "failed":
+            return original_job
+        replacement = store.get(job_id_for(VERIFIED_DAILY_MARKET_JOB, payload))
+        if replacement is None or replacement.status != "succeeded":
+            return original_job
+    _forward_seed_replacement_jobs(
+        store, (original_job,), {original_job.job_id: replacement.job_id}
+    )
+    if replacement.payload != payload:
+        raise ResearchDatasetError("forward_seed_replacement_job_mismatch")
+    if replacement.status in {"queued", "running", "failed"}:
+        return replacement
+    if (
+        replacement.status != "succeeded"
+        or not (replacement.result_ref or "").startswith("dataset:sha256:")
+        or replacement.available_at is None
+    ):
+        raise ResearchDatasetError("forward_seed_replacement_job_mismatch")
+    objects = ContentAddressedObjectStore(
+        store.path.resolve().parent / "research" / "objects"
+    )
+    if (original_job.failure_evidence_ref or "").startswith("quality:"):
+        prior = read_market_quality_evidence(
+            objects,
+            objects.resolve_ref(
+                original_job.failure_evidence_ref.removeprefix("quality:")
+            ),
+        )
+        if any(
+            item.kind is not MarketQualityDiagnosticKind.MISSING_INSTRUMENT
+            for item in prior.report.diagnostics
+        ):
+            raise ResearchDatasetError(
+                "forward_seed_replacement_original_quality_conflict"
+            )
+    elif original_job.error == "verified_daily_market_quality_blocked":
+        raise ResearchDatasetError("forward_seed_replacement_original_quality_missing")
+    request = VerifiedDailyMarketJobRequest.from_payload(payload)
+    replay = read_daily_bar_dataset(
+        objects,
+        DatasetRef(
+            objects.resolve_ref(replacement.result_ref.removeprefix("dataset:"))
+        ),
+    )
+    expected = {
+        (day, key)
+        for day in request.expected_sessions()
+        for key in request.instruments_for_session(day)
+    }
+    if (
+        replay.snapshot.resolver_policy_id
+        != verified_daily_resolver_policy_id(request.source_policy_id)
+        or {(bar.session_date, bar.instrument) for bar in replay.bars} != expected
+        or len(replay.bars) != len(expected)
+    ):
+        raise ResearchDatasetError("forward_seed_replacement_dataset_scope_mismatch")
+    verification = require_research_dataset_agreement(objects, replay.snapshot)
+    route = resolve_market_source_policy(request.source_policy_id).route(
+        MarketDataUseCase.DAILY_BARS
+    )
+    capture_request = DailyBarRequest(
+        request.instruments,
+        request.range_start_date or request.trade_date,
+        request.range_end_date or request.trade_date,
+    ).to_capture_request()
+    for evidence in verification.values():
+        if any(
+            name not in route.candidates
+            for name in (
+                evidence.report.primary_provider,
+                evidence.report.comparison_provider,
+            )
+        ):
+            raise ResearchDatasetError("forward_seed_replacement_provider_mismatch")
+        for identity in (
+            evidence.primary_materialization_id,
+            evidence.comparison_materialization_id,
+        ):
+            materialization = read_market_revision_materialization(
+                objects, objects.resolve_ref(identity)
+            )
+            capture = read_provider_capture(objects, materialization.capture_ref)
+            if json.loads(
+                capture.request_json
+            ) != capture_request or capture.started_at < datetime.fromisoformat(
+                replacement.available_at
+            ):
+                raise ResearchDatasetError(
+                    "forward_seed_replacement_capture_scope_or_time_mismatch"
+                )
+    return replacement
 
 
 def _reported_activity_successor(store, original_job):

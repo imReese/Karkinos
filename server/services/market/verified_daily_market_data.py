@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -37,10 +37,19 @@ from data.market.cross_source import (
 )
 from data.market.ingestion import DailyBarIngestionResult
 from data.market.quality import RESEARCH_STRICT_DAILY, MarketQualityDiagnosticKind
-from data.market.reconciliation import TENCENT_EASTMONEY_STOCK_RECONCILIATION
+from data.market.reconciliation import (
+    TENCENT_EASTMONEY_STOCK_RECONCILIATION,
+    DailyBarReconciliationPolicy,
+    ReconciliationDifferenceKind,
+    reconcile_daily_bar_revisions,
+)
 from data.market.reported_activity import TushareEastmoneyActivity
 from data.market.revision import validate_daily_bar_materialization
 from data.market.serving import MarketServingStore
+from data.providers.baostock import (
+    has_historical_daily_status,
+    read_baostock_historical_status,
+)
 from data.source_policy import (
     MarketDataUseCase,
     MarketSourcePolicy,
@@ -52,6 +61,9 @@ from data.source_routing import (
     resolve_daily_bar_verification_pairs,
 )
 from data.storage.objects import ContentAddressedObjectStore
+from server.persistence.market_daily_call_budget import (
+    MarketDailyProviderBudgetExhausted,
+)
 
 VERIFIED_DAILY_MARKET_JOB_SCHEMA_VERSION = "karkinos.market_daily_verified_job.v1"
 VERIFIED_DAILY_MARKET_RANGE_JOB_SCHEMA_VERSION = "karkinos.market_daily_verified_job.v2"
@@ -79,6 +91,7 @@ class VerifiedDailySourceResolution:
     unavailable_providers: tuple[str, ...] = ()
     selected_pair: tuple[str, str] | None = None
     selected_provider: str | None = None
+    provider_attempts: tuple[dict[str, object], ...] = ()
 
     def to_payload(self) -> dict[str, object]:
         return {
@@ -99,6 +112,7 @@ class VerifiedDailySourceResolution:
                 }
             ),
             "selected_provider": self.selected_provider,
+            "provider_attempts": list(self.provider_attempts),
         }
 
 
@@ -125,8 +139,12 @@ class VerifiedDailyMarketDataUnavailable(VerifiedDailyMarketDataError):
         code: str,
         *,
         source_resolution: VerifiedDailySourceResolution | None = None,
+        retry_at: datetime | None = None,
+        failure_evidence_ref: str | None = None,
     ) -> None:
         self.source_resolution = source_resolution
+        self.retry_at = retry_at
+        self.failure_evidence_ref = failure_evidence_ref
         super().__init__(code)
 
 
@@ -446,6 +464,97 @@ class VerifiedDailyMarketDataService:
         | None = None,
         publication_guard: Callable[[Callable[[], None]], None] | None = None,
     ) -> VerifiedDailyMarketPublication:
+        attempts: list[dict[str, object]] = []
+        budget_resets: list[datetime] = []
+
+        def before_fetch(descriptor: MarketDataProviderDescriptor) -> None:
+            attempt: dict[str, object] = {
+                "provider": descriptor.provider,
+                "upstream_group": descriptor.upstream_group,
+                "outcome": "fetch_requested",
+            }
+            attempts.append(attempt)
+            if before_provider_fetch is None:
+                return
+            try:
+                before_provider_fetch(descriptor)
+            except MarketDailyProviderBudgetExhausted as exc:
+                attempt.update(
+                    outcome="budget_exhausted",
+                    used=exc.used,
+                    limit=exc.limit,
+                    available_at=exc.available_at.isoformat(),
+                )
+                budget_resets.append(exc.available_at)
+                raise CrossSourceDailyBarUnavailableError(
+                    descriptor.provider, "budget_exhausted"
+                ) from exc
+
+        try:
+            publication = self._run(
+                payload,
+                checked_at=checked_at,
+                before_publish=before_publish,
+                before_provider_fetch=before_fetch,
+                publication_guard=publication_guard,
+                provider_attempts=attempts,
+            )
+        except Exception as exc:
+            # A later parse/integrity failure must retain earlier budget skips
+            # and captures too, without changing its original failure type.
+            resolution = getattr(exc, "source_resolution", None)
+            if not isinstance(resolution, VerifiedDailySourceResolution):
+                resolution = VerifiedDailySourceResolution(
+                    str(payload.get("source_policy_id", "")), "quality_blocked", ()
+                )
+            setattr(
+                exc,
+                "source_resolution",
+                replace(resolution, provider_attempts=tuple(attempts)),
+            )
+            if isinstance(exc, VerifiedDailyMarketDataUnavailable) and budget_resets:
+                exc.retry_at = min(budget_resets)
+            raise
+        selected = publication.source_resolution.selected_pair or ()
+        selected_by_date: dict[object, list[dict[str, object]]] = {}
+        for source in attempts:
+            if source["provider"] in selected and "materialization_id" in source:
+                selected_by_date.setdefault(source["trade_date"], []).append(
+                    {
+                        key: source[key]
+                        for key in ("provider", "capture_id", "materialization_id")
+                    }
+                )
+        for attempt in tuple(attempts):
+            if not attempt.get("missing_instruments"):
+                continue
+            attempts.append(
+                {
+                    "provider": attempt["provider"],
+                    "outcome": "missing_records_completed",
+                    "capture_id": attempt["capture_id"],
+                    "trade_date": attempt["trade_date"],
+                    "instruments": attempt["missing_instruments"],
+                    "selected_sources": selected_by_date[attempt["trade_date"]],
+                }
+            )
+        return replace(
+            publication,
+            source_resolution=replace(
+                publication.source_resolution, provider_attempts=tuple(attempts)
+            ),
+        )
+
+    def _run(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        checked_at: datetime | None,
+        before_publish: Callable[[], None] | None,
+        before_provider_fetch: Callable[[MarketDataProviderDescriptor], None],
+        publication_guard: Callable[[Callable[[], None]], None] | None,
+        provider_attempts: list[dict[str, object]],
+    ) -> VerifiedDailyMarketPublication:
         request = VerifiedDailyMarketJobRequest.from_payload(payload)
         checked_at = _utc_now(checked_at) if checked_at is not None else None
         if request.is_range:
@@ -455,6 +564,7 @@ class VerifiedDailyMarketDataService:
                 before_publish=before_publish,
                 before_provider_fetch=before_provider_fetch,
                 publication_guard=publication_guard,
+                provider_attempts=provider_attempts,
             )
 
         daily_request = DailyBarRequest(
@@ -476,6 +586,7 @@ class VerifiedDailyMarketDataService:
         unavailable_providers: set[str] = set()
         attempted_pairs: list[tuple[str, str]] = []
         ingestion_cache: dict[tuple[object, ...], DailyBarIngestionResult] = {}
+        missing_failure = None
         for pair in pairs:
             if {
                 pair.primary_name,
@@ -497,17 +608,22 @@ class VerifiedDailyMarketDataService:
                     ingestion_cache=ingestion_cache,
                 )
             except CrossSourceDailyBarUnavailableError as exc:
+                _record_unavailable(store, exc, provider_attempts)
                 unavailable_providers.add(exc.provider)
                 continue
+            finally:
+                _record_ingestions(ingestion_cache.values(), provider_attempts)
 
             if not candidate_evidence.eligible_for_verified_dataset:
-                outcome = (
-                    "quality_blocked"
-                    if candidate_evidence.verification is None
-                    else "conflict"
+                code = _fallback_blocker(
+                    store, candidate_evidence, pair.reconciliation_policy
                 )
+                if code is None:
+                    missing_failure = candidate_evidence
+                    continue
+                outcome = "quality_blocked" if "conflict" not in code else "conflict"
                 raise VerifiedDailyMarketDataNotPublishable(
-                    _not_publishable_code(store, candidate_evidence),
+                    code,
                     failure_evidence_ref=_not_publishable_evidence_ref(
                         candidate_evidence
                     ),
@@ -524,6 +640,15 @@ class VerifiedDailyMarketDataService:
             break
 
         if evidence is None or selected_pair is None:
+            _record_unpaired_sources(pairs, provider_attempts)
+            if missing_failure is not None:
+                resolution = VerifiedDailySourceResolution(
+                    policy.policy_id,
+                    "missing_data",
+                    tuple(attempted_pairs),
+                    tuple(sorted(unavailable_providers)),
+                )
+                _raise_missing_failure(missing_failure, resolution, provider_attempts)
             single_source = self._publish_single_source(
                 request,
                 daily_request=daily_request,
@@ -758,6 +883,7 @@ class VerifiedDailyMarketDataService:
         before_publish: Callable[[], None] | None,
         before_provider_fetch: Callable[[MarketDataProviderDescriptor], None] | None,
         publication_guard: Callable[[Callable[[], None]], None] | None,
+        provider_attempts: list[dict[str, object]],
     ) -> VerifiedDailyMarketPublication:
         """Capture a historical range once per source; retain daily verification.
 
@@ -787,6 +913,7 @@ class VerifiedDailyMarketDataService:
         ingestion_cache: dict[
             tuple[object, ...], tuple[DailyBarIngestionResult, ...]
         ] = {}
+        missing_failure = None
         for pair in pairs:
             if {pair.primary_name, pair.comparison_name} & unavailable:
                 continue
@@ -806,13 +933,23 @@ class VerifiedDailyMarketDataService:
                     ingestion_cache=ingestion_cache,
                 )
             except CrossSourceDailyBarUnavailableError as exc:
+                _record_unavailable(store, exc, provider_attempts)
                 unavailable.add(exc.provider)
                 continue
+            finally:
+                _record_ingestions(
+                    (item for source in ingestion_cache.values() for item in source),
+                    provider_attempts,
+                )
             failure = None
+            pair_missing = None
             for row in rows:
                 if row.eligible_for_verified_dataset:
                     continue
-                code = _not_publishable_code(store, row)
+                code = _fallback_blocker(store, row, pair.reconciliation_policy)
+                if code is None:
+                    pair_missing = row
+                    continue
                 if failure is None or code != "verified_daily_market_quality_blocked":
                     failure = code, row
                 if code != "verified_daily_market_quality_blocked":
@@ -824,17 +961,30 @@ class VerifiedDailyMarketDataService:
                     failure_evidence_ref=_not_publishable_evidence_ref(failed),
                     source_resolution=VerifiedDailySourceResolution(
                         policy.policy_id,
-                        "quality_blocked"
-                        if failed.verification is None
-                        else "conflict",
+                        "quality_blocked" if "conflict" not in code else "conflict",
                         tuple(attempted),
                         tuple(sorted(unavailable)),
                         (pair.primary_name, pair.comparison_name),
                     ),
                 )
+            if pair_missing is not None:
+                missing_failure = pair_missing
+                continue
             evidence_rows, selected_pair = rows, pair
             break
         if not evidence_rows or selected_pair is None:
+            _record_unpaired_sources(pairs, provider_attempts)
+            if missing_failure is not None:
+                _raise_missing_failure(
+                    missing_failure,
+                    VerifiedDailySourceResolution(
+                        policy.policy_id,
+                        "missing_data",
+                        tuple(attempted),
+                        tuple(sorted(unavailable)),
+                    ),
+                    provider_attempts,
+                )
             if policy.route(MarketDataUseCase.DAILY_BARS).single_source_allowed:
                 # Single-source composition for ranges is a deliberate phase-2
                 # gap: publish nothing rather than a partially labelled range.
@@ -886,20 +1036,24 @@ class VerifiedDailyMarketDataService:
         before_publish: Callable[[], None] | None = None,
         publication_guard: Callable[[Callable[[], None]], None] | None = None,
     ) -> VerifiedDailyMarketPublication:
-        """Explicitly re-evaluate original captures, with no provider I/O."""
+        """Re-evaluate original daily or range captures, with no provider I/O."""
         from data.market.cross_source import reverify_captured_daily_bar_evidence
         from data.market.verification_evidence import read_market_verification_evidence
 
         request = VerifiedDailyMarketJobRequest.from_payload(payload)
-        if not request.is_range or not verification_ids:
+        if not verification_ids:
             raise VerifiedDailyMarketDataRequestError(
-                "captured_reverification_range_required"
+                "captured_reverification_evidence_required"
             )
         daily_request = DailyBarRequest(
-            request.instruments, request.range_start_date, request.range_end_date
+            request.instruments,
+            request.range_start_date or request.trade_date,
+            request.range_end_date or request.trade_date,
         )
         expected = {
-            day: members for day, members, _ in request.session_memberships if members
+            day: members
+            for day in request.expected_sessions()
+            if (members := request.instruments_for_session(day))
         }
         policy = resolve_market_source_policy(request.source_policy_id)
         store = ContentAddressedObjectStore(self.root / "objects")
@@ -1103,6 +1257,15 @@ def reported_activity_reverification_payload(
     }
 
 
+def provider_fallback_recovery_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Append an explicit fresh-fetch successor without changing the source scope."""
+    VerifiedDailyMarketJobRequest.from_payload(payload)
+    return {
+        **payload,
+        "observation_round": f"{payload['observation_round']}.provider_fallback",
+    }
+
+
 def is_verified_daily_resolver_policy(policy_id: str) -> bool:
     return str(policy_id).startswith(_RESOLVER_POLICY_PREFIX)
 
@@ -1124,7 +1287,7 @@ def _not_publishable_code(
         (result.primary, result.comparison),
         (result.comparison, result.primary),
     ):
-        if side.revision.provider != "baostock":
+        if not has_historical_daily_status(side.capture):
             continue
         missing = {
             d.instrument
@@ -1133,20 +1296,155 @@ def _not_publishable_code(
         }
         if not missing:
             continue
+        _, _, statuses = read_baostock_historical_status(
+            store, side.capture.capture_ref
+        )
+        suspended = {
+            key
+            for key, status in statuses.get(side.revision.partition_date, {}).items()
+            if status == "0" and key in missing
+        }
+        if not suspended:
+            continue
         if any(
             d.kind is MarketQualityDiagnosticKind.MATERIALIZATION_INTEGRITY_FAILURE
             for d in other.quality.diagnostics
         ):
             return "verified_daily_market_quality_integrity_blocked"
         if any(
-            bar.instrument in missing and (bar.volume > 0 or bar.amount > 0)
+            bar.instrument in suspended and (bar.volume > 0 or bar.amount > 0)
             for bar in validate_daily_bar_materialization(
                 store, revision=other.revision, materialization=other.materialization
             )
         ):
             # A later halt correction must never hide the other source's trade.
             return "verified_daily_market_trade_coverage_conflict"
+        return "verified_daily_market_suspension_requires_status"
     return "verified_daily_market_quality_blocked"
+
+
+def _fallback_blocker(
+    store: ContentAddressedObjectStore,
+    result: CrossSourceDailyBarResult,
+    policy: DailyBarReconciliationPolicy,
+) -> str | None:
+    """Only coverage gaps may fall through; compare all overlapping real rows."""
+    code = _not_publishable_code(store, result)
+    if code != "verified_daily_market_quality_blocked":
+        return code
+    diagnostics = (
+        result.primary.quality.diagnostics + result.comparison.quality.diagnostics
+    )
+    if not diagnostics or any(
+        item.kind is not MarketQualityDiagnosticKind.MISSING_INSTRUMENT
+        for item in diagnostics
+    ):
+        return code
+    report = reconcile_daily_bar_revisions(
+        store,
+        primary_revision=result.primary.revision,
+        primary_materialization=result.primary.materialization,
+        comparison_revision=result.comparison.revision,
+        comparison_materialization=result.comparison.materialization,
+        policy=policy,
+    )
+    if any(
+        item.kind
+        not in {
+            ReconciliationDifferenceKind.MISSING_PRIMARY,
+            ReconciliationDifferenceKind.MISSING_COMPARISON,
+        }
+        for item in report.differences
+    ):
+        return "verified_daily_market_cross_source_conflict"
+    return None
+
+
+def _record_ingestions(
+    ingestions: Iterable[DailyBarIngestionResult], attempts: list[dict[str, object]]
+) -> None:
+    """Keep immutable row provenance for rejected as well as selected sources."""
+    recorded = {entry.get("materialization_id") for entry in attempts}
+    for item in ingestions:
+        if item.materialization.materialization_id in recorded:
+            continue
+        entry: dict[str, object] = {
+            "provider": item.capture.provider,
+            "outcome": item.quality.status.value,
+            "capture_id": item.capture.capture_id,
+            "raw_object_id": item.capture.raw_object_ref.object_id,
+            "materialization_id": item.materialization.materialization_id,
+            "trade_date": item.revision.partition_date.isoformat(),
+            "missing_instruments": [
+                {
+                    "symbol": diagnostic.instrument.symbol,
+                    "instrument_type": diagnostic.instrument.instrument_type.value,
+                }
+                for diagnostic in item.quality.diagnostics
+                if diagnostic.kind is MarketQualityDiagnosticKind.MISSING_INSTRUMENT
+                and diagnostic.instrument is not None
+            ],
+        }
+        attempts.append(entry)
+        recorded.add(item.materialization.materialization_id)
+
+
+def _record_unpaired_sources(
+    pairs: tuple[DailyBarVerificationPair, ...], attempts: list[dict[str, object]]
+) -> None:
+    attempted = {item["provider"] for item in attempts}
+    for pair in pairs:
+        for provider in (pair.primary, pair.comparison):
+            descriptor = provider.descriptor
+            if descriptor.provider not in attempted:
+                attempts.append(
+                    {
+                        "provider": descriptor.provider,
+                        "upstream_group": descriptor.upstream_group,
+                        "outcome": "no_independent_pair",
+                    }
+                )
+                attempted.add(descriptor.provider)
+
+
+def _record_unavailable(
+    store: ContentAddressedObjectStore,
+    error: CrossSourceDailyBarUnavailableError,
+    attempts: list[dict[str, object]],
+) -> None:
+    entry: dict[str, object] = {"provider": error.provider, "outcome": error.reason}
+    if error.capture is not None:
+        entry["capture_id"] = error.capture.capture_id
+    attempts.append(entry)
+    if error.capture is not None and has_historical_daily_status(error.capture):
+        _, _, statuses = read_baostock_historical_status(
+            store, error.capture.capture_ref
+        )
+        if any(status == "0" for day in statuses.values() for status in day.values()):
+            entry["outcome"] = "suspended"
+            raise VerifiedDailyMarketDataNotPublishable(
+                "verified_daily_market_suspension_requires_status",
+                failure_evidence_ref=f"capture:{error.capture.capture_id}",
+            )
+
+
+def _raise_missing_failure(
+    evidence: CrossSourceDailyBarResult,
+    resolution: VerifiedDailySourceResolution,
+    attempts: list[dict[str, object]],
+) -> None:
+    ref = _not_publishable_evidence_ref(evidence)
+    if any(item["outcome"] == "budget_exhausted" for item in attempts):
+        raise VerifiedDailyMarketDataUnavailable(
+            "verified_daily_market_sources_unavailable",
+            source_resolution=resolution,
+            failure_evidence_ref=ref,
+        )
+    raise VerifiedDailyMarketDataNotPublishable(
+        "verified_daily_market_quality_blocked",
+        source_resolution=resolution,
+        failure_evidence_ref=ref,
+    )
 
 
 def _not_publishable_evidence_ref(result: CrossSourceDailyBarResult) -> str:

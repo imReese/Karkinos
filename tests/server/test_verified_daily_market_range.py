@@ -38,6 +38,7 @@ from server.services.research.datasets import (
     publish_verified_interval_dataset,
 )
 from tests.server.test_verified_daily_market_data import FakeDailyProvider
+from tests.server.test_verified_daily_market_fallback import baostock_status_batch
 from tests.server.test_verified_daily_market_jobs import _calendar, _config, _store
 from tests.server.test_verified_interval_dataset import _db
 
@@ -54,6 +55,7 @@ class RangeProvider(FakeDailyProvider):
         super().__init__(descriptor)
         self.missing = missing
         self.conflict = conflict
+        self.reported_suspension = None
 
     def fetch_daily_bars(self, request):
         self.calls.append(request)
@@ -78,7 +80,7 @@ class RangeProvider(FakeDailyProvider):
                         high_value=row.high_value + 1,
                     )
                 rows.append(row)
-        return ProviderDailyBarBatch(
+        batch = ProviderDailyBarBatch(
             provider=self.descriptor.provider,
             adapter_version=self.descriptor.adapter_version,
             payload_format="range.fixture.v1",
@@ -87,6 +89,9 @@ class RangeProvider(FakeDailyProvider):
             raw_payload=(self.descriptor.provider + repr(rows)).encode(),
             rows=tuple(rows),
         )
+        if self.reported_suspension is not None:
+            return baostock_status_batch(batch, request, {self.reported_suspension})
+        return batch
 
 
 def _service(tmp_path, monkeypatch, *, missing=None, conflict=False):
@@ -129,8 +134,9 @@ def _plan(db, *, members=None):
     )
 
 
+@pytest.mark.parametrize("single_day", [False, True])
 def test_reverify_actual_capture_lineage_without_any_new_provider_call(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, single_day
 ):
     import pandas as pd
 
@@ -141,6 +147,8 @@ def test_reverify_actual_capture_lineage_without_any_new_provider_call(
     from data.providers.baostock import BaoStockDailyBarProvider
     from data.providers.tushare import TushareDailyBarProvider
     from tests.data.providers.test_baostock_daily import FakeBaoStock, FakeResult
+
+    days = DAYS[-1:] if single_day else DAYS
 
     class Bao(FakeBaoStock):
         def query_history_k_data_plus(self, code, fields, **kwargs):
@@ -159,7 +167,7 @@ def test_reverify_actual_capture_lineage_without_any_new_provider_call(
                         "3",
                         "1",
                     ]
-                    for day in DAYS
+                    for day in days
                 ]
             )
 
@@ -169,17 +177,26 @@ def test_reverify_actual_capture_lineage_without_any_new_provider_call(
 
         def daily(self, **kwargs):
             self.calls.append(kwargs)
+            codes = (
+                (kwargs["ts_code"],)
+                if "ts_code" in kwargs
+                else tuple(f"{key.symbol}.SH" for key in STOCKS)
+            )
             return pd.DataFrame(
-                {
-                    "ts_code": [kwargs["ts_code"]] * len(DAYS),
-                    "trade_date": [day.strftime("%Y%m%d") for day in DAYS],
-                    "open": [10] * 3,
-                    "high": [11] * 3,
-                    "low": [9] * 3,
-                    "close": [10] * 3,
-                    "vol": [100] * 3,
-                    "amount": [100] * 3,
-                }
+                [
+                    {
+                        "ts_code": code,
+                        "trade_date": day.strftime("%Y%m%d"),
+                        "open": 10,
+                        "high": 11,
+                        "low": 9,
+                        "close": 10,
+                        "vol": 100,
+                        "amount": 100,
+                    }
+                    for code in codes
+                    for day in days
+                ]
             )
 
     bao, ts = Bao(), TuShare()
@@ -204,13 +221,20 @@ def test_reverify_actual_capture_lineage_without_any_new_provider_call(
     db = _db(tmp_path, trading_days=DAYS)
     job = _plan(db)[0]
     planned = VerifiedDailyMarketJobRequest.from_payload(job.payload)
+    if single_day:
+        planned = replace(
+            planned,
+            range_start_date=None,
+            range_end_date=None,
+            session_memberships=(),
+        )
     objects = ContentAddressedObjectStore(tmp_path / "research" / "objects")
     original = ingest_cross_source_daily_bars_range(
         primary,
         comparison,
         objects,
-        request=DailyBarRequest(STOCKS, DAYS[0], DAYS[-1]),
-        expected_sessions={day: STOCKS for day in DAYS},
+        request=DailyBarRequest(STOCKS, days[0], days[-1]),
+        expected_sessions={day: STOCKS for day in days},
         quality_policy=RESEARCH_STRICT_DAILY,
         normalizer_version="karkinos.market.normalize.v1",
         checked_at=NOW,
@@ -231,7 +255,12 @@ def test_reverify_actual_capture_lineage_without_any_new_provider_call(
         checked_at=NOW + timedelta(seconds=10),
     )
     restored = read_daily_bar_dataset(objects, result.dataset_ref)
-    assert restored.row_count == 6 and restored.snapshot.verification_bound
+    if single_day:
+        assert restored.row_count == 2
+        assert restored.snapshot.start_date == restored.snapshot.end_date == DAYS[-1]
+    else:
+        assert restored.row_count == 6
+    assert restored.snapshot.verification_bound
     assert {bar.amount for bar in restored.bars} == {Decimal("100000.25")}
     assert (len(bao.query_calls), len(ts.calls)) == counts
     assert restored.snapshot.cutoff == NOW + timedelta(seconds=10)
@@ -250,7 +279,12 @@ def test_reverify_actual_capture_lineage_without_any_new_provider_call(
             verification_ids=ids,
             checked_at=NOW - timedelta(seconds=1),
         )
-    with pytest.raises(ValueError, match="session_coverage_mismatch"):
+    with pytest.raises(
+        VerifiedDailyMarketDataRequestError if single_day else ValueError,
+        match="captured_reverification_evidence_required"
+        if single_day
+        else "session_coverage_mismatch",
+    ):
         service.reverify_captured_range(
             planned.to_payload(),
             verification_ids=ids[:-1],
@@ -454,6 +488,9 @@ def test_range_never_promotes_partial_or_conflicting_days(
     )
     if case == "trade_after_gap":
         primary.missing = (DAYS[-1], STOCKS[0])
+        # A gap is not itself a halt: retain the conflict assertion using an
+        # explicit provider tradestatus=0 observation, as in the actual incident.
+        primary.reported_suspension = primary.missing
     with pytest.raises(VerifiedDailyMarketDataNotPublishable, match=reason) as caught:
         service.run(job.payload, checked_at=NOW + timedelta(seconds=1))
     evidence_ref = caught.value.failure_evidence_ref
