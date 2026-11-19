@@ -24,6 +24,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       base_sha: ${{ steps.plan.outputs.base_sha }}
+      incoming_base_sha: ${{ steps.plan.outputs.incoming_base_sha }}
       commit_sha: ${{ steps.plan.outputs.commit_sha }}
       has_backend_changes: ${{ steps.plan.outputs.has_backend_changes }}
     steps:
@@ -38,15 +39,22 @@ jobs:
         shell: bash
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+          PUSH_BEFORE: ${{ github.event.before || '' }}
         run: |
           set -euo pipefail
           commit_sha="$(git rev-parse HEAD)"
           test "${commit_sha}" = "${GITHUB_SHA}"
           if [[ "${GITHUB_EVENT_NAME}" == pull_request ]]; then
             base_ref="${PR_BASE_SHA}"
+            incoming_base="${PR_BASE_SHA}"
           else
             test "${GITHUB_REF}" = refs/heads/dev
             base_ref=origin/main
+            if [[ -n "${PUSH_BEFORE}" && "${PUSH_BEFORE}" =~ ^[0-9a-f]{40}$ && "${PUSH_BEFORE}" != "0000000000000000000000000000000000000000" ]] && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+              incoming_base="${PUSH_BEFORE}"
+            else
+              incoming_base="$(git rev-parse "${commit_sha}~1")"
+            fi
           fi
           base_sha="$(git rev-parse --verify --end-of-options "${base_ref}^{commit}")"
           git merge-base --is-ancestor "${base_sha}" "${commit_sha}"
@@ -58,6 +66,7 @@ jobs:
           fi
           {
             echo "base_sha=${base_sha}"
+            echo "incoming_base_sha=${incoming_base}"
             echo "commit_sha=${commit_sha}"
             echo "has_backend_changes=${has_backend_changes}"
           } >> "${GITHUB_OUTPUT}"
@@ -129,7 +138,7 @@ jobs:
         run: python scripts/ci/check_docs_integrity.py
       - name: Check commit message conventions
         run: |
-          python scripts/ci/check_commit_msg.py --range "${{ needs.plan.outputs.base_sha }}" "${{ needs.plan.outputs.commit_sha }}"
+          python scripts/ci/check_commit_msg.py --range "${{ needs.plan.outputs.incoming_base_sha }}" "${{ needs.plan.outputs.commit_sha }}"
       - name: Check tracked private artifacts
         shell: bash
         run: |
