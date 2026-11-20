@@ -1,4 +1,4 @@
-"""P0-4C tests: BacktestEngine lifecycle isolation, critical error fail-closed propagation,
+"""BacktestEngine lifecycle isolation, critical error fail-closed propagation,
 and deterministic replay comparison across independent runs.
 """
 
