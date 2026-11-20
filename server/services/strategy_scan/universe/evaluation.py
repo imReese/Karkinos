@@ -57,14 +57,21 @@ _DEFAULT_CASH_BUFFER_RATIO = Decimal("0.03")
 
 
 def promoted_scan_evaluation_policy_fingerprint(
-    policy: MarketUniversePolicy,
+    policy: Any,
 ) -> str:
     """Bind every explicit policy contract used to interpret one frozen scan."""
+    policy_dict: Any
+    if hasattr(policy, "to_dict") and callable(policy.to_dict):
+        policy_dict = policy.to_dict()
+    elif isinstance(policy, Mapping):
+        policy_dict = dict(policy)
+    else:
+        policy_dict = str(policy)
 
     return "sha256:" + content_fingerprint(
         {
             "schema_version": PROMOTED_STRATEGY_SCAN_EVALUATION_POLICY_VERSION,
-            "market_universe_policy": policy.to_dict(),
+            "market_universe_policy": policy_dict,
             "full_market_universe_truth_schema_version": (
                 FULL_MARKET_UNIVERSE_TRUTH_SCHEMA_VERSION
             ),

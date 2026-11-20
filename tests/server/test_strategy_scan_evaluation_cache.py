@@ -191,10 +191,16 @@ def test_service_reuses_cached_pure_evaluation_across_calls(monkeypatch) -> None
     assert eval_mock.call_count == 2
 
 
-def test_outside_window_without_cache_fast_fails_without_expensive_evaluation(
+def test_service_evaluation_without_init_handles_uninitialized_cache_and_mock_policy(
     monkeypatch,
 ) -> None:
-    eval_mock = MagicMock()
+    eval_mock = MagicMock(
+        return_value=(
+            {"strategy:one": {"evidence_fingerprint": "ev:one"}},
+            [{"symbol": "600869", "direction": "buy", "strategy_id": "strategy:one"}],
+            [],
+        )
+    )
     monkeypatch.setattr(
         "server.services.strategy_scan.universe.service.evaluate_promoted_strategy_market",
         eval_mock,
@@ -204,29 +210,38 @@ def test_outside_window_without_cache_fast_fails_without_expensive_evaluation(
         lambda _db, _promoted, market_date, decision_at: ({}, {}, {}, []),
     )
 
-    scanner = PromotedStrategyUniverseScanService(
-        db=MagicMock(),
-        config=None,
-        data_store=MagicMock(),
-    )
+    scanner = object.__new__(PromotedStrategyUniverseScanService)
+    scanner._db = object()
+    scanner._policy = object()
     market = _mock_market()
     promoted = _mock_promoted()
 
-    # When outside_window=True and no cache exists: fast-fail, no expensive call
     truths, signals, blockers = scanner._evaluate_promoted_strategies(
         promoted=promoted,
         market_date="2026-09-23",
         market=market,
         total_equity=100000.0,
-        decision_at=datetime(2026, 9, 23, 10, 0, tzinfo=timezone.utc),
-        outside_window=True,
+        decision_at=datetime(2026, 9, 23, 9, 36, tzinfo=timezone.utc),
     )
-    assert eval_mock.call_count == 0
-    assert truths == {}
-    assert signals == []
+    assert eval_mock.call_count == 1
+    assert "strategy:one" in truths
+    assert len(signals) == 1
+    assert getattr(scanner, "_evaluation_cache", None) is not None
+
+    # Subsequent call reuses cache even on raw object instance
+    truths2, signals2, _ = scanner._evaluate_promoted_strategies(
+        promoted=promoted,
+        market_date="2026-09-23",
+        market=market,
+        total_equity=100000.0,
+        decision_at=datetime(2026, 9, 23, 9, 46, tzinfo=timezone.utc),
+    )
+    assert eval_mock.call_count == 1
+    assert truths2 == truths
+    assert signals2 == signals
 
 
-def test_outside_window_with_existing_cache_reuses_cached_evaluation(
+def test_evaluation_cache_reused_in_subsequent_phases(
     monkeypatch,
 ) -> None:
     eval_mock = MagicMock(
@@ -253,25 +268,23 @@ def test_outside_window_with_existing_cache_reuses_cached_evaluation(
     market = _mock_market()
     promoted = _mock_promoted()
 
-    # Initial run within window populates cache
+    # Initial run during prepare phase
     scanner._evaluate_promoted_strategies(
         promoted=promoted,
         market_date="2026-09-23",
         market=market,
         total_equity=100000.0,
         decision_at=datetime(2026, 9, 23, 9, 36, tzinfo=timezone.utc),
-        outside_window=False,
     )
     assert eval_mock.call_count == 1
 
-    # Second call outside window: reuses cache without calling evaluate_promoted_strategy_market again
+    # Second run during final scan / outside window: reuses cache without re-evaluating
     truths, signals, blockers = scanner._evaluate_promoted_strategies(
         promoted=promoted,
         market_date="2026-09-23",
         market=market,
         total_equity=100000.0,
         decision_at=datetime(2026, 9, 23, 10, 0, tzinfo=timezone.utc),
-        outside_window=True,
     )
     assert eval_mock.call_count == 1
     assert "strategy:one" in truths

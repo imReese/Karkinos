@@ -178,7 +178,6 @@ class PromotedStrategyUniverseScanService:
             or item.startswith("strategy_gate_rejected:")
             or item.startswith("portfolio_instrument_type_unresolved:")
         ]
-        outside_window = "strategy_scan_outside_reviewed_decision_window" in blockers
         if not promoted or market_date is None or fatal_evaluation_blockers:
             truths, raw_signals, truth_blockers = {}, [], []
         else:
@@ -194,7 +193,6 @@ class PromotedStrategyUniverseScanService:
                 market=market,
                 total_equity=evaluation_equity,
                 decision_at=started_at,
-                outside_window=outside_window,
             )
         blockers.extend(truth_blockers)
         return self._complete_run(
@@ -233,7 +231,7 @@ class PromotedStrategyUniverseScanService:
                 promoted_reader=self._resolve_promoted_strategies,
                 safety_reader=self._read_safety_gate,
                 current_time=self._clock(),
-                evaluation_cache=self._evaluation_cache,
+                evaluation_cache=getattr(self, "_evaluation_cache", None),
             )
 
     def _portfolio_context(
@@ -359,11 +357,14 @@ class PromotedStrategyUniverseScanService:
         market: dict[str, Any],
         total_equity: float,
         decision_at: datetime | None = None,
-        outside_window: bool = False,
     ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]], list[str]]:
         start_date = market.get("history_start")
         if market_date is None or not isinstance(start_date, str):
             return {}, [], []
+        cache = getattr(self, "_evaluation_cache", None)
+        if cache is None:
+            cache = {}
+            self._evaluation_cache = cache
         exact_frames, cross_sections, bindings, blockers = (
             load_exact_formula_market_inputs(
                 self._db,
@@ -389,18 +390,16 @@ class PromotedStrategyUniverseScanService:
             promoted_strategies=promoted,
             formula_bindings=bindings,
         )
-        if cache_key in self._evaluation_cache:
-            cached_truths, cached_signals, cached_blockers, cached_bindings = (
-                self._evaluation_cache[cache_key]
-            )
+        if cache_key in cache:
+            cached_truths, cached_signals, cached_blockers, cached_bindings = cache[
+                cache_key
+            ]
             market["formula_dataset_bindings"] = copy.deepcopy(cached_bindings)
             return (
                 copy.deepcopy(cached_truths),
                 copy.deepcopy(cached_signals),
                 [*blockers, *cached_blockers],
             )
-        if outside_window:
-            return {}, [], []
         truths, signals, evaluated_blockers = evaluate_promoted_strategy_market(
             promoted=promoted,
             market_date=market_date,
@@ -416,7 +415,7 @@ class PromotedStrategyUniverseScanService:
             cross_sections=cross_sections,
             formula_frames=exact_frames,
         )
-        self._evaluation_cache[cache_key] = (
+        cache[cache_key] = (
             copy.deepcopy(truths),
             copy.deepcopy(signals),
             list(evaluated_blockers),
