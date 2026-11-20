@@ -1350,7 +1350,7 @@ def market_evaluation_cache_key(
     receipt_fingerprints: Sequence[str],
     trading_dates: Sequence[str],
     start_date: str,
-    total_equity: float,
+    total_equity: float | Decimal | str,
     held_symbols: Sequence[str],
     policy_fingerprint: str,
     promoted_strategies: Sequence[Mapping[str, Any]],
@@ -1382,19 +1382,17 @@ def market_evaluation_cache_key(
         else ()
     )
     receipts_key = tuple(sorted(str(r) for r in receipt_fingerprints if r))
-    dates_key = (
-        len(trading_dates),
-        trading_dates[0] if trading_dates else "",
-        trading_dates[-1] if trading_dates else "",
-    )
+    dates_key = tuple(str(d) for d in trading_dates)
     held_key = tuple(sorted(str(s) for s in held_symbols if s))
+    equity_dec = _nonnegative_decimal(total_equity)
+    equity_key = str(equity_dec) if equity_dec is not None else str(total_equity)
     return (
         market_date,
         snapshot_id,
         receipts_key,
         dates_key,
         start_date,
-        round(total_equity, 2),
+        equity_key,
         held_key,
         policy_fingerprint,
         promoted_key,

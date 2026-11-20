@@ -628,3 +628,117 @@ def test_blocked_scan_linked_to_attempt_does_not_falsely_report_final_scan_linka
     assert daily["authoritative_candidate_count"] == 0
     assert "final_scan_linkage_missing" not in daily["reason_codes"]
     assert "promoted_scan_integrity_invalid" not in daily["reason_codes"]
+
+
+def test_blocked_scan_with_non_empty_action_tasks_fails_integrity(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(report, "_research_by_date", lambda _db, _dates: {})
+    blocked_buys = [
+        {
+            "symbol": "301251",
+            "strategy_id": "strategy:one",
+            "board": "chinext",
+            "reason": "board_permission_disabled",
+        }
+    ]
+    raw_signals = [
+        {
+            "symbol": "600869",
+            "direction": "buy",
+            "strategy_id": "strategy:one",
+            "frozen_close": 22.03,
+            "frozen_market_date": "2026-09-23",
+        },
+        {
+            "symbol": "301251",
+            "strategy_id": "strategy:one",
+            "direction": "buy",
+            "frozen_close": 66.0,
+            "frozen_market_date": "2026-09-23",
+        },
+    ]
+    payload = {
+        "status": "blocked",
+        "blockers": ["daily_candidate_quote_freeze:quote_age_exceeded"],
+        "normal_no_signal": False,
+        "account_blocked_buys": blocked_buys,
+        "market_date": "2026-09-23",
+        "receipt_fingerprints": ["receipt:one"],
+        "selected_signal_count": 1,
+        "selected_signals": [raw_signals[0]],
+        "action_tasks": [{"action_id": 1, "source_signal_id": 0}],
+        "raw_signals": raw_signals,
+        "raw_signal_count": 2,
+    }
+    payload["output_fingerprint"] = "sha256:" + content_fingerprint(payload)
+    scan_row = _run(
+        "promoted_strategy_universe_scan",
+        "blocked",
+        payload,
+        run_id="scan:blocked_with_actions",
+    )
+
+    daily = report.get_daily_decision_report(_DB([scan_row]), "2026-09-24")
+
+    assert daily["scans"][0]["integrity_valid"] is False
+    assert len(daily["candidates"]) == 0
+    assert daily["blocked_signals"][0]["source_bound"] is False
+    assert "promoted_scan_integrity_invalid" in daily["reason_codes"]
+
+
+def test_blocked_scan_with_non_list_action_tasks_fails_integrity(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(report, "_research_by_date", lambda _db, _dates: {})
+    blocked_buys = [
+        {
+            "symbol": "301251",
+            "strategy_id": "strategy:one",
+            "board": "chinext",
+            "reason": "board_permission_disabled",
+        }
+    ]
+    raw_signals = [
+        {
+            "symbol": "600869",
+            "direction": "buy",
+            "strategy_id": "strategy:one",
+            "frozen_close": 22.03,
+            "frozen_market_date": "2026-09-23",
+        },
+        {
+            "symbol": "301251",
+            "strategy_id": "strategy:one",
+            "direction": "buy",
+            "frozen_close": 66.0,
+            "frozen_market_date": "2026-09-23",
+        },
+    ]
+    payload = {
+        "status": "blocked",
+        "blockers": ["daily_candidate_quote_freeze:quote_age_exceeded"],
+        "normal_no_signal": False,
+        "account_blocked_buys": blocked_buys,
+        "market_date": "2026-09-23",
+        "receipt_fingerprints": ["receipt:one"],
+        "selected_signal_count": 1,
+        "selected_signals": [raw_signals[0]],
+        "action_tasks": "not_a_list",
+        "raw_signals": raw_signals,
+        "raw_signal_count": 2,
+    }
+    payload["output_fingerprint"] = "sha256:" + content_fingerprint(payload)
+    scan_row = _run(
+        "promoted_strategy_universe_scan",
+        "blocked",
+        payload,
+        run_id="scan:blocked_non_list_actions",
+    )
+
+    daily = report.get_daily_decision_report(_DB([scan_row]), "2026-09-24")
+
+    assert daily["scans"][0]["integrity_valid"] is False
+    assert len(daily["candidates"]) == 0
+    assert daily["blocked_signals"][0]["source_bound"] is False
+    assert "promoted_scan_integrity_invalid" in daily["reason_codes"]

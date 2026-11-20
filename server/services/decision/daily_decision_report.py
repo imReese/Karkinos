@@ -486,7 +486,10 @@ def _scan_summary(row: dict[str, Any], *, include_receipts: bool) -> dict[str, A
             }
         )
     candidates: list[dict[str, Any]] = []
+    raw_action_tasks = payload.get("action_tasks")
     if payload.get("status") == "blocked":
+        if not isinstance(raw_action_tasks, list) or len(raw_action_tasks) != 0:
+            integrity_valid = False
         for index, signal in enumerate(selected):
             if not isinstance(signal, dict):
                 continue
