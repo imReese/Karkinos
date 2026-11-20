@@ -110,6 +110,8 @@ class BacktestFill(BaseModel):
     fee_breakdown: dict[str, Any] | None = None
     fee_rule_id: str | None = None
     fee_rule_version: str | None = None
+    session_date: str | None = None
+    bar_timestamp: str | None = None
 
 
 class BacktestResponse(BaseModel):

@@ -21,49 +21,54 @@ SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
 
 def _canonical_session_date(val: Any) -> str | None:
-    """Normalize session date or timestamp to Asia/Shanghai calendar date string (YYYY-MM-DD)."""
+    """Normalize session date or timestamp to canonical ISO calendar date string (YYYY-MM-DD).
+
+    Validates calendar date correctness (year, month, day).
+    Returns None if val is None, empty, or cannot be parsed as a valid calendar date or datetime.
+    Never slices arbitrary string prefixes, never returns raw bad strings, and never ignores parsing failure.
+    """
     if val is None:
         return None
-    if isinstance(val, datetime):
-        if val.tzinfo is not None:
-            val = val.astimezone(SHANGHAI_TZ)
-        return val.date().isoformat()
-    if isinstance(val, date):
+    if isinstance(val, date) and not isinstance(val, datetime):
         return val.isoformat()
+    if isinstance(val, datetime):
+        return val.date().isoformat()
     s = str(val).strip()
     if not s:
         return None
-    if len(s) == 10 and s[4] == "-" and s[7] == "-":
-        return s
+    # 1. Try strict ISO calendar date: YYYY-MM-DD
+    try:
+        return date.fromisoformat(s).isoformat()
+    except (ValueError, TypeError):
+        pass
+    # 2. Try ISO datetime (e.g. 2026-01-06T16:00:00+00:00, 2026-01-06T15:00:00)
     try:
         dt = datetime.fromisoformat(s)
-        if dt.tzinfo is not None:
-            dt = dt.astimezone(SHANGHAI_TZ)
         return dt.date().isoformat()
-    except Exception:
-        if len(s) >= 10 and s[4] == "-" and s[7] == "-":
-            return s[:10]
-        return None
+    except (ValueError, TypeError):
+        pass
+    return None
 
 
 def _canonical_bar_timestamp(val: Any) -> str | None:
-    """Normalize timestamp string for comparison preserving point-in-time semantics."""
+    """Normalize timestamp string for comparison preserving point-in-time semantics.
+
+    Validates ISO timestamp correctness.
+    Returns None if val is None, empty, or cannot be parsed as a valid ISO timestamp.
+    Never returns raw bad strings.
+    """
     if val is None:
         return None
     if isinstance(val, datetime):
-        if val.tzinfo is not None:
-            val = val.astimezone(SHANGHAI_TZ)
         return val.isoformat()
     s = str(val).strip()
     if not s:
         return None
     try:
         dt = datetime.fromisoformat(s)
-        if dt.tzinfo is not None:
-            dt = dt.astimezone(SHANGHAI_TZ)
         return dt.isoformat()
-    except Exception:
-        return s
+    except (ValueError, TypeError):
+        return None
 
 
 def _to_decimal(value: Any) -> Decimal:
@@ -870,49 +875,125 @@ def _validate_audit_completeness(
                     "summary": f"Audit symbol mismatch at {audit_path}",
                 }
 
-        # Verify session_date matches between fill and audit (canonical Asia/Shanghai trading date)
-        f_sess_raw = (
-            fill.get("session_date")
-            or fill.get("bar_timestamp")
-            or fill.get("timestamp")
-        )
-        f_session_date = _canonical_session_date(f_sess_raw)
-        a_session_date = _canonical_session_date(audit.get("session_date"))
-        if f_session_date is not None and a_session_date is not None:
-            if f_session_date != a_session_date:
+        # Verify audit session_date is parseable as a valid calendar date
+        raw_a_sess = audit.get("session_date")
+        a_session_date = _canonical_session_date(raw_a_sess)
+        if a_session_date is None:
+            return {
+                "is_identical": False,
+                "category": "missing_evidence",
+                "first_difference": {
+                    "category": "missing_evidence",
+                    "field": "session_date",
+                    "path": f"{audit_path}.session_date",
+                    "expected": "valid ISO calendar date string (YYYY-MM-DD)",
+                    "actual": repr(raw_a_sess),
+                    "detail": f"Audit entry at index {i} in {run_label} has invalid or unparseable session_date: {raw_a_sess!r}",
+                },
+                "summary": f"Audit has unparseable session_date at {audit_path}",
+            }
+
+        # Verify audit bar_timestamp is parseable as a valid timestamp
+        raw_a_bar = audit.get("bar_timestamp")
+        a_bar_ts = _canonical_bar_timestamp(raw_a_bar)
+        if a_bar_ts is None:
+            return {
+                "is_identical": False,
+                "category": "missing_evidence",
+                "first_difference": {
+                    "category": "missing_evidence",
+                    "field": "bar_timestamp",
+                    "path": f"{audit_path}.bar_timestamp",
+                    "expected": "valid ISO timestamp string",
+                    "actual": repr(raw_a_bar),
+                    "detail": f"Audit entry at index {i} in {run_label} has invalid or unparseable bar_timestamp: {raw_a_bar!r}",
+                },
+                "summary": f"Audit has unparseable bar_timestamp at {audit_path}",
+            }
+
+        # Verify session_date matches between fill and audit (canonical ISO calendar date)
+        raw_f_sess = fill.get("session_date")
+        if raw_f_sess is not None and str(raw_f_sess).strip() != "":
+            f_session_date = _canonical_session_date(raw_f_sess)
+            if f_session_date is None:
                 return {
                     "is_identical": False,
                     "category": "missing_evidence",
                     "first_difference": {
                         "category": "missing_evidence",
                         "field": "session_date",
-                        "path": f"{audit_path}.session_date",
-                        "expected": f_session_date,
-                        "actual": str(audit.get("session_date")),
-                        "detail": f"Audit entry at index {i} in {run_label} session_date '{audit.get('session_date')}' contradicts fill session_date '{f_session_date}'",
+                        "path": f"{run_label}.fills[{i}].session_date",
+                        "expected": "valid ISO calendar date string (YYYY-MM-DD)",
+                        "actual": repr(raw_f_sess),
+                        "detail": f"Fill entry at index {i} in {run_label} has invalid or unparseable session_date: {raw_f_sess!r}",
                     },
-                    "summary": f"Audit session_date contradiction at {audit_path}",
+                    "summary": f"Fill has unparseable session_date at {run_label}.fills[{i}]",
                 }
-
-        # Verify bar_timestamp matches between fill and audit
-        f_bar_raw = fill.get("bar_timestamp") or fill.get("timestamp")
-        f_bar_ts = _canonical_bar_timestamp(f_bar_raw)
-        a_bar_ts = _canonical_bar_timestamp(audit.get("bar_timestamp"))
-        if f_bar_ts is not None and a_bar_ts is not None:
-            if f_bar_ts != a_bar_ts:
+        else:
+            raw_f_fallback = fill.get("bar_timestamp") or fill.get("timestamp")
+            f_session_date = _canonical_session_date(raw_f_fallback)
+            if f_session_date is None:
                 return {
                     "is_identical": False,
                     "category": "missing_evidence",
                     "first_difference": {
                         "category": "missing_evidence",
-                        "field": "bar_timestamp",
-                        "path": f"{audit_path}.bar_timestamp",
-                        "expected": f_bar_ts,
-                        "actual": str(audit.get("bar_timestamp")),
-                        "detail": f"Audit entry at index {i} in {run_label} bar_timestamp '{audit.get('bar_timestamp')}' contradicts fill bar_timestamp '{f_bar_ts}'",
+                        "field": "session_date",
+                        "path": f"{run_label}.fills[{i}].timestamp",
+                        "expected": "valid date or timestamp to resolve session_date",
+                        "actual": repr(raw_f_fallback),
+                        "detail": f"Fill entry at index {i} in {run_label} lacks valid date/timestamp evidence",
                     },
-                    "summary": f"Audit bar_timestamp contradiction at {audit_path}",
+                    "summary": f"Fill lacks date evidence at {run_label}.fills[{i}]",
                 }
+
+        if f_session_date != a_session_date:
+            return {
+                "is_identical": False,
+                "category": "missing_evidence",
+                "first_difference": {
+                    "category": "missing_evidence",
+                    "field": "session_date",
+                    "path": f"{audit_path}.session_date",
+                    "expected": f_session_date,
+                    "actual": str(raw_a_sess),
+                    "detail": f"Audit entry at index {i} in {run_label} session_date '{raw_a_sess}' contradicts fill session_date '{f_session_date}'",
+                },
+                "summary": f"Audit session_date contradiction at {audit_path}",
+            }
+
+        # Verify bar_timestamp matches between fill and audit
+        raw_f_bar = fill.get("bar_timestamp") or fill.get("timestamp")
+        f_bar_ts = _canonical_bar_timestamp(raw_f_bar)
+        if f_bar_ts is None:
+            return {
+                "is_identical": False,
+                "category": "missing_evidence",
+                "first_difference": {
+                    "category": "missing_evidence",
+                    "field": "bar_timestamp",
+                    "path": f"{run_label}.fills[{i}].bar_timestamp",
+                    "expected": "valid ISO timestamp string",
+                    "actual": repr(raw_f_bar),
+                    "detail": f"Fill entry at index {i} in {run_label} has invalid or unparseable bar_timestamp: {raw_f_bar!r}",
+                },
+                "summary": f"Fill has unparseable bar_timestamp at {run_label}.fills[{i}]",
+            }
+
+        if f_bar_ts != a_bar_ts:
+            return {
+                "is_identical": False,
+                "category": "missing_evidence",
+                "first_difference": {
+                    "category": "missing_evidence",
+                    "field": "bar_timestamp",
+                    "path": f"{audit_path}.bar_timestamp",
+                    "expected": f_bar_ts,
+                    "actual": str(raw_a_bar),
+                    "detail": f"Audit entry at index {i} in {run_label} bar_timestamp '{raw_a_bar}' contradicts fill bar_timestamp '{f_bar_ts}'",
+                },
+                "summary": f"Audit bar_timestamp contradiction at {audit_path}",
+            }
 
         # Verify execution_phase if present on fill
         f_phase = fill.get("execution_phase")

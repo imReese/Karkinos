@@ -35,19 +35,76 @@ def fill_to_response(fill: Any) -> dict[str, Any]:
     timestamp = getattr(fill, "timestamp", None)
     raw_side = getattr(fill, "side", "")
     side = getattr(raw_side, "value", str(raw_side))
+    meta = getattr(fill, "metadata", None)
+    if meta is None and isinstance(fill, dict):
+        meta = fill.get("metadata")
+    session_date = None
+    bar_timestamp = None
+    if isinstance(meta, dict):
+        session_date = meta.get("session_date")
+        bar_timestamp = meta.get("bar_timestamp")
+    if session_date is None:
+        session_date = getattr(fill, "session_date", None)
+    if session_date is None and isinstance(fill, dict):
+        session_date = fill.get("session_date")
+    if bar_timestamp is None:
+        bar_timestamp = getattr(fill, "bar_timestamp", None)
+    if bar_timestamp is None and isinstance(fill, dict):
+        bar_timestamp = fill.get("bar_timestamp")
+
+    ts_iso = (
+        timestamp.isoformat()
+        if hasattr(timestamp, "isoformat")
+        else (str(timestamp) if timestamp is not None else None)
+    )
+
     return {
-        "fill_id": getattr(fill, "fill_id", None),
-        "order_id": getattr(fill, "order_id", None),
-        "timestamp": timestamp.isoformat() if timestamp is not None else None,
-        "symbol": str(getattr(fill, "symbol", "")),
+        "fill_id": getattr(fill, "fill_id", None)
+        if not isinstance(fill, dict)
+        else fill.get("fill_id"),
+        "order_id": getattr(fill, "order_id", None)
+        if not isinstance(fill, dict)
+        else fill.get("order_id"),
+        "timestamp": ts_iso,
+        "symbol": str(
+            getattr(fill, "symbol", "")
+            if not isinstance(fill, dict)
+            else fill.get("symbol", "")
+        ),
         "side": side,
-        "fill_price": float(getattr(fill, "fill_price", 0)),
-        "fill_quantity": float(getattr(fill, "fill_quantity", 0)),
-        "commission": float(getattr(fill, "commission", 0)),
-        "slippage": float(getattr(fill, "slippage", 0)),
-        "fee_breakdown": getattr(fill, "fee_breakdown", None),
-        "fee_rule_id": getattr(fill, "fee_rule_id", None),
-        "fee_rule_version": getattr(fill, "fee_rule_version", None),
+        "fill_price": float(
+            getattr(fill, "fill_price", 0)
+            if not isinstance(fill, dict)
+            else fill.get("fill_price", 0)
+        ),
+        "fill_quantity": float(
+            getattr(fill, "fill_quantity", 0)
+            if not isinstance(fill, dict)
+            else fill.get("fill_quantity", 0)
+        ),
+        "commission": float(
+            getattr(fill, "commission", 0)
+            if not isinstance(fill, dict)
+            else fill.get("commission", 0)
+        ),
+        "slippage": float(
+            getattr(fill, "slippage", 0)
+            if not isinstance(fill, dict)
+            else fill.get("slippage", 0)
+        ),
+        "fee_breakdown": getattr(fill, "fee_breakdown", None)
+        if not isinstance(fill, dict)
+        else fill.get("fee_breakdown"),
+        "fee_rule_id": getattr(fill, "fee_rule_id", None)
+        if not isinstance(fill, dict)
+        else fill.get("fee_rule_id"),
+        "fee_rule_version": getattr(fill, "fee_rule_version", None)
+        if not isinstance(fill, dict)
+        else fill.get("fee_rule_version"),
+        "session_date": str(session_date) if session_date is not None else None,
+        "bar_timestamp": str(bar_timestamp)
+        if bar_timestamp is not None
+        else (ts_iso if ts_iso is not None else None),
     }
 
 

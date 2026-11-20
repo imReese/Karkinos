@@ -1585,3 +1585,279 @@ def test_audit_ownership_engine_and_zero_fill_controls():
     comp_flat = compare_backtest_runs(out_flat1, out_flat2)
     assert comp_flat["is_identical"] is True
     assert comp_flat["category"] == "identical"
+
+
+def test_session_semantics_timezone_compatibility_and_crossing_midnight():
+    """Verify session date and timestamp normalization across Asia/Shanghai, UTC, naive, and midnight-crossing inputs."""
+    from datetime import timezone
+
+    # 1. Normal inputs with various timezone representations
+    for ts_val in [
+        datetime(2026, 1, 6, 15, 0, 0, tzinfo=SH),
+        datetime(2026, 1, 6, 7, 0, 0, tzinfo=timezone.utc),
+        datetime(2026, 1, 6, 15, 0, 0),
+    ]:
+        bar1 = MarketEvent(
+            timestamp=ts_val,
+            symbol=SYMBOL,
+            open=Decimal("10.0"),
+            high=Decimal("10.5"),
+            low=Decimal("9.5"),
+            close=Decimal("10.0"),
+            volume=Decimal("1000"),
+            available_at=ts_val + timedelta(hours=1),
+            instrument_type=InstrumentType.STOCK,
+        )
+        bar2 = MarketEvent(
+            timestamp=ts_val + timedelta(days=1),
+            symbol=SYMBOL,
+            open=Decimal("10.0"),
+            high=Decimal("10.5"),
+            low=Decimal("9.5"),
+            close=Decimal("10.0"),
+            volume=Decimal("1000"),
+            available_at=ts_val + timedelta(days=1, hours=1),
+            instrument_type=InstrumentType.STOCK,
+        )
+        inst = make_stock(str(SYMBOL), "synthetic_stock")
+        engine = BacktestEngine(
+            strategy=SimpleStepStrategy(buy_step=1, sell_step=999),
+            instruments={SYMBOL: inst},
+            data_handlers={SYMBOL: [bar1, bar2]},
+            initial_cash=Decimal("100000"),
+            commission_calc=StockACommission(),
+            slippage_model=PercentSlippage(Decimal("0.0005")),
+            strict_event_errors=True,
+        )
+        res = engine.run()
+        assert len(res.fills) == 1
+        comp_engine = compare_backtest_runs(res, res)
+        assert comp_engine["is_identical"] is True
+        assert comp_engine["category"] == "identical"
+
+        # Projected via fill_to_response to verify service payload consistency
+        from server.projections.backtest_result import fill_to_response
+
+        fills_proj = [fill_to_response(f) for f in res.fills]
+        assert fills_proj[0]["session_date"] == res.fills[0].metadata["session_date"]
+        srv = {
+            "initial_cash": float(res.initial_cash),
+            "final_equity": float(res.final_equity),
+            "positions": {
+                str(k): {
+                    "quantity": str(v.quantity),
+                    "available_qty": str(v.available_qty),
+                    "unlisted_qty": "0",
+                    "cost_basis": str(v.cost_basis),
+                }
+                for k, v in res.positions.items()
+            },
+            "fills": fills_proj,
+            "fill_execution_audits": [
+                {
+                    "fill_id": f.fill_id,
+                    "order_id": f.order_id,
+                    "symbol": str(f.symbol),
+                    "session_date": f.metadata.get("session_date"),
+                    "bar_timestamp": f.metadata.get("bar_timestamp"),
+                    "execution_phase": f.metadata.get("execution_phase"),
+                    "execution_model": f.metadata.get("execution_model"),
+                }
+                for f in res.fills
+            ],
+            "cost_summary_json": res.cost_summary.to_json_dict(),
+            "equity_curve": [(t.isoformat(), eq) for t, eq in res.equity_curve],
+            "metrics_json": {
+                "execution_context_id": "ctx-1",
+                "dataset_id": "ds-1",
+                "final_equity": float(res.final_equity),
+                "fill_execution_audits": [
+                    {
+                        "fill_id": f.fill_id,
+                        "order_id": f.order_id,
+                        "symbol": str(f.symbol),
+                        "session_date": f.metadata.get("session_date"),
+                        "bar_timestamp": f.metadata.get("bar_timestamp"),
+                        "execution_phase": f.metadata.get("execution_phase"),
+                        "execution_model": f.metadata.get("execution_model"),
+                    }
+                    for f in res.fills
+                ],
+                "positions": {
+                    str(k): {
+                        "quantity": str(v.quantity),
+                        "available_qty": str(v.available_qty),
+                        "unlisted_qty": "0",
+                        "cost_basis": str(v.cost_basis),
+                    }
+                    for k, v in res.positions.items()
+                },
+                "execution_window": {"policy_id": "pol-1"},
+            },
+        }
+        comp_srv = compare_backtest_runs(srv, copy.deepcopy(srv))
+        assert comp_srv["is_identical"] is True
+        assert comp_srv["category"] == "identical"
+        assert comp_srv["details"]["comparison_scope"] == "full_replay"
+
+    # 2. Counterexample A: UTC daily bar crossing midnight (2026-01-06T16:00:00+00:00 -> 2026-01-07 in SH)
+    utc_crossing = datetime(2026, 1, 6, 16, 0, 0, tzinfo=timezone.utc)
+    bar_a1 = MarketEvent(
+        timestamp=utc_crossing,
+        symbol=SYMBOL,
+        open=Decimal("10.0"),
+        high=Decimal("10.5"),
+        low=Decimal("9.5"),
+        close=Decimal("10.0"),
+        volume=Decimal("1000"),
+        available_at=utc_crossing + timedelta(hours=1),
+        instrument_type=InstrumentType.STOCK,
+    )
+    bar_a2 = MarketEvent(
+        timestamp=utc_crossing + timedelta(days=1),
+        symbol=SYMBOL,
+        open=Decimal("10.0"),
+        high=Decimal("10.5"),
+        low=Decimal("9.5"),
+        close=Decimal("10.0"),
+        volume=Decimal("1000"),
+        available_at=utc_crossing + timedelta(days=1, hours=1),
+        instrument_type=InstrumentType.STOCK,
+    )
+    inst = make_stock(str(SYMBOL), "synthetic_stock")
+    engine_crossing = BacktestEngine(
+        strategy=SimpleStepStrategy(buy_step=1, sell_step=999),
+        instruments={SYMBOL: inst},
+        data_handlers={SYMBOL: [bar_a1, bar_a2]},
+        initial_cash=Decimal("100000"),
+        commission_calc=StockACommission(),
+        slippage_model=PercentSlippage(Decimal("0.0005")),
+        strict_event_errors=True,
+    )
+    res_crossing = engine_crossing.run()
+    # Raw engine comparison
+    comp_raw = compare_backtest_runs(res_crossing, res_crossing)
+    assert comp_raw["is_identical"] is True
+    assert comp_raw["category"] == "identical"
+
+    # Projected service comparison
+    from server.projections.backtest_result import fill_to_response
+
+    fills_crossing = [fill_to_response(f) for f in res_crossing.fills]
+    srv_crossing = {
+        "initial_cash": float(res_crossing.initial_cash),
+        "final_equity": float(res_crossing.final_equity),
+        "positions": {
+            str(k): {
+                "quantity": str(v.quantity),
+                "available_qty": str(v.available_qty),
+                "unlisted_qty": "0",
+                "cost_basis": str(v.cost_basis),
+            }
+            for k, v in res_crossing.positions.items()
+        },
+        "fills": fills_crossing,
+        "fill_execution_audits": [
+            {
+                "fill_id": f.fill_id,
+                "order_id": f.order_id,
+                "symbol": str(f.symbol),
+                "session_date": f.metadata.get("session_date"),
+                "bar_timestamp": f.metadata.get("bar_timestamp"),
+                "execution_phase": f.metadata.get("execution_phase"),
+                "execution_model": f.metadata.get("execution_model"),
+            }
+            for f in res_crossing.fills
+        ],
+        "cost_summary_json": res_crossing.cost_summary.to_json_dict(),
+        "equity_curve": [(t.isoformat(), eq) for t, eq in res_crossing.equity_curve],
+        "metrics_json": {
+            "execution_context_id": "ctx-1",
+            "dataset_id": "ds-1",
+            "final_equity": float(res_crossing.final_equity),
+            "fill_execution_audits": [
+                {
+                    "fill_id": f.fill_id,
+                    "order_id": f.order_id,
+                    "symbol": str(f.symbol),
+                    "session_date": f.metadata.get("session_date"),
+                    "bar_timestamp": f.metadata.get("bar_timestamp"),
+                    "execution_phase": f.metadata.get("execution_phase"),
+                    "execution_model": f.metadata.get("execution_model"),
+                }
+                for f in res_crossing.fills
+            ],
+            "positions": {
+                str(k): {
+                    "quantity": str(v.quantity),
+                    "available_qty": str(v.available_qty),
+                    "unlisted_qty": "0",
+                    "cost_basis": str(v.cost_basis),
+                }
+                for k, v in res_crossing.positions.items()
+            },
+            "execution_window": {"policy_id": "pol-1"},
+        },
+    }
+    comp_srv_crossing = compare_backtest_runs(srv_crossing, copy.deepcopy(srv_crossing))
+    assert comp_srv_crossing["is_identical"] is True
+    assert comp_srv_crossing["category"] == "identical"
+    assert comp_srv_crossing["details"]["comparison_scope"] == "full_replay"
+
+
+def test_session_semantics_invalid_session_date_rejected():
+    """Invalid session_date in audits returns missing_evidence for single-side and both-sides identical corruption."""
+    base = _build_real_service_two_fill_run()
+
+    for invalid_val in ["not-a-date", "2026-02-30", "2026/01/05", ""]:
+        corrupt = copy.deepcopy(base)
+        corrupt["fill_execution_audits"][0]["session_date"] = invalid_val
+
+        # Single side corrupted
+        comp_single = compare_backtest_runs(base, corrupt)
+        assert comp_single["is_identical"] is False
+        assert comp_single["category"] == "missing_evidence"
+        assert comp_single["first_difference"]["field"] == "session_date"
+        assert (
+            comp_single["first_difference"]["path"]
+            == "run_b.fill_execution_audits[0].session_date"
+        )
+
+        # Both sides identically corrupted -> MUST NOT be proclaimed identical
+        comp_both = compare_backtest_runs(corrupt, corrupt)
+        assert comp_both["is_identical"] is False
+        assert comp_both["category"] == "missing_evidence"
+        assert comp_both["first_difference"]["field"] == "session_date"
+        assert (
+            comp_both["first_difference"]["path"]
+            == "run_a.fill_execution_audits[0].session_date"
+        )
+
+
+def test_session_semantics_invalid_bar_timestamp_rejected():
+    """Invalid bar_timestamp in audits returns missing_evidence for single-side and both-sides identical corruption."""
+    base = _build_real_service_two_fill_run()
+
+    for invalid_ts in ["not-a-timestamp", "2026-99-99T99:99:99", ""]:
+        corrupt = copy.deepcopy(base)
+        corrupt["fill_execution_audits"][0]["bar_timestamp"] = invalid_ts
+
+        # Single side corrupted
+        comp_single = compare_backtest_runs(base, corrupt)
+        assert comp_single["is_identical"] is False
+        assert comp_single["category"] == "missing_evidence"
+        assert comp_single["first_difference"]["field"] == "bar_timestamp"
+        assert (
+            comp_single["first_difference"]["path"]
+            == "run_b.fill_execution_audits[0].bar_timestamp"
+        )
+
+        # Both sides identically corrupted -> MUST NOT be proclaimed identical
+        comp_both = compare_backtest_runs(corrupt, corrupt)
+        assert comp_both["is_identical"] is False
+        assert comp_both["category"] == "missing_evidence"
+        assert comp_both["first_difference"]["field"] == "bar_timestamp"
+        assert (
+            comp_both["first_difference"]["path"]
+            == "run_a.fill_execution_audits[0].bar_timestamp"
+        )
