@@ -1861,3 +1861,60 @@ def test_session_semantics_invalid_bar_timestamp_rejected():
             comp_both["first_difference"]["path"]
             == "run_a.fill_execution_audits[0].bar_timestamp"
         )
+
+
+def test_fill_to_response_preserves_dict_and_object_fields():
+    """Verify fill_to_response cleanly extracts timestamp, side, session_date, and bar_timestamp from dicts and objects."""
+    from server.projections.backtest_result import fill_to_response
+
+    # Test dict input with datetime timestamp and string side
+    fill_dict = {
+        "fill_id": "fill-101",
+        "order_id": "ord-202",
+        "timestamp": datetime(2026, 1, 6, 15, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        "symbol": "603659",
+        "side": "BUY",
+        "fill_price": 25.5,
+        "fill_quantity": 400.0,
+        "commission": 5.0,
+        "slippage": 0.0,
+        "fee_breakdown": {"commission": 5.0},
+        "fee_rule_id": "rule-v1",
+        "fee_rule_version": "1.0",
+        "session_date": "2026-01-06",
+        "bar_timestamp": "2026-01-06T15:00:00+08:00",
+    }
+    resp_dict = fill_to_response(fill_dict)
+    assert resp_dict["fill_id"] == "fill-101"
+    assert resp_dict["order_id"] == "ord-202"
+    assert resp_dict["timestamp"] == "2026-01-06T15:00:00+08:00"
+    assert resp_dict["symbol"] == "603659"
+    assert resp_dict["side"] == "BUY"
+    assert resp_dict["fill_price"] == 25.5
+    assert resp_dict["fill_quantity"] == 400.0
+    assert resp_dict["commission"] == 5.0
+    assert resp_dict["session_date"] == "2026-01-06"
+    assert resp_dict["bar_timestamp"] == "2026-01-06T15:00:00+08:00"
+
+    # Test dict input with metadata nesting
+    fill_dict_meta = {
+        "fill_id": "fill-102",
+        "order_id": "ord-203",
+        "timestamp": "2026-01-07T09:30:00+08:00",
+        "symbol": "601985",
+        "side": OrderSide.SELL,
+        "fill_price": 9.8,
+        "fill_quantity": 100.0,
+        "commission": 5.0,
+        "metadata": {
+            "session_date": "2026-01-07",
+            "bar_timestamp": "2026-01-07T09:30:00+08:00",
+        },
+    }
+    resp_dict_meta = fill_to_response(fill_dict_meta)
+    assert resp_dict_meta["fill_id"] == "fill-102"
+    assert resp_dict_meta["order_id"] == "ord-203"
+    assert resp_dict_meta["timestamp"] == "2026-01-07T09:30:00+08:00"
+    assert resp_dict_meta["side"] == "sell"
+    assert resp_dict_meta["session_date"] == "2026-01-07"
+    assert resp_dict_meta["bar_timestamp"] == "2026-01-07T09:30:00+08:00"
