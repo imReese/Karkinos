@@ -107,7 +107,14 @@ def build_daily_decision_evidence_automation_service(
                         scan=cached["scan"],
                         portfolio_summary=portfolio,
                     )
-                    if cached_blockers:
+                    scan_status = str(cached["scan"].get("status") or "")
+                    if scan_status in {"completed", "completed_no_signal"}:
+                        if cached_blockers:
+                            cached = None
+                    elif any(
+                        item.startswith("promoted_strategy_scan_current_")
+                        for item in cached_blockers
+                    ):
                         cached = None
                 if cached is None:
                     prepared = await asyncio.to_thread(
@@ -164,6 +171,7 @@ def build_daily_decision_evidence_automation_service(
                     if final_scan.get("status") in {
                         "completed",
                         "completed_no_signal",
+                        "blocked",
                     }:
                         final_promotion_state_identity = (
                             promoted_strategy_state_cache_identity(state.db)

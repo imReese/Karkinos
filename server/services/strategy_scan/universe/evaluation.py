@@ -1336,6 +1336,65 @@ def _portfolio_account_signals(
     return [*exits, *selected], blocked, decision
 
 
+def market_evaluation_cache_key(
+    *,
+    market_date: str,
+    snapshot_id: str,
+    receipt_fingerprints: Sequence[str],
+    trading_dates: Sequence[str],
+    start_date: str,
+    total_equity: float,
+    held_symbols: Sequence[str],
+    policy_fingerprint: str,
+    promoted_strategies: Sequence[Mapping[str, Any]],
+    formula_bindings: Mapping[str, Any] | None = None,
+) -> tuple[Any, ...]:
+    promoted_key = tuple(
+        sorted(
+            (
+                str(p.get("strategy_id") or ""),
+                str(p.get("strategy_artifact_fingerprint") or ""),
+                str(p.get("order_generation_gate_fingerprint") or ""),
+                str(p.get("qualification_fingerprint") or ""),
+                str(p.get("history_start") or ""),
+            )
+            for p in promoted_strategies
+        )
+    )
+    bindings_key = (
+        tuple(
+            sorted(
+                (
+                    str(k),
+                    content_fingerprint(v) if isinstance(v, (dict, list)) else str(v),
+                )
+                for k, v in (formula_bindings or {}).items()
+            )
+        )
+        if formula_bindings
+        else ()
+    )
+    receipts_key = tuple(sorted(str(r) for r in receipt_fingerprints if r))
+    dates_key = (
+        len(trading_dates),
+        trading_dates[0] if trading_dates else "",
+        trading_dates[-1] if trading_dates else "",
+    )
+    held_key = tuple(sorted(str(s) for s in held_symbols if s))
+    return (
+        market_date,
+        snapshot_id,
+        receipts_key,
+        dates_key,
+        start_date,
+        round(total_equity, 2),
+        held_key,
+        policy_fingerprint,
+        promoted_key,
+        bindings_key,
+    )
+
+
 __all__ = [
     "DECISION_WINDOW_END",
     "DECISION_WINDOW_START",
@@ -1354,6 +1413,7 @@ __all__ = [
     "formula_history_rows",
     "history_start",
     "json_object",
+    "market_evaluation_cache_key",
     "policy_entry_signals",
     "portfolio_scan_binding",
     "positive_float",

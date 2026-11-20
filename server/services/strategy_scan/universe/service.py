@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Callable, Mapping
 from datetime import date, datetime, timezone
 from math import isfinite
@@ -43,6 +44,7 @@ from server.services.strategy_scan.universe.evaluation import (
     evaluate_promoted_strategy_market,
     history_start,
     json_object,
+    market_evaluation_cache_key,
     policy_entry_signals,
     portfolio_scan_binding,
     positive_float,
@@ -98,6 +100,15 @@ class PromotedStrategyUniverseScanService:
         self._strategy_loader = strategy_loader or self._load_strategy
         self._safety_gate_reader = safety_gate_reader
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._evaluation_cache: dict[
+            tuple[Any, ...],
+            tuple[
+                dict[str, dict[str, Any]],
+                list[dict[str, Any]],
+                list[str],
+                dict[str, Any],
+            ],
+        ] = {}
 
     def run_once(
         self,
@@ -167,6 +178,7 @@ class PromotedStrategyUniverseScanService:
             or item.startswith("strategy_gate_rejected:")
             or item.startswith("portfolio_instrument_type_unresolved:")
         ]
+        outside_window = "strategy_scan_outside_reviewed_decision_window" in blockers
         if not promoted or market_date is None or fatal_evaluation_blockers:
             truths, raw_signals, truth_blockers = {}, [], []
         else:
@@ -182,6 +194,7 @@ class PromotedStrategyUniverseScanService:
                 market=market,
                 total_equity=evaluation_equity,
                 decision_at=started_at,
+                outside_window=outside_window,
             )
         blockers.extend(truth_blockers)
         return self._complete_run(
@@ -220,6 +233,7 @@ class PromotedStrategyUniverseScanService:
                 promoted_reader=self._resolve_promoted_strategies,
                 safety_reader=self._read_safety_gate,
                 current_time=self._clock(),
+                evaluation_cache=self._evaluation_cache,
             )
 
     def _portfolio_context(
@@ -345,6 +359,7 @@ class PromotedStrategyUniverseScanService:
         market: dict[str, Any],
         total_equity: float,
         decision_at: datetime | None = None,
+        outside_window: bool = False,
     ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]], list[str]]:
         start_date = market.get("history_start")
         if market_date is None or not isinstance(start_date, str):
@@ -358,6 +373,34 @@ class PromotedStrategyUniverseScanService:
             )
         )
         market["formula_dataset_bindings"] = bindings
+        cache_key = market_evaluation_cache_key(
+            market_date=market_date,
+            snapshot_id=str(market["snapshot"].get("snapshot_id") or ""),
+            receipt_fingerprints=[
+                item.get("receipt_fingerprint") for item in market["receipts"]
+            ],
+            trading_dates=market["trading_dates"],
+            start_date=start_date,
+            total_equity=total_equity,
+            held_symbols=market["held_symbols"],
+            policy_fingerprint=promoted_scan_evaluation_policy_fingerprint(
+                self._policy
+            ),
+            promoted_strategies=promoted,
+            formula_bindings=bindings,
+        )
+        if cache_key in self._evaluation_cache:
+            cached_truths, cached_signals, cached_blockers, cached_bindings = (
+                self._evaluation_cache[cache_key]
+            )
+            market["formula_dataset_bindings"] = copy.deepcopy(cached_bindings)
+            return (
+                copy.deepcopy(cached_truths),
+                copy.deepcopy(cached_signals),
+                [*blockers, *cached_blockers],
+            )
+        if outside_window:
+            return {}, [], []
         truths, signals, evaluated_blockers = evaluate_promoted_strategy_market(
             promoted=promoted,
             market_date=market_date,
@@ -372,6 +415,12 @@ class PromotedStrategyUniverseScanService:
             decision_at=decision_at,
             cross_sections=cross_sections,
             formula_frames=exact_frames,
+        )
+        self._evaluation_cache[cache_key] = (
+            copy.deepcopy(truths),
+            copy.deepcopy(signals),
+            list(evaluated_blockers),
+            copy.deepcopy(bindings),
         )
         return truths, signals, [*blockers, *evaluated_blockers]
 

@@ -209,14 +209,18 @@ def _daily_report(
     candidates = [
         {
             **candidate,
-            "report_authoritative": any(
-                candidate["action_id"] == action_id
-                and scan_run_id == candidate["scan_run_id"]
-                for action_id, scan_run_id in ticket_bindings
+            "report_authoritative": (
+                any(
+                    candidate["action_id"] == action_id
+                    and scan_run_id == candidate["scan_run_id"]
+                    for action_id, scan_run_id in ticket_bindings
+                )
+                if candidate.get("action_id") is not None
+                else False
             ),
         }
         for scan in scans
-        if scan["integrity_valid"] and scan["status"] == "completed"
+        if scan["integrity_valid"] and scan["status"] in {"completed", "blocked"}
         for candidate in scan["candidates"]
     ]
     blocked_signals = [item for scan in scans for item in scan["blocked_signals"]]
@@ -274,7 +278,10 @@ def _daily_report(
         reasons.append("promoted_scan_without_daily_attempt")
     if completed_attempts and not linked_evidence:
         reasons.append("completed_attempt_final_evidence_unbound")
-    if candidates and not authoritative_candidate_count:
+    formal_candidates = [
+        item for item in candidates if item.get("action_id") is not None
+    ]
+    if formal_candidates and not authoritative_candidate_count:
         reasons.append("formal_signals_without_authoritative_daily_ticket")
     if any(
         item["integrity_valid"]
@@ -479,40 +486,74 @@ def _scan_summary(row: dict[str, Any], *, include_receipts: bool) -> dict[str, A
             }
         )
     candidates: list[dict[str, Any]] = []
-    for signal, action in zip(selected, actions, strict=False):
-        if not isinstance(signal, dict) or not isinstance(action, dict):
-            continue
-        signal_id = action.get("source_signal_id")
-        action_id = action.get("action_id")
-        if not isinstance(signal_id, int) or not isinstance(action_id, int):
-            continue
-        candidates.append(
-            {
-                "kind": "formal_signal",
-                "decision_date": str(row.get("run_date") or ""),
-                "frozen_market_date": signal.get("frozen_market_date"),
-                "symbol": str(signal.get("symbol") or ""),
-                "display_name": signal.get("display_name") or signal.get("name"),
-                "name": signal.get("name") or signal.get("display_name"),
-                "direction": str(signal.get("direction") or ""),
-                "strategy_id": str(signal.get("strategy_id") or ""),
-                "scan_run_id": str(row.get("run_id") or ""),
-                "signal_id": signal_id,
-                "action_id": action_id,
-                "source_ref": f"{row.get('run_id')}:signal:{signal_id}",
-                "frozen_price": signal.get("frozen_close"),
-            }
-        )
-    if (
-        len(candidates) != len(selected)
-        or len(actions) != len(selected)
-        or payload.get("selected_signal_count") != len(selected)
-        or (
-            "raw_signals" in payload
-            and payload.get("raw_signal_count") != len(raw_signals)
-        )
-    ):
-        integrity_valid = False
+    if payload.get("status") == "blocked":
+        for index, signal in enumerate(selected):
+            if not isinstance(signal, dict):
+                continue
+            signal_id = signal.get("signal_id")
+            candidates.append(
+                {
+                    "kind": "formal_signal",
+                    "decision_date": str(row.get("run_date") or ""),
+                    "frozen_market_date": signal.get("frozen_market_date"),
+                    "symbol": str(signal.get("symbol") or ""),
+                    "display_name": signal.get("display_name") or signal.get("name"),
+                    "name": signal.get("name") or signal.get("display_name"),
+                    "direction": str(signal.get("direction") or ""),
+                    "strategy_id": str(signal.get("strategy_id") or ""),
+                    "scan_run_id": str(row.get("run_id") or ""),
+                    "signal_id": signal_id if isinstance(signal_id, int) else index,
+                    "action_id": None,
+                    "source_ref": (
+                        f"{row.get('run_id')}:signal:{signal_id if isinstance(signal_id, int) else index}"
+                    ),
+                    "frozen_price": signal.get("frozen_close"),
+                }
+            )
+        if (
+            len(candidates) != len(selected)
+            or payload.get("selected_signal_count") != len(selected)
+            or (
+                "raw_signals" in payload
+                and payload.get("raw_signal_count") != len(raw_signals)
+            )
+        ):
+            integrity_valid = False
+    else:
+        for signal, action in zip(selected, actions, strict=False):
+            if not isinstance(signal, dict) or not isinstance(action, dict):
+                continue
+            signal_id = action.get("source_signal_id")
+            action_id = action.get("action_id")
+            if not isinstance(signal_id, int) or not isinstance(action_id, int):
+                continue
+            candidates.append(
+                {
+                    "kind": "formal_signal",
+                    "decision_date": str(row.get("run_date") or ""),
+                    "frozen_market_date": signal.get("frozen_market_date"),
+                    "symbol": str(signal.get("symbol") or ""),
+                    "display_name": signal.get("display_name") or signal.get("name"),
+                    "name": signal.get("name") or signal.get("display_name"),
+                    "direction": str(signal.get("direction") or ""),
+                    "strategy_id": str(signal.get("strategy_id") or ""),
+                    "scan_run_id": str(row.get("run_id") or ""),
+                    "signal_id": signal_id,
+                    "action_id": action_id,
+                    "source_ref": f"{row.get('run_id')}:signal:{signal_id}",
+                    "frozen_price": signal.get("frozen_close"),
+                }
+            )
+        if (
+            len(candidates) != len(selected)
+            or len(actions) != len(selected)
+            or payload.get("selected_signal_count") != len(selected)
+            or (
+                "raw_signals" in payload
+                and payload.get("raw_signal_count") != len(raw_signals)
+            )
+        ):
+            integrity_valid = False
     if not integrity_valid:
         for blocked in blocked_signals:
             blocked["source_bound"] = False

@@ -457,3 +457,174 @@ def test_research_preview_does_not_change_generation_status(monkeypatch) -> None
     assert daily["status"] == "missing_run"
     assert daily["research_previews"][0]["operations"][0]["symbol"] == "301251"
     assert daily["authoritative_candidate_count"] == 0
+
+
+def test_blocked_scan_with_empty_action_tasks_preserves_integrity_and_candidate_display(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(report, "_research_by_date", lambda _db, _dates: {})
+    blocked_buys = [
+        {
+            "symbol": "301251",
+            "strategy_id": "strategy:one",
+            "board": "chinext",
+            "reason": "board_permission_disabled",
+        }
+    ]
+    raw_signals = [
+        {
+            "symbol": "600869",
+            "direction": "buy",
+            "strategy_id": "strategy:one",
+            "frozen_close": 22.03,
+            "frozen_market_date": "2026-09-23",
+        },
+        {
+            "symbol": "301251",
+            "direction": "buy",
+            "strategy_id": "strategy:one",
+            "frozen_close": 66.0,
+            "frozen_market_date": "2026-09-23",
+        },
+    ]
+    payload = {
+        "status": "blocked",
+        "blockers": ["daily_candidate_quote_freeze:quote_age_exceeded"],
+        "normal_no_signal": False,
+        "account_blocked_buys": blocked_buys,
+        "market_date": "2026-09-23",
+        "receipt_fingerprints": ["receipt:one"],
+        "selected_signal_count": 1,
+        "selected_signals": [raw_signals[0]],
+        "action_tasks": [],
+        "raw_signals": raw_signals,
+        "raw_signal_count": 2,
+    }
+    payload["output_fingerprint"] = "sha256:" + content_fingerprint(payload)
+    scan_row = _run(
+        "promoted_strategy_universe_scan", "blocked", payload, run_id="scan:blocked"
+    )
+
+    daily = report.get_daily_decision_report(_DB([scan_row]), "2026-09-24")
+
+    assert daily["scans"][0]["integrity_valid"] is True
+    assert daily["scans"][0]["action_count"] == 0
+    assert len(daily["candidates"]) == 1
+    assert daily["candidates"][0]["symbol"] == "600869"
+    assert daily["candidates"][0]["action_id"] is None
+    assert daily["candidates"][0]["report_authoritative"] is False
+    assert daily["blocked_signals"][0]["symbol"] == "301251"
+    assert daily["blocked_signals"][0]["source_bound"] is True
+    assert "promoted_scan_integrity_invalid" not in daily["reason_codes"]
+    assert (
+        "formal_signals_without_authoritative_daily_ticket" not in daily["reason_codes"]
+    )
+
+
+def test_blocked_scan_with_tampered_fingerprint_fails_integrity_and_clears_source_bound(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(report, "_research_by_date", lambda _db, _dates: {})
+    blocked_buys = [
+        {
+            "symbol": "301251",
+            "strategy_id": "strategy:one",
+            "board": "chinext",
+            "reason": "board_permission_disabled",
+        }
+    ]
+    raw_signals = [
+        {
+            "symbol": "600869",
+            "direction": "buy",
+            "strategy_id": "strategy:one",
+            "frozen_close": 22.03,
+            "frozen_market_date": "2026-09-23",
+        },
+        {
+            "symbol": "301251",
+            "direction": "buy",
+            "strategy_id": "strategy:one",
+            "frozen_close": 66.0,
+            "frozen_market_date": "2026-09-23",
+        },
+    ]
+    payload = {
+        "status": "blocked",
+        "blockers": ["daily_candidate_quote_freeze:quote_age_exceeded"],
+        "normal_no_signal": False,
+        "account_blocked_buys": blocked_buys,
+        "market_date": "2026-09-23",
+        "receipt_fingerprints": ["receipt:one"],
+        "selected_signal_count": 1,
+        "selected_signals": [raw_signals[0]],
+        "action_tasks": [],
+        "raw_signals": raw_signals,
+        "raw_signal_count": 2,
+        "output_fingerprint": "sha256:corrupted_fingerprint",
+    }
+    scan_row = _run(
+        "promoted_strategy_universe_scan", "blocked", payload, run_id="scan:corrupt"
+    )
+
+    daily = report.get_daily_decision_report(_DB([scan_row]), "2026-09-24")
+
+    assert daily["scans"][0]["integrity_valid"] is False
+    assert daily["blocked_signals"][0]["source_bound"] is False
+    assert "promoted_scan_integrity_invalid" in daily["reason_codes"]
+
+
+def test_blocked_scan_linked_to_attempt_does_not_falsely_report_final_scan_linkage_missing(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(report, "_research_by_date", lambda _db, _dates: {})
+    payload = {
+        "status": "blocked",
+        "blockers": ["daily_candidate_quote_freeze:quote_age_exceeded"],
+        "normal_no_signal": False,
+        "account_blocked_buys": [],
+        "market_date": "2026-09-23",
+        "receipt_fingerprints": ["receipt:one"],
+        "selected_signal_count": 1,
+        "selected_signals": [
+            {
+                "symbol": "600869",
+                "direction": "buy",
+                "strategy_id": "strategy:one",
+                "frozen_close": 22.03,
+                "frozen_market_date": "2026-09-23",
+            }
+        ],
+        "action_tasks": [],
+        "raw_signals": [
+            {
+                "symbol": "600869",
+                "direction": "buy",
+                "strategy_id": "strategy:one",
+                "frozen_close": 22.03,
+                "frozen_market_date": "2026-09-23",
+            }
+        ],
+        "raw_signal_count": 1,
+    }
+    payload["output_fingerprint"] = "sha256:" + content_fingerprint(payload)
+    scan_row = _run(
+        "promoted_strategy_universe_scan", "blocked", payload, run_id="scan:blocked"
+    )
+
+    evidence_row = _evidence(
+        outcome="no_action",
+        action_ids=[],
+        scan_run_id="scan:blocked",
+        gate_status="blocked",
+    )
+    attempt_row = _attempt(outcome="no_action", scan_run_id="scan:blocked")
+
+    daily = report.get_daily_decision_report(
+        _DB([scan_row, evidence_row, attempt_row]), "2026-09-24"
+    )
+
+    assert daily["status"] == "blocked"
+    assert daily["authoritative_candidate_count"] == 0
+    assert "final_scan_linkage_missing" not in daily["reason_codes"]
+    assert "promoted_scan_integrity_invalid" not in daily["reason_codes"]

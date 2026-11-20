@@ -65,8 +65,7 @@ def record_cycle(
     promoted_scan = object_dict(summary.get("promoted_strategy_universe_scan"))
     promoted_scan_run_id = (
         str(promoted_scan.get("run_id") or "") or None
-        if promoted_scan.get("status") in {"completed", "completed_no_signal"}
-        and not promoted_scan.get("blockers")
+        if promoted_scan.get("run_id")
         else None
     )
     portfolio = object_dict(summary.get("portfolio"))

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from typing import Any
@@ -20,6 +21,7 @@ from server.services.strategy_scan.universe.evaluation import (
     automation_safety_blockers,
     cash_buffer_ratio,
     evaluate_promoted_strategy_market,
+    market_evaluation_cache_key,
     portfolio_scan_binding,
     prior_verified_trading_date,
     promoted_history_start,
@@ -75,6 +77,7 @@ def current_scan_input_blockers(
     promoted_reader: Callable[[str], tuple[list[dict[str, Any]], list[str]]],
     safety_reader: Callable[[], dict[str, Any]],
     current_time: datetime | None = None,
+    evaluation_cache: dict[tuple[Any, ...], Any] | None = None,
 ) -> list[str]:
     """Reopen every mutable input before a persisted scan is consumed."""
 
@@ -238,21 +241,48 @@ def current_scan_input_blockers(
         decision_at = (
             next(iter(cross_sections.values())).as_of if cross_sections else None
         )
-        truths, raw_signals, truth_blockers = evaluate_promoted_strategy_market(
-            promoted=promoted,
+        cache_key = market_evaluation_cache_key(
             market_date=market_date,
-            snapshot=snapshot,
-            frames=frames,
-            receipts=receipts,
+            snapshot_id=str(snapshot.get("snapshot_id") or ""),
+            receipt_fingerprints=[item.get("receipt_fingerprint") for item in receipts],
             trading_dates=trading_dates,
             start_date=start_date,
             total_equity=evaluation_equity,
-            held_stock_symbols=held_symbols,
-            policy=policy,
-            decision_at=decision_at,
-            cross_sections=cross_sections,
-            formula_frames=exact_frames,
+            held_symbols=held_symbols,
+            policy_fingerprint=promoted_scan_evaluation_policy_fingerprint(policy),
+            promoted_strategies=promoted,
+            formula_bindings=bindings,
         )
+        if evaluation_cache is not None and cache_key in evaluation_cache:
+            cached_truths, cached_signals, cached_blockers, _ = evaluation_cache[
+                cache_key
+            ]
+            truths = copy.deepcopy(cached_truths)
+            raw_signals = copy.deepcopy(cached_signals)
+            truth_blockers = list(cached_blockers)
+        else:
+            truths, raw_signals, truth_blockers = evaluate_promoted_strategy_market(
+                promoted=promoted,
+                market_date=market_date,
+                snapshot=snapshot,
+                frames=frames,
+                receipts=receipts,
+                trading_dates=trading_dates,
+                start_date=start_date,
+                total_equity=evaluation_equity,
+                held_stock_symbols=held_symbols,
+                policy=policy,
+                decision_at=decision_at,
+                cross_sections=cross_sections,
+                formula_frames=exact_frames,
+            )
+            if evaluation_cache is not None:
+                evaluation_cache[cache_key] = (
+                    copy.deepcopy(truths),
+                    copy.deepcopy(raw_signals),
+                    list(truth_blockers),
+                    copy.deepcopy(bindings),
+                )
         relevant_truth_blockers = active_action_blockers(
             truth_blockers, scan.get("selected_signals") or []
         )
