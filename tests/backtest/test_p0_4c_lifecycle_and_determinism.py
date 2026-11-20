@@ -24,7 +24,12 @@ from data.handler import DataHandler
 from domain.instrument import make_stock
 from execution.commission import StockACommission
 from execution.slippage import PercentSlippage
+from server.contracts.http.strategy_models import (
+    BacktestCostAssumptions,
+    BacktestRequest,
+)
 from server.services.backtest.deterministic_replay import compare_backtest_runs
+from server.services.backtest_views.execution import run_single_backtest
 from strategy.base import Strategy
 
 SH = ZoneInfo("Asia/Shanghai")
@@ -387,6 +392,13 @@ def test_comparator_detects_altered_execution_phase():
 def test_comparator_detects_broken_order_linkage():
     """Comparator normalizes isomorphic UUIDs, but detects broken cross-reference linkage."""
     run_a = {
+        "final_equity": Decimal("100000"),
+        "cost_summary": {
+            "total_commission": Decimal("10"),
+            "total_slippage": Decimal("0"),
+            "gross_turnover": Decimal("2000"),
+            "total_trades": Decimal("2"),
+        },
         "fills": [
             {
                 "symbol": "600000",
@@ -411,6 +423,22 @@ def test_comparator_detects_broken_order_linkage():
                 "fill_id": "fill_2",
             },
         ],
+        "fill_execution_audits": [
+            {
+                "symbol": "600000",
+                "order_id": "ord_AAA",
+                "fill_id": "fill_1",
+                "session_date": "2026-01-05",
+                "bar_timestamp": "2026-01-05T15:00:00",
+            },
+            {
+                "symbol": "600000",
+                "order_id": "ord_AAA",
+                "fill_id": "fill_2",
+                "session_date": "2026-01-06",
+                "bar_timestamp": "2026-01-06T15:00:00",
+            },
+        ],
         "equity_curve": [
             ("2026-01-05T15:00:00", Decimal("100000")),
             ("2026-01-06T15:00:00", Decimal("100000")),
@@ -419,6 +447,13 @@ def test_comparator_detects_broken_order_linkage():
     }
     # run_b has different UUIDs (ord_XXX), but preserves the exact same 2 fills referencing the same order
     run_b_isomorphic = {
+        "final_equity": Decimal("100000"),
+        "cost_summary": {
+            "total_commission": Decimal("10"),
+            "total_slippage": Decimal("0"),
+            "gross_turnover": Decimal("2000"),
+            "total_trades": Decimal("2"),
+        },
         "fills": [
             {
                 "symbol": "600000",
@@ -443,6 +478,22 @@ def test_comparator_detects_broken_order_linkage():
                 "fill_id": "fill_100",
             },
         ],
+        "fill_execution_audits": [
+            {
+                "symbol": "600000",
+                "order_id": "ord_XXX",
+                "fill_id": "fill_99",
+                "session_date": "2026-01-05",
+                "bar_timestamp": "2026-01-05T15:00:00",
+            },
+            {
+                "symbol": "600000",
+                "order_id": "ord_XXX",
+                "fill_id": "fill_100",
+                "session_date": "2026-01-06",
+                "bar_timestamp": "2026-01-06T15:00:00",
+            },
+        ],
         "equity_curve": [
             ("2026-01-05T15:00:00", Decimal("100000")),
             ("2026-01-06T15:00:00", Decimal("100000")),
@@ -455,6 +506,7 @@ def test_comparator_detects_broken_order_linkage():
     # run_b_broken: the second fill points to a DIFFERENT order (ord_YYY)
     run_b_broken = copy.deepcopy(run_b_isomorphic)
     run_b_broken["fills"][1]["order_id"] = "ord_YYY"
+    run_b_broken["fill_execution_audits"][1]["order_id"] = "ord_YYY"
     comp_broken = compare_backtest_runs(run_a, run_b_broken)
     assert comp_broken["is_identical"] is False
     assert comp_broken["first_difference"]["field"] in {"id_linkage", "id_isomorphism"}
@@ -609,120 +661,473 @@ def test_comparator_legitimate_zero_fills_and_positions():
     assert comp["first_difference"] is None
 
 
-def test_comparator_service_payload_contract_and_perturbations():
-    """Service payload contracts: compares realistic dictionary responses from backtest services
+def _build_real_service_inputs(
+    price_sequence: list[float] | None = None,
+    dataset_id: str | None = None,
+    execution_context_id: str | None = None,
+) -> tuple[dict, dict, dict, dict]:
+    sym = Symbol("600000")
+    inst = make_stock(sym, "浦发银行")
+    if price_sequence is None:
+        price_sequence = [10.0, 9.0, 8.0, 11.0, 12.0, 13.0]
 
-    including dataset_binding, metrics_json, cost_summary_json, and fill_execution_audits,
-    and catches perturbations across all contracts.
-    """
-    service_payload_a = {
-        "execution_context_id": "ctx_fixed_abc123",
-        "dataset_binding": {
-            "dataset_id": "ds_synth_001",
-            "execution_context_id": "ctx_fixed_abc123",
-        },
-        "initial_cash": 100000.0,
-        "final_equity": 102500.0,
-        "total_return": 0.025,
-        "equity_curve": [
-            ("2026-01-05T15:00:00", Decimal("100000.0")),
-            ("2026-01-06T15:00:00", Decimal("102500.0")),
-        ],
-        "cost_summary_json": {
-            "total_commission": 15.0,
-            "total_slippage": 5.0,
-            "gross_turnover": 25000.0,
-            "total_trades": 2,
-        },
-        "metrics_json": {
-            "execution_timing": {
-                "policy_id": "karkinos.backtest.next_bar_close.v2",
-                "risk_blocked_count": 0,
-                "limit_blocked_count": 0,
-                "suspension_blocked_count": 0,
-            },
-            "dataset_binding": {
-                "dataset_id": "ds_synth_001",
-                "execution_context_id": "ctx_fixed_abc123",
-            },
-        },
-        "fills": [
+    dates = [
+        datetime(2026, 1, 5, 15, 0, tzinfo=SH),
+        datetime(2026, 1, 6, 15, 0, tzinfo=SH),
+        datetime(2026, 1, 7, 15, 0, tzinfo=SH),
+        datetime(2026, 1, 8, 15, 0, tzinfo=SH),
+        datetime(2026, 1, 9, 15, 0, tzinfo=SH),
+        datetime(2026, 1, 12, 15, 0, tzinfo=SH),
+    ][: len(price_sequence)]
+
+    df = pd.DataFrame(
+        [
             {
-                "symbol": "600000",
-                "side": "buy",
-                "price": Decimal("10.0"),
-                "quantity": Decimal("1000"),
-                "commission": Decimal("10.0"),
-                "slippage": Decimal("5.0"),
-                "timestamp": "2026-01-05T15:00:00",
-                "order_id": "ORD-1111",
-                "fill_id": "FILL-1111",
-                "execution_phase": "close",
-                "session_date": "2026-01-05",
-                "bar_timestamp": "2026-01-05T15:00:00",
-                "execution_model": "next_bar_close",
-                "fee_rule_id": "cn_stock_a_default_v1",
+                "timestamp": dt,
+                "open": p,
+                "high": p * 1.02,
+                "low": p * 0.98,
+                "close": p,
+                "volume": 10000,
             }
-        ],
-        "fill_execution_audits": [
-            {
-                "symbol": "600000",
-                "session_date": "2026-01-05",
-                "bar_timestamp": "2026-01-05T15:00:00",
-                "execution_phase": "close",
-                "execution_model": "next_bar_close",
-                "order_id": "ORD-1111",
-                "fill_id": "FILL-1111",
-            }
-        ],
-        "positions": {
-            "600000": {
-                "quantity": Decimal("1000"),
-                "available_qty": Decimal("1000"),
-                "unlisted_qty": Decimal("0"),
-                "cost_basis": Decimal("10015.0"),
-            }
-        },
+            for dt, p in zip(dates, price_sequence, strict=True)
+        ]
+    )
+
+    ds_id = dataset_id or ("sha256:" + "a" * 64)
+    ctx_id = execution_context_id or "ctx_real_service_001"
+    binding = {
+        "dataset_id": ds_id,
+        "execution_context_id": ctx_id,
+        "execution_context": {"content_hash": ctx_id},
     }
+    snapshot = {
+        "immutable_dataset_id": ds_id,
+        "dataset_id": ds_id,
+        "date_range": {"start": "2026-01-05", "end": "2026-01-12"},
+    }
+    return ({sym: inst}, {sym: DataHandler(df, sym)}, binding, snapshot)
 
-    # 1. Identical service payloads compare True
-    service_payload_b = copy.deepcopy(service_payload_a)
-    comp_clean = compare_backtest_runs(service_payload_a, service_payload_b)
-    assert comp_clean["is_identical"] is True
 
-    # 2. Perturbation on risk_blocked_count in metrics_json
-    p_risk = copy.deepcopy(service_payload_a)
+def _build_real_service_request(
+    dataset_id: str | None = None,
+    execution_context_id: str | None = None,
+    **kwargs: Any,
+) -> BacktestRequest:
+    ds_id = dataset_id or ("sha256:" + "a" * 64)
+    ctx_id = execution_context_id or "ctx_real_service_001"
+    params = {"short_period": 2, "long_period": 3}
+    if "params" in kwargs:
+        params = kwargs.pop("params")
+    return BacktestRequest(
+        strategy="dual_ma",
+        dataset_id=ds_id,
+        execution_context_id=ctx_id,
+        start_date="2026-01-05",
+        end_date="2026-01-12",
+        initial_cash=100000.0,
+        params=params,
+        **kwargs,
+    )
+
+
+def test_comparator_counterexample_1_missing_context_id_rejected():
+    """Counterexample 1: One side lacks execution_context_id -> rejected as input_identity."""
+    from types import SimpleNamespace
+
+    inputs = _build_real_service_inputs()
+    req = _build_real_service_request()
+    out_a = run_single_backtest(
+        req, SimpleNamespace(), None, preloaded_dataset_inputs=inputs
+    )
+
+    out_b = copy.deepcopy(out_a)
+    out_b["execution_context_id"] = None
+    if "metrics_json" in out_b:
+        out_b["metrics_json"]["execution_context_id"] = None
+        if "dataset_binding" in out_b["metrics_json"]:
+            out_b["metrics_json"]["dataset_binding"]["execution_context_id"] = None
+    if "dataset_binding" in out_b:
+        out_b["dataset_binding"]["execution_context_id"] = None
+
+    comp = compare_backtest_runs(out_a, out_b)
+    assert comp["is_identical"] is False
+    assert comp["category"] == "input_identity"
+    assert comp["first_difference"]["field"] == "execution_context_id"
+
+
+def test_comparator_counterexample_2_missing_equity_or_cost_rejected():
+    """Counterexample 2: One side lacks cost_summary_json or final_equity -> rejected as missing_evidence."""
+    from types import SimpleNamespace
+
+    inputs = _build_real_service_inputs()
+    req = _build_real_service_request()
+    out_a = run_single_backtest(
+        req, SimpleNamespace(), None, preloaded_dataset_inputs=inputs
+    )
+
+    # 2a: Missing final_equity on run_b
+    out_b_no_eq = copy.deepcopy(out_a)
+    del out_b_no_eq["final_equity"]
+    if "metrics_json" in out_b_no_eq:
+        out_b_no_eq["metrics_json"].pop("final_equity", None)
+    comp_eq = compare_backtest_runs(out_a, out_b_no_eq)
+    assert comp_eq["is_identical"] is False
+    assert comp_eq["category"] == "missing_evidence"
+    assert comp_eq["first_difference"]["field"] == "final_equity"
+
+    # 2b: Missing cost_summary_json on run_b
+    out_b_no_cost = copy.deepcopy(out_a)
+    del out_b_no_cost["cost_summary_json"]
+    if "metrics_json" in out_b_no_cost:
+        out_b_no_cost["metrics_json"].pop("cost_summary", None)
+    comp_cost = compare_backtest_runs(out_a, out_b_no_cost)
+    assert comp_cost["is_identical"] is False
+    assert comp_cost["category"] == "missing_evidence"
+    assert comp_cost["first_difference"]["field"] == "cost_summary"
+
+
+def test_comparator_counterexample_3_fills_without_audits_rejected():
+    """Counterexample 3: Both sides have fills but BOTH lack fill_execution_audits -> rejected as missing_evidence."""
+    from types import SimpleNamespace
+
+    inputs = _build_real_service_inputs()
+    req = _build_real_service_request()
+    out_a = run_single_backtest(
+        req, SimpleNamespace(), None, preloaded_dataset_inputs=inputs
+    )
+    assert len(out_a["fills"]) > 0
+
+    out_a_no_audit = copy.deepcopy(out_a)
+    out_a_no_audit["fill_execution_audits"] = []
+    out_a_no_audit["metrics_json"]["fill_execution_audits"] = []
+    out_a_no_audit["evidence_json"]["fill_execution_audits"] = []
+
+    out_b_no_audit = copy.deepcopy(out_a_no_audit)
+
+    comp = compare_backtest_runs(out_a_no_audit, out_b_no_audit)
+    assert comp["is_identical"] is False
+    assert comp["category"] == "missing_evidence"
+    assert comp["first_difference"]["field"] == "fill_execution_audits"
+
+
+def test_comparator_counterexample_4_empty_payload_rejected():
+    """Counterexample 4: compare_backtest_runs({}, {}) -> rejected as missing_evidence."""
+    comp = compare_backtest_runs({}, {})
+    assert comp["is_identical"] is False
+    assert comp["category"] == "missing_evidence"
+    assert comp["first_difference"]["field"] == "run_payload"
+
+
+def test_comparator_counterexample_5_input_qualification_change_rejected():
+    """Counterexample 5: dataset_id, cost_assumptions, execution_window, execution_policy differences -> rejected as input_identity."""
+    from types import SimpleNamespace
+
+    inputs = _build_real_service_inputs()
+    req = _build_real_service_request()
+    out_a = run_single_backtest(
+        req, SimpleNamespace(), None, preloaded_dataset_inputs=inputs
+    )
+
+    # 5a: dataset_id change
+    out_diff_ds = copy.deepcopy(out_a)
+    out_diff_ds["metrics_json"]["dataset_id"] = "sha256:" + "b" * 64
+    if "dataset_binding" in out_diff_ds.get("metrics_json", {}):
+        out_diff_ds["metrics_json"]["dataset_binding"]["dataset_id"] = (
+            "sha256:" + "b" * 64
+        )
+    if "config" in out_diff_ds:
+        out_diff_ds["config"]["dataset_id"] = "sha256:" + "b" * 64
+    comp_ds = compare_backtest_runs(out_a, out_diff_ds)
+    assert comp_ds["is_identical"] is False
+    assert comp_ds["category"] == "input_identity"
+    assert comp_ds["first_difference"]["field"] == "dataset_id"
+
+    # 5b: cost_assumptions change
+    out_diff_cost = copy.deepcopy(out_a)
+    out_diff_cost["cost_assumptions"] = {
+        "commission_ratio": 0.001,
+        "slippage_bps": 50.0,
+    }
+    comp_cost = compare_backtest_runs(out_a, out_diff_cost)
+    assert comp_cost["is_identical"] is False
+    assert comp_cost["category"] == "input_identity"
+    assert comp_cost["first_difference"]["field"] == "cost_assumptions"
+
+    # 5c: execution_window change
+    out_diff_window = copy.deepcopy(out_a)
+    out_diff_window["execution_window"] = {
+        "start_date": "2026-01-01",
+        "end_date": "2026-01-12",
+    }
+    comp_window = compare_backtest_runs(out_a, out_diff_window)
+    assert comp_window["is_identical"] is False
+    assert comp_window["category"] == "input_identity"
+    assert comp_window["first_difference"]["field"] == "execution_window"
+
+    # 5d: execution policy (strict_security_status) change
+    out_diff_policy = copy.deepcopy(out_a)
+    out_diff_policy["strict_security_status"] = True
+    comp_policy = compare_backtest_runs(out_a, out_diff_policy)
+    assert comp_policy["is_identical"] is False
+    assert comp_policy["category"] == "input_identity"
+    assert comp_policy["first_difference"]["field"] == "strict_security_status"
+
+
+def test_comparator_counterexample_6_missing_positions_rejected():
+    """Counterexample 6: Service payload missing positions -> rejected as missing_evidence, NOT defaulting to 0 positions."""
+    from types import SimpleNamespace
+
+    inputs = _build_real_service_inputs()
+    req = _build_real_service_request()
+    out_a = run_single_backtest(
+        req, SimpleNamespace(), None, preloaded_dataset_inputs=inputs
+    )
+
+    out_no_pos_a = copy.deepcopy(out_a)
+    del out_no_pos_a["positions"]
+    out_no_pos_a["metrics_json"].pop("positions", None)
+    out_no_pos_a["evidence_json"].pop("positions", None)
+
+    out_no_pos_b = copy.deepcopy(out_no_pos_a)
+
+    comp = compare_backtest_runs(out_no_pos_a, out_no_pos_b)
+    assert comp["is_identical"] is False
+    assert comp["category"] == "missing_evidence"
+    assert comp["first_difference"]["field"] == "positions"
+
+
+def test_real_service_same_process_a_to_a():
+    """Real service entrypoint: unmocked run_single_backtest A1 vs A2 in same process produces identical replay."""
+    from types import SimpleNamespace
+
+    inputs1 = _build_real_service_inputs()
+    req1 = _build_real_service_request()
+    out1 = run_single_backtest(
+        req1, SimpleNamespace(), None, preloaded_dataset_inputs=inputs1
+    )
+
+    inputs2 = _build_real_service_inputs()
+    req2 = _build_real_service_request()
+    out2 = run_single_backtest(
+        req2, SimpleNamespace(), None, preloaded_dataset_inputs=inputs2
+    )
+
+    comp = compare_backtest_runs(out1, out2)
+    assert comp["is_identical"] is True
+    assert comp["category"] == "identical"
+    assert comp["first_difference"] is None
+    assert comp["details"]["comparison_scope"] == "full_replay"
+    assert comp["details"]["fill_count"] > 0
+    assert comp["details"]["position_count"] > 0
+
+
+def test_real_service_interleaved_a_b_a():
+    """Real service entrypoint: A1 -> B -> A2 isolates runs, A1 vs A2 identical, A1 vs B detects discrepancy."""
+    from types import SimpleNamespace
+
+    inputs_a1 = _build_real_service_inputs()
+    req_a1 = _build_real_service_request()
+    out_a1 = run_single_backtest(
+        req_a1, SimpleNamespace(), None, preloaded_dataset_inputs=inputs_a1
+    )
+
+    # Strategy B with different parameters
+    inputs_b = _build_real_service_inputs()
+    req_b = _build_real_service_request(params={"short_period": 3, "long_period": 4})
+    out_b = run_single_backtest(
+        req_b, SimpleNamespace(), None, preloaded_dataset_inputs=inputs_b
+    )
+
+    inputs_a2 = _build_real_service_inputs()
+    req_a2 = _build_real_service_request()
+    out_a2 = run_single_backtest(
+        req_a2, SimpleNamespace(), None, preloaded_dataset_inputs=inputs_a2
+    )
+
+    # A1 vs A2 is identical
+    comp_aa = compare_backtest_runs(out_a1, out_a2)
+    assert comp_aa["is_identical"] is True
+    assert comp_aa["category"] == "identical"
+
+    # A1 vs B detects parameter input identity difference
+    comp_ab = compare_backtest_runs(out_a1, out_b)
+    assert comp_ab["is_identical"] is False
+    assert comp_ab["category"] in {"input_identity", "output_difference"}
+
+
+def test_real_service_after_failure():
+    """Real service entrypoint: Engine/service failure in between does not contaminate subsequent A2 run."""
+    from types import SimpleNamespace
+
+    from server.services.research.datasets import ResearchDatasetError
+
+    inputs_a1 = _build_real_service_inputs()
+    req_a1 = _build_real_service_request()
+    out_a1 = run_single_backtest(
+        req_a1, SimpleNamespace(), None, preloaded_dataset_inputs=inputs_a1
+    )
+
+    # Failed run: mismatched context ID triggers ResearchDatasetError
+    bad_req = _build_real_service_request(execution_context_id="ctx_wrong_mismatch")
+    with pytest.raises(ResearchDatasetError):
+        run_single_backtest(
+            bad_req, SimpleNamespace(), None, preloaded_dataset_inputs=inputs_a1
+        )
+
+    # Subsequent clean run A2
+    inputs_a2 = _build_real_service_inputs()
+    req_a2 = _build_real_service_request()
+    out_a2 = run_single_backtest(
+        req_a2, SimpleNamespace(), None, preloaded_dataset_inputs=inputs_a2
+    )
+
+    comp = compare_backtest_runs(out_a1, out_a2)
+    assert comp["is_identical"] is True
+    assert comp["category"] == "identical"
+
+
+def test_real_service_legitimate_zero_fills_and_zero_positions():
+    """Real service entrypoint: Flat price sequence legitimately produces 0 fills and 0 positions, compares identical."""
+    from types import SimpleNamespace
+
+    flat_prices = [10.0, 10.0, 10.0, 10.0, 10.0, 10.0]
+    inputs1 = _build_real_service_inputs(price_sequence=flat_prices)
+    req1 = _build_real_service_request()
+    out1 = run_single_backtest(
+        req1, SimpleNamespace(), None, preloaded_dataset_inputs=inputs1
+    )
+
+    inputs2 = _build_real_service_inputs(price_sequence=flat_prices)
+    req2 = _build_real_service_request()
+    out2 = run_single_backtest(
+        req2, SimpleNamespace(), None, preloaded_dataset_inputs=inputs2
+    )
+
+    assert len(out1["fills"]) == 0
+    assert out1["positions"] == {}
+
+    comp = compare_backtest_runs(out1, out2)
+    assert comp["is_identical"] is True
+    assert comp["category"] == "identical"
+    assert comp["details"]["fill_count"] == 0
+    assert comp["details"]["position_count"] == 0
+
+
+def test_real_service_with_buy_and_nonzero_ending_positions():
+    """Real service entrypoint: Golden cross produces 1 buy fill and 1 ending position, compares identical."""
+    from types import SimpleNamespace
+
+    inputs1 = _build_real_service_inputs()
+    req1 = _build_real_service_request()
+    out1 = run_single_backtest(
+        req1, SimpleNamespace(), None, preloaded_dataset_inputs=inputs1
+    )
+
+    inputs2 = _build_real_service_inputs()
+    req2 = _build_real_service_request()
+    out2 = run_single_backtest(
+        req2, SimpleNamespace(), None, preloaded_dataset_inputs=inputs2
+    )
+
+    assert len(out1["fills"]) == 1
+    assert "600000" in out1["positions"]
+    assert out1["positions"]["600000"]["quantity"] == "100"
+
+    comp = compare_backtest_runs(out1, out2)
+    assert comp["is_identical"] is True
+    assert comp["category"] == "identical"
+    assert comp["details"]["fill_count"] == 1
+    assert comp["details"]["position_count"] == 1
+
+
+def test_real_service_missing_evidence_controls():
+    """Real service entrypoint: Stripping key evidence from real service output triggers missing_evidence."""
+    from types import SimpleNamespace
+
+    inputs = _build_real_service_inputs()
+    req = _build_real_service_request()
+    out = run_single_backtest(
+        req, SimpleNamespace(), None, preloaded_dataset_inputs=inputs
+    )
+
+    # 1. Missing final_equity
+    p_no_eq = copy.deepcopy(out)
+    del p_no_eq["final_equity"]
+    p_no_eq["metrics_json"].pop("final_equity", None)
+    assert compare_backtest_runs(out, p_no_eq)["category"] == "missing_evidence"
+
+    # 2. Missing cost_summary_json
+    p_no_cost = copy.deepcopy(out)
+    del p_no_cost["cost_summary_json"]
+    p_no_cost["metrics_json"].pop("cost_summary", None)
+    assert compare_backtest_runs(out, p_no_cost)["category"] == "missing_evidence"
+
+    # 3. Missing positions
+    p_no_pos = copy.deepcopy(out)
+    del p_no_pos["positions"]
+    p_no_pos["metrics_json"].pop("positions", None)
+    p_no_pos["evidence_json"].pop("positions", None)
+    assert compare_backtest_runs(out, p_no_pos)["category"] == "missing_evidence"
+
+    # 4. Missing audits when fills > 0
+    p_no_audit = copy.deepcopy(out)
+    p_no_audit["fill_execution_audits"] = []
+    p_no_audit["metrics_json"]["fill_execution_audits"] = []
+    p_no_audit["evidence_json"]["fill_execution_audits"] = []
+    assert compare_backtest_runs(out, p_no_audit)["category"] == "missing_evidence"
+
+
+def test_real_service_numerical_perturbations():
+    """Real service entrypoint: Perturbing real service numerical values triggers output_difference."""
+    from types import SimpleNamespace
+
+    inputs = _build_real_service_inputs()
+    req = _build_real_service_request()
+    out = run_single_backtest(
+        req, SimpleNamespace(), None, preloaded_dataset_inputs=inputs
+    )
+
+    # 1. Perturb final_equity
+    p_eq = copy.deepcopy(out)
+    p_eq["final_equity"] = float(out["final_equity"]) + 100.0
+    comp_eq = compare_backtest_runs(out, p_eq)
+    assert comp_eq["is_identical"] is False
+    assert comp_eq["category"] == "output_difference"
+    assert comp_eq["first_difference"]["path"] == "final_equity"
+
+    # 2. Perturb cost_summary_json
+    p_cost = copy.deepcopy(out)
+    p_cost["cost_summary_json"]["total_commission"] = (
+        float(p_cost["cost_summary_json"]["total_commission"]) + 50.0
+    )
+    comp_cost = compare_backtest_runs(out, p_cost)
+    assert comp_cost["is_identical"] is False
+    assert comp_cost["category"] == "output_difference"
+    assert comp_cost["first_difference"]["path"] == "cost_summary.total_commission"
+
+    # 3. Perturb bar_timestamp in fills
+    p_bar = copy.deepcopy(out)
+    p_bar["fills"][0]["bar_timestamp"] = "2026-01-05T14:50:00"
+    comp_bar = compare_backtest_runs(out, p_bar)
+    assert comp_bar["is_identical"] is False
+    assert comp_bar["category"] == "output_difference"
+    assert comp_bar["first_difference"]["path"] == "fills[0].bar_timestamp"
+
+    # 4. Perturb position quantity
+    p_pos = copy.deepcopy(out)
+    p_pos["positions"]["600000"]["quantity"] = "200"
+    comp_pos = compare_backtest_runs(out, p_pos)
+    assert comp_pos["is_identical"] is False
+    assert comp_pos["category"] == "output_difference"
+    assert comp_pos["first_difference"]["path"] == "positions['600000'].quantity"
+
+    # 5. Perturb risk_blocked_count
+    p_risk = copy.deepcopy(out)
     p_risk["metrics_json"]["execution_timing"]["risk_blocked_count"] = 1
-    comp_risk = compare_backtest_runs(service_payload_a, p_risk)
+    comp_risk = compare_backtest_runs(out, p_risk)
     assert comp_risk["is_identical"] is False
+    assert comp_risk["category"] == "output_difference"
     assert (
         comp_risk["first_difference"]["path"] == "execution_timing.risk_blocked_count"
     )
-
-    # 3. Perturbation on execution_context_id
-    p_ctx = copy.deepcopy(service_payload_a)
-    p_ctx["dataset_binding"]["execution_context_id"] = "ctx_different_999"
-    comp_ctx = compare_backtest_runs(service_payload_a, p_ctx)
-    assert comp_ctx["is_identical"] is False
-    assert "execution_context_id" in comp_ctx["first_difference"]["path"]
-
-    # 4. Perturbation on final_equity
-    p_eq = copy.deepcopy(service_payload_a)
-    p_eq["final_equity"] = 103000.0
-    comp_eq = compare_backtest_runs(service_payload_a, p_eq)
-    assert comp_eq["is_identical"] is False
-    assert comp_eq["first_difference"]["path"] == "final_equity"
-
-    # 5. Perturbation on costs
-    p_cost = copy.deepcopy(service_payload_a)
-    p_cost["cost_summary_json"]["total_commission"] = 99.0
-    comp_cost = compare_backtest_runs(service_payload_a, p_cost)
-    assert comp_cost["is_identical"] is False
-    assert comp_cost["first_difference"]["path"] == "cost_summary.total_commission"
-
-    # 6. Perturbation on bar_timestamp
-    p_bar = copy.deepcopy(service_payload_a)
-    p_bar["fills"][0]["bar_timestamp"] = "2026-01-05T14:55:00"
-    comp_bar = compare_backtest_runs(service_payload_a, p_bar)
-    assert comp_bar["is_identical"] is False
-    assert comp_bar["first_difference"]["path"] == "fills[0].bar_timestamp"

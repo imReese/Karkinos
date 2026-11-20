@@ -113,15 +113,47 @@ def _extract_fills(run: Any) -> list[dict[str, Any]]:
     return extracted
 
 
-def _extract_audits(run: Any) -> list[dict[str, Any]]:
-    if isinstance(run, dict):
+def _extract_audits(run: Any) -> list[dict[str, Any]] | None:
+    if isinstance(run, BacktestResult):
+        audits = []
+        for fill in run.fills:
+            meta = dict(fill.metadata) if fill.metadata else {}
+            audits.append(
+                {
+                    "fill_id": str(fill.fill_id)
+                    if hasattr(fill, "fill_id") and fill.fill_id is not None
+                    else None,
+                    "order_id": str(fill.order_id)
+                    if fill.order_id is not None
+                    else None,
+                    "symbol": str(fill.symbol),
+                    "session_date": str(meta.get("session_date") or ""),
+                    "bar_timestamp": str(meta.get("bar_timestamp") or ""),
+                    "execution_phase": meta.get("execution_phase"),
+                    "execution_model": meta.get("execution_model"),
+                }
+            )
+        return audits
+    elif isinstance(run, dict):
         audits = run.get("fill_execution_audits")
-        if audits is None and "metrics_json" in run:
+        if (
+            audits is None
+            and "metrics_json" in run
+            and isinstance(run["metrics_json"], dict)
+        ):
             audits = run["metrics_json"].get("fill_execution_audits")
-        if audits is None and "evidence" in run:
+        if audits is None and "evidence" in run and isinstance(run["evidence"], dict):
             audits = run["evidence"].get("fill_execution_audits")
-        return [dict(a) for a in (audits or [])]
-    return []
+        if (
+            audits is None
+            and "evidence_json" in run
+            and isinstance(run["evidence_json"], dict)
+        ):
+            audits = run["evidence_json"].get("fill_execution_audits")
+        if audits is None:
+            return None
+        return [dict(a) for a in audits]
+    return None
 
 
 def _extract_equity_curve(run: Any) -> list[tuple[str, Any]]:
@@ -147,12 +179,36 @@ def _extract_equity_curve(run: Any) -> list[tuple[str, Any]]:
     return []
 
 
-def _extract_positions(run: Any) -> dict[str, dict[str, Decimal]]:
-    raw_pos = {}
+def _extract_positions(run: Any) -> dict[str, dict[str, Decimal]] | None:
+    raw_pos = None
     if isinstance(run, BacktestResult):
         raw_pos = run.positions
     elif isinstance(run, dict):
-        raw_pos = run.get("positions", {})
+        if "positions" in run:
+            raw_pos = run["positions"]
+        elif (
+            "metrics_json" in run
+            and isinstance(run["metrics_json"], dict)
+            and "positions" in run["metrics_json"]
+        ):
+            raw_pos = run["metrics_json"]["positions"]
+        elif (
+            "evidence_json" in run
+            and isinstance(run["evidence_json"], dict)
+            and "positions" in run["evidence_json"]
+        ):
+            raw_pos = run["evidence_json"]["positions"]
+        elif (
+            "evidence" in run
+            and isinstance(run["evidence"], dict)
+            and "positions" in run["evidence"]
+        ):
+            raw_pos = run["evidence"]["positions"]
+    elif hasattr(run, "positions"):
+        raw_pos = getattr(run, "positions")
+
+    if raw_pos is None:
+        return None
 
     extracted = {}
     for sym, pos in raw_pos.items():
@@ -174,18 +230,83 @@ def _extract_positions(run: Any) -> dict[str, dict[str, Decimal]]:
     return extracted
 
 
-def _extract_input_identity(run: Any) -> dict[str, str | None]:
+def _normalize_identity_value(val: Any) -> Any:
+    if val is None:
+        return None
+    if hasattr(val, "model_dump"):
+        return val.model_dump()
+    if is_dataclass(val):
+        return asdict(val)
+    if isinstance(val, dict):
+        return {k: _normalize_identity_value(v) for k, v in val.items()}
+    if isinstance(val, (list, tuple)):
+        return [_normalize_identity_value(v) for v in val]
+    return val
+
+
+def _extract_input_identity(run: Any) -> dict[str, Any]:
     ctx_id = None
     dataset_id = None
+    window = None
+    strat_meta = None
+    cost_assumptions = None
+    research_mode = None
+    strict_status = None
+
     if isinstance(run, dict):
-        binding = run.get("dataset_binding")
-        if not isinstance(binding, dict) and isinstance(run.get("metrics_json"), dict):
-            binding = run["metrics_json"].get("dataset_binding")
-        if isinstance(binding, dict):
-            ctx_id = binding.get("execution_context_id")
-            dataset_id = binding.get("dataset_id")
-        ctx_id = ctx_id or run.get("execution_context_id")
-        dataset_id = dataset_id or run.get("dataset_id")
+        metrics = (
+            run.get("metrics_json") if isinstance(run.get("metrics_json"), dict) else {}
+        )
+        config = run.get("config") if isinstance(run.get("config"), dict) else {}
+        binding = run.get("dataset_binding") or metrics.get("dataset_binding")
+        b_ctx_id = (
+            binding.get("execution_context_id") if isinstance(binding, dict) else None
+        )
+        b_ds_id = binding.get("dataset_id") if isinstance(binding, dict) else None
+
+        ctx_id = (
+            run.get("execution_context_id")
+            or metrics.get("execution_context_id")
+            or b_ctx_id
+            or config.get("execution_context_id")
+        )
+        dataset_id = (
+            run.get("dataset_id")
+            or metrics.get("dataset_id")
+            or b_ds_id
+            or config.get("dataset_id")
+        )
+        window = run.get("execution_window") or metrics.get("execution_window")
+        if window is None and (config.get("start_date") or config.get("end_date")):
+            window = {
+                "start_date": str(config.get("start_date")),
+                "end_date": str(config.get("end_date")),
+            }
+        strat_meta = run.get("strategy_metadata") or metrics.get("strategy_metadata")
+        if strat_meta is None and config.get("strategy"):
+            strat_meta = {
+                "strategy": config.get("strategy"),
+                "params": config.get("params"),
+            }
+        cost_assumptions = (
+            run.get("cost_assumptions")
+            or metrics.get("cost_assumptions")
+            or config.get("cost_assumptions")
+        )
+        research_mode = (
+            run.get("research_mode")
+            or metrics.get("research_mode")
+            or config.get("research_mode")
+        )
+        strict_status = (
+            run.get("strict_security_status")
+            if "strict_security_status" in run
+            else (
+                metrics.get("strict_security_status")
+                if "strict_security_status" in metrics
+                else config.get("strict_security_status")
+            )
+        )
     else:
         ctx_id = getattr(run, "execution_context_id", None)
         dataset_id = getattr(run, "dataset_id", None)
@@ -193,7 +314,21 @@ def _extract_input_identity(run: Any) -> dict[str, str | None]:
         if isinstance(snapshot, dict):
             ctx_id = ctx_id or snapshot.get("execution_context_id")
             dataset_id = dataset_id or snapshot.get("dataset_id")
-    return {"execution_context_id": ctx_id, "dataset_id": dataset_id}
+        window = getattr(run, "execution_window", None)
+        strat_meta = getattr(run, "strategy_metadata", None)
+        cost_assumptions = getattr(run, "cost_assumptions", None)
+        research_mode = getattr(run, "research_mode", None)
+        strict_status = getattr(run, "strict_security_status", None)
+
+    return {
+        "execution_context_id": ctx_id,
+        "dataset_id": dataset_id,
+        "execution_window": window,
+        "strategy_metadata": strat_meta,
+        "cost_assumptions": cost_assumptions,
+        "research_mode": research_mode,
+        "strict_security_status": strict_status,
+    }
 
 
 def _extract_cost_summary(run: Any) -> dict[str, Decimal] | None:
@@ -315,22 +450,48 @@ class _IdBijectionChecker:
 
 
 def _compare_input_identity(run_a: Any, run_b: Any) -> dict[str, Any] | None:
-    id_info_a = _extract_input_identity(run_a)
-    id_info_b = _extract_input_identity(run_b)
-    ctx_a = id_info_a.get("execution_context_id")
-    ctx_b = id_info_b.get("execution_context_id")
-    if ctx_a is not None and ctx_b is not None and ctx_a != ctx_b:
-        return {
-            "is_identical": False,
-            "first_difference": {
-                "field": "execution_context_id",
-                "path": "dataset_binding.execution_context_id",
-                "expected": ctx_a,
-                "actual": ctx_b,
-                "detail": f"Execution context identity mismatch: {ctx_a!r} vs {ctx_b!r}",
-            },
-            "summary": f"Input identity mismatch: execution_context_id {ctx_a!r} vs {ctx_b!r}",
-        }
+    id_a = _extract_input_identity(run_a)
+    id_b = _extract_input_identity(run_b)
+
+    for field in (
+        "execution_context_id",
+        "dataset_id",
+        "execution_window",
+        "strategy_metadata",
+        "cost_assumptions",
+        "research_mode",
+        "strict_security_status",
+    ):
+        va = _normalize_identity_value(id_a.get(field))
+        vb = _normalize_identity_value(id_b.get(field))
+        if (va is None) != (vb is None):
+            return {
+                "is_identical": False,
+                "category": "input_identity",
+                "first_difference": {
+                    "category": "input_identity",
+                    "field": field,
+                    "path": f"input_identity.{field}",
+                    "expected": va,
+                    "actual": vb,
+                    "detail": f"Asymmetric input qualification presence for {field}: {va!r} vs {vb!r}",
+                },
+                "summary": f"Input identity presence mismatch for {field}",
+            }
+        if va is not None and vb is not None and va != vb:
+            return {
+                "is_identical": False,
+                "category": "input_identity",
+                "first_difference": {
+                    "category": "input_identity",
+                    "field": field,
+                    "path": f"input_identity.{field}",
+                    "expected": va,
+                    "actual": vb,
+                    "detail": f"Input qualification mismatch for {field}: {va!r} vs {vb!r}",
+                },
+                "summary": f"Input identity mismatch: {field} {va!r} vs {vb!r}",
+            }
     return None
 
 
@@ -342,7 +503,9 @@ def _compare_fills(
     if len(fills_a) != len(fills_b):
         return {
             "is_identical": False,
+            "category": "output_difference",
             "first_difference": {
+                "category": "output_difference",
                 "field": "fill_count",
                 "path": "fills",
                 "expected": len(fills_a),
@@ -367,7 +530,9 @@ def _compare_fills(
             if va != vb:
                 return {
                     "is_identical": False,
+                    "category": "output_difference",
                     "first_difference": {
+                        "category": "output_difference",
                         "field": field,
                         "path": f"{fill_path}.{field}",
                         "expected": va,
@@ -381,7 +546,9 @@ def _compare_fills(
         if fb_a != fb_b:
             return {
                 "is_identical": False,
+                "category": "output_difference",
                 "first_difference": {
+                    "category": "output_difference",
                     "field": "fee_breakdown",
                     "path": f"{fill_path}.fee_breakdown",
                     "expected": fb_a,
@@ -396,7 +563,9 @@ def _compare_fills(
             if da != db:
                 return {
                     "is_identical": False,
+                    "category": "output_difference",
                     "first_difference": {
+                        "category": "output_difference",
                         "field": dec_field,
                         "path": f"{fill_path}.{dec_field}",
                         "expected": str(da),
@@ -409,7 +578,9 @@ def _compare_fills(
         if fa["timestamp"] != fb["timestamp"]:
             return {
                 "is_identical": False,
+                "category": "output_difference",
                 "first_difference": {
+                    "category": "output_difference",
                     "field": "timestamp",
                     "path": f"{fill_path}.timestamp",
                     "expected": fa["timestamp"],
@@ -424,8 +595,10 @@ def _compare_fills(
                 fa.get(id_field), fb.get(id_field), f"{fill_path}.{id_field}"
             )
             if diff is not None:
+                diff["category"] = "output_difference"
                 return {
                     "is_identical": False,
+                    "category": "output_difference",
                     "first_difference": diff,
                     "summary": f"ID linkage discrepancy at {diff['path']}",
                 }
@@ -433,14 +606,69 @@ def _compare_fills(
 
 
 def _compare_audits(
-    audits_a: list[dict[str, Any]],
-    audits_b: list[dict[str, Any]],
+    audits_a: list[dict[str, Any]] | None,
+    audits_b: list[dict[str, Any]] | None,
+    fills_a: list[dict[str, Any]],
+    fills_b: list[dict[str, Any]],
     checker: _IdBijectionChecker,
 ) -> dict[str, Any] | None:
+    has_fills = bool(len(fills_a) > 0 or len(fills_b) > 0)
+    if has_fills:
+        if audits_a is None or audits_b is None:
+            return {
+                "is_identical": False,
+                "category": "missing_evidence",
+                "first_difference": {
+                    "category": "missing_evidence",
+                    "field": "fill_execution_audits",
+                    "path": "fill_execution_audits",
+                    "expected": "execution audits for all fills",
+                    "actual": "missing evidence",
+                    "detail": "Runs contain fills but lack mandatory fill_execution_audits evidence",
+                },
+                "summary": "Missing mandatory fill_execution_audits for non-zero fills",
+            }
+        if (len(fills_a) > 0 and len(audits_a) == 0) or (
+            len(fills_b) > 0 and len(audits_b) == 0
+        ):
+            return {
+                "is_identical": False,
+                "category": "missing_evidence",
+                "first_difference": {
+                    "category": "missing_evidence",
+                    "field": "fill_execution_audits",
+                    "path": "fill_execution_audits",
+                    "expected": f"audit entries matching non-zero fills ({len(fills_a)} vs {len(fills_b)})",
+                    "actual": f"missing audit entries ({len(audits_a)} vs {len(audits_b)})",
+                    "detail": "Runs contain fills but lack mandatory fill_execution_audits evidence",
+                },
+                "summary": "Missing mandatory fill_execution_audits despite non-zero fills",
+            }
+
+    if audits_a is None and audits_b is None:
+        return None
+    if (audits_a is None) != (audits_b is None):
+        return {
+            "is_identical": False,
+            "category": "missing_evidence",
+            "first_difference": {
+                "category": "missing_evidence",
+                "field": "fill_execution_audits",
+                "path": "fill_execution_audits",
+                "expected": "present" if audits_a is not None else "missing",
+                "actual": "present" if audits_b is not None else "missing",
+                "detail": "Asymmetric fill_execution_audits presence",
+            },
+            "summary": "Audit presence mismatch",
+        }
+
+    assert audits_a is not None and audits_b is not None
     if len(audits_a) != len(audits_b):
         return {
             "is_identical": False,
+            "category": "output_difference",
             "first_difference": {
+                "category": "output_difference",
                 "field": "audit_count",
                 "path": "fill_execution_audits",
                 "expected": len(audits_a),
@@ -462,7 +690,9 @@ def _compare_audits(
             if va != vb:
                 return {
                     "is_identical": False,
+                    "category": "output_difference",
                     "first_difference": {
+                        "category": "output_difference",
                         "field": field,
                         "path": f"{audit_path}.{field}",
                         "expected": va,
@@ -476,8 +706,10 @@ def _compare_audits(
                 aa.get(id_field), ab.get(id_field), f"{audit_path}.{id_field}"
             )
             if diff is not None:
+                diff["category"] = "output_difference"
                 return {
                     "is_identical": False,
+                    "category": "output_difference",
                     "first_difference": diff,
                     "summary": f"Audit ID linkage discrepancy at {diff['path']}",
                 }
@@ -492,7 +724,9 @@ def _compare_equity_curve(
     if len(curve_a) != len(curve_b):
         return {
             "is_identical": False,
+            "category": "output_difference",
             "first_difference": {
+                "category": "output_difference",
                 "field": "equity_curve_length",
                 "path": "equity_curve",
                 "expected": len(curve_a),
@@ -508,7 +742,9 @@ def _compare_equity_curve(
         if ts_a != ts_b:
             return {
                 "is_identical": False,
+                "category": "output_difference",
                 "first_difference": {
+                    "category": "output_difference",
                     "field": "timestamp",
                     "path": f"equity_curve[{i}].timestamp",
                     "expected": ts_a,
@@ -521,7 +757,9 @@ def _compare_equity_curve(
             if eq_a != eq_b:
                 return {
                     "is_identical": False,
+                    "category": "output_difference",
                     "first_difference": {
+                        "category": "output_difference",
                         "field": "equity",
                         "path": f"equity_curve[{i}].equity",
                         "expected": str(eq_a),
@@ -535,7 +773,9 @@ def _compare_equity_curve(
             if diff_num > float_tolerance:
                 return {
                     "is_identical": False,
+                    "category": "output_difference",
                     "first_difference": {
+                        "category": "output_difference",
                         "field": "equity",
                         "path": f"equity_curve[{i}].equity",
                         "expected": float(eq_a),
@@ -552,74 +792,125 @@ def _compare_final_equity(
 ) -> dict[str, Any] | None:
     fe_a = _extract_final_equity(run_a)
     fe_b = _extract_final_equity(run_b)
-    if fe_a is not None and fe_b is not None:
-        if isinstance(fe_a, Decimal) and isinstance(fe_b, Decimal):
-            if fe_a != fe_b:
-                return {
-                    "is_identical": False,
-                    "first_difference": {
-                        "field": "final_equity",
-                        "path": "final_equity",
-                        "expected": str(fe_a),
-                        "actual": str(fe_b),
-                        "detail": f"Final equity Decimal mismatch: {fe_a} vs {fe_b}",
-                    },
-                    "summary": f"Discrepancy at final_equity: expected {fe_a}, got {fe_b}",
-                }
-        else:
-            diff_fe = abs(float(fe_a) - float(fe_b))
-            if diff_fe > float_tolerance:
-                return {
-                    "is_identical": False,
-                    "first_difference": {
-                        "field": "final_equity",
-                        "path": "final_equity",
-                        "expected": float(fe_a),
-                        "actual": float(fe_b),
-                        "detail": f"Final equity float discrepancy exceeds tolerance: diff={diff_fe}",
-                    },
-                    "summary": f"Discrepancy at final_equity: expected {fe_a}, got {fe_b}",
-                }
+    if fe_a is None or fe_b is None:
+        return {
+            "is_identical": False,
+            "category": "missing_evidence",
+            "first_difference": {
+                "category": "missing_evidence",
+                "field": "final_equity",
+                "path": "final_equity",
+                "expected": "present" if fe_a is not None else "missing",
+                "actual": "present" if fe_b is not None else "missing",
+                "detail": "Final equity evidence is missing on one or both runs",
+            },
+            "summary": "Missing required final equity evidence",
+        }
+    if isinstance(fe_a, Decimal) and isinstance(fe_b, Decimal):
+        if fe_a != fe_b:
+            return {
+                "is_identical": False,
+                "category": "output_difference",
+                "first_difference": {
+                    "category": "output_difference",
+                    "field": "final_equity",
+                    "path": "final_equity",
+                    "expected": str(fe_a),
+                    "actual": str(fe_b),
+                    "detail": f"Final equity Decimal mismatch: {fe_a} vs {fe_b}",
+                },
+                "summary": f"Discrepancy at final_equity: expected {fe_a}, got {fe_b}",
+            }
+    else:
+        diff_fe = abs(float(fe_a) - float(fe_b))
+        if diff_fe > float_tolerance:
+            return {
+                "is_identical": False,
+                "category": "output_difference",
+                "first_difference": {
+                    "category": "output_difference",
+                    "field": "final_equity",
+                    "path": "final_equity",
+                    "expected": float(fe_a),
+                    "actual": float(fe_b),
+                    "detail": f"Final equity float discrepancy exceeds tolerance: diff={diff_fe}",
+                },
+                "summary": f"Discrepancy at final_equity: expected {fe_a}, got {fe_b}",
+            }
     return None
 
 
 def _compare_cost_summary(run_a: Any, run_b: Any) -> dict[str, Any] | None:
     cs_a = _extract_cost_summary(run_a)
     cs_b = _extract_cost_summary(run_b)
-    if cs_a is not None and cs_b is not None:
-        for cost_field in (
-            "total_commission",
-            "total_slippage",
-            "gross_turnover",
-            "total_trades",
-        ):
-            ca = cs_a.get(cost_field)
-            cb = cs_b.get(cost_field)
-            if ca != cb:
-                return {
-                    "is_identical": False,
-                    "first_difference": {
-                        "field": cost_field,
-                        "path": f"cost_summary.{cost_field}",
-                        "expected": str(ca),
-                        "actual": str(cb),
-                        "detail": f"Cost summary {cost_field} mismatch",
-                    },
-                    "summary": f"Discrepancy at cost_summary.{cost_field}: expected {ca}, got {cb}",
-                }
+    if cs_a is None or cs_b is None:
+        return {
+            "is_identical": False,
+            "category": "missing_evidence",
+            "first_difference": {
+                "category": "missing_evidence",
+                "field": "cost_summary",
+                "path": "cost_summary",
+                "expected": "present" if cs_a is not None else "missing",
+                "actual": "present" if cs_b is not None else "missing",
+                "detail": "Cost summary evidence is missing on one or both runs",
+            },
+            "summary": "Missing required cost summary evidence",
+        }
+    for cost_field in (
+        "total_commission",
+        "total_slippage",
+        "gross_turnover",
+        "total_trades",
+    ):
+        ca = cs_a.get(cost_field)
+        cb = cs_b.get(cost_field)
+        if ca != cb:
+            return {
+                "is_identical": False,
+                "category": "output_difference",
+                "first_difference": {
+                    "category": "output_difference",
+                    "field": cost_field,
+                    "path": f"cost_summary.{cost_field}",
+                    "expected": str(ca),
+                    "actual": str(cb),
+                    "detail": f"Cost summary {cost_field} mismatch",
+                },
+                "summary": f"Discrepancy at cost_summary.{cost_field}: expected {ca}, got {cb}",
+            }
     return None
 
 
 def _compare_positions(
-    pos_a: dict[str, dict[str, Decimal]],
-    pos_b: dict[str, dict[str, Decimal]],
+    run_a: Any,
+    run_b: Any,
 ) -> dict[str, Any] | None:
+    pos_a = _extract_positions(run_a)
+    pos_b = _extract_positions(run_b)
+    if pos_a is None or pos_b is None:
+        return {
+            "is_identical": False,
+            "category": "missing_evidence",
+            "first_difference": {
+                "category": "missing_evidence",
+                "field": "positions",
+                "path": "positions",
+                "expected": "present" if pos_a is not None else "missing",
+                "actual": "present" if pos_b is not None else "missing",
+                "detail": "Positions evidence is missing; cannot verify ending portfolio state",
+            },
+            "summary": "Missing required positions evidence",
+        }
+
     symbols_a = sorted(pos_a.keys())
     symbols_b = sorted(pos_b.keys())
     if symbols_a != symbols_b:
         return {
             "is_identical": False,
+            "category": "output_difference",
             "first_difference": {
+                "category": "output_difference",
                 "field": "positions_symbols",
                 "path": "positions",
                 "expected": symbols_a,
@@ -635,7 +926,9 @@ def _compare_positions(
             if pa[field] != pb[field]:
                 return {
                     "is_identical": False,
+                    "category": "output_difference",
                     "first_difference": {
+                        "category": "output_difference",
                         "field": field,
                         "path": f"positions['{sym}'].{field}",
                         "expected": str(pa[field]),
@@ -657,7 +950,9 @@ def _compare_blocked_counts(run_a: Any, run_b: Any) -> dict[str, Any] | None:
         if ca != cb:
             return {
                 "is_identical": False,
+                "category": "output_difference",
                 "first_difference": {
+                    "category": "output_difference",
                     "field": key,
                     "path": f"execution_timing.{key}",
                     "expected": ca,
@@ -676,6 +971,23 @@ def compare_backtest_runs(
     float_tolerance: float = 1e-7,
 ) -> dict[str, Any]:
     """Compare two backtest runs for exact deterministic equivalence."""
+    if (isinstance(run_a, dict) and not run_a) or (
+        isinstance(run_b, dict) and not run_b
+    ):
+        return {
+            "is_identical": False,
+            "category": "missing_evidence",
+            "first_difference": {
+                "category": "missing_evidence",
+                "field": "run_payload",
+                "path": "run",
+                "expected": "valid backtest result",
+                "actual": "empty payload",
+                "detail": "Empty backtest run payload; cannot verify deterministic replay",
+            },
+            "summary": "Missing required backtest run evidence in empty payload",
+        }
+
     # 0. Input Identity
     diff = _compare_input_identity(run_a, run_b)
     if diff:
@@ -692,10 +1004,9 @@ def compare_backtest_runs(
     # 2. Audits
     audits_a = _extract_audits(run_a)
     audits_b = _extract_audits(run_b)
-    if audits_a or audits_b:
-        diff = _compare_audits(audits_a, audits_b, checker)
-        if diff:
-            return diff
+    diff = _compare_audits(audits_a, audits_b, fills_a, fills_b, checker)
+    if diff:
+        return diff
 
     # 3. Equity Curve
     curve_a = _extract_equity_curve(run_a)
@@ -715,9 +1026,7 @@ def compare_backtest_runs(
         return diff
 
     # 6. Positions
-    pos_a = _extract_positions(run_a)
-    pos_b = _extract_positions(run_b)
-    diff = _compare_positions(pos_a, pos_b)
+    diff = _compare_positions(run_a, run_b)
     if diff:
         return diff
 
@@ -726,9 +1035,12 @@ def compare_backtest_runs(
     if diff:
         return diff
 
+    pos_a = _extract_positions(run_a) or {}
+
     # All checks passed cleanly
     return {
         "is_identical": True,
+        "category": "identical",
         "first_difference": None,
         "summary": (
             f"Runs are deterministically identical: {len(fills_a)} fills, "
@@ -737,8 +1049,9 @@ def compare_backtest_runs(
         "details": {
             "fill_count": len(fills_a),
             "equity_points": len(curve_a),
-            "audit_count": len(audits_a),
+            "audit_count": len(audits_a or []),
             "position_count": len(pos_a),
             "canonical_ids_mapped": len(checker.map_a_to_canon),
+            "comparison_scope": "full_replay",
         },
     }

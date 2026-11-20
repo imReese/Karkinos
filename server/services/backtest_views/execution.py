@@ -179,6 +179,74 @@ def read_backtest_report_file(result_id: int) -> dict[str, Any]:
     return data
 
 
+def _run_cost_sensitivity_scenarios(
+    *,
+    request: BacktestRequest,
+    result: Any,
+    strategy_config: Any,
+    event_bus_placeholder: Any,
+    instruments: dict,
+    data_handlers: dict,
+    execution_config: Any,
+    cash_dividends: Any,
+    cash_dividend_mode: str,
+    evaluation_start: date | None,
+) -> list[dict[str, Any]]:
+    from dataclasses import replace
+
+    from backtest.engine import BacktestEngine
+    from server.bootstrap import build_strategy
+    from server.contracts.http.strategy_models import BacktestCostAssumptions
+    from server.services.backtest.backtest_costs import resolve_backtest_costs
+
+    inputs = request.cost_assumptions or BacktestCostAssumptions()
+    base_bps = inputs.slippage_bps
+    sensitivity: list[dict[str, Any]] = []
+    stress_levels = sorted(
+        {min(9999.0, max(10.0, base_bps * 2)), min(9999.0, max(25.0, base_bps * 5))}
+    )
+    for bps in stress_levels:
+        if bps <= base_bps:
+            continue
+        stress_config, stress_assumptions = resolve_backtest_costs(
+            inputs.model_copy(update={"slippage_bps": bps})
+        )
+        stress_config = replace(
+            stress_config,
+            trading_calendar=execution_config.trading_calendar,
+            nontrading_instruments=execution_config.nontrading_instruments,
+            security_status=execution_config.security_status,
+            strict_security_status=execution_config.strict_security_status,
+        )
+        stressed_strategy = build_strategy(strategy_config, event_bus_placeholder)
+        stressed = BacktestEngine(
+            strategy=stressed_strategy,
+            instruments=instruments,
+            data_handlers=data_handlers,
+            initial_cash=result.initial_cash,
+            execution_config=stress_config,
+            cash_dividends=cash_dividends,
+            include_share_distributions=cash_dividend_mode
+            == "reported_distributions_gross",
+            evaluation_start=evaluation_start,
+            strict_event_errors=True,
+            **(
+                {"session_completed": stressed_strategy.require_complete_session}
+                if request.strategy == "risk_parity_macro"
+                else {}
+            ),
+        ).run()
+        sensitivity.append(
+            {
+                "cost_assumptions": stress_assumptions,
+                "total_return": float(stressed.total_return),
+                "max_drawdown": stressed.metrics.max_drawdown,
+                "fill_count": len(stressed.fills),
+            }
+        )
+    return sensitivity
+
+
 def run_single_backtest(
     request: BacktestRequest,
     config: Any,
@@ -266,7 +334,7 @@ def run_single_backtest(
     )
     from dataclasses import replace
 
-    from core.types import Symbol
+    from core.types import ZERO, Symbol
 
     ctx = (dataset_binding or {}).get("execution_context")
     nontrading_mapping: dict[date, tuple[Symbol, ...]] | None = None
@@ -404,51 +472,18 @@ def run_single_backtest(
     )
     # Two explicit adverse scenarios reuse the frozen bars, rules and fresh book;
     # stress replay never persists additional Orders/Fills or tunes parameters.
-    inputs = request.cost_assumptions or BacktestCostAssumptions()
-    base_bps = inputs.slippage_bps
-    metrics_json["cost_sensitivity"] = []
-    stress_levels = sorted(
-        {min(9999.0, max(10.0, base_bps * 2)), min(9999.0, max(25.0, base_bps * 5))}
+    metrics_json["cost_sensitivity"] = _run_cost_sensitivity_scenarios(
+        request=request,
+        result=result,
+        strategy_config=strategy_config,
+        event_bus_placeholder=event_bus_placeholder,
+        instruments=instruments,
+        data_handlers=data_handlers,
+        execution_config=execution_config,
+        cash_dividends=cash_dividends,
+        cash_dividend_mode=cash_dividend_mode,
+        evaluation_start=evaluation_start,
     )
-    for bps in stress_levels:
-        if bps <= base_bps:
-            continue
-        stress_config, stress_assumptions = resolve_backtest_costs(
-            inputs.model_copy(update={"slippage_bps": bps})
-        )
-        stress_config = replace(
-            stress_config,
-            trading_calendar=execution_config.trading_calendar,
-            nontrading_instruments=execution_config.nontrading_instruments,
-            security_status=execution_config.security_status,
-            strict_security_status=execution_config.strict_security_status,
-        )
-        stressed_strategy = build_strategy(strategy_config, event_bus_placeholder)
-        stressed = BacktestEngine(
-            strategy=stressed_strategy,
-            instruments=instruments,
-            data_handlers=data_handlers,
-            initial_cash=result.initial_cash,
-            execution_config=stress_config,
-            cash_dividends=cash_dividends,
-            include_share_distributions=cash_dividend_mode
-            == "reported_distributions_gross",
-            evaluation_start=evaluation_start,
-            strict_event_errors=True,
-            **(
-                {"session_completed": stressed_strategy.require_complete_session}
-                if request.strategy == "risk_parity_macro"
-                else {}
-            ),
-        ).run()
-        metrics_json["cost_sensitivity"].append(
-            {
-                "cost_assumptions": stress_assumptions,
-                "total_return": float(stressed.total_return),
-                "max_drawdown": stressed.metrics.max_drawdown,
-                "fill_count": len(stressed.fills),
-            }
-        )
     metrics_json["capacity_review"] = build_backtest_capacity_evidence(
         fills=result.fills,
         data_handlers=data_handlers,
@@ -489,15 +524,37 @@ def run_single_backtest(
         if result.evidence_bundle is not None
         else {}
     )
+    positions_snapshot = {
+        str(sym): {
+            "quantity": str(pos.quantity),
+            "available_qty": str(getattr(pos, "available_qty", ZERO)),
+            "unlisted_qty": str(getattr(pos, "unlisted_qty", ZERO)),
+            "cost_basis": str(getattr(pos, "cost_basis", ZERO)),
+        }
+        for sym, pos in result.positions.items()
+    }
     evidence_json = dict(evidence_bundle_dict)
     evidence_json["fill_execution_audits"] = fill_execution_audits
+    evidence_json["positions"] = positions_snapshot
     metrics_json["fill_execution_audits"] = fill_execution_audits
+    metrics_json["positions"] = positions_snapshot
+    metrics_json["final_equity"] = float(result.final_equity)
     metrics_json["evidence_bundle"] = evidence_bundle_dict
     metrics_json["dataset_snapshot"] = dataset_snapshot_json
     if execution_window is not None:
         metrics_json["execution_window"] = execution_window
     if dataset_binding is not None:
         metrics_json["dataset_binding"] = dataset_binding
+    if getattr(request, "dataset_id", None) is not None:
+        metrics_json["dataset_id"] = str(request.dataset_id)
+    elif dataset_binding and dataset_binding.get("dataset_id") is not None:
+        metrics_json["dataset_id"] = str(dataset_binding["dataset_id"])
+    if getattr(request, "execution_context_id", None) is not None:
+        metrics_json["execution_context_id"] = str(request.execution_context_id)
+    elif dataset_binding and dataset_binding.get("execution_context_id") is not None:
+        metrics_json["execution_context_id"] = str(
+            dataset_binding["execution_context_id"]
+        )
     metrics_json["strategy_metadata"] = _strategy_metadata_snapshot(request)
     oos_validation_json = build_oos_validation_payload(request, result)
     if oos_validation_json:
@@ -514,6 +571,7 @@ def run_single_backtest(
         "win_rate": metrics.win_rate,
         "duration_days": result.duration_days,
         "equity_curve": equity_curve,
+        "positions": positions_snapshot,
         "metrics_json": metrics_json,
         "cost_summary_json": result.cost_summary.to_json_dict(),
         "evidence_json": evidence_json,
