@@ -127,8 +127,12 @@ def _extract_audits(run: Any) -> list[dict[str, Any]] | None:
                     if fill.order_id is not None
                     else None,
                     "symbol": str(fill.symbol),
-                    "session_date": str(meta.get("session_date") or ""),
-                    "bar_timestamp": str(meta.get("bar_timestamp") or ""),
+                    "session_date": str(meta.get("session_date"))
+                    if meta.get("session_date") is not None
+                    else None,
+                    "bar_timestamp": str(meta.get("bar_timestamp"))
+                    if meta.get("bar_timestamp") is not None
+                    else None,
                     "execution_phase": meta.get("execution_phase"),
                     "execution_model": meta.get("execution_model"),
                 }
@@ -252,12 +256,42 @@ def _extract_input_identity(run: Any) -> dict[str, Any]:
     cost_assumptions = None
     research_mode = None
     strict_status = None
+    policy_id = None
+    initial_cash = None
 
     if isinstance(run, dict):
         metrics = (
             run.get("metrics_json") if isinstance(run.get("metrics_json"), dict) else {}
         )
         config = run.get("config") if isinstance(run.get("config"), dict) else {}
+        timing = (
+            run.get("execution_timing")
+            or metrics.get("execution_timing")
+            or (
+                run.get("evidence") if isinstance(run.get("evidence"), dict) else {}
+            ).get("execution_timing")
+            or (
+                run.get("evidence_json")
+                if isinstance(run.get("evidence_json"), dict)
+                else {}
+            ).get("execution_timing")
+            or {}
+        )
+        policy_id = (
+            timing.get("policy_id") or run.get("policy_id") or metrics.get("policy_id")
+        )
+        raw_initial_cash = (
+            run.get("initial_cash")
+            if "initial_cash" in run
+            else (
+                metrics.get("initial_cash")
+                if "initial_cash" in metrics
+                else config.get("initial_cash")
+            )
+        )
+        if raw_initial_cash is not None:
+            initial_cash = _to_decimal(raw_initial_cash)
+
         binding = run.get("dataset_binding") or metrics.get("dataset_binding")
         b_ctx_id = (
             binding.get("execution_context_id") if isinstance(binding, dict) else None
@@ -308,6 +342,16 @@ def _extract_input_identity(run: Any) -> dict[str, Any]:
             )
         )
     else:
+        timing = getattr(run, "execution_timing", None) or {}
+        policy_id = (
+            timing.get("policy_id")
+            if isinstance(timing, dict)
+            else getattr(run, "policy_id", None)
+        )
+        raw_initial_cash = getattr(run, "initial_cash", None)
+        if raw_initial_cash is not None:
+            initial_cash = _to_decimal(raw_initial_cash)
+
         ctx_id = getattr(run, "execution_context_id", None)
         dataset_id = getattr(run, "dataset_id", None)
         snapshot = getattr(run, "dataset_snapshot", None)
@@ -328,6 +372,8 @@ def _extract_input_identity(run: Any) -> dict[str, Any]:
         "cost_assumptions": cost_assumptions,
         "research_mode": research_mode,
         "strict_security_status": strict_status,
+        "policy_id": policy_id,
+        "initial_cash": initial_cash,
     }
 
 
@@ -461,6 +507,8 @@ def _compare_input_identity(run_a: Any, run_b: Any) -> dict[str, Any] | None:
         "cost_assumptions",
         "research_mode",
         "strict_security_status",
+        "policy_id",
+        "initial_cash",
     ):
         va = _normalize_identity_value(id_a.get(field))
         vb = _normalize_identity_value(id_b.get(field))
@@ -605,6 +653,154 @@ def _compare_fills(
     return None
 
 
+REQUIRED_AUDIT_FIELDS = (
+    "symbol",
+    "session_date",
+    "bar_timestamp",
+    "execution_phase",
+    "execution_model",
+)
+
+
+def _validate_audit_completeness(
+    fills: list[dict[str, Any]],
+    audits: list[dict[str, Any]] | None,
+    run_label: str,
+) -> dict[str, Any] | None:
+    if not fills:
+        if audits is not None and len(audits) > 0:
+            return {
+                "is_identical": False,
+                "category": "missing_evidence",
+                "first_difference": {
+                    "category": "missing_evidence",
+                    "field": "fill_execution_audits",
+                    "path": f"{run_label}.fill_execution_audits",
+                    "expected": "0 audit entries for 0 fills",
+                    "actual": f"{len(audits)} audit entries",
+                    "detail": f"{run_label} has 0 fills but contains {len(audits)} execution audit entries",
+                },
+                "summary": f"{run_label} has unexpected audits for 0 fills",
+            }
+        return None
+
+    if audits is None:
+        return {
+            "is_identical": False,
+            "category": "missing_evidence",
+            "first_difference": {
+                "category": "missing_evidence",
+                "field": "fill_execution_audits",
+                "path": f"{run_label}.fill_execution_audits",
+                "expected": f"{len(fills)} execution audits",
+                "actual": "missing evidence (None)",
+                "detail": f"{run_label} contains {len(fills)} fills but lacks fill_execution_audits evidence",
+            },
+            "summary": f"{run_label} lacks fill_execution_audits evidence",
+        }
+
+    if len(audits) != len(fills):
+        return {
+            "is_identical": False,
+            "category": "missing_evidence",
+            "first_difference": {
+                "category": "missing_evidence",
+                "field": "fill_execution_audits",
+                "path": f"{run_label}.fill_execution_audits",
+                "expected": f"{len(fills)} audit entries for {len(fills)} fills",
+                "actual": f"{len(audits)} audit entries",
+                "detail": f"{run_label} contains {len(fills)} fills but only {len(audits)} execution audit entries",
+            },
+            "summary": f"Incomplete audit coverage in {run_label}: {len(audits)} audits for {len(fills)} fills",
+        }
+
+    seen_audits: dict[Any, int] = {}
+    for i, (fill, audit) in enumerate(zip(fills, audits, strict=True)):
+        audit_path = f"{run_label}.fill_execution_audits[{i}]"
+        for field in REQUIRED_AUDIT_FIELDS:
+            val = audit.get(field)
+            if val is None or str(val).strip() == "":
+                return {
+                    "is_identical": False,
+                    "category": "missing_evidence",
+                    "first_difference": {
+                        "category": "missing_evidence",
+                        "field": field,
+                        "path": f"{audit_path}.{field}",
+                        "expected": f"valid non-empty {field}",
+                        "actual": repr(val),
+                        "detail": f"Audit entry at index {i} in {run_label} lacks mandatory field '{field}'",
+                    },
+                    "summary": f"Missing mandatory field '{field}' at {audit_path}",
+                }
+
+        f_fill_id = fill.get("fill_id")
+        a_fill_id = audit.get("fill_id")
+        if f_fill_id is not None and a_fill_id is not None:
+            if str(f_fill_id) != str(a_fill_id):
+                return {
+                    "is_identical": False,
+                    "category": "missing_evidence",
+                    "first_difference": {
+                        "category": "missing_evidence",
+                        "field": "fill_id",
+                        "path": f"{audit_path}.fill_id",
+                        "expected": str(f_fill_id),
+                        "actual": str(a_fill_id),
+                        "detail": f"Audit entry at index {i} fill_id does not correspond to fill at index {i}",
+                    },
+                    "summary": f"Audit fill_id linkage mismatch at {audit_path}",
+                }
+
+        f_order_id = fill.get("order_id")
+        a_order_id = audit.get("order_id")
+        if f_order_id is not None and a_order_id is not None:
+            if str(f_order_id) != str(a_order_id):
+                return {
+                    "is_identical": False,
+                    "category": "missing_evidence",
+                    "first_difference": {
+                        "category": "missing_evidence",
+                        "field": "order_id",
+                        "path": f"{audit_path}.order_id",
+                        "expected": str(f_order_id),
+                        "actual": str(a_order_id),
+                        "detail": f"Audit entry at index {i} order_id does not correspond to fill at index {i}",
+                    },
+                    "summary": f"Audit order_id linkage mismatch at {audit_path}",
+                }
+
+        fill_key = (
+            ("fill_id", str(a_fill_id))
+            if a_fill_id is not None
+            else (
+                str(audit.get("symbol")),
+                str(audit.get("session_date")),
+                str(audit.get("bar_timestamp")),
+                str(audit.get("execution_phase")),
+                str(audit.get("order_id")),
+            )
+        )
+        if fill_key in seen_audits:
+            prev_idx = seen_audits[fill_key]
+            return {
+                "is_identical": False,
+                "category": "missing_evidence",
+                "first_difference": {
+                    "category": "missing_evidence",
+                    "field": "fill_execution_audits",
+                    "path": audit_path,
+                    "expected": f"unique audit entry for fill {i}",
+                    "actual": f"duplicate of audit at index {prev_idx}",
+                    "detail": f"Duplicate audit entry at index {i} in {run_label} does not provide complete coverage",
+                },
+                "summary": f"Duplicate audit entry at {audit_path}",
+            }
+        seen_audits[fill_key] = i
+
+    return None
+
+
 def _compare_audits(
     audits_a: list[dict[str, Any]] | None,
     audits_b: list[dict[str, Any]] | None,
@@ -612,55 +808,15 @@ def _compare_audits(
     fills_b: list[dict[str, Any]],
     checker: _IdBijectionChecker,
 ) -> dict[str, Any] | None:
-    has_fills = bool(len(fills_a) > 0 or len(fills_b) > 0)
-    if has_fills:
-        if audits_a is None or audits_b is None:
-            return {
-                "is_identical": False,
-                "category": "missing_evidence",
-                "first_difference": {
-                    "category": "missing_evidence",
-                    "field": "fill_execution_audits",
-                    "path": "fill_execution_audits",
-                    "expected": "execution audits for all fills",
-                    "actual": "missing evidence",
-                    "detail": "Runs contain fills but lack mandatory fill_execution_audits evidence",
-                },
-                "summary": "Missing mandatory fill_execution_audits for non-zero fills",
-            }
-        if (len(fills_a) > 0 and len(audits_a) == 0) or (
-            len(fills_b) > 0 and len(audits_b) == 0
-        ):
-            return {
-                "is_identical": False,
-                "category": "missing_evidence",
-                "first_difference": {
-                    "category": "missing_evidence",
-                    "field": "fill_execution_audits",
-                    "path": "fill_execution_audits",
-                    "expected": f"audit entries matching non-zero fills ({len(fills_a)} vs {len(fills_b)})",
-                    "actual": f"missing audit entries ({len(audits_a)} vs {len(audits_b)})",
-                    "detail": "Runs contain fills but lack mandatory fill_execution_audits evidence",
-                },
-                "summary": "Missing mandatory fill_execution_audits despite non-zero fills",
-            }
+    err_a = _validate_audit_completeness(fills_a, audits_a, "run_a")
+    if err_a:
+        return err_a
+    err_b = _validate_audit_completeness(fills_b, audits_b, "run_b")
+    if err_b:
+        return err_b
 
-    if audits_a is None and audits_b is None:
+    if len(fills_a) == 0 and len(fills_b) == 0:
         return None
-    if (audits_a is None) != (audits_b is None):
-        return {
-            "is_identical": False,
-            "category": "missing_evidence",
-            "first_difference": {
-                "category": "missing_evidence",
-                "field": "fill_execution_audits",
-                "path": "fill_execution_audits",
-                "expected": "present" if audits_a is not None else "missing",
-                "actual": "present" if audits_b is not None else "missing",
-                "detail": "Asymmetric fill_execution_audits presence",
-            },
-            "summary": "Audit presence mismatch",
-        }
 
     assert audits_a is not None and audits_b is not None
     if len(audits_a) != len(audits_b):
@@ -679,13 +835,7 @@ def _compare_audits(
         }
     for i, (aa, ab) in enumerate(zip(audits_a, audits_b, strict=True)):
         audit_path = f"fill_execution_audits[{i}]"
-        for field in (
-            "symbol",
-            "session_date",
-            "bar_timestamp",
-            "execution_phase",
-            "execution_model",
-        ):
+        for field in REQUIRED_AUDIT_FIELDS:
             va, vb = aa.get(field), ab.get(field)
             if va != vb:
                 return {

@@ -74,12 +74,36 @@ def strategy_metadata_snapshot(request: BacktestRequest) -> dict[str, Any]:
         ),
         None,
     )
+    raw_params = request.params
+    if raw_params is None:
+        param_names = (
+            {p["name"] for p in strategy_info.get("parameter_schema", [])}
+            if strategy_info
+            else set()
+        )
+        raw_params = {
+            k: getattr(request, k)
+            for k in param_names
+            if hasattr(request, k) and getattr(request, k) is not None
+        }
+    else:
+        raw_params = dict(raw_params)
+
+    try:
+        effective_params = (
+            StrategyRegistry.validate_params(request.strategy, raw_params)
+            if strategy_info
+            else raw_params
+        )
+    except Exception:
+        effective_params = raw_params
+
     if strategy_info is None:
         return {
             "schema_version": "karkinos.strategy_metadata.v1",
             "strategy_id": request.strategy,
             "name": request.strategy,
-            "params": dict(request.params or {}),
+            "params": effective_params,
             "parameter_schema": [],
         }
     return {
@@ -100,7 +124,7 @@ def strategy_metadata_snapshot(request: BacktestRequest) -> dict[str, Any]:
         ),
         "validation_notes": list(strategy_info.get("validation_notes", [])),
         "parameter_schema": list(strategy_info.get("parameter_schema", [])),
-        "params": dict(request.params or {}),
+        "params": effective_params,
     }
 
 

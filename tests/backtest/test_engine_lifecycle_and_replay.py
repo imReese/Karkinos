@@ -430,6 +430,8 @@ def test_comparator_detects_broken_order_linkage():
                 "fill_id": "fill_1",
                 "session_date": "2026-01-05",
                 "bar_timestamp": "2026-01-05T15:00:00",
+                "execution_phase": "close",
+                "execution_model": "next_bar_close",
             },
             {
                 "symbol": "600000",
@@ -437,6 +439,8 @@ def test_comparator_detects_broken_order_linkage():
                 "fill_id": "fill_2",
                 "session_date": "2026-01-06",
                 "bar_timestamp": "2026-01-06T15:00:00",
+                "execution_phase": "close",
+                "execution_model": "next_bar_close",
             },
         ],
         "equity_curve": [
@@ -485,6 +489,8 @@ def test_comparator_detects_broken_order_linkage():
                 "fill_id": "fill_99",
                 "session_date": "2026-01-05",
                 "bar_timestamp": "2026-01-05T15:00:00",
+                "execution_phase": "close",
+                "execution_model": "next_bar_close",
             },
             {
                 "symbol": "600000",
@@ -492,6 +498,8 @@ def test_comparator_detects_broken_order_linkage():
                 "fill_id": "fill_100",
                 "session_date": "2026-01-06",
                 "bar_timestamp": "2026-01-06T15:00:00",
+                "execution_phase": "close",
+                "execution_model": "next_bar_close",
             },
         ],
         "equity_curve": [
@@ -1131,3 +1139,240 @@ def test_real_service_numerical_perturbations():
     assert (
         comp_risk["first_difference"]["path"] == "execution_timing.risk_blocked_count"
     )
+
+
+def test_comparator_detects_altered_policy_id():
+    """Altering policy_id on BacktestResult or service payload returns category='input_identity'."""
+    from types import SimpleNamespace
+
+    # 1. BacktestResult
+    res1 = _build_test_engine(SimpleStepStrategy(buy_step=1, sell_step=2)).run()
+    res2 = copy.deepcopy(res1)
+    if res2.execution_timing is None:
+        res2.execution_timing = {}
+    res2.execution_timing["policy_id"] = "policy_custom_altered"
+    comp_res = compare_backtest_runs(res1, res2)
+    assert comp_res["is_identical"] is False
+    assert comp_res["category"] == "input_identity"
+    assert comp_res["first_difference"]["field"] == "policy_id"
+
+    # 2. Service payload
+    inputs = _build_real_service_inputs()
+    req = _build_real_service_request()
+    out1 = run_single_backtest(
+        req, SimpleNamespace(), None, preloaded_dataset_inputs=inputs
+    )
+    out2 = copy.deepcopy(out1)
+    if "execution_timing" in out2:
+        out2["execution_timing"]["policy_id"] = "policy_custom_altered"
+    out2["metrics_json"]["execution_timing"]["policy_id"] = "policy_custom_altered"
+    comp_out = compare_backtest_runs(out1, out2)
+    assert comp_out["is_identical"] is False
+    assert comp_out["category"] == "input_identity"
+    assert comp_out["first_difference"]["field"] == "policy_id"
+
+
+def test_comparator_detects_altered_initial_cash():
+    """Altering initial_cash on BacktestResult or service payload returns category='input_identity'."""
+    from types import SimpleNamespace
+
+    # 1. BacktestResult
+    res1 = _build_test_engine(SimpleStepStrategy(buy_step=1, sell_step=2)).run()
+    res2 = copy.deepcopy(res1)
+    res2.initial_cash = Decimal("200000")
+    comp_res = compare_backtest_runs(res1, res2)
+    assert comp_res["is_identical"] is False
+    assert comp_res["category"] == "input_identity"
+    assert comp_res["first_difference"]["field"] == "initial_cash"
+
+    # 2. Service payload
+    inputs = _build_real_service_inputs()
+    req = _build_real_service_request()
+    out1 = run_single_backtest(
+        req, SimpleNamespace(), None, preloaded_dataset_inputs=inputs
+    )
+    out2 = copy.deepcopy(out1)
+    out2["initial_cash"] = 250000.0
+    out2["metrics_json"]["initial_cash"] = 250000.0
+    comp_out = compare_backtest_runs(out1, out2)
+    assert comp_out["is_identical"] is False
+    assert comp_out["category"] == "input_identity"
+    assert comp_out["first_difference"]["field"] == "initial_cash"
+
+
+def test_comparator_detects_effective_params_mismatch_with_identical_trades():
+    """Different effective params (when params=None via top-level fields) with zero trades returns input_identity."""
+    from types import SimpleNamespace
+
+    flat_prices = [10.0, 10.0, 10.0, 10.0, 10.0, 10.0]
+    inputs1 = _build_real_service_inputs(price_sequence=flat_prices)
+    req1 = _build_real_service_request(
+        params=None,
+        short_period=2,
+        long_period=3,
+    )
+    out1 = run_single_backtest(
+        req1, SimpleNamespace(), None, preloaded_dataset_inputs=inputs1
+    )
+
+    inputs2 = _build_real_service_inputs(price_sequence=flat_prices)
+    req2 = _build_real_service_request(
+        params=None,
+        short_period=3,
+        long_period=4,
+    )
+    out2 = run_single_backtest(
+        req2, SimpleNamespace(), None, preloaded_dataset_inputs=inputs2
+    )
+
+    assert len(out1["fills"]) == 0
+    assert len(out2["fills"]) == 0
+    assert out1["metrics_json"]["strategy_metadata"]["params"] == {
+        "short_period": 2,
+        "long_period": 3,
+    }
+    assert out2["metrics_json"]["strategy_metadata"]["params"] == {
+        "short_period": 3,
+        "long_period": 4,
+    }
+
+    comp = compare_backtest_runs(out1, out2)
+    assert comp["is_identical"] is False
+    assert comp["category"] == "input_identity"
+    assert comp["first_difference"]["field"] == "strategy_metadata"
+
+
+def test_comparator_audit_completeness_and_coverage():
+    """Incomplete, duplicate or missing audit records return missing_evidence; legitimate 0 fills returns identical."""
+    from types import SimpleNamespace
+
+    inputs = _build_real_service_inputs()
+    req = _build_real_service_request()
+    out = run_single_backtest(
+        req, SimpleNamespace(), None, preloaded_dataset_inputs=inputs
+    )
+    assert len(out["fills"]) == 1
+    assert len(out["fill_execution_audits"]) == 1
+
+    # Base payload with 2 fills and 2 complete valid audits
+    base = copy.deepcopy(out)
+    fill2 = copy.deepcopy(base["fills"][0])
+    fill2["fill_id"] = "fill_synth_002"
+    fill2["order_id"] = "ord_synth_002"
+    fill2["timestamp"] = "2026-01-06T15:00:00"
+    base["fills"].append(fill2)
+
+    audit2 = copy.deepcopy(base["fill_execution_audits"][0])
+    audit2["fill_id"] = "fill_synth_002"
+    audit2["order_id"] = "ord_synth_002"
+    audit2["session_date"] = "2026-01-06"
+    audit2["bar_timestamp"] = "2026-01-06T15:00:00"
+    base["fill_execution_audits"].append(audit2)
+
+    # Valid 2 fills and 2 complete audits compares identical with itself
+    comp_valid = compare_backtest_runs(base, copy.deepcopy(base))
+    assert comp_valid["is_identical"] is True
+    assert comp_valid["category"] == "identical"
+
+    # Counterexample 1: 2 fills with 1 audit entry -> missing_evidence
+    p1 = copy.deepcopy(base)
+    p1["fill_execution_audits"] = [base["fill_execution_audits"][0]]
+    comp1 = compare_backtest_runs(base, p1)
+    assert comp1["is_identical"] is False
+    assert comp1["category"] == "missing_evidence"
+    assert comp1["first_difference"]["field"] == "fill_execution_audits"
+
+    # Counterexample 2: 2 fills with empty audits [{}, {}] -> missing_evidence
+    p2 = copy.deepcopy(base)
+    p2["fill_execution_audits"] = [{}, {}]
+    comp2 = compare_backtest_runs(base, p2)
+    assert comp2["is_identical"] is False
+    assert comp2["category"] == "missing_evidence"
+    assert comp2["first_difference"]["field"] in (
+        "symbol",
+        "session_date",
+        "bar_timestamp",
+        "execution_phase",
+        "execution_model",
+    )
+
+    # Counterexample 3: 2 fills with duplicate padded audits [audit0, audit0] -> missing_evidence
+    p3 = copy.deepcopy(base)
+    p3["fill_execution_audits"] = [
+        copy.deepcopy(base["fill_execution_audits"][0]),
+        copy.deepcopy(base["fill_execution_audits"][0]),
+    ]
+    comp3 = compare_backtest_runs(base, p3)
+    assert comp3["is_identical"] is False
+    assert comp3["category"] == "missing_evidence"
+    assert comp3["first_difference"]["field"] in (
+        "fill_id",
+        "order_id",
+        "fill_execution_audits",
+    )
+
+    # Counterexample 3b: duplicate audit entries sharing the exact same fill_key
+    p3_dup_key = {
+        "fills": [
+            {
+                "symbol": "600000",
+                "side": "buy",
+                "price": "10",
+                "quantity": "100",
+                "timestamp": "2026-01-05T15:00:00",
+            },
+            {
+                "symbol": "600000",
+                "side": "buy",
+                "price": "10",
+                "quantity": "100",
+                "timestamp": "2026-01-06T15:00:00",
+            },
+        ],
+        "fill_execution_audits": [
+            {
+                "symbol": "600000",
+                "session_date": "2026-01-05",
+                "bar_timestamp": "2026-01-05T15:00:00",
+                "execution_phase": "close",
+                "execution_model": "next_bar_close",
+            },
+            {
+                "symbol": "600000",
+                "session_date": "2026-01-05",
+                "bar_timestamp": "2026-01-05T15:00:00",
+                "execution_phase": "close",
+                "execution_model": "next_bar_close",
+            },
+        ],
+        "final_equity": Decimal("100000"),
+        "cost_summary": {
+            "total_commission": Decimal("10"),
+            "total_slippage": Decimal("0"),
+            "gross_turnover": Decimal("2000"),
+            "total_trades": Decimal("2"),
+        },
+        "equity_curve": [("2026-01-05T15:00:00", Decimal("100000"))],
+        "positions": {},
+    }
+    comp_dup = compare_backtest_runs(p3_dup_key, p3_dup_key)
+    assert comp_dup["is_identical"] is False
+    assert comp_dup["category"] == "missing_evidence"
+    assert comp_dup["first_difference"]["field"] == "fill_execution_audits"
+    assert "duplicate" in comp_dup["first_difference"]["actual"]
+
+    # Valid 0 fills and 0 audits -> identical
+    flat_prices = [10.0, 10.0, 10.0, 10.0, 10.0, 10.0]
+    inputs_flat = _build_real_service_inputs(price_sequence=flat_prices)
+    req_flat = _build_real_service_request()
+    out_flat1 = run_single_backtest(
+        req_flat, SimpleNamespace(), None, preloaded_dataset_inputs=inputs_flat
+    )
+    out_flat2 = run_single_backtest(
+        req_flat, SimpleNamespace(), None, preloaded_dataset_inputs=inputs_flat
+    )
+    assert len(out_flat1["fills"]) == 0
+    assert len(out_flat1["fill_execution_audits"]) == 0
+    comp_flat = compare_backtest_runs(out_flat1, out_flat2)
+    assert comp_flat["is_identical"] is True
+    assert comp_flat["category"] == "identical"
