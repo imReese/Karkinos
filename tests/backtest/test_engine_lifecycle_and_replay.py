@@ -739,6 +739,63 @@ def _build_real_service_request(
     )
 
 
+def _build_real_service_two_fill_run() -> dict[str, Any]:
+    """Execute unmocked real service with dual_ma producing genuine 2 fills (1 buy, 1 sell)."""
+    from types import SimpleNamespace
+
+    sym = Symbol("600000")
+    inst = make_stock(sym, "浦发银行")
+    dates = [
+        datetime(2026, 1, 5, 15, 0, tzinfo=SH),
+        datetime(2026, 1, 6, 15, 0, tzinfo=SH),
+        datetime(2026, 1, 7, 15, 0, tzinfo=SH),
+        datetime(2026, 1, 8, 15, 0, tzinfo=SH),
+        datetime(2026, 1, 9, 15, 0, tzinfo=SH),
+        datetime(2026, 1, 12, 15, 0, tzinfo=SH),
+        datetime(2026, 1, 13, 15, 0, tzinfo=SH),
+        datetime(2026, 1, 14, 15, 0, tzinfo=SH),
+    ]
+    prices = [10.0, 10.0, 9.0, 12.0, 12.0, 7.0, 7.0, 7.0]
+    df = pd.DataFrame(
+        [
+            {
+                "timestamp": dt,
+                "open": p,
+                "high": p * 1.02,
+                "low": p * 0.98,
+                "close": p,
+                "volume": 10000,
+            }
+            for dt, p in zip(dates, prices, strict=True)
+        ]
+    )
+    ds_id = "sha256:" + "a" * 64
+    ctx_id = "ctx_real_service_two_fills"
+    binding = {
+        "dataset_id": ds_id,
+        "execution_context_id": ctx_id,
+        "execution_context": {"content_hash": ctx_id},
+    }
+    snapshot = {
+        "immutable_dataset_id": ds_id,
+        "dataset_id": ds_id,
+        "date_range": {"start": "2026-01-05", "end": "2026-01-14"},
+    }
+    inputs = ({sym: inst}, {sym: DataHandler(df, sym)}, binding, snapshot)
+    req = BacktestRequest(
+        strategy="dual_ma",
+        dataset_id=ds_id,
+        execution_context_id=ctx_id,
+        start_date="2026-01-05",
+        end_date="2026-01-14",
+        initial_cash=100000.0,
+        params={"short_period": 2, "long_period": 3},
+    )
+    return run_single_backtest(
+        req, SimpleNamespace(), None, preloaded_dataset_inputs=inputs
+    )
+
+
 def test_comparator_counterexample_1_missing_context_id_rejected():
     """Counterexample 1: One side lacks execution_context_id -> rejected as input_identity."""
     from types import SimpleNamespace
@@ -1246,28 +1303,10 @@ def test_comparator_audit_completeness_and_coverage():
     """Incomplete, duplicate or missing audit records return missing_evidence; legitimate 0 fills returns identical."""
     from types import SimpleNamespace
 
-    inputs = _build_real_service_inputs()
-    req = _build_real_service_request()
-    out = run_single_backtest(
-        req, SimpleNamespace(), None, preloaded_dataset_inputs=inputs
-    )
-    assert len(out["fills"]) == 1
-    assert len(out["fill_execution_audits"]) == 1
-
-    # Base payload with 2 fills and 2 complete valid audits
-    base = copy.deepcopy(out)
-    fill2 = copy.deepcopy(base["fills"][0])
-    fill2["fill_id"] = "fill_synth_002"
-    fill2["order_id"] = "ord_synth_002"
-    fill2["timestamp"] = "2026-01-06T15:00:00"
-    base["fills"].append(fill2)
-
-    audit2 = copy.deepcopy(base["fill_execution_audits"][0])
-    audit2["fill_id"] = "fill_synth_002"
-    audit2["order_id"] = "ord_synth_002"
-    audit2["session_date"] = "2026-01-06"
-    audit2["bar_timestamp"] = "2026-01-06T15:00:00"
-    base["fill_execution_audits"].append(audit2)
+    # Base payload directly from unmocked real service with genuine 2 fills
+    base = _build_real_service_two_fill_run()
+    assert len(base["fills"]) == 2
+    assert len(base["fill_execution_audits"]) == 2
 
     # Valid 2 fills and 2 complete audits compares identical with itself
     comp_valid = compare_backtest_runs(base, copy.deepcopy(base))
@@ -1308,6 +1347,9 @@ def test_comparator_audit_completeness_and_coverage():
     assert comp3["first_difference"]["field"] in (
         "fill_id",
         "order_id",
+        "symbol",
+        "session_date",
+        "bar_timestamp",
         "fill_execution_audits",
     )
 
@@ -1326,7 +1368,7 @@ def test_comparator_audit_completeness_and_coverage():
                 "side": "buy",
                 "price": "10",
                 "quantity": "100",
-                "timestamp": "2026-01-06T15:00:00",
+                "timestamp": "2026-01-05T15:00:00",
             },
         ],
         "fill_execution_audits": [
@@ -1364,6 +1406,173 @@ def test_comparator_audit_completeness_and_coverage():
     # Valid 0 fills and 0 audits -> identical
     flat_prices = [10.0, 10.0, 10.0, 10.0, 10.0, 10.0]
     inputs_flat = _build_real_service_inputs(price_sequence=flat_prices)
+    req_flat = _build_real_service_request()
+    out_flat1 = run_single_backtest(
+        req_flat, SimpleNamespace(), None, preloaded_dataset_inputs=inputs_flat
+    )
+    out_flat2 = run_single_backtest(
+        req_flat, SimpleNamespace(), None, preloaded_dataset_inputs=inputs_flat
+    )
+    assert len(out_flat1["fills"]) == 0
+    assert len(out_flat1["fill_execution_audits"]) == 0
+    comp_flat = compare_backtest_runs(out_flat1, out_flat2)
+    assert comp_flat["is_identical"] is True
+    assert comp_flat["category"] == "identical"
+
+
+def test_audit_ownership_omitted_identity_fields():
+    """Omitting fill_id or order_id from audit when present on fill returns missing_evidence, even if both runs have identical omissions."""
+    base = _build_real_service_two_fill_run()
+    assert len(base["fills"]) == 2
+
+    # 1. Audit deletes fill_id on one run
+    corrupt_fill_id = copy.deepcopy(base)
+    del corrupt_fill_id["fill_execution_audits"][0]["fill_id"]
+    comp_single = compare_backtest_runs(base, corrupt_fill_id)
+    assert comp_single["is_identical"] is False
+    assert comp_single["category"] == "missing_evidence"
+    assert comp_single["first_difference"]["field"] == "fill_id"
+    assert (
+        comp_single["first_difference"]["path"]
+        == "run_b.fill_execution_audits[0].fill_id"
+    )
+
+    # Both runs suffer the same deleted fill_id -> still missing_evidence on run_a
+    comp_both = compare_backtest_runs(corrupt_fill_id, corrupt_fill_id)
+    assert comp_both["is_identical"] is False
+    assert comp_both["category"] == "missing_evidence"
+    assert comp_both["first_difference"]["field"] == "fill_id"
+    assert (
+        comp_both["first_difference"]["path"]
+        == "run_a.fill_execution_audits[0].fill_id"
+    )
+
+    # 2. Audit deletes order_id on one run
+    corrupt_order_id = copy.deepcopy(base)
+    del corrupt_order_id["fill_execution_audits"][0]["order_id"]
+    comp_order_single = compare_backtest_runs(base, corrupt_order_id)
+    assert comp_order_single["is_identical"] is False
+    assert comp_order_single["category"] == "missing_evidence"
+    assert comp_order_single["first_difference"]["field"] == "order_id"
+    assert (
+        comp_order_single["first_difference"]["path"]
+        == "run_b.fill_execution_audits[0].order_id"
+    )
+
+    # Both runs suffer the same deleted order_id -> still missing_evidence on run_a
+    comp_order_both = compare_backtest_runs(corrupt_order_id, corrupt_order_id)
+    assert comp_order_both["is_identical"] is False
+    assert comp_order_both["category"] == "missing_evidence"
+    assert comp_order_both["first_difference"]["field"] == "order_id"
+    assert (
+        comp_order_both["first_difference"]["path"]
+        == "run_a.fill_execution_audits[0].order_id"
+    )
+
+
+def test_audit_ownership_symbol_mismatch():
+    """Audit symbol contradicting fill symbol returns missing_evidence, even if both runs have identical corruptions."""
+    base = _build_real_service_two_fill_run()
+
+    corrupt_sym = copy.deepcopy(base)
+    corrupt_sym["fill_execution_audits"][0]["symbol"] = "600519"  # fill is 600000
+
+    comp_single = compare_backtest_runs(base, corrupt_sym)
+    assert comp_single["is_identical"] is False
+    assert comp_single["category"] == "missing_evidence"
+    assert comp_single["first_difference"]["field"] == "symbol"
+    assert (
+        comp_single["first_difference"]["path"]
+        == "run_b.fill_execution_audits[0].symbol"
+    )
+    assert "600519" in comp_single["first_difference"]["actual"]
+
+    # Both runs have identical symbol mismatch -> must not be proclaimed identical
+    comp_both = compare_backtest_runs(corrupt_sym, corrupt_sym)
+    assert comp_both["is_identical"] is False
+    assert comp_both["category"] == "missing_evidence"
+    assert comp_both["first_difference"]["field"] == "symbol"
+    assert (
+        comp_both["first_difference"]["path"] == "run_a.fill_execution_audits[0].symbol"
+    )
+
+
+def test_audit_ownership_temporal_contradiction():
+    """Audit session_date or bar_timestamp contradicting fill times returns missing_evidence, even if both runs have identical contradictions."""
+    base = _build_real_service_two_fill_run()
+
+    # 1. Contradict session_date (e.g. 2026-01-20 instead of 2026-01-09)
+    corrupt_date = copy.deepcopy(base)
+    corrupt_date["fill_execution_audits"][0]["session_date"] = "2026-01-20"
+
+    comp_date = compare_backtest_runs(base, corrupt_date)
+    assert comp_date["is_identical"] is False
+    assert comp_date["category"] == "missing_evidence"
+    assert comp_date["first_difference"]["field"] == "session_date"
+    assert (
+        comp_date["first_difference"]["path"]
+        == "run_b.fill_execution_audits[0].session_date"
+    )
+
+    comp_date_both = compare_backtest_runs(corrupt_date, corrupt_date)
+    assert comp_date_both["is_identical"] is False
+    assert comp_date_both["category"] == "missing_evidence"
+    assert comp_date_both["first_difference"]["field"] == "session_date"
+    assert (
+        comp_date_both["first_difference"]["path"]
+        == "run_a.fill_execution_audits[0].session_date"
+    )
+
+    # 2. Contradict bar_timestamp (e.g. 2026-01-20T15:00:00+08:00 instead of 2026-01-09T15:00:00+08:00)
+    corrupt_bar = copy.deepcopy(base)
+    corrupt_bar["fill_execution_audits"][0]["bar_timestamp"] = (
+        "2026-01-20T15:00:00+08:00"
+    )
+
+    comp_bar = compare_backtest_runs(base, corrupt_bar)
+    assert comp_bar["is_identical"] is False
+    assert comp_bar["category"] == "missing_evidence"
+    assert comp_bar["first_difference"]["field"] == "bar_timestamp"
+    assert (
+        comp_bar["first_difference"]["path"]
+        == "run_b.fill_execution_audits[0].bar_timestamp"
+    )
+
+    comp_bar_both = compare_backtest_runs(corrupt_bar, corrupt_bar)
+    assert comp_bar_both["is_identical"] is False
+    assert comp_bar_both["category"] == "missing_evidence"
+    assert comp_bar_both["first_difference"]["field"] == "bar_timestamp"
+    assert (
+        comp_bar_both["first_difference"]["path"]
+        == "run_a.fill_execution_audits[0].bar_timestamp"
+    )
+
+
+def test_audit_ownership_engine_and_zero_fill_controls():
+    """Uncorrupted real engine multi-fill, real service multi-fill, and legitimate zero-fill runs pass as identical full_replay."""
+    from types import SimpleNamespace
+
+    # 1. Real Engine produces 2 fills via SimpleStepStrategy
+    res = _build_test_engine(SimpleStepStrategy(buy_step=1, sell_step=2)).run()
+    assert len(res.fills) == 2
+    comp_engine = compare_backtest_runs(res, copy.deepcopy(res))
+    assert comp_engine["is_identical"] is True
+    assert comp_engine["category"] == "identical"
+    assert comp_engine["details"]["comparison_scope"] == "full_replay"
+
+    # 2. Uncorrupted Real Service produces 2 fills via dual_ma
+    base = _build_real_service_two_fill_run()
+    assert len(base["fills"]) == 2
+    assert len(base["fill_execution_audits"]) == 2
+    comp_service = compare_backtest_runs(base, copy.deepcopy(base))
+    assert comp_service["is_identical"] is True
+    assert comp_service["category"] == "identical"
+    assert comp_service["details"]["comparison_scope"] == "full_replay"
+
+    # 3. Legitimate zero-fill run
+    inputs_flat = _build_real_service_inputs(
+        price_sequence=[10.0, 10.0, 10.0, 10.0, 10.0, 10.0]
+    )
     req_flat = _build_real_service_request()
     out_flat1 = run_single_backtest(
         req_flat, SimpleNamespace(), None, preloaded_dataset_inputs=inputs_flat

@@ -11,10 +11,59 @@ from dataclasses import asdict, is_dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from backtest.result import BacktestResult
 from core.events import FillEvent
 from core.types import ZERO
+
+SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
+
+
+def _canonical_session_date(val: Any) -> str | None:
+    """Normalize session date or timestamp to Asia/Shanghai calendar date string (YYYY-MM-DD)."""
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        if val.tzinfo is not None:
+            val = val.astimezone(SHANGHAI_TZ)
+        return val.date().isoformat()
+    if isinstance(val, date):
+        return val.isoformat()
+    s = str(val).strip()
+    if not s:
+        return None
+    if len(s) == 10 and s[4] == "-" and s[7] == "-":
+        return s
+    try:
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(SHANGHAI_TZ)
+        return dt.date().isoformat()
+    except Exception:
+        if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+            return s[:10]
+        return None
+
+
+def _canonical_bar_timestamp(val: Any) -> str | None:
+    """Normalize timestamp string for comparison preserving point-in-time semantics."""
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        if val.tzinfo is not None:
+            val = val.astimezone(SHANGHAI_TZ)
+        return val.isoformat()
+    s = str(val).strip()
+    if not s:
+        return None
+    try:
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(SHANGHAI_TZ)
+        return dt.isoformat()
+    except Exception:
+        return s
 
 
 def _to_decimal(value: Any) -> Decimal:
@@ -98,11 +147,15 @@ def _extract_fills(run: Any) -> list[dict[str, Any]]:
                     "execution_phase": fill.get("execution_phase")
                     or metadata.get("execution_phase"),
                     "session_date": str(
-                        fill.get("session_date") or metadata.get("session_date") or ""
-                    ),
+                        fill.get("session_date") or metadata.get("session_date")
+                    )
+                    if (fill.get("session_date") or metadata.get("session_date"))
+                    else None,
                     "bar_timestamp": str(
-                        fill.get("bar_timestamp") or metadata.get("bar_timestamp") or ""
-                    ),
+                        fill.get("bar_timestamp") or metadata.get("bar_timestamp")
+                    )
+                    if (fill.get("bar_timestamp") or metadata.get("bar_timestamp"))
+                    else None,
                     "execution_model": fill.get("execution_model")
                     or metadata.get("execution_model"),
                     "fee_breakdown": fill.get("fee_breakdown"),
@@ -736,7 +789,21 @@ def _validate_audit_completeness(
 
         f_fill_id = fill.get("fill_id")
         a_fill_id = audit.get("fill_id")
-        if f_fill_id is not None and a_fill_id is not None:
+        if f_fill_id is not None and str(f_fill_id).strip() != "":
+            if a_fill_id is None or str(a_fill_id).strip() == "":
+                return {
+                    "is_identical": False,
+                    "category": "missing_evidence",
+                    "first_difference": {
+                        "category": "missing_evidence",
+                        "field": "fill_id",
+                        "path": f"{audit_path}.fill_id",
+                        "expected": str(f_fill_id),
+                        "actual": "missing evidence (None)",
+                        "detail": f"Audit entry at index {i} in {run_label} lacks fill_id required by fill",
+                    },
+                    "summary": f"Audit missing fill_id at {audit_path}",
+                }
             if str(f_fill_id) != str(a_fill_id):
                 return {
                     "is_identical": False,
@@ -754,7 +821,21 @@ def _validate_audit_completeness(
 
         f_order_id = fill.get("order_id")
         a_order_id = audit.get("order_id")
-        if f_order_id is not None and a_order_id is not None:
+        if f_order_id is not None and str(f_order_id).strip() != "":
+            if a_order_id is None or str(a_order_id).strip() == "":
+                return {
+                    "is_identical": False,
+                    "category": "missing_evidence",
+                    "first_difference": {
+                        "category": "missing_evidence",
+                        "field": "order_id",
+                        "path": f"{audit_path}.order_id",
+                        "expected": str(f_order_id),
+                        "actual": "missing evidence (None)",
+                        "detail": f"Audit entry at index {i} in {run_label} lacks order_id required by fill",
+                    },
+                    "summary": f"Audit missing order_id at {audit_path}",
+                }
             if str(f_order_id) != str(a_order_id):
                 return {
                     "is_identical": False,
@@ -768,6 +849,107 @@ def _validate_audit_completeness(
                         "detail": f"Audit entry at index {i} order_id does not correspond to fill at index {i}",
                     },
                     "summary": f"Audit order_id linkage mismatch at {audit_path}",
+                }
+
+        # Verify symbol matches between fill and audit
+        f_symbol = fill.get("symbol")
+        a_symbol = audit.get("symbol")
+        if f_symbol is not None and str(f_symbol).strip() != "":
+            if str(f_symbol) != str(a_symbol):
+                return {
+                    "is_identical": False,
+                    "category": "missing_evidence",
+                    "first_difference": {
+                        "category": "missing_evidence",
+                        "field": "symbol",
+                        "path": f"{audit_path}.symbol",
+                        "expected": str(f_symbol),
+                        "actual": str(a_symbol),
+                        "detail": f"Audit entry at index {i} in {run_label} symbol '{a_symbol}' does not match fill symbol '{f_symbol}'",
+                    },
+                    "summary": f"Audit symbol mismatch at {audit_path}",
+                }
+
+        # Verify session_date matches between fill and audit (canonical Asia/Shanghai trading date)
+        f_sess_raw = (
+            fill.get("session_date")
+            or fill.get("bar_timestamp")
+            or fill.get("timestamp")
+        )
+        f_session_date = _canonical_session_date(f_sess_raw)
+        a_session_date = _canonical_session_date(audit.get("session_date"))
+        if f_session_date is not None and a_session_date is not None:
+            if f_session_date != a_session_date:
+                return {
+                    "is_identical": False,
+                    "category": "missing_evidence",
+                    "first_difference": {
+                        "category": "missing_evidence",
+                        "field": "session_date",
+                        "path": f"{audit_path}.session_date",
+                        "expected": f_session_date,
+                        "actual": str(audit.get("session_date")),
+                        "detail": f"Audit entry at index {i} in {run_label} session_date '{audit.get('session_date')}' contradicts fill session_date '{f_session_date}'",
+                    },
+                    "summary": f"Audit session_date contradiction at {audit_path}",
+                }
+
+        # Verify bar_timestamp matches between fill and audit
+        f_bar_raw = fill.get("bar_timestamp") or fill.get("timestamp")
+        f_bar_ts = _canonical_bar_timestamp(f_bar_raw)
+        a_bar_ts = _canonical_bar_timestamp(audit.get("bar_timestamp"))
+        if f_bar_ts is not None and a_bar_ts is not None:
+            if f_bar_ts != a_bar_ts:
+                return {
+                    "is_identical": False,
+                    "category": "missing_evidence",
+                    "first_difference": {
+                        "category": "missing_evidence",
+                        "field": "bar_timestamp",
+                        "path": f"{audit_path}.bar_timestamp",
+                        "expected": f_bar_ts,
+                        "actual": str(audit.get("bar_timestamp")),
+                        "detail": f"Audit entry at index {i} in {run_label} bar_timestamp '{audit.get('bar_timestamp')}' contradicts fill bar_timestamp '{f_bar_ts}'",
+                    },
+                    "summary": f"Audit bar_timestamp contradiction at {audit_path}",
+                }
+
+        # Verify execution_phase if present on fill
+        f_phase = fill.get("execution_phase")
+        a_phase = audit.get("execution_phase")
+        if f_phase is not None and str(f_phase).strip() != "":
+            if str(f_phase) != str(a_phase):
+                return {
+                    "is_identical": False,
+                    "category": "missing_evidence",
+                    "first_difference": {
+                        "category": "missing_evidence",
+                        "field": "execution_phase",
+                        "path": f"{audit_path}.execution_phase",
+                        "expected": str(f_phase),
+                        "actual": str(a_phase),
+                        "detail": f"Audit entry at index {i} in {run_label} execution_phase '{a_phase}' does not match fill execution_phase '{f_phase}'",
+                    },
+                    "summary": f"Audit execution_phase mismatch at {audit_path}",
+                }
+
+        # Verify execution_model if present on fill
+        f_model = fill.get("execution_model")
+        a_model = audit.get("execution_model")
+        if f_model is not None and str(f_model).strip() != "":
+            if str(f_model) != str(a_model):
+                return {
+                    "is_identical": False,
+                    "category": "missing_evidence",
+                    "first_difference": {
+                        "category": "missing_evidence",
+                        "field": "execution_model",
+                        "path": f"{audit_path}.execution_model",
+                        "expected": str(f_model),
+                        "actual": str(a_model),
+                        "detail": f"Audit entry at index {i} in {run_label} execution_model '{a_model}' does not match fill execution_model '{f_model}'",
+                    },
+                    "summary": f"Audit execution_model mismatch at {audit_path}",
                 }
 
         fill_key = (
