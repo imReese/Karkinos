@@ -76,6 +76,7 @@ def roll_forward_daily_broker_statement_for_state(
     state: Any,
     run_date: str,
     ledger_revision_guardrail_resolver: LedgerRevisionGuardrailResolver | None = None,
+    path: str | Path | None = None,
 ) -> DailySnapshotRollForwardResult:
     """Apply the owner-enabled roll-forward using persisted ledger guardrails."""
 
@@ -111,8 +112,16 @@ def roll_forward_daily_broker_statement_for_state(
         ignored_revision_entry_ids, ledger_integrity_blocker = (
             ledger_revision_guardrail_resolver(ledger_entries)
         )
+    target_path = path
+    if target_path is None:
+        collector = getattr(state, "broker_statement_collector", None)
+        target_path = (
+            getattr(collector, "_path", None)
+            if collector is not None and getattr(collector, "_path", None)
+            else getattr(config, "path", "")
+        )
     return roll_forward_daily_broker_statement(
-        path=getattr(config, "path", ""),
+        path=target_path,
         run_date=run_date,
         max_file_bytes=int(getattr(config, "max_file_bytes", 0)),
         ledger_entries=ledger_entries,

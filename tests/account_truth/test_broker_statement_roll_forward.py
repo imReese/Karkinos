@@ -172,6 +172,56 @@ def test_state_roll_forward_is_explicitly_enabled_and_non_authorizing(tmp_path):
     assert enabled.changes_capital_authority is False
 
 
+def test_state_roll_forward_uses_collector_path_when_present(tmp_path) -> None:
+    path = tmp_path / "broker_statement.csv"
+    path.write_text(STATEMENT, encoding="utf-8")
+
+    class EmptyLedger:
+        def get_ledger_entries_sync(self, *, limit, offset):
+            assert (limit, offset) == (5000, 0)
+            return []
+
+    collector = SimpleNamespace(_path=path)
+    result = roll_forward_daily_broker_statement_for_state(
+        state=SimpleNamespace(
+            config=SimpleNamespace(
+                broker_statement_collector=BrokerStatementCollectorConfig(
+                    enabled=True,
+                    daily_snapshot_roll_forward_enabled=True,
+                    path="wrong_unmatched_path.csv",
+                )
+            ),
+            broker_statement_collector=collector,
+            db=EmptyLedger(),
+        ),
+        run_date="2026-08-21",
+    )
+    assert result.status == "rolled_forward"
+    assert DAILY_SNAPSHOT_ROLL_FORWARD_EVENT_PREFIX in path.read_text(encoding="utf-8")
+
+    explicit_path = tmp_path / "explicit_statement.csv"
+    explicit_path.write_text(STATEMENT, encoding="utf-8")
+    result_explicit = roll_forward_daily_broker_statement_for_state(
+        state=SimpleNamespace(
+            config=SimpleNamespace(
+                broker_statement_collector=BrokerStatementCollectorConfig(
+                    enabled=True,
+                    daily_snapshot_roll_forward_enabled=True,
+                    path="wrong_unmatched_path.csv",
+                )
+            ),
+            broker_statement_collector=collector,
+            db=EmptyLedger(),
+        ),
+        run_date="2026-08-21",
+        path=explicit_path,
+    )
+    assert result_explicit.status == "rolled_forward"
+    assert DAILY_SNAPSHOT_ROLL_FORWARD_EVENT_PREFIX in explicit_path.read_text(
+        encoding="utf-8"
+    )
+
+
 def test_daily_snapshot_roll_forward_rejects_ledger_revision_after_source_refresh(
     tmp_path,
 ) -> None:

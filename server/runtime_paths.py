@@ -87,3 +87,27 @@ def resolve_static_dir() -> Path:
     if configured:
         return _resolved_path(configured)
     return resolve_release_root() / "web" / "dist"
+
+
+def resolve_broker_statement_path(path: str | Path = "broker_statement.csv") -> Path:
+    """Resolve a broker statement path against workspace or repository root.
+
+    Relative paths prefer existing files in the current workspace, then existing
+    files in the repository root, defaulting to the workspace path when neither
+    exists yet. Absolute paths are preserved as-is.
+    """
+
+    candidate = Path(path).expanduser()
+    if candidate.is_absolute():
+        return candidate.resolve()
+
+    workspace = resolve_workspace()
+    candidate_workspace = (workspace / candidate).resolve()
+    repo_root = Path(__file__).resolve().parents[1]
+    candidate_repo = (repo_root / candidate).resolve()
+
+    if candidate_workspace.exists():
+        return candidate_workspace
+    if candidate_repo.exists():
+        return candidate_repo
+    return candidate_workspace

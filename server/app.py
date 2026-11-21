@@ -27,7 +27,10 @@ from server.release_activation import (
     ReleaseActivationGuardMiddleware,
     is_release_activation_guarded,
 )
-from server.runtime_paths import resolve_static_dir
+from server.runtime_paths import (
+    resolve_broker_statement_path,
+    resolve_static_dir,
+)
 from server.scheduler import TradingScheduler
 from server.services.risk.trading_controls import TradingControlState
 from server.ws.hub import ConnectionHub
@@ -285,24 +288,11 @@ async def lifespan(app: FastAPI):
         collector_stability_delay = float(collector_config.stability_delay_seconds)
     except (TypeError, ValueError) as exc:
         raise ValueError("broker_statement_collector_timing_invalid") from exc
-    collector_path = collector_config.path
-    if collector_path:
-        p = Path(collector_path).expanduser()
-        if not p.is_absolute():
-            from server.runtime_paths import resolve_workspace
-
-            workspace = resolve_workspace()
-            candidate_workspace = workspace / p
-            repo_root = Path(__file__).resolve().parents[1]
-            candidate_repo = repo_root / p
-            if candidate_workspace.exists():
-                collector_path = str(candidate_workspace)
-            elif candidate_repo.exists():
-                collector_path = str(candidate_repo)
-            else:
-                collector_path = str(candidate_workspace)
-        else:
-            collector_path = str(p)
+    collector_path = (
+        str(resolve_broker_statement_path(collector_config.path))
+        if collector_config.path
+        else ""
+    )
 
     broker_statement_collector = LocalBrokerStatementCollector(
         repository=(
