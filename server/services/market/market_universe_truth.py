@@ -632,6 +632,12 @@ def build_full_market_universe_truth(
     maintenance_symbols: list[str] = []
     excluded_reason_counts: dict[str, int] = {}
     per_name_budget = cash * weight
+    end_receipt = receipt_by_date.get(end_date)
+    end_traded_symbols = (
+        set(end_receipt.get("symbols") or [])
+        if isinstance(end_receipt, Mapping)
+        else None
+    )
     for symbol, member in member_by_symbol.items():
         state_reason = (
             _member_session_exclusion(verified, symbol)
@@ -653,6 +659,7 @@ def build_full_market_universe_truth(
                 fee_buffer_rate=active_policy.fee_buffer_rate,
                 per_name_budget=per_name_budget,
                 enforce_lot_feasibility=True,
+                end_traded_symbols=end_traded_symbols,
             )
         )
         if assessment["status"] == "eligible":
@@ -674,6 +681,7 @@ def build_full_market_universe_truth(
             fee_buffer_rate=active_policy.fee_buffer_rate,
             per_name_budget=per_name_budget,
             enforce_lot_feasibility=False,
+            end_traded_symbols=end_traded_symbols,
         )
         if maintenance["status"] == "eligible":
             maintenance_symbols.append(symbol)
@@ -765,6 +773,7 @@ def _assess_member_frame(
     fee_buffer_rate: Decimal,
     per_name_budget: Decimal,
     enforce_lot_feasibility: bool,
+    end_traded_symbols: set[str] | None = None,
 ) -> dict[str, Any]:
     if frame is None or frame.empty or "timestamp" not in frame.columns:
         return {**member, "status": "excluded", "reason": "persisted_bars_missing"}
@@ -782,6 +791,15 @@ def _assess_member_frame(
     if len(window) < minimum_history_rows:
         return {**member, "status": "excluded", "reason": "history_too_short"}
     if window["timestamp"].iloc[-1].date().isoformat() != end_date:
+        if (
+            end_traded_symbols is not None
+            and str(member.get("symbol") or "") not in end_traded_symbols
+        ):
+            return {
+                **member,
+                "status": "excluded",
+                "reason": "nontrading_session_excluded",
+            }
         return {**member, "status": "excluded", "reason": "market_date_missing"}
     required_columns = ("open", "high", "low", "close", "volume")
     if any(column not in window.columns for column in required_columns):

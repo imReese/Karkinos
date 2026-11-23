@@ -40,7 +40,7 @@ class DailyCandidateQuoteFreezeService:
                 str(signal.get("symbol") or "")
                 for signal in prepared_scan.get("selected_signals") or []
                 if isinstance(signal, Mapping)
-                and signal.get("direction") == "buy"
+                and signal.get("direction") in {"buy", "sell"}
                 and str(signal.get("symbol") or "")
             }
         )
@@ -58,18 +58,19 @@ class DailyCandidateQuoteFreezeService:
             "mutates_account_ledger": False,
             "changes_capital_authority": False,
         }
-        if prepared_scan.get("status") == "blocked":
-            return {
-                **base,
-                "status": "not_run",
-                "blockers": ["prepared_strategy_scan_blocked"],
-                "quote_results": [],
-            }
         if not symbols:
             return {
                 **base,
-                "status": "not_required",
-                "blockers": [],
+                "status": (
+                    "not_required"
+                    if prepared_scan.get("status") != "blocked"
+                    else "not_run"
+                ),
+                "blockers": (
+                    []
+                    if prepared_scan.get("status") != "blocked"
+                    else ["prepared_strategy_scan_blocked"]
+                ),
                 "quote_results": [],
             }
 

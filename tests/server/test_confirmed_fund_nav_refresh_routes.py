@@ -368,3 +368,45 @@ def test_confirmed_fund_nav_refresh_keeps_exact_fund_lane_with_same_symbol_stock
     assert response.status == "success"
     assert response.refreshed_symbols == ["FUND-A"]
     assert source.calls == ["FUND-A"]
+
+
+def test_confirmed_fund_nav_refresh_resolves_closed_trading_date_on_weekend(
+    monkeypatch,
+    tmp_path,
+    inline_market_fetch,
+):
+    from server.routes.market import ConfirmedFundNavRefreshRequest
+    from server.services.market import fund_nav as fund_nav_sync
+    from server.services.market_views import confirmed_nav as confirmed_nav_views
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    source = DeterministicConfirmedFundNavSource()
+    monkeypatch.setattr(
+        fund_nav_sync,
+        "build_sources",
+        lambda data_source, tushare_token: {
+            "deterministic_fixture": source,
+            "akshare": source,
+        },
+    )
+    state = _state(db)
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: state)
+    monkeypatch.setattr(
+        confirmed_nav_views,
+        "resolve_latest_verified_closed_trading_date",
+        lambda db, now: SimpleNamespace(trade_date="2026-06-17"),
+    )
+
+    response = asyncio.run(
+        _route_endpoint()(
+            ConfirmedFundNavRefreshRequest(
+                symbols=["FUND-A"],
+                target_date="2026-06-17",
+            )
+        )
+    )
+
+    assert response.status == "success"
+    assert response.refreshed_symbols == ["FUND-A"]
+    assert response.run.metadata["target_date"] == "2026-06-17"

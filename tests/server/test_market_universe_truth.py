@@ -285,3 +285,50 @@ def test_research_panel_hard_filters_the_full_stock_directory(tmp_path) -> None:
     assert result["research_screened_stock_count"] == 1_000
     assert result["research_eligible_count"] == 40
     assert set(result["research_panel"]["symbols"]) == set(eligible_outside_preliminary)
+
+
+def test_full_market_universe_truth_treats_receipt_omitted_symbol_as_nontrading_excluded(
+    tmp_path,
+) -> None:
+    from decimal import Decimal
+
+    from server.services.market.market_universe_truth import (
+        _assess_member_frame,
+    )
+
+    bars_df = _bars()
+    # bars_df ends at 2026-08-20, while end_date is 2026-08-21
+    bars_df = bars_df.loc[bars_df["timestamp"] <= "2026-08-20T23:59:59"].copy()
+    member = {"symbol": "000635", "asset_class": "stock"}
+
+    # Case 1: 000635 is in end_traded_symbols (it traded, but our frame missed the bar) -> market_date_missing
+    res_missing = _assess_member_frame(
+        frame=bars_df,
+        member=member,
+        start_date="2026-04-01",
+        end_date="2026-08-21",
+        minimum_history_rows=60,
+        lot_size=100,
+        fee_buffer_rate=Decimal("0.01"),
+        per_name_budget=Decimal("25000"),
+        enforce_lot_feasibility=True,
+        end_traded_symbols={"000635", "600000"},
+    )
+    assert res_missing["status"] == "excluded"
+    assert res_missing["reason"] == "market_date_missing"
+
+    # Case 2: 000635 is NOT in end_traded_symbols (confirmed halted by provider receipt) -> nontrading_session_excluded
+    res_halted = _assess_member_frame(
+        frame=bars_df,
+        member=member,
+        start_date="2026-04-01",
+        end_date="2026-08-21",
+        minimum_history_rows=60,
+        lot_size=100,
+        fee_buffer_rate=Decimal("0.01"),
+        per_name_budget=Decimal("25000"),
+        enforce_lot_feasibility=True,
+        end_traded_symbols={"600000"},
+    )
+    assert res_halted["status"] == "excluded"
+    assert res_halted["reason"] == "nontrading_session_excluded"

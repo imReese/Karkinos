@@ -8,7 +8,7 @@ import pytest
 
 from core.types import AssetClass, Symbol
 from data.providers.tushare import TushareSource
-from domain.instrument import make_etf
+from domain.instrument import make_etf, make_stock
 from server.db import AppDatabase
 from server.scheduler.quote_restore import runtime_quotes_from_persisted
 from server.services.market import identity as market_identity
@@ -292,6 +292,73 @@ def test_scheduler_restore_rejects_unbound_same_symbol_identity_conflict() -> No
             ],
             {},
         )
+
+
+def test_scheduler_restore_prefers_tradeable_stock_over_index_for_same_symbol() -> None:
+    quotes = [
+        {
+            "id": 1,
+            "symbol": "000001",
+            "asset_type": "index",
+            "price": 3533.79,
+            "volume": None,
+            "timestamp": "2026-11-20T15:00:00+08:00",
+        },
+        {
+            "id": 2,
+            "symbol": "000001",
+            "asset_type": "stock",
+            "price": 12.03,
+            "volume": 22291400.0,
+            "timestamp": "2026-11-20T09:45:03+08:00",
+        },
+    ]
+    # When instruments is empty, stock takes precedence over index
+    restored = runtime_quotes_from_persisted(quotes, {})
+    assert "000001" in restored
+    assert restored["000001"]["price"] == 12.03
+    assert restored["000001"]["instrument_type"] == "stock"
+
+    # Also works when order is reversed
+    restored_reversed = runtime_quotes_from_persisted(list(reversed(quotes)), {})
+    assert "000001" in restored_reversed
+    assert restored_reversed["000001"]["price"] == 12.03
+
+
+def test_scheduler_restore_ignores_untracked_symbol_conflicts_when_instruments_specified() -> (
+    None
+):
+    quotes = [
+        {
+            "id": 1,
+            "symbol": "000001",
+            "asset_type": "index",
+            "price": 3533.79,
+            "timestamp": "2026-11-20T15:00:00+08:00",
+        },
+        {
+            "id": 2,
+            "symbol": "000001",
+            "asset_type": "stock",
+            "price": 12.03,
+            "timestamp": "2026-11-20T09:45:03+08:00",
+        },
+        {
+            "id": 3,
+            "symbol": "601985",
+            "asset_type": "stock",
+            "price": 9.98,
+            "timestamp": "2026-11-20T09:45:03+08:00",
+        },
+    ]
+    # instruments only tracks 601985
+    instruments = {
+        Symbol("601985"): make_stock("601985", "中国核电"),
+    }
+    restored = runtime_quotes_from_persisted(quotes, instruments)
+    assert "601985" in restored
+    assert restored["601985"]["price"] == 9.98
+    assert "000001" not in restored
 
 
 def test_ledger_position_assets_aggregate_same_symbol_by_exact_identity() -> None:

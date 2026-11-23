@@ -58,8 +58,20 @@ export function decisionGateMatrixItems(
   return DECISION_GATE_IDS.map((gateId) => {
     const task = workflowTasks.get(gateId);
     if (task) {
-      const stateLabel = formatPublicStatus(task.status, locale);
-      const blockers = gateBlockingReasonLabels(task.blocking_reasons, locale);
+      let taskStatus = task.status;
+      let taskBlockingReasons = task.blocking_reasons;
+      if (
+        gateId === 'strategy_evidence' &&
+        lane?.generation?.status === 'blocked' &&
+        taskStatus === 'pass'
+      ) {
+        taskStatus = 'blocked';
+        taskBlockingReasons = [
+          lane.generation.failure_code ?? 'daily_generation_blocked',
+        ];
+      }
+      const stateLabel = formatPublicStatus(taskStatus, locale);
+      const blockers = gateBlockingReasonLabels(taskBlockingReasons, locale);
       const requiredActions = gateRequirementLabels(
         task.required_actions,
         labels,
@@ -82,7 +94,7 @@ export function decisionGateMatrixItems(
       return {
         id: gateId,
         gate: labels.workflowTaskLabel(gateId),
-        state: decisionGateState(task.status),
+        state: decisionGateState(taskStatus),
         stateLabel,
         reason: finalBlockers.join(' · ') || stateLabel,
         evidence: lane ? formatTimestamp(lane.generated_at) : missingEvidence,

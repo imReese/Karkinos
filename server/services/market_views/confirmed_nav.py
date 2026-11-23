@@ -11,6 +11,7 @@ from server.contracts.http.market import (
     ConfirmedFundNavRefreshRequest,
     ConfirmedFundNavRefreshResponse,
 )
+from server.services.market.calendar import resolve_latest_verified_closed_trading_date
 from server.services.market.refresh import run_blocking_fetch as _run_blocking_fetch
 from server.services.market.refresh import shanghai_now as _shanghai_now
 from server.services.market_views.fetch_runs import (
@@ -77,6 +78,16 @@ async def refresh_confirmed_fund_nav(
             },
         )
 
+    target_date = (
+        str(request.target_date).strip()
+        if request.target_date is not None and str(request.target_date).strip()
+        else None
+    )
+    if target_date is None:
+        resolved = resolve_latest_verified_closed_trading_date(db, shanghai_now())
+        if resolved is not None:
+            target_date = resolved.trade_date
+
     watchlist = [
         (Symbol(symbol), InstrumentType.OPEN_END_FUND) for symbol in requested_symbols
     ]
@@ -91,6 +102,7 @@ async def refresh_confirmed_fund_nav(
                 now=shanghai_now(),
                 ttl_seconds=0,
                 confirmation_only=True,
+                target_date=target_date,
                 request_id=request.request_id,
                 manual_explicit_trigger=True,
             )

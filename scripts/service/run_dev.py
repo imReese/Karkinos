@@ -342,36 +342,40 @@ def main(argv: list[str] | None = None) -> int:
             f"Development checkout: {ROOT}\nDevelopment state: {environment['KARKINOS_HOME']}\nWeb: http://127.0.0.1:{args.web_port}\nAPI: http://127.0.0.1:{args.port}\nPress Ctrl-C to stop both processes.",
             flush=True,
         )
-        return supervise(
+        commands = [
             [
-                [
-                    sys.executable,
-                    "-m",
-                    "server",
-                    "--reload",
-                    "--host",
-                    "127.0.0.1",
-                    "--port",
-                    str(args.port),
-                    "--reload-exclude",
-                    "tests",
-                    "--reload-exclude",
-                    "web",
-                ],
-                [
-                    npm,
-                    "--prefix",
-                    str(ROOT / "web"),
-                    "run",
-                    "dev",
-                    "--",
-                    "--host",
-                    "127.0.0.1",
-                    "--port",
-                    str(args.web_port),
-                    "--strictPort",
-                ],
+                sys.executable,
+                "-m",
+                "server",
+                "--reload",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(args.port),
+                "--reload-exclude",
+                "tests",
+                "--reload-exclude",
+                "web",
             ],
+            [
+                npm,
+                "--prefix",
+                str(ROOT / "web"),
+                "run",
+                "dev",
+                "--",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(args.web_port),
+                "--strictPort",
+            ],
+        ]
+        caffeinate = shutil.which("caffeinate") if sys.platform == "darwin" else None
+        if caffeinate is not None and not os.environ.get("KARKINOS_NO_CAFFEINATE"):
+            commands.append([caffeinate, "-i", "-s"])
+        return supervise(
+            commands,
             environment,
             health_url=f"http://127.0.0.1:{args.port}/api/health",
             startup_timeout=args.startup_timeout,

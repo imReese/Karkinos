@@ -313,9 +313,15 @@ start_dev() {
         log_start="$(wc -c <"${log}")"
     fi
 
+    local launcher=()
+    if [[ "$(uname)" == "Darwin" ]] && command -v caffeinate >/dev/null 2>&1; then
+        launcher=(caffeinate -i -s)
+    fi
+
     (
         cd "${REPO_ROOT}"
         exec nohup \
+            "${launcher[@]}" \
             "${python}" \
             -c 'import os, sys; os.setsid(); os.execv(sys.argv[1], sys.argv[1:])' \
             "${python}" \
@@ -436,6 +442,11 @@ start_worktree_branch() {
         log_start="$(wc -c <"${log}")"
     fi
 
+    local launcher=()
+    if [[ "$(uname)" == "Darwin" ]] && command -v caffeinate >/dev/null 2>&1; then
+        launcher=(caffeinate -i -s)
+    fi
+
     (
         cd "${SOURCE_ROOT}"
         exec nohup env \
@@ -446,6 +457,7 @@ start_worktree_branch() {
             KARKINOS_ENV_FILE="${KARKINOS_ENV_FILE}" \
             KARKINOS_STATIC_DIR="${KARKINOS_STATIC_DIR}" \
             KARKINOS_RELEASE_ROOT="${KARKINOS_RELEASE_ROOT}" \
+            "${launcher[@]}" \
             "${python}" \
             -c 'import os, sys; os.setsid(); os.execv(sys.argv[1], sys.argv[1:])' \
             "${python}" \

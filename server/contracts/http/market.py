@@ -18,6 +18,10 @@ class ConfirmedFundNavRefreshRequest(BaseModel):
         max_length=128,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$",
     )
+    target_date: str | None = Field(
+        default=None,
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+    )
 
 
 class ConfirmedFundNavRefreshResponse(BaseModel):

@@ -79,14 +79,78 @@ def test_quote_freeze_refreshes_only_selected_buys_and_reuses_audit() -> None:
 
     assert first["status"] == "complete"
     assert first["blockers"] == []
-    assert first["symbols"] == ["600001"]
+    assert first["symbols"] == ["000001", "600001"]
     assert first["provider_contact_performed"] is True
     assert second["status"] == "complete"
     assert second["reused"] is True
-    assert calls == ["600001"]
+    assert calls == ["000001", "600001"]
     assert db.runs[first["run_id"]]["trigger"] == (
         "daily_candidate_signal_quote_freeze"
     )
+
+
+def test_quote_freeze_refreshes_sell_candidates_when_scan_blocked() -> None:
+    db = _QuoteDb()
+    calls: list[str] = []
+
+    async def refresh(_state, symbol, asset_class, *, fetch_run_id):
+        calls.append(symbol)
+        db.quotes[symbol] = {
+            "symbol": symbol,
+            "asset_type": asset_class.value,
+            "price": 9.98,
+            "quote_timestamp": "2026-11-23T09:36:00+08:00",
+            "quote_status": "live",
+            "provider_name": "fixture",
+            "fetch_run_id": fetch_run_id,
+        }
+        return {
+            "symbol": symbol,
+            "status": "refreshed",
+            "quote_timestamp": "2026-11-23T09:36:00+08:00",
+        }
+
+    service = DailyCandidateQuoteFreezeService(
+        db=db,
+        state=SimpleNamespace(config=SimpleNamespace(data_source="akshare")),
+        quote_refresher=refresh,
+        clock=lambda: datetime(2026, 11, 23, 9, 36, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+
+    blocked_prepared = {
+        "status": "blocked",
+        "decision_date": "2026-11-23",
+        "input_fingerprint": "sha256:prepared_blocked",
+        "signal_selection_fingerprint": "sha256:signals_blocked",
+        "selected_signals": [
+            {"symbol": "601985", "direction": "sell"},
+            {"symbol": "603659", "direction": "sell"},
+        ],
+    }
+
+    result = asyncio.run(service.run_once(blocked_prepared))
+    assert result["status"] == "complete"
+    assert result["blockers"] == []
+    assert result["symbols"] == ["601985", "603659"]
+    assert calls == ["601985", "603659"]
+
+
+def test_quote_freeze_returns_not_run_when_scan_blocked_and_no_signals() -> None:
+    db = _QuoteDb()
+    service = DailyCandidateQuoteFreezeService(
+        db=db,
+        state=SimpleNamespace(config=SimpleNamespace(data_source="akshare")),
+        quote_refresher=lambda *args, **kwargs: None,
+    )
+    blocked_empty = {
+        "status": "blocked",
+        "decision_date": "2026-11-23",
+        "selected_signals": [],
+    }
+    result = asyncio.run(service.run_once(blocked_empty))
+    assert result["status"] == "not_run"
+    assert result["blockers"] == ["prepared_strategy_scan_blocked"]
+    assert result["symbols"] == []
 
 
 def test_quote_freeze_fails_closed_on_wrong_day_quote() -> None:

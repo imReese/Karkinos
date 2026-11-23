@@ -5309,6 +5309,63 @@ test('collapses an all-pass gate matrix across viewport breakpoints', async () =
   expect(content?.className).toContain('block');
 });
 
+test('decision gate disclosure shows blocked review when daily generation is blocked', async () => {
+  const blockedGenerationToday = {
+    ...dailyDecision,
+    decision: 'no_action',
+    generation: {
+      run_date: '2026-11-23',
+      status: 'blocked',
+      attempt_run_id: 'attempt-1',
+      daily_evidence_run_id: null,
+      scan_run_id: 'scan-1',
+      failure_stage: 'final_scan',
+      generation_verified: false,
+      recommendation_authoritative: false,
+      failure_code:
+        'promoted_strategy_universe_scan:strategy_scan_outside_reviewed_decision_window',
+    },
+    summary: {
+      ...dailyDecision.summary,
+      workflow_tasks: [
+        'account_truth',
+        'strategy_evidence',
+        'risk_review',
+        'paper_shadow_review',
+        'manual_confirmation',
+      ].map((id) => ({
+        id,
+        priority: 10,
+        status: id === 'strategy_evidence' ? 'blocked' : 'pass',
+        title: id,
+        description: 'Gate evidence.',
+        required_actions:
+          id === 'strategy_evidence'
+            ? ['review_daily_generation_blockers']
+            : [],
+        blocking_reasons:
+          id === 'strategy_evidence'
+            ? [
+                'promoted_strategy_universe_scan:strategy_scan_outside_reviewed_decision_window',
+              ]
+            : [],
+        evidence: {},
+      })),
+    },
+  } as DecisionResponse;
+
+  renderDecisionCockpit({ todayResponse: blockedGenerationToday });
+
+  const disclosure = await screen.findByTestId('decision-gate-disclosure');
+  expect(within(disclosure).queryByText('5/5 passed')).toBeNull();
+  expect(within(disclosure).getByText('1 need review')).toBeTruthy();
+  const track = within(disclosure).getByTestId('decision-gate-track');
+  const stratStep = Array.from(track.children).find((step) =>
+    step.textContent?.includes('Strategy evidence'),
+  );
+  expect(stratStep?.getAttribute('data-gate-state')).toBe('block');
+});
+
 test('surfaces strategy-attribution gate status in decision summaries', async () => {
   const blockedToday = {
     ...dailyDecision,

@@ -108,12 +108,17 @@ def workflow_tasks(
     audit: dict[str, Any],
     candidate_count: int,
     ready_for_manual_confirmation_count: int,
+    generation: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     return [
         data_refresh_workflow_task(market_data),
         account_truth_workflow_task(account_truth),
         risk_review_workflow_task(action_tasks, audit),
-        strategy_evidence_workflow_task(strategy_attribution, candidate_count),
+        strategy_evidence_workflow_task(
+            strategy_attribution,
+            candidate_count,
+            generation=generation,
+        ),
         paper_shadow_workflow_task(candidate_count),
         manual_confirmation_workflow_task(
             account_truth=account_truth,
@@ -228,27 +233,57 @@ def risk_review_workflow_task(
 def strategy_evidence_workflow_task(
     strategy_attribution: dict[str, Any],
     candidate_count: int,
+    generation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     gate_status = str(strategy_attribution.get("gate_status") or "pass")
-    if gate_status == "pass":
+    if generation is not None and generation.get("status") == "blocked":
+        status = "blocked"
+        required_actions = ["review_daily_generation_blockers"]
+        failure_code = str(generation.get("failure_code") or "daily_generation_blocked")
+        blocking_reasons = [failure_code]
+        description = "Daily strategy candidate generation was blocked by market or timing evidence."
+    elif gate_status == "pass":
         status = "pass"
+        required_actions = list(strategy_attribution.get("required_actions") or [])
+        blocking_reasons = list(strategy_attribution.get("blocking_reasons") or [])
+        description = (
+            "Strategy candidates are reviewed only after data and account facts."
+        )
     elif gate_status == "degraded":
         status = "degraded"
+        required_actions = list(strategy_attribution.get("required_actions") or [])
+        blocking_reasons = list(strategy_attribution.get("blocking_reasons") or [])
+        description = (
+            "Strategy candidates are reviewed only after data and account facts."
+        )
     else:
         status = "blocked"
+        required_actions = list(strategy_attribution.get("required_actions") or [])
+        blocking_reasons = list(strategy_attribution.get("blocking_reasons") or [])
+        description = (
+            "Strategy candidates are reviewed only after data and account facts."
+        )
     return workflow_task(
         task_id="strategy_evidence",
         priority=40,
         status=status,
         title="Strategy evidence",
-        description="Strategy candidates are reviewed only after data and account facts.",
-        required_actions=list(strategy_attribution.get("required_actions") or []),
-        blocking_reasons=list(strategy_attribution.get("blocking_reasons") or []),
+        description=description,
+        required_actions=required_actions,
+        blocking_reasons=blocking_reasons,
         evidence={
             "candidate_count": candidate_count,
             "gate_status": gate_status,
             "strategy_id": strategy_attribution.get("strategy_id"),
             "has_evidence": bool(strategy_attribution.get("has_evidence")),
+            **(
+                {
+                    "generation_status": generation.get("status"),
+                    "generation_failure_code": generation.get("failure_code"),
+                }
+                if generation is not None
+                else {}
+            ),
         },
     )
 

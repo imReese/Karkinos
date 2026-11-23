@@ -47,7 +47,7 @@ def runtime_quote_from_persisted(quote: dict[str, Any]) -> dict[str, Any]:
     asset_class = INSTRUMENT_ASSET_CLASS_MAP[instrument_type]
     return {
         "price": float(quote["price"]),
-        "volume": float(quote["volume"]) if quote["volume"] is not None else None,
+        "volume": float(quote["volume"]) if quote.get("volume") is not None else None,
         "timestamp": quote["timestamp"],
         "asset_class": asset_class.value,
         "instrument_type": instrument_type.value,
@@ -100,6 +100,8 @@ def runtime_quotes_from_persisted(
         expected_type = expected.get(symbol)
         if expected_type is not None and instrument_type is not expected_type:
             continue
+        if expected and expected_type is None:
+            continue
         rank = (
             str(quote.get("quote_timestamp") or quote.get("timestamp") or ""),
             str(quote.get("updated_at") or quote.get("captured_at") or ""),
@@ -107,6 +109,17 @@ def runtime_quotes_from_persisted(
         )
         previous = selected.get(symbol)
         if previous is not None and previous[0] is not instrument_type:
+            if (
+                previous[0] == InstrumentType.INDEX
+                and instrument_type != InstrumentType.INDEX
+            ):
+                selected[symbol] = (instrument_type, quote, rank)
+                continue
+            elif (
+                previous[0] != InstrumentType.INDEX
+                and instrument_type == InstrumentType.INDEX
+            ):
+                continue
             raise RuntimeError(
                 f"persisted scheduler quote identity conflicts: {symbol}"
             )

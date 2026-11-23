@@ -364,6 +364,7 @@ def suppress_unverified_daily_scan_candidates(
             audit=audit,
             candidate_count=len(retained),
             ready_for_manual_confirmation_count=ready_count,
+            generation=generation,
         ),
     )
     return {

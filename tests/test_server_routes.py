@@ -9933,6 +9933,48 @@ def test_decision_today_summary_aggregates_portfolio_market_and_audit_state(
     assert workflow_tasks[1]["priority"] < workflow_tasks[3]["priority"]
 
 
+def test_strategy_evidence_workflow_task_blocked_when_daily_generation_blocked() -> (
+    None
+):
+    from server.services.decision.decision_workflow_projection import (
+        strategy_evidence_workflow_task,
+        workflow_tasks,
+    )
+
+    task = strategy_evidence_workflow_task(
+        strategy_attribution={"gate_status": "pass", "strategy_id": "test_strat"},
+        candidate_count=0,
+        generation={
+            "status": "blocked",
+            "failure_code": "promoted_strategy_universe_scan:strategy_scan_outside_reviewed_decision_window",
+        },
+    )
+    assert task["status"] == "blocked"
+    assert task["blocking_reasons"] == [
+        "promoted_strategy_universe_scan:strategy_scan_outside_reviewed_decision_window"
+    ]
+    assert task["evidence"]["generation_status"] == "blocked"
+
+    all_tasks = workflow_tasks(
+        market_data={"source_health": "live"},
+        account_truth={"gate_status": "pass"},
+        strategy_attribution={"gate_status": "pass"},
+        action_tasks={},
+        audit={},
+        candidate_count=0,
+        ready_for_manual_confirmation_count=0,
+        generation={
+            "status": "blocked",
+            "failure_code": "promoted_strategy_universe_scan:strategy_scan_outside_reviewed_decision_window",
+        },
+    )
+    strat_task = next(t for t in all_tasks if t["id"] == "strategy_evidence")
+    assert strat_task["status"] == "blocked"
+    assert strat_task["blocking_reasons"] == [
+        "promoted_strategy_universe_scan:strategy_scan_outside_reviewed_decision_window"
+    ]
+
+
 def test_decision_today_returns_no_action_reason(monkeypatch):
     from server.routes import decision as decision_routes
 
