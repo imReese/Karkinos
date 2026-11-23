@@ -372,7 +372,9 @@ def main(argv: list[str] | None = None) -> int:
             ],
         ]
         caffeinate = shutil.which("caffeinate") if sys.platform == "darwin" else None
-        if caffeinate is not None and not os.environ.get("KARKINOS_NO_CAFFEINATE"):
+        if caffeinate is not None and os.environ.get(
+            "KARKINOS_NO_CAFFEINATE", ""
+        ).strip().lower() not in {"1", "true", "yes"}:
             commands.append([caffeinate, "-i", "-s"])
         return supervise(
             commands,

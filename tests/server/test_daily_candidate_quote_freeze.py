@@ -183,3 +183,36 @@ def test_quote_freeze_fails_closed_on_wrong_day_quote() -> None:
     assert result["status"] == "blocked"
     assert "selected_quote_date_mismatch:600001" in result["blockers"]
     assert "selected_quote_fetch_run_not_successful" in result["blockers"]
+
+
+def test_active_action_blockers_preserves_quote_freeze_for_sell_candidates() -> None:
+    from server.services.strategy_scan.universe.evaluation import active_action_blockers
+
+    sell_signals = [{"symbol": "601985", "direction": "sell"}]
+    buy_signals = [{"symbol": "600001", "direction": "buy"}]
+
+    # 1. Quote freeze for the exact sell symbol must NOT be swallowed
+    symbol_blocker = "daily_candidate_quote_freeze:selected_quote_run_mismatch:601985"
+    assert active_action_blockers([symbol_blocker], sell_signals) == [symbol_blocker]
+
+    # 2. Quote freeze for a different symbol is ignored
+    other_blocker = "daily_candidate_quote_freeze:selected_quote_run_mismatch:600001"
+    assert active_action_blockers([other_blocker], sell_signals) == []
+
+    # 3. General quote freeze failure blocks sell candidates
+    general_blocker = (
+        "daily_candidate_quote_freeze:selected_quote_fetch_run_not_successful"
+    )
+    assert active_action_blockers([general_blocker], sell_signals) == [general_blocker]
+
+    # 4. Buy-only blockers do NOT block sell candidates
+    buy_only_blockers = [
+        "market:full_market_evidence_incomplete",
+        "market:full_market_eligible_stock_pool_too_small",
+        "insufficient_cash_for_one_lot",
+    ]
+    assert active_action_blockers(buy_only_blockers, sell_signals) == []
+
+    # 5. Buy candidates also respect symbol-specific quote freeze
+    assert active_action_blockers([other_blocker], buy_signals) == [other_blocker]
+    assert active_action_blockers([symbol_blocker], buy_signals) == []

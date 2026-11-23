@@ -316,6 +316,40 @@ def suppress_unverified_daily_scan_candidates(
         else:
             retained.append(candidate)
     if not suppressed:
+        if generation.get("status") == "blocked" and payload.get("summary"):
+            summary = dict(payload.get("summary") or {})
+            if "workflow_tasks" in summary:
+                risk_blocked_count = sum(
+                    item.get("risk_gate_status") == "blocked" for item in retained
+                )
+                ready_count = sum(
+                    item.get("manual_confirmation_status")
+                    == "ready_for_manual_confirmation"
+                    for item in retained
+                )
+                summary["workflow_tasks"] = workflow_tasks(
+                    market_data=dict(summary.get("market_data") or {}),
+                    account_truth=dict(summary.get("account_truth") or {}),
+                    strategy_attribution=dict(
+                        summary.get("strategy_attribution") or {}
+                    ),
+                    action_tasks=dict(summary.get("action_tasks") or {}),
+                    audit=dict(summary.get("audit") or {}),
+                    candidate_count=len(retained),
+                    ready_for_manual_confirmation_count=ready_count,
+                    generation=generation,
+                )
+                return {
+                    **payload,
+                    "summary": summary,
+                    "no_action_reasons": (
+                        payload.get("no_action_reasons")
+                        if retained
+                        else [
+                            f"daily_generation_{generation.get('status') or 'unavailable'}"
+                        ]
+                    ),
+                }
         return payload
 
     summary = dict(payload.get("summary") or {})
@@ -530,12 +564,20 @@ def _finish_today_decision_projection(
     )
     for action, candidate in zip(actions, candidates, strict=True):
         candidate["action_task_status"] = str(action.get("status") or "unknown")
-    no_action_reasons = [] if candidates else ["no_pending_action_tasks"]
     generation = (
         daily_candidate_generation_status(prepared["db"], prepared["decision_date"])
         if prepared["portfolio_context"].get("authority")
         == "persisted_valuation_snapshot"
         else None
+    )
+    no_action_reasons = (
+        []
+        if candidates
+        else (
+            [f"daily_generation_{generation.get('status') or 'unavailable'}"]
+            if generation and generation.get("status") == "blocked"
+            else ["no_pending_action_tasks"]
+        )
     )
     return {
         "lane": "daily",
@@ -551,6 +593,7 @@ def _finish_today_decision_projection(
             account_truth=account_truth,
             strategy_attribution=strategy_attribution,
             portfolio_context=prepared["portfolio_context"],
+            generation=generation,
         ),
         "candidates": candidates,
         "generation": generation,

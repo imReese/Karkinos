@@ -314,7 +314,7 @@ start_dev() {
     fi
 
     local launcher=()
-    if [[ "$(uname)" == "Darwin" ]] && command -v caffeinate >/dev/null 2>&1; then
+    if [[ "$(uname)" == "Darwin" ]] && [[ -z "${KARKINOS_NO_CAFFEINATE:-}" || "${KARKINOS_NO_CAFFEINATE}" == "0" || "${KARKINOS_NO_CAFFEINATE}" == "false" ]] && command -v caffeinate >/dev/null 2>&1; then
         launcher=(caffeinate -i -s)
     fi
 
@@ -443,7 +443,7 @@ start_worktree_branch() {
     fi
 
     local launcher=()
-    if [[ "$(uname)" == "Darwin" ]] && command -v caffeinate >/dev/null 2>&1; then
+    if [[ "$(uname)" == "Darwin" ]] && [[ -z "${KARKINOS_NO_CAFFEINATE:-}" || "${KARKINOS_NO_CAFFEINATE}" == "0" || "${KARKINOS_NO_CAFFEINATE}" == "false" ]] && command -v caffeinate >/dev/null 2>&1; then
         launcher=(caffeinate -i -s)
     fi
 

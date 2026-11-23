@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
+import hashlib
+import json
+from datetime import datetime, timezone
 
 import pandas as pd
 import pytest
@@ -287,48 +289,278 @@ def test_research_panel_hard_filters_the_full_stock_directory(tmp_path) -> None:
     assert set(result["research_panel"]["symbols"]) == set(eligible_outside_preliminary)
 
 
-def test_full_market_universe_truth_treats_receipt_omitted_symbol_as_nontrading_excluded(
+def test_full_market_universe_truth_verifies_session_state_before_excluding_untraded_stocks(
     tmp_path,
 ) -> None:
-    from decimal import Decimal
-
     from server.services.market.market_universe_truth import (
-        _assess_member_frame,
+        build_full_market_universe_truth,
     )
 
-    bars_df = _bars()
-    # bars_df ends at 2026-08-20, while end_date is 2026-08-21
-    bars_df = bars_df.loc[bars_df["timestamp"] <= "2026-08-20T23:59:59"].copy()
-    member = {"symbol": "000635", "asset_class": "stock"}
+    store = DataStore(tmp_path / "market")
+    symbols = _symbols()  # 1000 symbols: 600000 .. 600999
+    symbol_b = "600999"
+    active_symbols_21 = [s for s in symbols if s != symbol_b]
 
-    # Case 1: 000635 is in end_traded_symbols (it traded, but our frame missed the bar) -> market_date_missing
-    res_missing = _assess_member_frame(
-        frame=bars_df,
-        member=member,
+    # Save bars for all symbols up to 2026-08-20 (80 bars)
+    full_bars_20 = _bars(end="2026-08-20")
+    frames = {s: full_bars_20.copy() for s in symbols}
+
+    # Bars on 2026-08-21: only for active_symbols_21 (omits symbol_b)
+    bar_21 = pd.DataFrame(
+        {
+            "symbol": active_symbols_21,
+            "timestamp": [pd.Timestamp("2026-08-21")] * len(active_symbols_21),
+            "open": [10.0] * len(active_symbols_21),
+            "high": [10.1] * len(active_symbols_21),
+            "low": [9.9] * len(active_symbols_21),
+            "close": [10.0] * len(active_symbols_21),
+            "volume": [1_000_000] * len(active_symbols_21),
+            "amount": [10_000_000.0] * len(active_symbols_21),
+        }
+    )
+    receipt_20 = store.ingest_market_daily_batch(
+        trade_date="2026-08-20",
+        provider_name="unit_fixture",
+        bars=pd.DataFrame(
+            {
+                "symbol": symbols,
+                "timestamp": [pd.Timestamp("2026-08-20")] * len(symbols),
+                "open": [10.0] * len(symbols),
+                "high": [10.1] * len(symbols),
+                "low": [9.9] * len(symbols),
+                "close": [10.0] * len(symbols),
+                "volume": [1_000_000] * len(symbols),
+                "amount": [10_000_000.0] * len(symbols),
+            }
+        ),
+    )
+    receipt_21_omitted = store.ingest_market_daily_batch(
+        trade_date="2026-08-21",
+        provider_name="unit_fixture",
+        bars=bar_21,
+    )
+    receipts_omitted = [receipt_20, receipt_21_omitted]
+    required_dates = ["2026-08-20", "2026-08-21"]
+
+    # Add 2026-08-21 bar to frames for active_symbols_21
+    row_21 = pd.DataFrame(
+        [
+            {
+                "timestamp": pd.Timestamp("2026-08-21"),
+                "open": 10.0,
+                "high": 10.1,
+                "low": 9.9,
+                "close": 10.0,
+                "volume": 1_000_000,
+                "amount": 10_000_000.0,
+            }
+        ]
+    )
+    for s in active_symbols_21:
+        frames[s] = pd.concat([frames[s], row_21], ignore_index=True)
+
+    # Base source metadata giving each symbol a valid display name and active listing
+    capture_time = datetime(2026, 8, 21, 15, tzinfo=timezone.utc)
+    base_source_metadata = [
+        {"symbol": s, "display_name": f"股票{s}", "list_status": "L"} for s in symbols
+    ]
+
+    # -------------------------------------------------------------------------
+    # Case 1: symbol_b omitted from provider receipt, status unknown (no trade_status)
+    # -> Must NOT guess non-trading; B is market_date_missing; universe is blocked.
+    # -------------------------------------------------------------------------
+    snap_unknown = store.save_market_universe_snapshot(
+        trade_date="2026-08-21",
+        provider_name="unit_fixture",
+        members=normalize_a_share_members(symbols),
+        source_metadata=base_source_metadata,
+        capture_started_at=capture_time,
+        capture_completed_at=capture_time,
+    )
+    truth_unknown = build_full_market_universe_truth(
+        snapshot=snap_unknown,
+        frames=frames,
+        receipts=receipts_omitted,
+        required_trading_dates=required_dates,
         start_date="2026-04-01",
         end_date="2026-08-21",
+        initial_cash=100_000.0,
+        target_weight=0.25,
+        held_symbols=[symbol_b],
         minimum_history_rows=60,
-        lot_size=100,
-        fee_buffer_rate=Decimal("0.01"),
-        per_name_budget=Decimal("25000"),
-        enforce_lot_feasibility=True,
-        end_traded_symbols={"000635", "600000"},
     )
-    assert res_missing["status"] == "excluded"
-    assert res_missing["reason"] == "market_date_missing"
+    assert truth_unknown["status"] == "blocked"
+    assert "full_market_evidence_incomplete" in truth_unknown["blockers"]
+    assert truth_unknown["coverage"]["unresolved"] >= 1
+    assert any(
+        f"holding_exit_evidence_incomplete:{symbol_b}:market_date_missing" in b
+        for b in truth_unknown["blockers"]
+    )
+    assert truth_unknown["excluded_reason_counts"].get("market_date_missing") == 1
 
-    # Case 2: 000635 is NOT in end_traded_symbols (confirmed halted by provider receipt) -> nontrading_session_excluded
-    res_halted = _assess_member_frame(
-        frame=bars_df,
-        member=member,
+    from data.store import normalize_stock_master_metadata
+
+    def _snapshot_with_metadata(base_snapshot, source_meta, capture_ids=()):
+        core = dict(base_snapshot)
+        core.pop("snapshot_id", None)
+        core["member_metadata"] = normalize_stock_master_metadata(
+            source_meta, base_snapshot["members"]
+        )
+        if capture_ids:
+            core["source_capture_ids"] = list(capture_ids)
+        snap_id = (
+            "sha256:"
+            + hashlib.sha256(
+                json.dumps(
+                    core, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                ).encode("utf-8")
+            ).hexdigest()
+        )
+        return {**core, "snapshot_id": snap_id}
+
+    # -------------------------------------------------------------------------
+    # Case 2: symbol_b has trade_status="1" (trading) with matching session and capture ID
+    # but still lacks the target-date bar -> Must remain blocked; forbidden to classify as non-trading.
+    # -------------------------------------------------------------------------
+    capture_id = "sha256:" + "a" * 64
+    source_meta_trading = [
+        {"symbol": s, "display_name": f"股票{s}", "list_status": "L"}
+        for s in active_symbols_21
+    ] + [
+        {
+            "symbol": symbol_b,
+            "display_name": f"股票{symbol_b}",
+            "list_status": "L",
+            "trade_status": "1",
+            "status_session_date": "2026-08-21",
+            "status_capture_id": capture_id,
+        }
+    ]
+    snap_trading = _snapshot_with_metadata(
+        snap_unknown, source_meta_trading, capture_ids=[capture_id]
+    )
+    truth_trading = build_full_market_universe_truth(
+        snapshot=snap_trading,
+        frames=frames,
+        receipts=receipts_omitted,
+        required_trading_dates=required_dates,
         start_date="2026-04-01",
         end_date="2026-08-21",
+        initial_cash=100_000.0,
+        target_weight=0.25,
+        held_symbols=[symbol_b],
         minimum_history_rows=60,
-        lot_size=100,
-        fee_buffer_rate=Decimal("0.01"),
-        per_name_budget=Decimal("25000"),
-        enforce_lot_feasibility=True,
-        end_traded_symbols={"600000"},
     )
-    assert res_halted["status"] == "excluded"
-    assert res_halted["reason"] == "nontrading_session_excluded"
+    assert truth_trading["status"] == "blocked"
+    assert "full_market_evidence_incomplete" in truth_trading["blockers"]
+    assert truth_trading["coverage"]["unresolved"] >= 1
+    assert truth_trading["excluded_reason_counts"].get("market_date_missing") == 1
+
+    # -------------------------------------------------------------------------
+    # Case 3: symbol_b has matching explicit suspension evidence (trade_status="0")
+    # -> Legally excluded as nontrading_session_excluded; 0 unresolved; complete!
+    # -------------------------------------------------------------------------
+    source_meta_halted = [
+        {"symbol": s, "display_name": f"股票{s}", "list_status": "L"}
+        for s in active_symbols_21
+    ] + [
+        {
+            "symbol": symbol_b,
+            "display_name": f"股票{symbol_b}",
+            "list_status": "L",
+            "trade_status": "0",
+            "status_session_date": "2026-08-21",
+            "status_capture_id": capture_id,
+        }
+    ]
+    snap_halted = _snapshot_with_metadata(
+        snap_unknown, source_meta_halted, capture_ids=[capture_id]
+    )
+    truth_halted = build_full_market_universe_truth(
+        snapshot=snap_halted,
+        frames=frames,
+        receipts=receipts_omitted,
+        required_trading_dates=required_dates,
+        start_date="2026-04-01",
+        end_date="2026-08-21",
+        initial_cash=100_000.0,
+        target_weight=0.25,
+        held_symbols=[],  # no held symbol blocker
+        minimum_history_rows=60,
+    )
+    assert truth_halted["status"] == "complete"
+    assert truth_halted["coverage"]["unresolved"] == 0
+    assert (
+        truth_halted["excluded_reason_counts"].get("nontrading_session_excluded") == 1
+    )
+    assert "market_date_missing" not in truth_halted["excluded_reason_counts"]
+
+    # -------------------------------------------------------------------------
+    # Case 4: Receipt contains symbol_b, but local frames missing symbol_b's 2026-08-21 bar
+    # -> Must block with market_date_missing.
+    # -------------------------------------------------------------------------
+    bar_21_with_b = pd.concat(
+        [
+            bar_21,
+            pd.DataFrame(
+                [
+                    {
+                        "symbol": symbol_b,
+                        "timestamp": pd.Timestamp("2026-08-21"),
+                        "open": 10.0,
+                        "high": 10.1,
+                        "low": 9.9,
+                        "close": 10.0,
+                        "volume": 1_000_000,
+                        "amount": 10_000_000.0,
+                    }
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+    receipt_21_with_b = store.ingest_market_daily_batch(
+        trade_date="2026-08-21",
+        provider_name="unit_fixture_full",
+        bars=bar_21_with_b,
+    )
+    truth_local_missing = build_full_market_universe_truth(
+        snapshot=snap_unknown,
+        frames=frames,  # frames[symbol_b] still lacks 2026-08-21
+        receipts=[receipt_20, receipt_21_with_b],
+        required_trading_dates=required_dates,
+        start_date="2026-04-01",
+        end_date="2026-08-21",
+        initial_cash=100_000.0,
+        target_weight=0.25,
+        held_symbols=[symbol_b],
+        minimum_history_rows=60,
+    )
+    assert truth_local_missing["status"] == "blocked"
+    assert "full_market_evidence_incomplete" in truth_local_missing["blockers"]
+    assert truth_local_missing["coverage"]["unresolved"] >= 1
+    assert truth_local_missing["excluded_reason_counts"].get("market_date_missing") == 1
+
+    # -------------------------------------------------------------------------
+    # Case 5: Complete universe: symbol_b has 2026-08-21 bar in frame as well
+    # -> Must pass with status complete and 0 unresolved.
+    # -------------------------------------------------------------------------
+    frames_complete = {
+        **frames,
+        symbol_b: pd.concat([frames[symbol_b], row_21], ignore_index=True),
+    }
+    truth_complete = build_full_market_universe_truth(
+        snapshot=snap_unknown,
+        frames=frames_complete,
+        receipts=[receipt_20, receipt_21_with_b],
+        required_trading_dates=required_dates,
+        start_date="2026-04-01",
+        end_date="2026-08-21",
+        initial_cash=100_000.0,
+        target_weight=0.25,
+        held_symbols=[symbol_b],
+        minimum_history_rows=60,
+    )
+    assert truth_complete["status"] == "complete"
+    assert truth_complete["coverage"]["unresolved"] == 0
+    assert not truth_complete["blockers"]

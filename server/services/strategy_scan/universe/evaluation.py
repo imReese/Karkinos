@@ -234,6 +234,11 @@ def active_action_blockers(
         return list(dict.fromkeys(str(item) for item in blockers if str(item)))
 
     has_buys = any(s.get("direction") == "buy" for s in selected_signals)
+    selected_symbols = {
+        str(s.get("symbol") or "")
+        for s in selected_signals
+        if str(s.get("symbol") or "")
+    }
     held_symbols = {
         str(s.get("symbol") or "")
         for s in selected_signals
@@ -255,6 +260,12 @@ def active_action_blockers(
             for item in selected_signals
         ):
             continue
+        if blocker_str.startswith("daily_candidate_quote_freeze:"):
+            parts = blocker_str.split(":")
+            # If the blocker is symbol-specific (e.g. ...:<reason>:<symbol>),
+            # it only applies if that symbol is among the selected signals.
+            if len(parts) >= 3 and parts[-1] not in selected_symbols:
+                continue
         # Buy-only blockers do not block an all-sell (exit) action set
         if not has_buys:
             if (
@@ -264,7 +275,6 @@ def active_action_blockers(
                 or ":full_market_trading_date_evidence_incomplete" in blocker_str
                 or ":full_market_daily_receipt_coverage_incomplete" in blocker_str
                 or ":full_market_daily_receipt_invalid" in blocker_str
-                or blocker_str.startswith("daily_candidate_quote_freeze:")
                 or "current_board_permission_changed" in blocker_str
                 or blocker_str == "unsupported_trade_unit"
                 or blocker_str == "insufficient_cash_for_one_lot"

@@ -736,6 +736,62 @@ def test_successful_scan_cache_does_not_override_current_blockers(tmp_path, chan
     assert db.list_signal_journal_sync(limit=100) == original_signals
 
 
+def test_quote_freeze_blocker_for_sell_candidate_blocks_final_scan_actions(
+    tmp_path,
+) -> None:
+    db, service, symbols = _service(tmp_path, produces_signals=True)
+    sell_symbol = symbols[0]
+    portfolio = {
+        "total_equity": 100_000,
+        "cash": 4_000,  # Cash capacity blocks buys, leaving only sell candidate
+        "fact_authority": "persisted_valuation_snapshot",
+        "valuation_status": "complete",
+        "symbols": [sell_symbol],
+        "instrument_types": {sell_symbol: "stock"},
+        "valuation_snapshot_id": _valuation_id(db),
+    }
+
+    # 1. Unrelated quote freeze blocker for an unselected symbol -> does not block sell candidate
+    unrelated_blocker = (
+        "daily_candidate_quote_freeze:selected_quote_run_mismatch:999999"
+    )
+    result_unrelated = service.run_once(
+        decision_date="2026-08-24",
+        portfolio_summary=portfolio,
+        additional_blockers=[unrelated_blocker],
+    )
+    assert result_unrelated["status"] == "completed"
+    assert result_unrelated["selected_signals"][0]["direction"] == "sell"
+    assert result_unrelated["selected_signals"][0]["symbol"] == sell_symbol
+    assert len(result_unrelated["action_tasks"]) == 1
+
+    # 2. Quote freeze blocker for the sell candidate symbol -> actively blocks final scan
+    symbol_blocker = (
+        f"daily_candidate_quote_freeze:selected_quote_run_mismatch:{sell_symbol}"
+    )
+    result_blocked = service.run_once(
+        decision_date="2026-08-24",
+        portfolio_summary=portfolio,
+        additional_blockers=[symbol_blocker],
+    )
+    assert result_blocked["status"] == "blocked"
+    assert symbol_blocker in result_blocked["blockers"]
+    assert result_blocked["action_tasks"] == []
+
+    # 3. General quote freeze failure -> actively blocks sell candidate final scan
+    general_blocker = (
+        "daily_candidate_quote_freeze:selected_quote_fetch_run_not_successful"
+    )
+    result_general = service.run_once(
+        decision_date="2026-08-24",
+        portfolio_summary=portfolio,
+        additional_blockers=[general_blocker],
+    )
+    assert result_general["status"] == "blocked"
+    assert general_blocker in result_general["blockers"]
+    assert result_general["action_tasks"] == []
+
+
 def test_minimum_commission_is_included_in_one_lot_cash_gate() -> None:
     signal = {
         "strategy_id": "ai_formula_shadow:fixture-winner",

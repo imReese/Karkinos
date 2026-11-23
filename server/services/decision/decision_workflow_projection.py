@@ -20,6 +20,7 @@ def decision_summary(
     account_truth: dict[str, Any],
     strategy_attribution: dict[str, Any],
     portfolio_context: dict[str, Any],
+    generation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     risk_blocked_count = sum(
         1 for candidate in candidates if candidate["risk_gate_status"] == "blocked"
@@ -57,6 +58,7 @@ def decision_summary(
             audit=audit,
             candidate_count=len(candidates),
             ready_for_manual_confirmation_count=ready_for_manual_confirmation_count,
+            generation=generation,
         ),
     }
 

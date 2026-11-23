@@ -10003,6 +10003,117 @@ def test_decision_today_returns_no_action_reason(monkeypatch):
     assert response["requires_manual_confirmation"] is False
 
 
+def test_decision_today_returns_blocked_strategy_evidence_when_generation_blocked(
+    monkeypatch,
+):
+    from server.routes import decision as decision_routes
+
+    router = decision_routes.create_router()
+    today_route = next(
+        route
+        for route in router.routes
+        if isinstance(route, APIRoute) and route.path == "/api/decision/today"
+    )
+    endpoint = today_route.endpoint
+
+    fake_state = SimpleNamespace(
+        db=SimpleNamespace(
+            get_action_tasks_sync=lambda statuses=None, limit=50, offset=0: [],
+            list_signal_journal_sync=lambda limit=50, offset=0: [],
+            get_latest_quote_sync=lambda symbol, asset_type=None: None,
+        )
+    )
+    monkeypatch.setattr("server.dependencies.get_app_state", lambda: fake_state)
+    monkeypatch.setattr(
+        "server.services.decision.decision_application._decision_portfolio_context",
+        lambda state: {
+            "authority": "persisted_valuation_snapshot",
+            "decision_date": "2026-11-23",
+            "total_equity": 100000.0,
+            "cash": 100000.0,
+            "held_symbols": [],
+            "symbols": [],
+            "quotes": {},
+            "valuation_status": "complete",
+        },
+    )
+    monkeypatch.setattr(
+        "server.services.decision.decision_projection.daily_candidate_generation_status",
+        lambda db, decision_date: {
+            "status": "blocked",
+            "failure_code": "promoted_strategy_universe_scan:strategy_scan_outside_reviewed_decision_window",
+            "failure_stage": "promoted_strategy_universe_scan",
+        },
+    )
+
+    response = asyncio.run(endpoint())
+
+    assert response["decision"] == "no_action"
+    assert response["summary"]["candidate_count"] == 0
+    assert response["generation"]["status"] == "blocked"
+    assert response["no_action_reasons"] == ["daily_generation_blocked"]
+    strategy_task = next(
+        task
+        for task in response["summary"]["workflow_tasks"]
+        if task["id"] == "strategy_evidence"
+    )
+    assert strategy_task["status"] == "blocked"
+    assert strategy_task["blocking_reasons"] == [
+        "promoted_strategy_universe_scan:strategy_scan_outside_reviewed_decision_window"
+    ]
+    assert strategy_task["required_actions"] == ["review_daily_generation_blockers"]
+
+
+def test_suppress_unverified_daily_scan_candidates_preserves_blocked_workflow_tasks_when_empty_candidates():
+    from server.services.decision.decision_projection import (
+        suppress_unverified_daily_scan_candidates,
+    )
+    from server.services.decision.decision_workflow_projection import workflow_tasks
+
+    generation = {
+        "status": "blocked",
+        "failure_code": (
+            "promoted_strategy_universe_scan:daily_candidate_quote_freeze:"
+            "selected_quote_run_mismatch:601985"
+        ),
+    }
+    initial_summary = {
+        "market_data": {"source_health": "live"},
+        "account_truth": {"gate_status": "pass"},
+        "strategy_attribution": {"gate_status": "pass"},
+        "action_tasks": {},
+        "audit": {},
+        "workflow_tasks": workflow_tasks(
+            market_data={"source_health": "live"},
+            account_truth={"gate_status": "pass"},
+            strategy_attribution={"gate_status": "pass"},
+            action_tasks={},
+            audit={},
+            candidate_count=0,
+            ready_for_manual_confirmation_count=0,
+        ),
+    }
+    payload = {
+        "lane": "daily",
+        "decision": "no_action",
+        "decision_date": "2026-11-23",
+        "summary": initial_summary,
+        "candidates": [],
+        "generation": generation,
+        "no_action_reasons": ["no_pending_action_tasks"],
+    }
+    result = suppress_unverified_daily_scan_candidates(payload)
+    assert result["no_action_reasons"] == ["daily_generation_blocked"]
+    task = next(
+        t for t in result["summary"]["workflow_tasks"] if t["id"] == "strategy_evidence"
+    )
+    assert task["status"] == "blocked"
+    assert task["blocking_reasons"] == [
+        "promoted_strategy_universe_scan:daily_candidate_quote_freeze:"
+        "selected_quote_run_mismatch:601985"
+    ]
+
+
 def test_decision_intraday_returns_stock_and_etf_candidates_only(monkeypatch):
     from server.routes import decision as decision_routes
 
