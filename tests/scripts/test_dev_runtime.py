@@ -311,3 +311,71 @@ def test_preparation_allows_restarting_a_port_in_time_wait(tmp_path, monkeypatch
         )
         == 0
     )
+
+
+@pytest.mark.parametrize(
+    ("env_val", "should_enable"),
+    [
+        (None, True),
+        ("", True),
+        ("0", True),
+        ("false", True),
+        ("False", True),
+        (" FALSE ", True),
+        ("no", True),
+        ("NO", True),
+        ("1", False),
+        ("true", False),
+        ("True", False),
+        (" TRUE ", False),
+        ("yes", False),
+        ("YES", False),
+    ],
+)
+def test_caffeinate_boolean_parsing(tmp_path, monkeypatch, env_val, should_enable):
+    import socket
+
+    captured_commands = []
+    root = tmp_path / "source"
+    (root / "web/node_modules/.bin").mkdir(parents=True)
+    (root / "web/node_modules/.bin/vite").touch()
+    monkeypatch.setattr(run_dev, "ROOT", root)
+    monkeypatch.setattr(run_dev.sys, "platform", "darwin")
+    monkeypatch.setattr(run_dev.shutil, "which", lambda cmd: f"/usr/bin/{cmd}")
+    monkeypatch.setattr(
+        run_dev,
+        "supervise",
+        lambda commands, *_, **__: captured_commands.extend(commands) or 0,
+    )
+    if env_val is None:
+        monkeypatch.delenv("KARKINOS_NO_CAFFEINATE", raising=False)
+    else:
+        monkeypatch.setenv("KARKINOS_NO_CAFFEINATE", env_val)
+
+    with socket.socket() as s1, socket.socket() as s2:
+        s1.bind(("127.0.0.1", 0))
+        s2.bind(("127.0.0.1", 0))
+        api_port = s1.getsockname()[1]
+        web_port = s2.getsockname()[1]
+
+    assert (
+        run_dev.main(
+            [
+                "--home",
+                str(tmp_path / "home"),
+                "--port",
+                str(api_port),
+                "--web-port",
+                str(web_port),
+            ]
+        )
+        == 0
+    )
+    caffeinate_commands = [
+        cmd for cmd in captured_commands if cmd and "caffeinate" in cmd[0]
+    ]
+    if should_enable:
+        assert len(caffeinate_commands) == 1
+        assert caffeinate_commands[0] == ["/usr/bin/caffeinate", "-i", "-s"]
+    else:
+        assert len(caffeinate_commands) == 0

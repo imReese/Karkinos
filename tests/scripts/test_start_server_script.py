@@ -822,3 +822,39 @@ def test_stop_refuses_reused_pid(launcher: SimpleNamespace) -> None:
     finally:
         unrelated.terminate()
         unrelated.wait(timeout=10)
+
+
+@pytest.mark.parametrize(
+    ("env_val", "expected_code"),
+    [
+        (None, 0),
+        ("", 0),
+        ("0", 0),
+        ("false", 0),
+        ("False", 0),
+        (" FALSE ", 0),
+        ("no", 0),
+        ("NO", 0),
+        ("1", 1),
+        ("true", 1),
+        ("True", 1),
+        (" TRUE ", 1),
+        ("yes", 1),
+        ("YES", 1),
+    ],
+)
+def test_start_server_caffeinate_boolean_parsing(
+    launcher: SimpleNamespace, env_val: str | None, expected_code: int
+) -> None:
+    cmd = (
+        f"eval \"$(sed -n '/^is_caffeinate_enabled()/,/^}}/p' '{launcher.repo}/scripts/start_server.sh')\"; "
+        "is_caffeinate_enabled"
+    )
+    env = dict(os.environ)
+    if env_val is None:
+        env.pop("KARKINOS_NO_CAFFEINATE", None)
+    else:
+        env["KARKINOS_NO_CAFFEINATE"] = env_val
+    res = subprocess.run([launcher.bash, "-c", cmd], env=env, capture_output=True)
+    if sys.platform == "darwin":
+        assert res.returncode == expected_code

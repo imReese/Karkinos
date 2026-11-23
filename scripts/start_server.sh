@@ -59,6 +59,17 @@ git check-ref-format --branch "${TARGET_BRANCH}" >/dev/null 2>&1 ||
 
 mkdir -p "${RUNTIME_DIR}" "${WORKTREE_DIR}" "${REPO_ROOT}/logs"
 
+is_caffeinate_enabled() {
+    [[ "$(uname)" == "Darwin" ]] || return 1
+    command -v caffeinate >/dev/null 2>&1 || return 1
+    local normalized
+    normalized="$(printf '%s' "${KARKINOS_NO_CAFFEINATE:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+    case "${normalized}" in
+        1|true|yes) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
 process_start_identity() {
     ps -p "$1" -o lstart= 2>/dev/null |
         sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
@@ -314,7 +325,10 @@ start_dev() {
     fi
 
     local launcher=()
-    if [[ "$(uname)" == "Darwin" ]] && [[ -z "${KARKINOS_NO_CAFFEINATE:-}" || "${KARKINOS_NO_CAFFEINATE}" == "0" || "${KARKINOS_NO_CAFFEINATE}" == "false" ]] && command -v caffeinate >/dev/null 2>&1; then
+    # On Darwin, launch caffeinate -i -s: -i prevents system idle sleep
+    # (-d prevents display sleep, -s prevents system sleep only while on AC power).
+    # KARKINOS_NO_CAFFEINATE=1/true/yes disables caffeinate; 0/false/no/empty enables it.
+    if is_caffeinate_enabled; then
         launcher=(caffeinate -i -s)
     fi
 
@@ -443,7 +457,10 @@ start_worktree_branch() {
     fi
 
     local launcher=()
-    if [[ "$(uname)" == "Darwin" ]] && [[ -z "${KARKINOS_NO_CAFFEINATE:-}" || "${KARKINOS_NO_CAFFEINATE}" == "0" || "${KARKINOS_NO_CAFFEINATE}" == "false" ]] && command -v caffeinate >/dev/null 2>&1; then
+    # On Darwin, launch caffeinate -i -s: -i prevents system idle sleep
+    # (-d prevents display sleep, -s prevents system sleep only while on AC power).
+    # KARKINOS_NO_CAFFEINATE=1/true/yes disables caffeinate; 0/false/no/empty enables it.
+    if is_caffeinate_enabled; then
         launcher=(caffeinate -i -s)
     fi
 

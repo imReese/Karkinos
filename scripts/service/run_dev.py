@@ -372,6 +372,9 @@ def main(argv: list[str] | None = None) -> int:
             ],
         ]
         caffeinate = shutil.which("caffeinate") if sys.platform == "darwin" else None
+        # On Darwin, launch caffeinate -i -s: -i prevents system idle sleep
+        # (-d prevents display sleep, -s prevents system sleep only while on AC power).
+        # KARKINOS_NO_CAFFEINATE=1/true/yes disables caffeinate; 0/false/no/empty enables it.
         if caffeinate is not None and os.environ.get(
             "KARKINOS_NO_CAFFEINATE", ""
         ).strip().lower() not in {"1", "true", "yes"}:
