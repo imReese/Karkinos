@@ -859,18 +859,29 @@ class MarketUniverseAutomationService:
         master_provider_name = self._security_master_provider_name
         daily_provider_name = self._daily_bar_provider_name
         if trade_date is None:
-            pending_id = f"market_universe_sync:pending:{run_date}"
+            pending_ids = (
+                f"market_universe_sync:pending:{run_date}",
+                f"market_universe_sync:pending:{run_date}:{master_provider_name}:{daily_provider_name}",
+            )
             getter = getattr(self._db, "get_automation_run_sync", None)
-            existing_pending = getter(pending_id) if callable(getter) else None
-            if _is_matching_pending_blocked_run(
-                existing_pending,
-                run_date=run_date,
-                master_provider_name=master_provider_name,
-                daily_provider_name=daily_provider_name,
-            ):
-                return existing_pending
+            if callable(getter):
+                for pid in pending_ids:
+                    existing_pending = getter(pid)
+                    if _is_matching_pending_blocked_run(
+                        existing_pending,
+                        run_date=run_date,
+                        master_provider_name=master_provider_name,
+                        daily_provider_name=daily_provider_name,
+                    ):
+                        is_valid_ancestry, _ = validate_run_predecessor_ancestry(
+                            existing_pending,
+                            current_run_id=pid,
+                            db=self._db,
+                        )
+                        if is_valid_ancestry:
+                            return existing_pending
             return self._record_run(
-                run_id=pending_id,
+                run_id=pending_ids[0],
                 run_date=run_date,
                 status="blocked",
                 now=current,
@@ -1786,15 +1797,19 @@ class MarketUniverseAutomationService:
                 if is_valid_ancestry:
                     return row
             if status == "blocked" and existing_status == "blocked":
-                if str(
-                    row.get("run_id") or ""
-                ) == current_run_id and _is_matching_pending_blocked_run(
+                if _is_matching_pending_blocked_run(
                     row,
                     run_date=run_date,
                     master_provider_name=rec_master,
                     daily_provider_name=rec_daily,
                 ):
-                    return row
+                    is_valid_ancestry, _ = validate_run_predecessor_ancestry(
+                        row,
+                        current_run_id=str(row.get("run_id") or current_run_id),
+                        db=self._db,
+                    )
+                    if is_valid_ancestry:
+                        return row
 
             colliding_id = str(row.get("run_id") or initial_run_id)
             row_task_key = row_payload.get("task_key")
@@ -1818,22 +1833,52 @@ class MarketUniverseAutomationService:
             else:
                 is_same_task = bool(row_task_key is None)
 
-            if is_same_task and row_matches_scope and is_valid_ancestry:
-                if not target_predecessor:
-                    target_predecessor = colliding_id
-                elif row_supersedes and row_supersedes == target_predecessor:
-                    target_predecessor = colliding_id
+            if status == "blocked":
+                is_valid_pending_cand = _is_matching_pending_blocked_run(
+                    row,
+                    run_date=run_date,
+                    master_provider_name=rec_master,
+                    daily_provider_name=rec_daily,
+                )
+                if is_valid_pending_cand and is_valid_ancestry:
+                    if not target_predecessor:
+                        target_predecessor = colliding_id
+                    elif row_supersedes and row_supersedes == target_predecessor:
+                        target_predecessor = colliding_id
+            else:
+                if is_same_task and row_matches_scope and is_valid_ancestry:
+                    if not target_predecessor:
+                        target_predecessor = colliding_id
+                    elif row_supersedes and row_supersedes == target_predecessor:
+                        target_predecessor = colliding_id
 
-            attempt_fp = content_fingerprint(
-                {
-                    "initial_run_id": initial_run_id,
-                    "colliding_run_id": colliding_id,
-                    "target_predecessor": target_predecessor,
-                    "attempt": attempt + 1,
-                    "started_at": now.isoformat(),
-                }
-            )
-            current_run_id = f"market_universe_sync:{trade_scope}:{attempt_fp[:16]}"
+            if status == "blocked":
+                if attempt == 0:
+                    current_run_id = f"market_universe_sync:pending:{run_date}:{rec_master}:{rec_daily}"
+                else:
+                    attempt_fp = content_fingerprint(
+                        {
+                            "initial_run_id": initial_run_id,
+                            "run_date": run_date,
+                            "master": rec_master,
+                            "daily": rec_daily,
+                            "attempt": attempt + 1,
+                        }
+                    )
+                    current_run_id = (
+                        f"market_universe_sync:pending:{run_date}:{attempt_fp[:16]}"
+                    )
+            else:
+                attempt_fp = content_fingerprint(
+                    {
+                        "initial_run_id": initial_run_id,
+                        "colliding_run_id": colliding_id,
+                        "target_predecessor": target_predecessor,
+                        "attempt": attempt + 1,
+                        "started_at": now.isoformat(),
+                    }
+                )
+                current_run_id = f"market_universe_sync:{trade_scope}:{attempt_fp[:16]}"
 
         raise RuntimeError(
             f"automation_run_collision_exhaustion: unable to allocate run identity after {max_attempts} attempts"

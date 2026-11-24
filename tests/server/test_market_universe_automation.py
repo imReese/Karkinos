@@ -2999,7 +2999,7 @@ def test_historical_legacy_fixture_reuse_and_collision_consistency_preserves_lin
 def test_pending_calendar_blocked_run_reuse_and_foreign_collision_preservation(
     tmp_path,
 ):
-    """Pending calendar-blocked runs reuse on same scope and preserve rows on foreign collision."""
+    """Pending calendar-blocked runs reuse on same scope, reject corrupt lineage, and preserve rows on foreign collision."""
     from server.services.market.market_universe_truth import MarketUniversePolicy
 
     db = AppDatabase(tmp_path / "app.db")
@@ -3044,7 +3044,24 @@ def test_pending_calendar_blocked_run_reuse_and_foreign_collision_preservation(
     )
     assert race_res["run_id"] == pending_id
 
-    # 4. Foreign collision: clean DB with foreign run at pending_id
+    # 4. Corrupt lineage rejection: alter pending row in DB to have self-referencing lineage
+    db.upsert_automation_run_sync(
+        {
+            **res1,
+            "source_ref": pending_id,
+            "payload": {
+                **json.loads(res1["payload_json"]),
+                "supersedes_run_id": pending_id,
+                "prior_run_id": pending_id,
+            },
+        }
+    )
+    res_corrupt_rejected = service.run_due(now=sunday + timedelta(minutes=7))
+    assert res_corrupt_rejected["status"] == "blocked"
+    assert res_corrupt_rejected["run_id"] != pending_id
+    assert res_corrupt_rejected["source_ref"] != pending_id
+
+    # 5. Foreign collision: clean DB with foreign run at pending_id
     db_foreign = AppDatabase(tmp_path / "app_foreign.db")
     db_foreign.init_sync()
     foreign_row = {
@@ -3073,9 +3090,26 @@ def test_pending_calendar_blocked_run_reuse_and_foreign_collision_preservation(
         source=_Source(),
         policy=policy,
     )
-    res_foreign = service_foreign.run_due(now=sunday)
-    assert res_foreign["status"] == "blocked"
-    assert res_foreign["run_id"] != pending_id
+    # Call 1: rejects foreign row, derives alternative stable ID, and does not adopt foreign row as predecessor
+    res_foreign_1 = service_foreign.run_due(now=sunday)
+    assert res_foreign_1["status"] == "blocked"
+    assert res_foreign_1["run_id"] != pending_id
+    assert res_foreign_1["source_ref"] is None
+    p_foreign_1 = json.loads(res_foreign_1["payload_json"])
+    assert p_foreign_1.get("supersedes_run_id") is None
+    expected_alt_id = (
+        f"market_universe_sync:pending:{run_date}:unit_fixture:unit_fixture"
+    )
+    assert res_foreign_1["run_id"] == expected_alt_id
+
+    # Call 2 (5 minutes later): reuses the alternative stable pending run without creating another record
+    res_foreign_2 = service_foreign.run_due(now=sunday + timedelta(minutes=5))
+    assert res_foreign_2["run_id"] == expected_alt_id
+    assert res_foreign_2["status"] == "blocked"
+
+    # Audit record count is exactly 2 (the foreign row + the single alternative pending run)
+    all_runs = db_foreign.list_automation_runs_sync(limit=10)
+    assert len(all_runs) == 2
     orig_foreign = db_foreign.get_automation_run_sync(pending_id)
     assert orig_foreign is not None
     assert orig_foreign["run_type"] == "foreign_automation_type"
@@ -3212,10 +3246,7 @@ def test_collision_predecessor_adoption_rejects_scope_conflicts(
     assert run_initial["status"] == "completed"
     fingerprinted_id = run_initial["run_id"]
 
-    # Clean DB and seed conflicting row directly at fingerprinted_id
-    db_clean = AppDatabase(tmp_path / "app_clean.db")
-    db_clean.init_sync()
-    _verified_calendar(db_clean)
+    # Clean DB sharing the same store and verified snapshot to ensure identical capture timestamp and target execution ID
     bad_colliding_row = {
         "run_id": fingerprinted_id,
         "run_type": "market_universe_sync",
@@ -3233,19 +3264,10 @@ def test_collision_predecessor_adoption_rejects_scope_conflicts(
             "prior_run_id": None,
         },
     }
-    db_clean.upsert_automation_run_sync(bad_colliding_row)
+    db.upsert_automation_run_sync(bad_colliding_row)
 
-    service_clean = MarketUniverseAutomationService(
-        db=db_clean,
-        config=SimpleNamespace(
-            data_source="unit_fixture", tushare_token="", start_date="2026-08-01"
-        ),
-        data_store=DataStore(tmp_path / "market_clean"),
-        source=_Source(),
-        policy=policy,
-    )
-    # Execute run_due: collides with fingerprinted_id, must NOT adopt it as predecessor
-    result = service_clean.run_due(now=t)
+    # Execute run_due: targets fingerprinted_id, collides, must NOT adopt it as predecessor
+    result = service.run_due(now=t + timedelta(minutes=5))
     assert result["status"] == "completed"
     assert result["run_id"] != fingerprinted_id
     assert result["source_ref"] != fingerprinted_id
@@ -3254,7 +3276,7 @@ def test_collision_predecessor_adoption_rejects_scope_conflicts(
     assert p_result.get("prior_run_id") != fingerprinted_id
 
     # Verify colliding row remains untouched
-    orig = db_clean.get_automation_run_sync(fingerprinted_id)
+    orig = db.get_automation_run_sync(fingerprinted_id)
     assert orig is not None
     assert orig["status"] == "failed"
 
@@ -3327,6 +3349,8 @@ def test_failed_run_with_null_coverage_fingerprint_throttled_during_backoff(
     policy = MarketUniversePolicy(
         minimum_master_member_count=50, panel_size=50, minimum_history_rows=5
     )
+    t = datetime(2026, 8, 21, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    clock_time = t
     service = MarketUniverseAutomationService(
         db=db,
         config=SimpleNamespace(
@@ -3335,14 +3359,13 @@ def test_failed_run_with_null_coverage_fingerprint_throttled_during_backoff(
         data_store=store,
         source=_PartialCoverageSource(),
         policy=policy,
+        capture_clock=lambda: clock_time,
     )
 
     # Pre-create verified stock master snapshot so primary evidence fingerprint is computed
     service._ensure_market_universe_snapshot(
         trade_date="2026-08-21", master_provider_name="unit_fixture"
     )
-
-    t = datetime(2026, 8, 21, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
 
     # 1. run_due records retryable failure with primary fingerprint and null coverage fingerprint
     run_1 = service.run_due(now=t)
@@ -3359,14 +3382,108 @@ def test_failed_run_with_null_coverage_fingerprint_throttled_during_backoff(
     assert run_2["run_id"] == run_1_id
     assert run_2["status"] == "failed"
 
-    # 3. Call after backoff expiry (2 hours later) creates a linked successor
+    # 3. Changed immutable evidence during active backoff window (2 minutes later) bypasses backoff
+    revised_metadata = [
+        {
+            "symbol": s,
+            "display_name": f"Revised {s}",
+            "provider_symbol": f"{s}.SH",
+            "provider_name": "unit_fixture",
+            "source": "stock_master",
+            "list_date": "2026-01-01" if i < 35 else "2026-08-21",
+        }
+        for i, s in enumerate(symbols)
+    ]
+    store.save_market_universe_snapshot(
+        trade_date="2026-08-21",
+        provider_name="unit_fixture",
+        members=[{"symbol": s} for s in symbols],
+        capture_started_at=t + timedelta(minutes=2),
+        capture_completed_at=t + timedelta(minutes=2),
+        source_metadata=revised_metadata,
+    )
+    run_changed = service.run_due(now=t + timedelta(minutes=2))
+    assert run_changed["run_id"] != run_1_id
+    assert run_changed["source_ref"] == run_1_id
+    p_changed = json.loads(run_changed["payload_json"])
+    assert p_changed.get("supersedes_run_id") == run_1_id
+    assert p_changed.get("prior_run_id") == run_1_id
+
+    # 4. Call after backoff expiry (2 hours later) creates a linked successor to run_changed
     run_3 = service.run_due(now=t + timedelta(hours=2))
     assert run_3["status"] == "failed"
-    assert run_3["run_id"] != run_1_id
-    assert run_3["source_ref"] == run_1_id
+    assert run_3["run_id"] != run_changed["run_id"]
+    assert run_3["source_ref"] == run_changed["run_id"]
     p3 = json.loads(run_3["payload_json"])
-    assert p3.get("supersedes_run_id") == run_1_id
-    assert p3.get("prior_run_id") == run_1_id
+    assert p3.get("supersedes_run_id") == run_changed["run_id"]
+    assert p3.get("prior_run_id") == run_changed["run_id"]
+
+
+def test_policy_fingerprint_changes_with_panel_size_and_rejects_cross_qualification(
+    tmp_path,
+):
+    """Different panel_size configurations yield different policy fingerprints and reject cross-qualification."""
+    from server.ai_runtime.contracts import content_fingerprint
+    from server.services.market.market_universe_automation import (
+        is_qualified_market_universe_coverage_run,
+    )
+    from server.services.market.market_universe_truth import MarketUniversePolicy
+
+    policy_40 = MarketUniversePolicy(panel_size=40)
+    policy_50 = MarketUniversePolicy(panel_size=50)
+    fp_40 = content_fingerprint(policy_40.to_dict())
+    fp_50 = content_fingerprint(policy_50.to_dict())
+    assert fp_40 != fp_50
+
+    # Seed completion under policy_40
+    completed_row = {
+        "run_id": "test_completion_panel_40",
+        "run_type": "market_universe_sync",
+        "status": "completed",
+        "payload_json": json.dumps(
+            {
+                "validation_policy_id": "market_universe_coverage:v1",
+                "coverage_validation_policy_id": "market_universe_coverage:v1",
+                "policy_fingerprint": fp_40,
+                "evidence_fingerprint": "ev_fp_test",
+                "coverage_evidence_fingerprint": "ev_fp_test",
+                "market_universe_snapshot_id": "snap_test",
+                "task_key": "market_universe_sync:unit_fixture:unit_fixture:2026-08-21",
+                "full_market_history_frozen": True,
+                "blockers": [],
+                "full_market_partial_receipt_dates": [],
+                "full_market_missing_receipt_dates": [],
+                "full_market_uncovered_symbol_session_count": 0,
+                "full_market_missing_receipt_date_count": 0,
+                "full_market_daily_receipt_count": 5,
+            }
+        ),
+    }
+
+    # Under policy_50, expected_policy_fingerprint is fp_50, which must reject the panel_size=40 run
+    assert (
+        is_qualified_market_universe_coverage_run(
+            completed_row,
+            expected_snapshot_id="snap_test",
+            expected_fingerprint="ev_fp_test",
+            expected_policy_id="market_universe_coverage:v1",
+            expected_policy_fingerprint=fp_50,
+            expected_task_key="market_universe_sync:unit_fixture:unit_fixture:2026-08-21",
+        )
+        is False
+    )
+    # Under policy_40, it qualifies
+    assert (
+        is_qualified_market_universe_coverage_run(
+            completed_row,
+            expected_snapshot_id="snap_test",
+            expected_fingerprint="ev_fp_test",
+            expected_policy_id="market_universe_coverage:v1",
+            expected_policy_fingerprint=fp_40,
+            expected_task_key="market_universe_sync:unit_fixture:unit_fixture:2026-08-21",
+        )
+        is True
+    )
 
 
 def test_ancestor_scope_validation_rejects_explicit_conflicts_and_foreign_run_types(
