@@ -1538,7 +1538,7 @@ def test_collision_routing_preserves_latest_retry_predecessor(tmp_path):
     service = MarketUniverseAutomationService(
         db=db,
         config=SimpleNamespace(
-            data_source="unit_fixture", tushare_token="", start_date="2026-08-01"
+            data_source="unit_fixture", tushare_token="", start_date="2026-04-01"
         ),
         data_store=store,
         source=failing_source,
@@ -1591,6 +1591,136 @@ def test_collision_routing_preserves_latest_retry_predecessor(tmp_path):
     )
     assert run_map[run_2_id]["source_ref"] == run_1_id
     assert run_map[run_3_id]["source_ref"] == run_2_id
+
+
+def test_allocation_after_second_collision_preserves_lineage(tmp_path):
+    """When attempt 0 and attempt 1 both collide, attempt 2 allocates and links to the latest same-task retry."""
+    from server.ai_runtime.contracts import content_fingerprint
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-04-01"
+        ),
+        data_store=DataStore(tmp_path / "market"),
+        source=_Source(),
+    )
+    t = datetime(2026, 8, 23, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    base_id = "market_universe_sync:2026-08-21:second_collision_base"
+    task_key = "market_universe_sync:unit_fixture:unit_fixture:2026-08-21"
+
+    # Pre-seed base_id (Run 1)
+    db.upsert_automation_run_sync(
+        {
+            "run_id": base_id,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-23",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": t.isoformat(),
+            "finished_at": t.isoformat(),
+            "payload": {
+                "task_key": task_key,
+                "trade_date": "2026-08-21",
+                "attempt": 1,
+            },
+        }
+    )
+
+    # Compute candidate 1 ID (which collides on attempt 0 conflict)
+    cand_1_fp = content_fingerprint(
+        {
+            "initial_run_id": base_id,
+            "colliding_run_id": base_id,
+            "target_predecessor": base_id,
+            "attempt": 1,
+            "started_at": t.isoformat(),
+        }
+    )
+    cand_1_id = f"market_universe_sync:2026-08-21:{cand_1_fp[:16]}"
+
+    # Pre-seed candidate 1 (Run 2)
+    db.upsert_automation_run_sync(
+        {
+            "run_id": cand_1_id,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-23",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": t.isoformat(),
+            "finished_at": t.isoformat(),
+            "source_ref": base_id,
+            "payload": {
+                "task_key": task_key,
+                "trade_date": "2026-08-21",
+                "attempt": 2,
+                "supersedes_run_id": base_id,
+                "prior_run_id": base_id,
+            },
+        }
+    )
+
+    # Now call _record_run with base_id:
+    # Attempt 0: collides with base_id.
+    # Attempt 1: collides with cand_1_id.
+    # Attempt 2: allocates cand_2_id, which successfully inserts!
+    run_3 = service._record_run(
+        run_id=base_id,
+        run_date="2026-08-23",
+        status="failed",
+        now=t,
+        payload={
+            "task_key": task_key,
+            "trade_date": "2026-08-21",
+            "attempt": 3,
+        },
+    )
+
+    assert run_3["run_id"] != base_id
+    assert run_3["run_id"] != cand_1_id
+    assert run_3["source_ref"] == cand_1_id
+    p3 = json.loads(run_3["payload_json"])
+    assert p3["supersedes_run_id"] == cand_1_id
+    assert p3["prior_run_id"] == cand_1_id
+
+    # Also verify task-identity isolation: a collision with an unrelated task key
+    # does NOT replace the target predecessor.
+    unrelated_task_key = "market_universe_sync:other:other:2026-08-21"
+    db.upsert_automation_run_sync(
+        {
+            "run_id": cand_1_id,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-23",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": t.isoformat(),
+            "finished_at": t.isoformat(),
+            "source_ref": "other_ref",
+            "payload": {
+                "task_key": unrelated_task_key,
+                "trade_date": "2026-08-21",
+            },
+        }
+    )
+    known_pred = "market_universe_sync:2026-08-21:my_pred"
+    run_isolated = service._record_run(
+        run_id=base_id,
+        run_date="2026-08-23",
+        status="failed",
+        source_ref=known_pred,
+        now=t,
+        payload={
+            "task_key": task_key,
+            "trade_date": "2026-08-21",
+            "supersedes_run_id": known_pred,
+            "prior_run_id": known_pred,
+        },
+    )
+    p_iso = json.loads(run_isolated["payload_json"])
+    assert p_iso["supersedes_run_id"] == known_pred
+    assert run_isolated["source_ref"] == known_pred
 
 
 def test_listing_inside_history_window_produces_fingerprint_and_reuses_completed(

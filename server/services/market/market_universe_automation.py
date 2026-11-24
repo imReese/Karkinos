@@ -1209,11 +1209,29 @@ class MarketUniverseAutomationService:
                 return row
 
             colliding_id = str(row.get("run_id") or initial_run_id)
-            if attempt == 0:
-                if not target_predecessor or str(target_predecessor) == current_run_id:
+            row_task_key = None
+            try:
+                row_payload = json.loads(str(row.get("payload_json") or "{}"))
+                if isinstance(row_payload, Mapping):
+                    row_task_key = row_payload.get("task_key")
+            except Exception:
+                row_task_key = None
+
+            expected_task_key = payload.get("task_key")
+            is_same_task = bool(
+                not row_task_key
+                or not expected_task_key
+                or row_task_key == expected_task_key
+            )
+            if is_same_task:
+                if attempt == 0:
+                    if (
+                        not target_predecessor
+                        or str(target_predecessor) == current_run_id
+                    ):
+                        target_predecessor = colliding_id
+                else:
                     target_predecessor = colliding_id
-            else:
-                target_predecessor = colliding_id
 
             attempt_fp = content_fingerprint(
                 {
