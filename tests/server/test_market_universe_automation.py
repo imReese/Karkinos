@@ -1363,21 +1363,7 @@ def test_find_prior_run_pages_beyond_first_page_when_unrelated_runs_precede(tmp_
     db.init_sync()
     task_key = "market_universe_sync:unit_fixture:unit_fixture:2026-08-21"
 
-    # Seed 105 unrelated runs of market_universe_sync
-    for i in range(105):
-        db.upsert_automation_run_sync(
-            {
-                "run_id": f"unrelated_run_{i:03d}",
-                "run_type": "market_universe_sync",
-                "run_date": "2026-08-20",
-                "status": "failed",
-                "execution_mode": "market_data_ingestion",
-                "started_at": f"2026-08-20T{10 + i // 60:02d}:{i % 60:02d}:00+08:00",
-                "payload": {"task_key": f"other_task_{i}"},
-            }
-        )
-
-    # Seed the matching target run at position 106 (older than the 105 unrelated runs)
+    # Seed the matching target predecessor FIRST so its created_at / updated_at is older
     db.upsert_automation_run_sync(
         {
             "run_id": "target_predecessor_at_pos_106",
@@ -1396,6 +1382,24 @@ def test_find_prior_run_pages_beyond_first_page_when_unrelated_runs_precede(tmp_
         }
     )
 
+    # Seed 105 unrelated runs of market_universe_sync AFTER the target run
+    for i in range(105):
+        db.upsert_automation_run_sync(
+            {
+                "run_id": f"unrelated_run_{i:03d}",
+                "run_type": "market_universe_sync",
+                "run_date": "2026-08-20",
+                "status": "failed",
+                "execution_mode": "market_data_ingestion",
+                "started_at": f"2026-08-20T{10 + i // 60:02d}:{i % 60:02d}:00+08:00",
+                "payload": {"task_key": f"other_task_{i}"},
+            }
+        )
+
+    # Verify target predecessor is NOT on page 1 (limit 100)
+    page1 = db.list_automation_runs_sync(run_type="market_universe_sync", limit=100)
+    assert not any(r["run_id"] == "target_predecessor_at_pos_106" for r in page1)
+
     prior = find_prior_market_universe_run(
         db,
         task_key=task_key,
@@ -1409,6 +1413,8 @@ def test_find_prior_run_pages_beyond_first_page_when_unrelated_runs_precede(tmp_
 
 def test_calendar_blocked_concurrent_conflict_reuses_pending_row(tmp_path):
     """When concurrent callers write a calendar-blocked pending run, the loser reuses the existing pending row."""
+    import concurrent.futures
+
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     service = MarketUniverseAutomationService(
@@ -1422,25 +1428,27 @@ def test_calendar_blocked_concurrent_conflict_reuses_pending_row(tmp_path):
     t = datetime(2026, 8, 23, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     pending_id = "market_universe_sync:pending:2026-08-23"
 
-    # First write inserts it
-    res1 = service._record_run(
-        run_id=pending_id,
-        run_date="2026-08-23",
-        status="blocked",
-        now=t,
-        payload={"blockers": ["verified_closed_trading_date_unavailable"]},
-    )
-    assert res1["run_id"] == pending_id
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        f1 = executor.submit(
+            service._record_run,
+            run_id=pending_id,
+            run_date="2026-08-23",
+            status="blocked",
+            now=t,
+            payload={"blockers": ["verified_closed_trading_date_unavailable"]},
+        )
+        f2 = executor.submit(
+            service._record_run,
+            run_id=pending_id,
+            run_date="2026-08-23",
+            status="blocked",
+            now=t,
+            payload={"blockers": ["verified_closed_trading_date_unavailable"]},
+        )
+        res1 = f1.result()
+        res2 = f2.result()
 
-    # Simulated concurrent loser calls _record_run with same pending_id
-    res2 = service._record_run(
-        run_id=pending_id,
-        run_date="2026-08-23",
-        status="blocked",
-        now=t,
-        payload={"blockers": ["verified_closed_trading_date_unavailable"]},
-    )
-    # Must reuse existing pending row instead of allocating a successor
+    assert res1["run_id"] == pending_id
     assert res2["run_id"] == pending_id
     runs = db.list_automation_runs_sync(run_type="market_universe_sync")
     assert len(runs) == 1
@@ -1448,7 +1456,7 @@ def test_calendar_blocked_concurrent_conflict_reuses_pending_row(tmp_path):
 
 def test_collision_exhaustion_raises_and_never_overwrites_terminal_rows(tmp_path):
     """When candidate successor IDs are exhausted, _record_run fails with RuntimeError rather than overwriting."""
-    import pytest
+    from server.ai_runtime.contracts import content_fingerprint
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
@@ -1463,24 +1471,35 @@ def test_collision_exhaustion_raises_and_never_overwrites_terminal_rows(tmp_path
     t = datetime(2026, 8, 23, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     base_id = "market_universe_sync:2026-08-21:collision_exhaustion_base"
 
-    # Seed base row in database
-    db.upsert_automation_run_sync(
-        {
-            "run_id": base_id,
-            "run_type": "market_universe_sync",
-            "run_date": "2026-08-23",
-            "status": "completed",
-            "execution_mode": "market_data_ingestion",
-            "started_at": t.isoformat(),
-            "finished_at": t.isoformat(),
-            "payload": {"attempt": 0},
-        }
-    )
+    # Compute and pre-seed all 10 candidate collision IDs into real database
+    candidates = [base_id]
+    curr_colliding = base_id
+    for att in range(10):
+        attempt_fp = content_fingerprint(
+            {
+                "initial_run_id": base_id,
+                "colliding_run_id": curr_colliding,
+                "attempt": att + 1,
+                "started_at": t.isoformat(),
+            }
+        )
+        next_id = f"market_universe_sync:2026-08-21:{attempt_fp[:16]}"
+        candidates.append(next_id)
+        curr_colliding = next_id
 
-    # Simulate perpetual insert collisions
-    original_inserter = db.insert_automation_run_if_absent_sync
-    conflict_row = db.get_automation_run_sync(base_id)
-    db.insert_automation_run_if_absent_sync = lambda run: (conflict_row, False)
+    for cand_id in candidates:
+        db.upsert_automation_run_sync(
+            {
+                "run_id": cand_id,
+                "run_type": "market_universe_sync",
+                "run_date": "2026-08-23",
+                "status": "failed",
+                "execution_mode": "market_data_ingestion",
+                "started_at": t.isoformat(),
+                "finished_at": t.isoformat(),
+                "payload": {"attempt": "seed", "candidate_id": cand_id},
+            }
+        )
 
     with pytest.raises(RuntimeError, match="automation_run_collision_exhaustion"):
         service._record_run(
@@ -1488,21 +1507,30 @@ def test_collision_exhaustion_raises_and_never_overwrites_terminal_rows(tmp_path
             run_date="2026-08-23",
             status="failed",
             now=t,
-            payload={"attempt": "conflict"},
+            payload={
+                "schema_version": "karkinos.market_universe_automation.v7",
+                "trade_date": "2026-08-21",
+                "attempt": "overwrite_attempt",
+            },
         )
 
-    # Restore inserter and verify base row was never overwritten
-    db.insert_automation_run_if_absent_sync = original_inserter
-    row = db.get_automation_run_sync(base_id)
-    assert row is not None
-    assert row["status"] == "completed"
-    assert json.loads(row["payload_json"]) == {"attempt": 0}
+    # Verify all pre-seeded terminal rows remain completely untouched
+    rows = db.list_automation_runs_sync(run_type="market_universe_sync", limit=100)
+    assert len(rows) == len(candidates)
+    for r in rows:
+        payload = json.loads(r["payload_json"])
+        assert payload.get("attempt") == "seed"
 
 
 def test_listing_inside_history_window_produces_fingerprint_and_reuses_completed(
     tmp_path,
 ):
     """When a stock lists midway through history window, complete coverage produces fingerprint and reuses completed."""
+    from server.services.market.market_universe_automation import (
+        compute_market_coverage_evidence_fingerprint,
+    )
+    from server.services.market.market_universe_truth import MarketUniversePolicy
+
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     _verified_calendar(db)
@@ -1510,7 +1538,7 @@ def test_listing_inside_history_window_produces_fingerprint_and_reuses_completed
 
     # Day 1: only stock A is listed (1 row). Day 2: stock A and stock B are listed (2 rows).
     dates = ["2026-08-20", "2026-08-21"]
-    members = [{"symbol": "600000"}, {"symbol": "600001"}]
+    members = normalize_a_share_members(["600000", "600001"])
     member_metadata = [
         {"symbol": "600000", "list_date": "2026-01-01"},
         {"symbol": "600001", "list_date": "2026-08-21"},  # Lists on Day 2!
@@ -1574,11 +1602,8 @@ def test_listing_inside_history_window_produces_fingerprint_and_reuses_completed
     receipts = store.list_market_daily_ingestion_receipts(
         start_date="2026-08-20", end_date="2026-08-21", provider_name="unit_fixture"
     )
-    from server.services.market.market_universe_automation import (
-        compute_market_coverage_evidence_fingerprint,
-    )
 
-    # Fingerprint must be non-None despite day 1 having 1 row (< len(members) == 2)!
+    # 1. Fingerprint is computed properly despite Day 1 having 1 row (< len(members) == 2)
     fp = compute_market_coverage_evidence_fingerprint(
         snapshot_id="test_snap",
         trading_dates=dates,
@@ -1587,3 +1612,147 @@ def test_listing_inside_history_window_produces_fingerprint_and_reuses_completed
         member_metadata=member_metadata,
     )
     assert fp is not None
+
+    # 2. End-to-end service execution verifies completion and deterministic reuse
+    class _IpoSource:
+        def __init__(self):
+            self.daily_fetch_calls = 0
+
+        def list_symbols(self):
+            return ["600000", "600001"]
+
+        def list_symbol_metadata(self):
+            return [
+                {"symbol": "600000", "display_name": "老股", "list_date": "2026-01-01"},
+                {"symbol": "600001", "display_name": "新股", "list_date": "2026-08-21"},
+            ]
+
+        def fetch_market_daily_bars(self, trade_date: str):
+            self.daily_fetch_calls += 1
+            return pd.DataFrame()
+
+    ipo_source = _IpoSource()
+    policy = MarketUniversePolicy(
+        panel_size=1,
+        allocation_slots=1,
+        minimum_master_member_count=2,
+        minimum_history_rows=2,
+    )
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture",
+            tushare_token="",
+            start_date="2026-08-20",
+        ),
+        data_store=store,
+        source=ipo_source,
+        policy=policy,
+    )
+
+    t_run = datetime(2026, 8, 21, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    res1 = service.run_due(now=t_run)
+    assert res1["status"] == "completed"
+    payload1 = json.loads(res1["payload_json"])
+    assert payload1.get("evidence_fingerprint") is not None
+    assert payload1.get("full_market_uncovered_symbol_session_count") == 0
+
+    daily_calls_prior = ipo_source.daily_fetch_calls
+
+    # Second call must reuse res1 identically with 0 additional provider calls
+    res2 = service.run_due(now=t_run)
+    assert res2["run_id"] == res1["run_id"]
+    assert res2["status"] == "completed"
+    assert ipo_source.daily_fetch_calls == daily_calls_prior
+
+
+def test_is_qualified_market_universe_coverage_run_strict_types():
+    """is_qualified_market_universe_coverage_run strictly validates types and rejects malformed values."""
+    from server.services.market.market_universe_automation import (
+        MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+        is_qualified_market_universe_coverage_run,
+    )
+
+    base_payload = {
+        "validation_policy_id": MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+        "policy_fingerprint": "p_fp",
+        "market_universe_snapshot_id": "snap_1",
+        "evidence_fingerprint": "ev_fp",
+        "full_market_history_frozen": True,
+        "blockers": [],
+        "full_market_partial_receipt_dates": [],
+        "full_market_missing_receipt_dates": [],
+        "full_market_uncovered_symbol_session_count": 0,
+        "full_market_missing_receipt_date_count": 0,
+        "full_market_partial_receipt_date_count": 0,
+        "full_market_daily_receipt_count": 10,
+    }
+
+    def _make_run(payload):
+        return {
+            "status": "completed",
+            "payload_json": json.dumps(payload),
+        }
+
+    # Baseline valid run qualifies
+    assert is_qualified_market_universe_coverage_run(
+        _make_run(base_payload),
+        expected_snapshot_id="snap_1",
+        expected_fingerprint="ev_fp",
+        expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+        expected_policy_fingerprint="p_fp",
+    )
+
+    # Disqualify if full_market_history_frozen is a truthy string instead of True boolean
+    p_bad_frozen = dict(base_payload, full_market_history_frozen="false")
+    assert not is_qualified_market_universe_coverage_run(
+        _make_run(p_bad_frozen),
+        expected_snapshot_id="snap_1",
+        expected_fingerprint="ev_fp",
+        expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+        expected_policy_fingerprint="p_fp",
+    )
+
+    # Disqualify if uncovered count is a non-digit string or negative or boolean
+    for bad_uncovered in ["broken", -1, True, False, 1]:
+        p = dict(base_payload, full_market_uncovered_symbol_session_count=bad_uncovered)
+        assert not is_qualified_market_universe_coverage_run(
+            _make_run(p),
+            expected_snapshot_id="snap_1",
+            expected_fingerprint="ev_fp",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            expected_policy_fingerprint="p_fp",
+        )
+
+    # Disqualify if daily receipt count is <= 0 or non-int
+    for bad_receipt_count in [0, -5, "broken", False]:
+        p = dict(base_payload, full_market_daily_receipt_count=bad_receipt_count)
+        assert not is_qualified_market_universe_coverage_run(
+            _make_run(p),
+            expected_snapshot_id="snap_1",
+            expected_fingerprint="ev_fp",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            expected_policy_fingerprint="p_fp",
+        )
+
+
+def test_market_universe_automation_requires_atomic_inserter(tmp_path):
+    """MarketUniverseAutomationService raises TypeError when db lacks insert_automation_run_if_absent_sync."""
+    dummy_db = SimpleNamespace(
+        get_automation_run_sync=lambda rid: None,
+        upsert_automation_run_sync=lambda run: run,
+    )
+    with pytest.raises(
+        TypeError,
+        match="market_universe_automation_requires_atomic_run_inserter",
+    ):
+        MarketUniverseAutomationService(
+            db=dummy_db,
+            config=SimpleNamespace(
+                data_source="unit_fixture",
+                tushare_token="",
+                start_date="2026-04-01",
+            ),
+            data_store=DataStore(tmp_path / "market"),
+            source=_Source(),
+        )
