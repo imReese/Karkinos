@@ -364,6 +364,43 @@ def test_internal_partial_receipt_cannot_freeze_full_market_history(tmp_path):
     )
 
 
+def test_subtle_single_symbol_omission_cannot_freeze_full_market_history(tmp_path):
+    """Omitting even 1 of 1000 symbols (99.9% coverage) fails closed under strict identity."""
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _verified_calendar(db)
+    store = DataStore(tmp_path / "market")
+    source = _Source()
+    dates = [
+        day.date().isoformat() for day in pd.bdate_range(end="2026-08-21", periods=80)
+    ]
+    partial_day = dates[20]
+    for day in dates:
+        frame = source.fetch_market_daily_bars(day)
+        if day == partial_day:
+            frame = frame.iloc[:999]  # 999 out of 1000 symbols present
+        store.ingest_market_daily_batch(
+            trade_date=day, provider_name="unit_fixture", bars=frame
+        )
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-04-01"
+        ),
+        data_store=store,
+        source=source,
+    )
+    result = service.run_due(
+        now=datetime(2026, 8, 23, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
+    )
+    payload = json.loads(result["payload_json"])
+    assert result["status"] == "failed"
+    assert payload["full_market_history_frozen"] is False
+    assert payload["full_market_partial_receipt_dates"] == [partial_day]
+    assert payload["full_market_uncovered_symbol_session_count"] == 1
+    assert "full_market_daily_symbol_coverage_unverified" in payload["blockers"]
+
+
 def test_market_universe_routes_security_master_and_daily_bars_separately(
     monkeypatch,
     tmp_path,
