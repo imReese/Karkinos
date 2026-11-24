@@ -396,101 +396,19 @@ class MarketUniverseAutomationService:
         stock_master_metadata_fetched = False
         stock_master_useful_name_count = 0
         instrument_metadata_persisted_count = 0
-        symbol_metadata: Any = None
-        source_capture_ids = None
+        provider_contacted = False
         snapshot: dict[str, Any] | None = None
         try:
-            snapshot = self._data_store.get_market_universe_snapshot(
+            (
+                snapshot,
+                provider_contacted,
+                stock_master_metadata_fetched,
+                stock_master_useful_name_count,
+                instrument_metadata_persisted_count,
+            ) = self._ensure_market_universe_snapshot(
                 trade_date=trade_date,
-                provider_name=master_provider_name,
+                master_provider_name=master_provider_name,
             )
-            provider_contacted = False
-            metadata_lister = getattr(
-                self._security_master_source, "list_symbol_metadata", None
-            )
-            capture_lister = getattr(
-                self._security_master_source, "capture_symbol_metadata", None
-            )
-            if (
-                snapshot is None
-                or snapshot.get("schema_version")
-                not in {
-                    "karkinos.market_universe_snapshot.v2",
-                    "karkinos.market_universe_snapshot.v3",
-                }
-                or (
-                    snapshot.get("schema_version")
-                    == "karkinos.market_universe_snapshot.v2"
-                    and callable(metadata_lister)
-                )
-                or (callable(capture_lister) and not snapshot.get("source_capture_ids"))
-            ):
-                capture_started_at = self._capture_clock()
-                metadata_lister = getattr(
-                    self._security_master_source, "list_symbol_metadata", None
-                )
-                if callable(capture_lister):
-                    (
-                        symbol_metadata,
-                        source_capture_ids,
-                        capture_started_at,
-                        capture_completed_at,
-                    ) = capture_lister(
-                        ContentAddressedObjectStore(
-                            self._data_store._root / "research" / "objects"
-                        ),
-                        trade_date=trade_date,
-                    )
-                elif callable(metadata_lister):
-                    symbol_metadata = metadata_lister()
-                if symbol_metadata is None:
-                    symbols = self._security_master_source.list_symbols()
-                else:
-                    stock_master_metadata_fetched = True
-                    symbols = [
-                        item.get("symbol")
-                        for item in symbol_metadata
-                        if isinstance(item, Mapping)
-                    ]
-                if source_capture_ids is None:
-                    capture_completed_at = self._capture_clock()
-                provider_contacted = True
-                normalized_members = normalize_a_share_members(symbols)
-                if len(normalized_members) < self._policy.minimum_master_member_count:
-                    raise ValueError("market_universe_provider_result_incomplete")
-                if stock_master_metadata_fetched:
-                    metadata_items = _useful_stock_master_metadata(
-                        symbol_metadata or [],
-                        members=normalized_members,
-                        provider_name=master_provider_name,
-                        fetched_at=capture_completed_at.isoformat(),
-                        trade_date=trade_date,
-                    )
-                    stock_master_useful_name_count = len(metadata_items)
-                    if metadata_items:
-                        batch_upsert = getattr(
-                            self._db, "upsert_instrument_metadata_batch_sync", None
-                        )
-                        if not callable(batch_upsert):
-                            raise RuntimeError(
-                                "instrument_metadata_batch_persistence_unavailable"
-                            )
-                        instrument_metadata_persisted_count = int(
-                            batch_upsert(metadata_items)
-                        )
-                        if instrument_metadata_persisted_count != len(metadata_items):
-                            raise RuntimeError(
-                                "instrument_metadata_batch_persistence_incomplete"
-                            )
-                snapshot = self._data_store.save_market_universe_snapshot(
-                    trade_date=trade_date,
-                    provider_name=master_provider_name,
-                    members=normalized_members,
-                    capture_started_at=capture_started_at,
-                    capture_completed_at=capture_completed_at,
-                    source_metadata=symbol_metadata,
-                    source_capture_ids=source_capture_ids,
-                )
             snapshot = require_complete_market_universe_snapshot(
                 snapshot,
                 policy=self._policy,
@@ -505,103 +423,17 @@ class MarketUniverseAutomationService:
             )
             if len(trading_dates) < self._policy.minimum_history_rows:
                 raise ValueError("verified_market_history_window_incomplete")
-            updated = 0
-            failed = 0
-            remote_attempted = 0
-            receipt_skipped = 0
-            batch_fetcher = (
-                None
-                if self._daily_batch_source is None
-                else getattr(
-                    self._daily_batch_source,
-                    "fetch_market_daily_bars",
-                    None,
-                )
+
+            (
+                updated,
+                failed,
+                remote_attempted,
+                receipt_skipped,
+            ) = self._refresh_daily_bars(
+                daily_provider_name=daily_provider_name,
+                trading_dates=trading_dates,
+                members=members,
             )
-            if callable(batch_fetcher):
-                member_set = set(members)
-                for market_date in trading_dates:
-                    receipt = self._data_store.get_market_daily_ingestion_receipt(
-                        trade_date=market_date,
-                        provider_name=daily_provider_name,
-                    )
-                    if receipt is not None:
-                        receipt_skipped += 1
-                        continue
-                    if self._throttle_seconds:
-                        self._sleep(self._throttle_seconds)
-                    remote_attempted += 1
-                    try:
-                        frame = batch_fetcher(market_date)
-                        frame = frame.loc[
-                            frame["symbol"].astype(str).isin(member_set)
-                        ].copy()
-                        if frame.empty:
-                            raise ValueError("market_daily_batch_no_active_members")
-                        self._data_store.ingest_market_daily_batch(
-                            trade_date=market_date,
-                            provider_name=daily_provider_name,
-                            bars=frame,
-                        )
-                        updated += 1
-                    except Exception:
-                        failed += 1
-                        logger.warning(
-                            "Full-market daily batch refresh failed for %s",
-                            market_date,
-                            exc_info=True,
-                        )
-                        break
-            else:
-                missing_dates = [
-                    day
-                    for day in trading_dates
-                    if self._data_store.get_market_daily_ingestion_receipt(
-                        trade_date=day, provider_name=daily_provider_name
-                    )
-                    is None
-                ]
-                receipt_skipped = len(trading_dates) - len(missing_dates)
-                fresh_frames = {}
-                for symbol_text in members if missing_dates else ():
-                    if self._throttle_seconds:
-                        self._sleep(self._throttle_seconds)
-                    remote_attempted += 1
-                    try:
-                        frame = self._daily_source.fetch_bars(
-                            Symbol(symbol_text),
-                            start=datetime.fromisoformat(missing_dates[0]),
-                            end=datetime.combine(
-                                datetime.fromisoformat(missing_dates[-1]).date(),
-                                time.max,
-                            ),
-                            frequency=BarFrequency.DAILY,
-                            asset_class=AssetClass.STOCK,
-                        )
-                        if (
-                            frame.attrs.get("volume_unit") != "shares"
-                            or frame.attrs.get("amount_unit") != "CNY"
-                            or frame.attrs.get("adjustment_mode") != "none"
-                        ):
-                            raise ValueError("market_daily_provider_units_unverified")
-                        if not frame.empty:
-                            fresh_frames[symbol_text] = frame
-                        updated += 1
-                    except Exception:
-                        failed += 1
-                        logger.warning(
-                            "Full-market per-symbol refresh failed for %s",
-                            symbol_text,
-                            exc_info=True,
-                        )
-                        break
-                if not failed and missing_dates:
-                    _freeze_market_dates(
-                        data_store=self._data_store,
-                        provider_name=daily_provider_name,
-                        frames=fresh_frames,
-                        trading_dates=missing_dates,
-                    )
 
             coverage = self._history_coverage(
                 start_date=start_date,
@@ -716,6 +548,222 @@ class MarketUniverseAutomationService:
                     ),
                 },
             )
+
+    def _ensure_market_universe_snapshot(
+        self,
+        *,
+        trade_date: str,
+        master_provider_name: str,
+    ) -> tuple[dict[str, Any] | None, bool, bool, int, int]:
+        snapshot = self._data_store.get_market_universe_snapshot(
+            trade_date=trade_date,
+            provider_name=master_provider_name,
+        )
+        provider_contacted = False
+        stock_master_metadata_fetched = False
+        stock_master_useful_name_count = 0
+        instrument_metadata_persisted_count = 0
+        symbol_metadata: Any = None
+        source_capture_ids = None
+
+        metadata_lister = getattr(
+            self._security_master_source, "list_symbol_metadata", None
+        )
+        capture_lister = getattr(
+            self._security_master_source, "capture_symbol_metadata", None
+        )
+        if (
+            snapshot is None
+            or snapshot.get("schema_version")
+            not in {
+                "karkinos.market_universe_snapshot.v2",
+                "karkinos.market_universe_snapshot.v3",
+            }
+            or (
+                snapshot.get("schema_version") == "karkinos.market_universe_snapshot.v2"
+                and callable(metadata_lister)
+            )
+            or (callable(capture_lister) and not snapshot.get("source_capture_ids"))
+        ):
+            capture_started_at = self._capture_clock()
+            metadata_lister = getattr(
+                self._security_master_source, "list_symbol_metadata", None
+            )
+            if callable(capture_lister):
+                (
+                    symbol_metadata,
+                    source_capture_ids,
+                    capture_started_at,
+                    capture_completed_at,
+                ) = capture_lister(
+                    ContentAddressedObjectStore(
+                        self._data_store._root / "research" / "objects"
+                    ),
+                    trade_date=trade_date,
+                )
+            elif callable(metadata_lister):
+                symbol_metadata = metadata_lister()
+            if symbol_metadata is None:
+                symbols = self._security_master_source.list_symbols()
+            else:
+                stock_master_metadata_fetched = True
+                symbols = [
+                    item.get("symbol")
+                    for item in symbol_metadata
+                    if isinstance(item, Mapping)
+                ]
+            if source_capture_ids is None:
+                capture_completed_at = self._capture_clock()
+            provider_contacted = True
+            normalized_members = normalize_a_share_members(symbols)
+            if len(normalized_members) < self._policy.minimum_master_member_count:
+                raise ValueError("market_universe_provider_result_incomplete")
+            if stock_master_metadata_fetched:
+                metadata_items = _useful_stock_master_metadata(
+                    symbol_metadata or [],
+                    members=normalized_members,
+                    provider_name=master_provider_name,
+                    fetched_at=capture_completed_at.isoformat(),
+                    trade_date=trade_date,
+                )
+                stock_master_useful_name_count = len(metadata_items)
+                if metadata_items:
+                    batch_upsert = getattr(
+                        self._db, "upsert_instrument_metadata_batch_sync", None
+                    )
+                    if not callable(batch_upsert):
+                        raise RuntimeError(
+                            "instrument_metadata_batch_persistence_unavailable"
+                        )
+                    instrument_metadata_persisted_count = int(
+                        batch_upsert(metadata_items)
+                    )
+                    if instrument_metadata_persisted_count != len(metadata_items):
+                        raise RuntimeError(
+                            "instrument_metadata_batch_persistence_incomplete"
+                        )
+            snapshot = self._data_store.save_market_universe_snapshot(
+                trade_date=trade_date,
+                provider_name=master_provider_name,
+                members=normalized_members,
+                capture_started_at=capture_started_at,
+                capture_completed_at=capture_completed_at,
+                source_metadata=symbol_metadata,
+                source_capture_ids=source_capture_ids,
+            )
+        return (
+            snapshot,
+            provider_contacted,
+            stock_master_metadata_fetched,
+            stock_master_useful_name_count,
+            instrument_metadata_persisted_count,
+        )
+
+    def _refresh_daily_bars(
+        self,
+        *,
+        daily_provider_name: str,
+        trading_dates: Sequence[str],
+        members: Sequence[str],
+    ) -> tuple[int, int, int, int]:
+        updated = 0
+        failed = 0
+        remote_attempted = 0
+        receipt_skipped = 0
+        batch_fetcher = (
+            None
+            if self._daily_batch_source is None
+            else getattr(
+                self._daily_batch_source,
+                "fetch_market_daily_bars",
+                None,
+            )
+        )
+        if callable(batch_fetcher):
+            member_set = set(members)
+            for market_date in trading_dates:
+                receipt = self._data_store.get_market_daily_ingestion_receipt(
+                    trade_date=market_date,
+                    provider_name=daily_provider_name,
+                )
+                if receipt is not None:
+                    receipt_skipped += 1
+                    continue
+                if self._throttle_seconds:
+                    self._sleep(self._throttle_seconds)
+                remote_attempted += 1
+                try:
+                    frame = batch_fetcher(market_date)
+                    frame = frame.loc[
+                        frame["symbol"].astype(str).isin(member_set)
+                    ].copy()
+                    if frame.empty:
+                        raise ValueError("market_daily_batch_no_active_members")
+                    self._data_store.ingest_market_daily_batch(
+                        trade_date=market_date,
+                        provider_name=daily_provider_name,
+                        bars=frame,
+                    )
+                    updated += 1
+                except Exception:
+                    failed += 1
+                    logger.warning(
+                        "Full-market daily batch refresh failed for %s",
+                        market_date,
+                        exc_info=True,
+                    )
+                    break
+        else:
+            missing_dates = [
+                day
+                for day in trading_dates
+                if self._data_store.get_market_daily_ingestion_receipt(
+                    trade_date=day, provider_name=daily_provider_name
+                )
+                is None
+            ]
+            receipt_skipped = len(trading_dates) - len(missing_dates)
+            fresh_frames = {}
+            for symbol_text in members if missing_dates else ():
+                if self._throttle_seconds:
+                    self._sleep(self._throttle_seconds)
+                remote_attempted += 1
+                try:
+                    frame = self._daily_source.fetch_bars(
+                        Symbol(symbol_text),
+                        start=datetime.fromisoformat(missing_dates[0]),
+                        end=datetime.combine(
+                            datetime.fromisoformat(missing_dates[-1]).date(),
+                            time.max,
+                        ),
+                        frequency=BarFrequency.DAILY,
+                        asset_class=AssetClass.STOCK,
+                    )
+                    if (
+                        frame.attrs.get("volume_unit") != "shares"
+                        or frame.attrs.get("amount_unit") != "CNY"
+                        or frame.attrs.get("adjustment_mode") != "none"
+                    ):
+                        raise ValueError("market_daily_provider_units_unverified")
+                    if not frame.empty:
+                        fresh_frames[symbol_text] = frame
+                    updated += 1
+                except Exception:
+                    failed += 1
+                    logger.warning(
+                        "Full-market per-symbol refresh failed for %s",
+                        symbol_text,
+                        exc_info=True,
+                    )
+                    break
+            if not failed and missing_dates:
+                _freeze_market_dates(
+                    data_store=self._data_store,
+                    provider_name=daily_provider_name,
+                    frames=fresh_frames,
+                    trading_dates=missing_dates,
+                )
+        return updated, failed, remote_attempted, receipt_skipped
 
     def _history_coverage(
         self,
