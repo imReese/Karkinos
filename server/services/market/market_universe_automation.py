@@ -367,6 +367,53 @@ def _row_matches_market_universe_scope(
     return matches, payload
 
 
+def _is_matching_pending_blocked_run(
+    row: Mapping[str, Any] | None,
+    *,
+    run_date: str,
+    master_provider_name: str | None = None,
+    daily_provider_name: str | None = None,
+) -> bool:
+    """Verify that an existing blocked run matches the pending calendar-blocked scope."""
+    if not isinstance(row, Mapping):
+        return False
+    if row.get("run_type") != MARKET_UNIVERSE_AUTOMATION_RUN_TYPE:
+        return False
+    if str(row.get("status") or "") != "blocked":
+        return False
+    if str(row.get("run_date") or "") != run_date:
+        return False
+    payload = row.get("payload")
+    if payload is None:
+        raw_payload = row.get("payload_json")
+        if raw_payload:
+            try:
+                payload = json.loads(str(raw_payload))
+            except Exception:
+                return False
+    if not isinstance(payload, Mapping):
+        return False
+    if payload.get("trade_date") is not None:
+        return False
+    if (
+        master_provider_name is not None
+        and payload.get("security_master_provider") != master_provider_name
+    ):
+        return False
+    if (
+        daily_provider_name is not None
+        and payload.get("daily_bar_provider") != daily_provider_name
+    ):
+        return False
+    blockers = payload.get("blockers")
+    if (
+        not isinstance(blockers, (list, tuple))
+        or "verified_closed_trading_date_unavailable" not in blockers
+    ):
+        return False
+    return True
+
+
 def validate_run_predecessor_ancestry(
     run_or_row: Mapping[str, Any] | None,
     *,
@@ -815,9 +862,11 @@ class MarketUniverseAutomationService:
             pending_id = f"market_universe_sync:pending:{run_date}"
             getter = getattr(self._db, "get_automation_run_sync", None)
             existing_pending = getter(pending_id) if callable(getter) else None
-            if (
-                existing_pending is not None
-                and str(existing_pending.get("status")) == "blocked"
+            if _is_matching_pending_blocked_run(
+                existing_pending,
+                run_date=run_date,
+                master_provider_name=master_provider_name,
+                daily_provider_name=daily_provider_name,
             ):
                 return existing_pending
             return self._record_run(
@@ -1644,7 +1693,9 @@ class MarketUniverseAutomationService:
         source_ref: str | None = None,
     ) -> dict[str, Any]:
         inserter = self._db.insert_automation_run_if_absent_sync
-        trade_scope = payload.get("trade_date") or run_date
+        trade_scope = payload.get("trade_date")
+        if trade_scope is None and status != "blocked":
+            trade_scope = run_date
         rec_master = payload.get("security_master_provider")
         rec_daily = payload.get("daily_bar_provider")
         rec_task_key = payload.get("task_key")
@@ -1734,13 +1785,16 @@ class MarketUniverseAutomationService:
                 )
                 if is_valid_ancestry:
                     return row
-            if (
-                status == "blocked"
-                and existing_status == "blocked"
-                and row_matches_scope
-                and str(row.get("run_id") or "") == current_run_id
-            ):
-                return row
+            if status == "blocked" and existing_status == "blocked":
+                if str(
+                    row.get("run_id") or ""
+                ) == current_run_id and _is_matching_pending_blocked_run(
+                    row,
+                    run_date=run_date,
+                    master_provider_name=rec_master,
+                    daily_provider_name=rec_daily,
+                ):
+                    return row
 
             colliding_id = str(row.get("run_id") or initial_run_id)
             row_task_key = row_payload.get("task_key")
