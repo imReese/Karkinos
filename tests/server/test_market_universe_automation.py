@@ -1479,7 +1479,7 @@ def test_collision_exhaustion_raises_and_never_overwrites_terminal_rows(tmp_path
             {
                 "initial_run_id": base_id,
                 "colliding_run_id": curr_colliding,
-                "target_predecessor": base_id,
+                "target_predecessor": curr_colliding,
                 "attempt": att + 1,
                 "started_at": t.isoformat(),
             }
@@ -1524,87 +1524,73 @@ def test_collision_exhaustion_raises_and_never_overwrites_terminal_rows(tmp_path
 
 
 def test_collision_routing_preserves_latest_retry_predecessor(tmp_path):
-    """When a task has retried, collision on base ID attaches the new attempt to the latest retry, not the base ID."""
+    """Production run_due preserves lineage across multiple attempts, linking each retry to its latest predecessor."""
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
+    _verified_calendar(db)
+    store = DataStore(tmp_path / "market")
+
+    class _FailingDailySource(_Source):
+        def fetch_market_daily_bars(self, trade_date: str) -> pd.DataFrame:
+            raise ValueError("simulated_provider_bar_failure")
+
+    failing_source = _FailingDailySource()
     service = MarketUniverseAutomationService(
         db=db,
         config=SimpleNamespace(
-            data_source="unit_fixture", tushare_token="", start_date="2026-04-01"
+            data_source="unit_fixture", tushare_token="", start_date="2026-08-01"
         ),
-        data_store=DataStore(tmp_path / "market"),
-        source=_Source(),
-    )
-    t1 = datetime(2026, 8, 23, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
-    t2 = datetime(2026, 8, 23, 10, 5, tzinfo=ZoneInfo("Asia/Shanghai"))
-    t3 = datetime(2026, 8, 23, 10, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
-
-    base_id = "market_universe_sync:2026-08-21:deterministic_base"
-    retry_1_id = "market_universe_sync:2026-08-21:retry_attempt_1"
-
-    # Seed Run 1 (base attempt, failed)
-    db.upsert_automation_run_sync(
-        {
-            "run_id": base_id,
-            "run_type": "market_universe_sync",
-            "run_date": "2026-08-23",
-            "status": "failed",
-            "execution_mode": "market_data_ingestion",
-            "started_at": t1.isoformat(),
-            "finished_at": t1.isoformat(),
-            "payload": {
-                "schema_version": "karkinos.market_universe_automation.v7",
-                "trade_date": "2026-08-21",
-                "attempt": 1,
-            },
-        }
+        data_store=store,
+        source=failing_source,
     )
 
-    # Seed Run 2 (retry 1, supersedes base_id)
-    db.upsert_automation_run_sync(
-        {
-            "run_id": retry_1_id,
-            "run_type": "market_universe_sync",
-            "run_date": "2026-08-23",
-            "status": "failed",
-            "execution_mode": "market_data_ingestion",
-            "started_at": t2.isoformat(),
-            "finished_at": t2.isoformat(),
-            "source_ref": base_id,
-            "payload": {
-                "schema_version": "karkinos.market_universe_automation.v7",
-                "trade_date": "2026-08-21",
-                "attempt": 2,
-                "supersedes_run_id": base_id,
-                "prior_run_id": base_id,
-            },
-        }
-    )
+    t1 = datetime(2026, 8, 21, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    t2 = t1 + timedelta(hours=2)
+    t3 = t2 + timedelta(hours=2)
 
-    # Now Run 3 executes. Caller knows retry_1_id was the prior run,
-    # but the deterministic target identity resolves to base_id.
-    run_3 = service._record_run(
-        run_id=base_id,
-        run_date="2026-08-23",
-        status="failed",
-        source_ref=retry_1_id,
-        now=t3,
-        payload={
-            "schema_version": "karkinos.market_universe_automation.v7",
-            "trade_date": "2026-08-21",
-            "attempt": 3,
-            "supersedes_run_id": retry_1_id,
-            "prior_run_id": retry_1_id,
-        },
-    )
+    # Attempt 1 through production run_due: records initial terminal failure
+    run_1 = service.run_due(now=t1)
+    assert run_1["status"] == "failed"
+    run_1_id = run_1["run_id"]
+    p1 = json.loads(run_1["payload_json"])
+    assert p1.get("supersedes_run_id") is None
 
-    # Run 3 must allocate a distinct run_id and point to retry_1_id (the latest retry), NOT base_id!
-    assert run_3["run_id"] != base_id
-    assert run_3["run_id"] != retry_1_id
-    assert run_3["source_ref"] == retry_1_id
+    # Attempt 2 through production run_due: discovers run_1 as predecessor and attaches to it
+    run_2 = service.run_due(now=t2)
+    assert run_2["status"] == "failed"
+    run_2_id = run_2["run_id"]
+    assert run_2_id != run_1_id
+    assert run_2["source_ref"] == run_1_id
+    p2 = json.loads(run_2["payload_json"])
+    assert p2["supersedes_run_id"] == run_1_id
+    assert p2["prior_run_id"] == run_1_id
+
+    # Attempt 3 through production run_due: discovers run_2 as latest retry and attaches to run_2, NOT run_1!
+    run_3 = service.run_due(now=t3)
+    assert run_3["status"] == "failed"
+    run_3_id = run_3["run_id"]
+    assert run_3_id != run_2_id
+    assert run_3_id != run_1_id
+    assert run_3["source_ref"] == run_2_id
     p3 = json.loads(run_3["payload_json"])
-    assert p3["supersedes_run_id"] == retry_1_id
-    assert p3["prior_run_id"] == retry_1_id
+    assert p3["supersedes_run_id"] == run_2_id
+    assert p3["prior_run_id"] == run_2_id
+
+    # In real SQLite database: all 3 attempts are preserved immutably with exact predecessor links
+    runs = db.list_automation_runs_sync(run_type="market_universe_sync", limit=10)
+    assert len(runs) == 3
+    run_map = {r["run_id"]: r for r in runs}
+    assert (
+        json.loads(run_map[run_1_id]["payload_json"]).get("supersedes_run_id") is None
+    )
+    assert (
+        json.loads(run_map[run_2_id]["payload_json"])["supersedes_run_id"] == run_1_id
+    )
+    assert (
+        json.loads(run_map[run_3_id]["payload_json"])["supersedes_run_id"] == run_2_id
+    )
+    assert run_map[run_2_id]["source_ref"] == run_1_id
+    assert run_map[run_3_id]["source_ref"] == run_2_id
 
 
 def test_listing_inside_history_window_produces_fingerprint_and_reuses_completed(
@@ -1836,28 +1822,53 @@ def test_is_qualified_market_universe_coverage_run_strict_types():
                 expected_policy_fingerprint="p_fp",
             )
 
-    # Disqualify if validation policy aliases contradict each other
-    p_bad_policy_alias = dict(
-        base_payload,
-        validation_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
-        coverage_validation_policy_id="contradictory_policy",
-    )
+    # Disqualify if policy alias counterpart contains falsy malformed value
+    for bad_counterpart in ["", None, False, 0, "wrong"]:
+        p_bad_alias = dict(
+            base_payload,
+            validation_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            coverage_validation_policy_id=bad_counterpart,
+        )
+        assert not is_qualified_market_universe_coverage_run(
+            _make_run(p_bad_alias),
+            expected_snapshot_id="snap_1",
+            expected_fingerprint="ev_fp",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            expected_policy_fingerprint="p_fp",
+        )
+
+    # Disqualify if evidence fingerprint alias counterpart contains falsy malformed value
+    for bad_counterpart in ["", None, False, 0, "wrong"]:
+        p_bad_fp_alias = dict(
+            base_payload,
+            evidence_fingerprint="ev_fp",
+            coverage_evidence_fingerprint=bad_counterpart,
+        )
+        assert not is_qualified_market_universe_coverage_run(
+            _make_run(p_bad_fp_alias),
+            expected_snapshot_id="snap_1",
+            expected_fingerprint="ev_fp",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            expected_policy_fingerprint="p_fp",
+        )
+
+    # Disqualify if neither policy alias or neither fingerprint alias is present
+    p_no_policy = dict(base_payload)
+    p_no_policy.pop("validation_policy_id", None)
+    p_no_policy.pop("coverage_validation_policy_id", None)
     assert not is_qualified_market_universe_coverage_run(
-        _make_run(p_bad_policy_alias),
+        _make_run(p_no_policy),
         expected_snapshot_id="snap_1",
         expected_fingerprint="ev_fp",
         expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
         expected_policy_fingerprint="p_fp",
     )
 
-    # Disqualify if evidence fingerprint aliases contradict each other
-    p_bad_fp_alias = dict(
-        base_payload,
-        evidence_fingerprint="ev_fp",
-        coverage_evidence_fingerprint="contradictory_fp",
-    )
+    p_no_fp = dict(base_payload)
+    p_no_fp.pop("evidence_fingerprint", None)
+    p_no_fp.pop("coverage_evidence_fingerprint", None)
     assert not is_qualified_market_universe_coverage_run(
-        _make_run(p_bad_fp_alias),
+        _make_run(p_no_fp),
         expected_snapshot_id="snap_1",
         expected_fingerprint="ev_fp",
         expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,

@@ -164,12 +164,17 @@ def is_qualified_market_universe_coverage_run(
         return None
 
     # 1. Validation policy identity & policy fingerprint
-    primary_policy = payload.get("validation_policy_id")
-    alias_policy = payload.get("coverage_validation_policy_id")
-    if primary_policy and alias_policy and primary_policy != alias_policy:
+    # Reject missing or malformed aliases: every present alias must strictly match expected_policy_id
+    has_primary_policy = "validation_policy_id" in payload
+    has_alias_policy = "coverage_validation_policy_id" in payload
+    if not (has_primary_policy or has_alias_policy):
         return False
-    policy_id = primary_policy or alias_policy
-    if policy_id != expected_policy_id:
+    if has_primary_policy and payload["validation_policy_id"] != expected_policy_id:
+        return False
+    if (
+        has_alias_policy
+        and payload["coverage_validation_policy_id"] != expected_policy_id
+    ):
         return False
     if payload.get("policy_fingerprint") != expected_policy_fingerprint:
         return False
@@ -218,12 +223,18 @@ def is_qualified_market_universe_coverage_run(
     # 3. Content identity & fingerprint: master snapshot and daily receipt evidence must match
     if payload.get("market_universe_snapshot_id") != expected_snapshot_id:
         return False
-    primary_fp = payload.get("evidence_fingerprint")
-    alias_fp = payload.get("coverage_evidence_fingerprint")
-    if primary_fp and alias_fp and primary_fp != alias_fp:
+
+    # Reject missing or malformed evidence fingerprint aliases
+    has_primary_fp = "evidence_fingerprint" in payload
+    has_alias_fp = "coverage_evidence_fingerprint" in payload
+    if not (has_primary_fp or has_alias_fp):
         return False
-    existing_evidence_fp = primary_fp or alias_fp
-    if existing_evidence_fp != expected_fingerprint:
+    if has_primary_fp and payload["evidence_fingerprint"] != expected_fingerprint:
+        return False
+    if (
+        has_alias_fp
+        and payload["coverage_evidence_fingerprint"] != expected_fingerprint
+    ):
         return False
     return True
 
@@ -1198,7 +1209,10 @@ class MarketUniverseAutomationService:
                 return row
 
             colliding_id = str(row.get("run_id") or initial_run_id)
-            if not target_predecessor or str(target_predecessor) == current_run_id:
+            if attempt == 0:
+                if not target_predecessor or str(target_predecessor) == current_run_id:
+                    target_predecessor = colliding_id
+            else:
                 target_predecessor = colliding_id
 
             attempt_fp = content_fingerprint(
