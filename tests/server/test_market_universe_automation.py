@@ -740,3 +740,242 @@ def test_per_symbol_ingestion_never_relabels_existing_cache_as_provider_evidence
     assert store.load_bars("600000", instrument_type="stock")["volume"].eq(10000).all()
     service.run_due(now=datetime(2026, 8, 23, 11, tzinfo=ZoneInfo("Asia/Shanghai")))
     assert len(calls) == 41
+
+
+def test_failed_retry_on_unchanged_evidence_creates_distinct_successor_without_overwriting_or_self_link(
+    tmp_path,
+):
+    """When a failed run is retried after backoff with unchanged broken inputs,
+
+    it produces a distinct successor run, preserves the original terminal run immutably,
+    and never creates a self-referencing supersedes_run_id.
+    """
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _verified_calendar(db)
+    store = DataStore(tmp_path / "market")
+    source = _Source()
+    dates = [
+        day.date().isoformat() for day in pd.bdate_range(end="2026-08-21", periods=80)
+    ]
+    partial_day = dates[20]
+    for day in dates:
+        frame = source.fetch_market_daily_bars(day)
+        if day == partial_day:
+            frame = frame.iloc[:999]  # 999 out of 1000 symbols present
+        store.ingest_market_daily_batch(
+            trade_date=day, provider_name="unit_fixture", bars=frame
+        )
+
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-04-01"
+        ),
+        data_store=store,
+        source=source,
+    )
+
+    # Run 1: 10:00 fails closed
+    t1 = datetime(2026, 8, 23, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    res1 = service.run_due(now=t1)
+    assert res1["status"] == "failed"
+    run_1_id = res1["run_id"]
+    assert res1["finished_at"] == t1.isoformat()
+
+    # Verify Run 1 persisted in DB
+    persisted_1 = db.get_automation_run_sync(run_1_id)
+    assert persisted_1 is not None
+    assert persisted_1["finished_at"] == t1.isoformat()
+    assert persisted_1["status"] == "failed"
+
+    # Run 2: 11:01 (after 1-hour backoff) retries with unchanged broken data
+    t2 = datetime(2026, 8, 23, 11, 1, tzinfo=ZoneInfo("Asia/Shanghai"))
+    res2 = service.run_due(now=t2)
+    assert res2["status"] == "failed"
+    run_2_id = res2["run_id"]
+
+    # 1. Distinct successor run ID (not overwritten)
+    assert run_2_id != run_1_id
+    assert res2["finished_at"] == t2.isoformat()
+
+    # 2. Source ref & supersedes point to Run 1, with NO self-link
+    payload2 = json.loads(res2["payload_json"])
+    assert payload2["supersedes_run_id"] == run_1_id
+    assert payload2["supersedes_run_id"] != run_2_id
+    assert res2["source_ref"] == run_1_id
+    assert res2["source_ref"] != run_2_id
+
+    # 3. Run 1 remains immutable in DB with original finished_at
+    orig_check = db.get_automation_run_sync(run_1_id)
+    assert orig_check is not None
+    assert orig_check["finished_at"] == t1.isoformat()
+    assert orig_check["status"] == "failed"
+
+    # Run 3: 11:02 (within 1-hour backoff of Run 2) throttles and returns Run 2 without writing
+    t3 = datetime(2026, 8, 23, 11, 2, tzinfo=ZoneInfo("Asia/Shanghai"))
+    res3 = service.run_due(now=t3)
+    assert res3["run_id"] == run_2_id
+    assert res3["finished_at"] == t2.isoformat()
+
+
+def test_cross_day_prior_resolution_finds_previous_day_run_by_task_key(tmp_path):
+    """find_prior_market_universe_run resolves across natural dates by stable task_key."""
+    from server.services.market.market_universe_automation import (
+        find_prior_market_universe_run,
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+
+    task_key = "market_universe_sync:unit_fixture:unit_fixture:2026-11-24"
+    run_id_1124 = "market_universe_sync:2026-11-24:ab24fbe3755a1a21"
+    payload_1124 = {
+        "schema_version": "karkinos.market_universe_automation.v7",
+        "task_key": task_key,
+        "trade_date": "2026-11-24",
+        "security_master_provider": "unit_fixture",
+        "daily_bar_provider": "unit_fixture",
+        "status": "failed",
+    }
+    db.upsert_automation_run_sync(
+        {
+            "run_id": run_id_1124,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-11-24",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": "2026-11-24T19:07:00+08:00",
+            "finished_at": "2026-11-24T19:07:05+08:00",
+            "source_ref": None,
+            "payload": payload_1124,
+        }
+    )
+
+    # On next calendar day (11-25), look up prior run for task_key with run_date="2026-11-25"
+    prior_on_next_day = find_prior_market_universe_run(
+        db,
+        task_key=task_key,
+        trade_date="2026-11-24",
+        master_provider_name="unit_fixture",
+        daily_provider_name="unit_fixture",
+        run_date="2026-11-25",
+    )
+    assert prior_on_next_day is not None
+    assert prior_on_next_day["run_id"] == run_id_1124
+
+    # Seed a successor on 11-25
+    run_id_1125 = "market_universe_sync:2026-11-24:fedcba9876543210"
+    payload_1125 = {
+        **payload_1124,
+        "prior_run_id": run_id_1124,
+        "supersedes_run_id": run_id_1124,
+    }
+    db.upsert_automation_run_sync(
+        {
+            "run_id": run_id_1125,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-11-25",
+            "status": "completed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": "2026-11-25T08:00:00+08:00",
+            "finished_at": "2026-11-25T08:05:00+08:00",
+            "source_ref": run_id_1124,
+            "payload": payload_1125,
+        }
+    )
+
+    # Lookup returns latest successor
+    latest_prior = find_prior_market_universe_run(
+        db,
+        task_key=task_key,
+        trade_date="2026-11-24",
+        master_provider_name="unit_fixture",
+        daily_provider_name="unit_fixture",
+        run_date="2026-11-25",
+    )
+    assert latest_prior is not None
+    assert latest_prior["run_id"] == run_id_1125
+
+
+def test_exact_completed_run_requires_qualification(tmp_path):
+    """An exact matching completed run ID in DB must still satisfy the qualification contract to be returned."""
+    from server.services.market.market_universe_automation import (
+        MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+        compute_market_coverage_evidence_fingerprint,
+        content_fingerprint,
+    )
+    from server.services.market.market_universe_truth import MarketUniversePolicy
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _verified_calendar(db)
+    store = DataStore(tmp_path / "market")
+    source = _Source()
+    dates = [
+        day.date().isoformat() for day in pd.bdate_range(end="2026-08-21", periods=80)
+    ]
+    partial_day = dates[20]
+    for day in dates:
+        frame = source.fetch_market_daily_bars(day)
+        if day == partial_day:
+            frame = frame.iloc[:999]  # missing 1 symbol
+        store.ingest_market_daily_batch(
+            trade_date=day, provider_name="unit_fixture", bars=frame
+        )
+
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-04-01"
+        ),
+        data_store=store,
+        source=source,
+    )
+    snapshot, _, _, _, _ = service._ensure_market_universe_snapshot(
+        trade_date="2026-08-21", master_provider_name="unit_fixture"
+    )
+    receipts = store.list_market_daily_ingestion_receipts(
+        start_date="2026-04-01", end_date="2026-08-21", provider_name="unit_fixture"
+    )
+
+    ev_fp = compute_market_coverage_evidence_fingerprint(
+        snapshot_id=snapshot["snapshot_id"],
+        trading_dates=dates,
+        receipts=receipts,
+    )
+    task_key = "market_universe_sync:unit_fixture:unit_fixture:2026-08-21"
+    exec_fp = content_fingerprint(
+        {
+            "task_key": task_key,
+            "validation_policy_id": MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            "policy_fingerprint": content_fingerprint(MarketUniversePolicy().to_dict()),
+            "evidence_fingerprint": ev_fp,
+        }
+    )
+    target_run_id = f"market_universe_sync:2026-08-21:{exec_fp[:16]}"
+
+    # Seed an unqualified completed run with matching run_id (missing validation_policy_id in payload)
+    db.upsert_automation_run_sync(
+        {
+            "run_id": target_run_id,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-21",
+            "status": "completed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": "2026-08-23T10:00:00+08:00",
+            "finished_at": "2026-08-23T10:05:00+08:00",
+            "payload": {
+                "schema_version": "karkinos.market_universe_automation.v7",
+                "task_key": task_key,
+                "validation_policy_id": "legacy.loose.v0",
+            },
+        }
+    )
+
+    result = service.run_due(
+        now=datetime(2026, 8, 23, 10, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
+    )
+    assert result["status"] == "failed"
+    assert result["run_id"] != target_run_id
+    assert result["source_ref"] == target_run_id
