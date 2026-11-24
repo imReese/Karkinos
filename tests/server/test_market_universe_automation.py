@@ -464,9 +464,18 @@ def test_unqualified_completed_market_run_disqualified_and_reverified_under_stri
     payload = json.loads(result["payload_json"])
 
     # 1. Existing completed run disqualified due to missing strict policy identity; re-evaluates and fails
+    assert result["run_id"] != sync_run_id
+    assert result["run_id"].startswith("market_universe_sync:2026-08-21:")
+    assert result["source_ref"] == sync_run_id
     assert (
-        result["run_id"]
-        == "market_universe_sync:v7:unit_fixture:unit_fixture:2026-08-21"
+        payload["task_key"]
+        == "market_universe_sync:unit_fixture:unit_fixture:2026-08-21"
+    )
+    assert payload["supersedes_run_id"] == sync_run_id
+    assert payload["prior_run_id"] == sync_run_id
+    assert (
+        payload["validation_policy_id"]
+        == "karkinos.market_universe_coverage.strict_per_symbol.v1"
     )
     assert payload["schema_version"] == "karkinos.market_universe_automation.v7"
     assert result["status"] == "failed"
@@ -474,6 +483,11 @@ def test_unqualified_completed_market_run_disqualified_and_reverified_under_stri
     assert payload["full_market_partial_receipt_dates"] == [partial_day]
     assert payload["full_market_uncovered_symbol_session_count"] == 1
     assert "full_market_daily_symbol_coverage_unverified" in payload["blockers"]
+
+    # Historical legacy record in DB remains preserved immutably
+    preserved_legacy = db.get_automation_run_sync(sync_run_id)
+    assert preserved_legacy is not None
+    assert preserved_legacy["status"] == "completed"
 
     # 2. Test valid completion with policy identity and idempotency on complete data store
     complete_db = AppDatabase(tmp_path / "complete_app.db")
@@ -498,17 +512,19 @@ def test_unqualified_completed_market_run_disqualified_and_reverified_under_stri
         now=datetime(2026, 8, 23, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
     assert res1["status"] == "completed"
-    assert (
-        res1["run_id"] == "market_universe_sync:v7:unit_fixture:unit_fixture:2026-08-21"
-    )
+    assert res1["run_id"].startswith("market_universe_sync:2026-08-21:")
     res1_payload = json.loads(res1["payload_json"])
     assert res1_payload["schema_version"] == "karkinos.market_universe_automation.v7"
     assert (
-        res1_payload["coverage_validation_policy_id"]
+        res1_payload["validation_policy_id"]
         == "karkinos.market_universe_coverage.strict_per_symbol.v1"
     )
+    assert (
+        res1_payload["task_key"]
+        == "market_universe_sync:unit_fixture:unit_fixture:2026-08-21"
+    )
     assert res1_payload["full_market_history_frozen"] is True
-    assert bool(res1_payload.get("coverage_evidence_fingerprint")) is True
+    assert bool(res1_payload.get("evidence_fingerprint")) is True
 
     # Subsequent run_due returns the completed run idempotently via evidence qualification
     res2 = complete_service.run_due(
