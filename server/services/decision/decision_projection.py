@@ -106,10 +106,25 @@ def daily_candidate_generation_status(db: Any, decision_date: str) -> dict[str, 
             ),
         }
     if attempt_status != "completed":
-        return base
+        return {
+            **base,
+            "status": (
+                "failed_closed"
+                if attempt_status in {"failed_closed", "interrupted_fail_closed"}
+                else "blocked"
+            ),
+            "failure_code": (
+                attempt_payload.get("failure_code")
+                or (f"attempt_status_{attempt_status}" if attempt_status else None)
+            ),
+        }
     evidence_run_id = str(attempt_payload.get("result_run_id") or "")
     if not evidence_run_id or attempt.get("source_ref") != evidence_run_id:
-        return {**base, "failure_code": "daily_evidence_link_invalid"}
+        return {
+            **base,
+            "status": "blocked",
+            "failure_code": "daily_evidence_link_invalid",
+        }
     evidence_reader = getattr(db, "get_automation_run_sync", None)
     evidence = evidence_reader(evidence_run_id) if callable(evidence_reader) else None
     if (
@@ -117,7 +132,7 @@ def daily_candidate_generation_status(db: Any, decision_date: str) -> dict[str, 
         or evidence.get("run_type") != "daily_decision_evidence"
         or evidence.get("run_date") != decision_date
     ):
-        return {**base, "failure_code": "daily_evidence_missing"}
+        return {**base, "status": "blocked", "failure_code": "daily_evidence_missing"}
     evidence_payload = _automation_payload(evidence)
     if (
         evidence_payload.get("schema_version")
@@ -127,11 +142,19 @@ def daily_candidate_generation_status(db: Any, decision_date: str) -> dict[str, 
         or evidence_payload.get("production_record_fingerprint")
         != daily_candidate_record_fingerprint(evidence_payload)
     ):
-        return {**base, "failure_code": "daily_evidence_fingerprint_invalid"}
+        return {
+            **base,
+            "status": "blocked",
+            "failure_code": "daily_evidence_fingerprint_invalid",
+        }
     if evidence_payload.get("decision_outcome") != attempt_payload.get(
         "decision_outcome"
     ):
-        return {**base, "failure_code": "daily_evidence_outcome_mismatch"}
+        return {
+            **base,
+            "status": "blocked",
+            "failure_code": "daily_evidence_outcome_mismatch",
+        }
     production_gate = evidence_payload.get("production_gate")
     production_gate = production_gate if isinstance(production_gate, dict) else {}
     production_blockers = [
@@ -159,7 +182,11 @@ def daily_candidate_generation_status(db: Any, decision_date: str) -> dict[str, 
         not bound_scan_run_id
         or attempt_payload.get("promoted_strategy_scan_run_id") != bound_scan_run_id
     ):
-        return {**base, "failure_code": "promoted_scan_link_missing_or_conflicting"}
+        return {
+            **base,
+            "status": "blocked",
+            "failure_code": "promoted_scan_link_missing_or_conflicting",
+        }
     scan = resolve_latest_verified_promoted_strategy_scan(
         db,
         decision_date=decision_date,
@@ -167,7 +194,11 @@ def daily_candidate_generation_status(db: Any, decision_date: str) -> dict[str, 
     )
     base["scan_run_id"] = scan.get("run_id")
     if scan.get("run_id") != bound_scan_run_id:
-        return {**base, "failure_code": "promoted_scan_link_mismatch"}
+        return {
+            **base,
+            "status": "blocked",
+            "failure_code": "promoted_scan_link_mismatch",
+        }
     scan_action_ids = scan.get("action_task_ids")
     parsed_scan_action_ids = (
         [_action_task_id(item) for item in scan_action_ids]
@@ -175,7 +206,11 @@ def daily_candidate_generation_status(db: Any, decision_date: str) -> dict[str, 
         else []
     )
     if any(item is None for item in parsed_scan_action_ids):
-        return {**base, "failure_code": "promoted_scan_action_id_invalid"}
+        return {
+            **base,
+            "status": "blocked",
+            "failure_code": "promoted_scan_action_id_invalid",
+        }
     base["bound_scan_action_ids"] = sorted(set(parsed_scan_action_ids))
     if scan.get("status") == "completed_no_signal" and (
         scan.get("normal_no_signal") is True
@@ -337,8 +372,12 @@ def suppress_unverified_daily_scan_candidates(
         else:
             retained.append(candidate)
     if not suppressed:
+        has_generation_evidence = generation is not None and not (
+            generation.get("status") == "unavailable"
+            and not generation.get("failure_code")
+        )
         if (
-            generation.get("status") != "unavailable"
+            has_generation_evidence
             and not generation.get("generation_verified")
             and payload.get("summary")
         ):
@@ -595,16 +634,15 @@ def _finish_today_decision_projection(
         == "persisted_valuation_snapshot"
         else None
     )
+    has_generation_evidence = generation is not None and not (
+        generation.get("status") == "unavailable" and not generation.get("failure_code")
+    )
     no_action_reasons = (
         []
         if candidates
         else (
             [f"daily_generation_{generation.get('status') or 'unavailable'}"]
-            if (
-                generation
-                and generation.get("status") != "unavailable"
-                and not generation.get("generation_verified")
-            )
+            if has_generation_evidence and not generation.get("generation_verified")
             else ["no_pending_action_tasks"]
         )
     )
