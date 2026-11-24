@@ -175,6 +175,53 @@ def require_corporate_action_capture_permission(
         raise ValueError("corporate_action_permission_invalid")
 
 
+def insert_automation_run_if_absent_in_transaction(
+    conn: sqlite3.Connection,
+    run: dict[str, Any],
+    *,
+    now: str,
+) -> tuple[dict[str, Any], bool]:
+    """Atomically insert an automation run if not present without overwriting.
+
+    Returns (persisted_or_existing_row, was_inserted).
+    """
+    payload_json = json.dumps(
+        dict(run.get("payload") or {}),
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    run_id = str(run["run_id"])
+    cursor = conn.execute(
+        """
+        INSERT OR IGNORE INTO automation_runs (
+            run_id, run_type, run_date, status, execution_mode,
+            started_at, finished_at, source_ref, payload_json,
+            created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            run_id,
+            str(run["run_type"]),
+            str(run["run_date"]),
+            str(run["status"]),
+            str(run["execution_mode"]),
+            str(run.get("started_at") or now),
+            run.get("finished_at"),
+            run.get("source_ref"),
+            payload_json,
+            now,
+            now,
+        ),
+    )
+    row = conn.execute(
+        "SELECT * FROM automation_runs WHERE run_id = ?",
+        (run_id,),
+    ).fetchone()
+    if row is None:
+        raise RuntimeError("automation run was not persisted")
+    return dict(row), cursor.rowcount > 0
+
+
 def upsert_automation_run_in_transaction(
     conn: sqlite3.Connection,
     run: dict[str, Any],
@@ -480,6 +527,19 @@ class AutomationRunRepository(SQLiteRepository):
             conn.commit()
             return row
 
+    def insert_automation_run_if_absent_sync(
+        self, run: dict[str, Any]
+    ) -> tuple[dict[str, Any], bool]:
+        """Atomically insert an automation run without overwriting if present."""
+        now = self._now().isoformat()
+        with connect_sqlite(self._path) as conn:
+            conn.row_factory = sqlite3.Row
+            row, inserted = insert_automation_run_if_absent_in_transaction(
+                conn, run, now=now
+            )
+            conn.commit()
+            return row, inserted
+
     def get_automation_run_sync(self, run_id: str) -> dict[str, Any] | None:
         """Read one automation run audit record."""
         with connect_sqlite(self._path) as conn:
@@ -639,7 +699,7 @@ class AutomationRunRepository(SQLiteRepository):
                 SELECT *
                 FROM automation_runs
                 {where_clause}
-                ORDER BY updated_at DESC, created_at DESC
+                ORDER BY updated_at DESC, created_at DESC, run_id DESC
                 LIMIT ? OFFSET ?
                 """,
                 tuple(params),
@@ -664,7 +724,7 @@ class AutomationRunRepository(SQLiteRepository):
                 SELECT *
                 FROM automation_runs
                 WHERE run_type = ?
-                ORDER BY run_date ASC, updated_at ASC, created_at ASC
+                ORDER BY run_date ASC, updated_at ASC, created_at ASC, run_id ASC
                 """,
                 (run_type,),
             ).fetchall()

@@ -261,6 +261,12 @@ class SignalAutomationDatabaseFacade(DatabaseRepositoryAccess):
         """Persist or update an automation run audit record."""
         return self._automation_runs.upsert_automation_run_sync(run)
 
+    def insert_automation_run_if_absent_sync(
+        self, run: dict[str, Any]
+    ) -> tuple[dict[str, Any], bool]:
+        """Atomically insert an automation run without overwriting if present."""
+        return self._automation_runs.insert_automation_run_if_absent_sync(run)
+
     def get_automation_run_sync(self, run_id: str) -> dict[str, Any] | None:
         """Read one automation run audit record."""
         return self._automation_runs.get_automation_run_sync(run_id)

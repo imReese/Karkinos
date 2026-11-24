@@ -47,11 +47,28 @@ MARKET_UNIVERSE_COVERAGE_POLICY_ID = (
 
 def compute_market_coverage_evidence_fingerprint(
     *,
-    snapshot_id: str,
+    snapshot_id: str | None,
     trading_dates: Sequence[str],
     receipts: Sequence[Mapping[str, Any]],
-) -> str:
-    """Deterministic content fingerprint binding master snapshot and daily bar receipts."""
+    expected_member_count: int | None = None,
+) -> str | None:
+    """Deterministic content fingerprint binding master snapshot and daily bar receipts.
+
+    Returns None if snapshot_id is absent, trading_dates is empty, or receipts
+    do not completely cover all required trading dates with non-zero (and at least
+    expected_member_count) row counts.
+    """
+    if not snapshot_id or not trading_dates:
+        return None
+    min_count = max(expected_member_count or 1, 1)
+    receipt_dates = {
+        str(r.get("trade_date"))
+        for r in receipts
+        if int(r.get("row_count") or 0) >= min_count
+    }
+    if not set(trading_dates).issubset(receipt_dates):
+        return None
+
     from server.ai_runtime.contracts import content_fingerprint
 
     receipt_cores = [
@@ -118,6 +135,10 @@ def is_qualified_market_universe_coverage_run(
         return False
     if int(payload.get("full_market_missing_receipt_date_count") or 0) > 0:
         return False
+    if int(payload.get("full_market_daily_receipt_count") or 0) <= 0:
+        return False
+    if payload.get("full_market_missing_receipt_dates"):
+        return False
     # 3. Content identity & fingerprint: master snapshot and daily receipt evidence must match
     if payload.get("market_universe_snapshot_id") != expected_snapshot_id:
         return False
@@ -144,6 +165,7 @@ def find_prior_market_universe_run(
         f"market_universe_sync:v7:{master_provider_name}:{daily_provider_name}:{trade_date}",
         f"market_universe_sync:v8:{master_provider_name}:{daily_provider_name}:{trade_date}",
     )
+    candidates = []
     lister = getattr(db, "list_automation_runs_sync", None)
     if callable(lister):
         try:
@@ -151,44 +173,54 @@ def find_prior_market_universe_run(
                 run_type=MARKET_UNIVERSE_AUTOMATION_RUN_TYPE,
                 limit=100,
             )
-            for cand in candidates:
-                payload = json.loads(str(cand.get("payload_json") or "{}"))
-                if payload.get("task_key") == task_key:
-                    return cand
-                if cand.get("run_id") in legacy_candidate_ids:
-                    return cand
-                if (
-                    payload.get("trade_date") == trade_date
-                    and payload.get("security_master_provider") == master_provider_name
-                    and payload.get("daily_bar_provider") == daily_provider_name
-                ):
-                    return cand
         except Exception:
-            pass
-    all_lister = getattr(db, "list_all_automation_runs_for_type_sync", None)
-    if callable(all_lister):
+            candidates = []
+    if not candidates:
+        all_lister = getattr(db, "list_all_automation_runs_for_type_sync", None)
+        if callable(all_lister):
+            try:
+                candidates = list(
+                    reversed(all_lister(run_type=MARKET_UNIVERSE_AUTOMATION_RUN_TYPE))
+                )
+            except Exception:
+                candidates = []
+
+    for cand in candidates:
         try:
-            all_candidates = all_lister(run_type=MARKET_UNIVERSE_AUTOMATION_RUN_TYPE)
-            for cand in reversed(all_candidates):
-                payload = json.loads(str(cand.get("payload_json") or "{}"))
-                if payload.get("task_key") == task_key:
-                    return cand
-                if cand.get("run_id") in legacy_candidate_ids:
-                    return cand
-                if (
-                    payload.get("trade_date") == trade_date
-                    and payload.get("security_master_provider") == master_provider_name
-                    and payload.get("daily_bar_provider") == daily_provider_name
-                ):
-                    return cand
+            payload = json.loads(str(cand.get("payload_json") or "{}"))
         except Exception:
-            pass
+            continue
+        if not isinstance(payload, Mapping):
+            continue
+        cand_task_key = payload.get("task_key")
+        if cand_task_key:
+            if cand_task_key == task_key:
+                return cand
+            continue
+        # Only evaluate legacy fallback on keyless historical rows
+        if cand.get("run_id") in legacy_candidate_ids:
+            return cand
+        if (
+            payload.get("trade_date") == trade_date
+            and payload.get("security_master_provider") == master_provider_name
+            and payload.get("daily_bar_provider") == daily_provider_name
+        ):
+            return cand
+
     getter = getattr(db, "get_automation_run_sync", None)
     if callable(getter):
         for candidate_id in legacy_candidate_ids:
             try:
                 prior = getter(candidate_id)
                 if prior is not None:
+                    try:
+                        p = json.loads(str(prior.get("payload_json") or "{}"))
+                    except Exception:
+                        continue
+                    if not isinstance(p, Mapping):
+                        continue
+                    if p.get("task_key") and p.get("task_key") != task_key:
+                        continue
                     return prior
             except Exception:
                 pass
@@ -301,8 +333,16 @@ class MarketUniverseAutomationService:
         master_provider_name = self._security_master_provider_name
         daily_provider_name = self._daily_bar_provider_name
         if trade_date is None:
+            pending_id = f"market_universe_sync:pending:{run_date}"
+            getter = getattr(self._db, "get_automation_run_sync", None)
+            existing_pending = getter(pending_id) if callable(getter) else None
+            if (
+                existing_pending is not None
+                and str(existing_pending.get("status")) == "blocked"
+            ):
+                return existing_pending
             return self._record_run(
-                run_id=f"market_universe_sync:pending:{run_date}",
+                run_id=pending_id,
                 run_date=run_date,
                 status="blocked",
                 now=current,
@@ -348,13 +388,20 @@ class MarketUniverseAutomationService:
             run_date=run_date,
         )
 
+        receipt_dates = {str(item.get("trade_date")) for item in current_receipts}
+        has_complete_current_receipts = bool(
+            trading_dates and receipt_dates.issuperset(trading_dates)
+        )
         evidence_fingerprint = (
             compute_market_coverage_evidence_fingerprint(
                 snapshot_id=str(latest_master.get("snapshot_id") or ""),
                 trading_dates=trading_dates,
                 receipts=current_receipts,
+                expected_member_count=int(latest_master.get("member_count") or 0)
+                if latest_master
+                else None,
             )
-            if latest_master
+            if (latest_master and has_complete_current_receipts)
             else None
         )
 
@@ -563,82 +610,117 @@ class MarketUniverseAutomationService:
                 },
             )
         except Exception as exc:
-            logger.warning("Market-universe automation failed closed", exc_info=True)
-            prior_run_id = str(prior_run.get("run_id") or "") if prior_run else None
-            fail_evidence_fp = evidence_fingerprint or content_fingerprint(
-                {"error": type(exc).__name__, "message": str(exc), "task_key": task_key}
+            return self._handle_run_due_failure(
+                exc=exc,
+                current=current,
+                run_date=run_date,
+                trade_date=trade_date,
+                task_key=task_key,
+                validation_policy_id=validation_policy_id,
+                policy_fingerprint=policy_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                prior_run=prior_run,
+                master_provider_name=master_provider_name,
+                daily_provider_name=daily_provider_name,
+                snapshot=snapshot,
+                stock_master_metadata_fetched=stock_master_metadata_fetched,
+                stock_master_useful_name_count=stock_master_useful_name_count,
+                instrument_metadata_persisted_count=instrument_metadata_persisted_count,
             )
-            fail_exec_fp = content_fingerprint(
+
+    def _handle_run_due_failure(
+        self,
+        *,
+        exc: Exception,
+        current: datetime,
+        run_date: str,
+        trade_date: str,
+        task_key: str,
+        validation_policy_id: str,
+        policy_fingerprint: str,
+        evidence_fingerprint: str | None,
+        prior_run: dict[str, Any] | None,
+        master_provider_name: str,
+        daily_provider_name: str,
+        snapshot: dict[str, Any] | None,
+        stock_master_metadata_fetched: bool,
+        stock_master_useful_name_count: int,
+        instrument_metadata_persisted_count: int,
+    ) -> dict[str, Any]:
+        logger.warning("Market-universe automation failed closed", exc_info=True)
+        prior_run_id = str(prior_run.get("run_id") or "") if prior_run else None
+        fail_evidence_fp = evidence_fingerprint or content_fingerprint(
+            {"error": type(exc).__name__, "message": str(exc), "task_key": task_key}
+        )
+        fail_exec_fp = content_fingerprint(
+            {
+                "task_key": task_key,
+                "validation_policy_id": validation_policy_id,
+                "policy_fingerprint": policy_fingerprint,
+                "evidence_fingerprint": fail_evidence_fp,
+            }
+        )
+        base_fail_run_id = f"market_universe_sync:{trade_date}:{fail_exec_fp[:16]}"
+        existing_fail = (
+            self._db.get_automation_run_sync(base_fail_run_id)
+            if hasattr(self._db, "get_automation_run_sync")
+            else None
+        )
+        prior_fail_collision = (existing_fail is not None) or (
+            bool(prior_run_id) and prior_run_id == base_fail_run_id
+        )
+        if prior_fail_collision:
+            supersedes_fail_id = prior_run_id or base_fail_run_id
+            attempt_fp = content_fingerprint(
                 {
                     "task_key": task_key,
-                    "validation_policy_id": validation_policy_id,
-                    "policy_fingerprint": policy_fingerprint,
-                    "evidence_fingerprint": fail_evidence_fp,
+                    "execution_fingerprint": fail_exec_fp,
+                    "supersedes_run_id": supersedes_fail_id,
+                    "started_at": current.isoformat(),
                 }
             )
-            base_fail_run_id = f"market_universe_sync:{trade_date}:{fail_exec_fp[:16]}"
-            existing_fail = (
-                self._db.get_automation_run_sync(base_fail_run_id)
-                if hasattr(self._db, "get_automation_run_sync")
-                else None
+            fail_run_id = f"market_universe_sync:{trade_date}:{attempt_fp[:16]}"
+        else:
+            fail_run_id = base_fail_run_id
+            supersedes_fail_id = (
+                prior_run_id if (prior_run_id and prior_run_id != fail_run_id) else None
             )
-            prior_fail_collision = (existing_fail is not None) or (
-                bool(prior_run_id) and prior_run_id == base_fail_run_id
-            )
-            if prior_fail_collision:
-                supersedes_fail_id = prior_run_id or base_fail_run_id
-                attempt_fp = content_fingerprint(
-                    {
-                        "task_key": task_key,
-                        "execution_fingerprint": fail_exec_fp,
-                        "supersedes_run_id": supersedes_fail_id,
-                        "started_at": current.isoformat(),
-                    }
-                )
-                fail_run_id = f"market_universe_sync:{trade_date}:{attempt_fp[:16]}"
-            else:
-                fail_run_id = base_fail_run_id
-                supersedes_fail_id = (
-                    prior_run_id
-                    if (prior_run_id and prior_run_id != fail_run_id)
-                    else None
-                )
 
-            return self._record_run(
-                run_id=fail_run_id,
-                run_date=run_date,
-                status="failed",
-                source_ref=supersedes_fail_id,
-                now=current,
-                payload={
-                    **self._base_payload(
-                        master_provider_name,
-                        daily_provider_name,
-                    ),
-                    "task_key": task_key,
-                    "validation_policy_id": validation_policy_id,
-                    "policy_fingerprint": policy_fingerprint,
-                    "evidence_fingerprint": fail_evidence_fp,
-                    "coverage_validation_policy_id": validation_policy_id,
-                    "prior_run_id": supersedes_fail_id,
-                    "supersedes_run_id": supersedes_fail_id,
-                    "trade_date": trade_date,
-                    "market_universe_snapshot_id": snapshot.get("snapshot_id")
-                    if snapshot
-                    else None,
-                    "stock_master_metadata_fetched": stock_master_metadata_fetched,
-                    "stock_master_useful_name_count": (stock_master_useful_name_count),
-                    "instrument_metadata_persisted_count": (
-                        instrument_metadata_persisted_count
-                    ),
-                    "error": {"type": type(exc).__name__, "message": str(exc)},
-                    "retryable": not (
-                        isinstance(exc, ValueError)
-                        and str(exc).startswith("stock_master_")
-                        and not str(exc).endswith("unavailable")
-                    ),
-                },
-            )
+        return self._record_run(
+            run_id=fail_run_id,
+            run_date=run_date,
+            status="failed",
+            source_ref=supersedes_fail_id,
+            now=current,
+            payload={
+                **self._base_payload(
+                    master_provider_name,
+                    daily_provider_name,
+                ),
+                "task_key": task_key,
+                "validation_policy_id": validation_policy_id,
+                "policy_fingerprint": policy_fingerprint,
+                "evidence_fingerprint": fail_evidence_fp,
+                "coverage_validation_policy_id": validation_policy_id,
+                "prior_run_id": supersedes_fail_id,
+                "supersedes_run_id": supersedes_fail_id,
+                "trade_date": trade_date,
+                "market_universe_snapshot_id": snapshot.get("snapshot_id")
+                if snapshot
+                else None,
+                "stock_master_metadata_fetched": stock_master_metadata_fetched,
+                "stock_master_useful_name_count": (stock_master_useful_name_count),
+                "instrument_metadata_persisted_count": (
+                    instrument_metadata_persisted_count
+                ),
+                "error": {"type": type(exc).__name__, "message": str(exc)},
+                "retryable": not (
+                    isinstance(exc, ValueError)
+                    and str(exc).startswith("stock_master_")
+                    and not str(exc).endswith("unavailable")
+                ),
+            },
+        )
 
     def _ensure_market_universe_snapshot(
         self,
@@ -926,6 +1008,7 @@ class MarketUniverseAutomationService:
             blockers.append("full_market_latest_cross_section_incomplete")
         if ready < minimum_ready_count:
             blockers.append("full_market_persisted_bar_coverage_incomplete")
+        full_coverage = not missing_receipt_dates and not partial_dates and not blockers
         return {
             "full_market_daily_receipt_count": len(receipts),
             "full_market_missing_receipt_dates": missing_receipt_dates[:100],
@@ -947,8 +1030,9 @@ class MarketUniverseAutomationService:
                 snapshot_id=str(snapshot_id or ""),
                 trading_dates=trading_dates,
                 receipts=receipts,
+                expected_member_count=len(members),
             )
-            if snapshot_id
+            if (snapshot_id and full_coverage)
             else None,
             "blockers": blockers,
             "retryable": bool(blockers),
@@ -992,24 +1076,30 @@ class MarketUniverseAutomationService:
         payload: dict[str, Any],
         source_ref: str | None = None,
     ) -> dict[str, Any]:
-        supersedes = payload.get("supersedes_run_id")
-        if supersedes and str(supersedes) == run_id:
-            payload["supersedes_run_id"] = None
-        prior = payload.get("prior_run_id")
-        if prior and str(prior) == run_id:
-            payload["prior_run_id"] = None
-        resolved_source_ref = (
-            source_ref
-            if source_ref and str(source_ref) != run_id
-            else payload.get("supersedes_run_id")
-            or payload.get("prior_run_id")
-            or payload.get("market_universe_snapshot_id")
-        )
-        if resolved_source_ref and str(resolved_source_ref) == run_id:
-            resolved_source_ref = payload.get("market_universe_snapshot_id")
-        return self._db.upsert_automation_run_sync(
-            {
-                "run_id": run_id,
+        inserter = getattr(self._db, "insert_automation_run_if_absent_sync", None)
+        trade_scope = payload.get("trade_date") or run_date
+        current_run_id = run_id
+        current_source_ref = source_ref
+
+        for _ in range(5):
+            supersedes = payload.get("supersedes_run_id")
+            if supersedes and str(supersedes) == current_run_id:
+                payload["supersedes_run_id"] = None
+            prior = payload.get("prior_run_id")
+            if prior and str(prior) == current_run_id:
+                payload["prior_run_id"] = None
+            resolved_source_ref = (
+                current_source_ref
+                if current_source_ref and str(current_source_ref) != current_run_id
+                else payload.get("supersedes_run_id")
+                or payload.get("prior_run_id")
+                or payload.get("market_universe_snapshot_id")
+            )
+            if resolved_source_ref and str(resolved_source_ref) == current_run_id:
+                resolved_source_ref = payload.get("market_universe_snapshot_id")
+
+            run_dict = {
+                "run_id": current_run_id,
                 "run_type": MARKET_UNIVERSE_AUTOMATION_RUN_TYPE,
                 "run_date": run_date,
                 "status": status,
@@ -1019,7 +1109,43 @@ class MarketUniverseAutomationService:
                 "source_ref": resolved_source_ref,
                 "payload": payload,
             }
-        )
+
+            if callable(inserter):
+                row, inserted = inserter(run_dict)
+                if inserted:
+                    return row
+                # Collision with existing terminal run! Atomic preservation.
+                existing_status = str(row.get("status") or "")
+                if (
+                    status == "completed"
+                    and existing_status == "completed"
+                    and is_qualified_market_universe_coverage_run(
+                        row,
+                        expected_snapshot_id=payload.get("market_universe_snapshot_id"),
+                        expected_fingerprint=payload.get("evidence_fingerprint"),
+                        expected_policy_id=payload.get("validation_policy_id"),
+                        expected_policy_fingerprint=payload.get("policy_fingerprint"),
+                    )
+                ):
+                    return row
+
+                attempt_fp = content_fingerprint(
+                    {
+                        "colliding_run_id": current_run_id,
+                        "supersedes_run_id": current_run_id,
+                        "started_at": now.isoformat(),
+                        "payload": payload,
+                    }
+                )
+                payload["supersedes_run_id"] = current_run_id
+                payload["prior_run_id"] = current_run_id
+                current_source_ref = current_run_id
+                current_run_id = f"market_universe_sync:{trade_scope}:{attempt_fp[:16]}"
+                continue
+            else:
+                return self._db.upsert_automation_run_sync(run_dict)
+
+        return self._db.upsert_automation_run_sync(run_dict)
 
 
 def _useful_stock_master_metadata(

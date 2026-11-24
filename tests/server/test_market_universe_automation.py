@@ -821,81 +821,66 @@ def test_failed_retry_on_unchanged_evidence_creates_distinct_successor_without_o
 
 def test_cross_day_prior_resolution_finds_previous_day_run_by_task_key(tmp_path):
     """find_prior_market_universe_run resolves across natural dates by stable task_key."""
-    from server.services.market.market_universe_automation import (
-        find_prior_market_universe_run,
-    )
-
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
+    _verified_calendar(db)
+    store = DataStore(tmp_path / "market")
+    source = _Source()
+    dates = [
+        day.date().isoformat() for day in pd.bdate_range(end="2026-08-21", periods=80)
+    ]
+    partial_day = dates[20]
+    for day in dates:
+        frame = source.fetch_market_daily_bars(day)
+        if day == partial_day:
+            frame = frame.iloc[:999]
+        store.ingest_market_daily_batch(
+            trade_date=day, provider_name="unit_fixture", bars=frame
+        )
 
-    task_key = "market_universe_sync:unit_fixture:unit_fixture:2026-11-24"
-    run_id_1124 = "market_universe_sync:2026-11-24:ab24fbe3755a1a21"
-    payload_1124 = {
-        "schema_version": "karkinos.market_universe_automation.v7",
-        "task_key": task_key,
-        "trade_date": "2026-11-24",
-        "security_master_provider": "unit_fixture",
-        "daily_bar_provider": "unit_fixture",
-        "status": "failed",
-    }
-    db.upsert_automation_run_sync(
-        {
-            "run_id": run_id_1124,
-            "run_type": "market_universe_sync",
-            "run_date": "2026-11-24",
-            "status": "failed",
-            "execution_mode": "market_data_ingestion",
-            "started_at": "2026-11-24T19:07:00+08:00",
-            "finished_at": "2026-11-24T19:07:05+08:00",
-            "source_ref": None,
-            "payload": payload_1124,
-        }
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-04-01"
+        ),
+        data_store=store,
+        source=source,
     )
 
-    # On next calendar day (11-25), look up prior run for task_key with run_date="2026-11-25"
-    prior_on_next_day = find_prior_market_universe_run(
-        db,
-        task_key=task_key,
-        trade_date="2026-11-24",
-        master_provider_name="unit_fixture",
-        daily_provider_name="unit_fixture",
-        run_date="2026-11-25",
-    )
-    assert prior_on_next_day is not None
-    assert prior_on_next_day["run_id"] == run_id_1124
+    # Run 1: 23:30 fails closed
+    t1 = datetime(2026, 8, 23, 23, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
+    res1 = service.run_due(now=t1)
+    assert res1["status"] == "failed"
+    run_1_id = res1["run_id"]
+    assert res1["run_date"] == "2026-08-23"
 
-    # Seed a successor on 11-25
-    run_id_1125 = "market_universe_sync:2026-11-24:fedcba9876543210"
-    payload_1125 = {
-        **payload_1124,
-        "prior_run_id": run_id_1124,
-        "supersedes_run_id": run_id_1124,
-    }
-    db.upsert_automation_run_sync(
-        {
-            "run_id": run_id_1125,
-            "run_type": "market_universe_sync",
-            "run_date": "2026-11-25",
-            "status": "completed",
-            "execution_mode": "market_data_ingestion",
-            "started_at": "2026-11-25T08:00:00+08:00",
-            "finished_at": "2026-11-25T08:05:00+08:00",
-            "source_ref": run_id_1124,
-            "payload": payload_1125,
-        }
-    )
+    # Backoff check: 00:15 (45 minutes later, across calendar midnight)
+    # 1-hour backoff is still active, so scheduler must return run_1_id under same-task backoff!
+    t_backoff = datetime(2026, 8, 24, 0, 15, tzinfo=ZoneInfo("Asia/Shanghai"))
+    res_backoff = service.run_due(now=t_backoff)
+    assert res_backoff["run_id"] == run_1_id
+    assert res_backoff["status"] == "failed"
 
-    # Lookup returns latest successor
-    latest_prior = find_prior_market_universe_run(
-        db,
-        task_key=task_key,
-        trade_date="2026-11-24",
-        master_provider_name="unit_fixture",
-        daily_provider_name="unit_fixture",
-        run_date="2026-11-25",
-    )
-    assert latest_prior is not None
-    assert latest_prior["run_id"] == run_id_1125
+    # Run 2 on next calendar day: 2026-08-24 00:45 (after midnight and after 1-hour backoff)
+    # The verified closed trading date is still 2026-08-21, but calendar run_date is 2026-08-24!
+    t2 = datetime(2026, 8, 24, 0, 45, tzinfo=ZoneInfo("Asia/Shanghai"))
+    res2 = service.run_due(now=t2)
+    assert res2["status"] == "failed"
+    assert res2["run_date"] == "2026-08-24"
+
+    # Production run_due correctly resolves the prior-day attempt across midnight
+    assert res2["run_id"] != run_1_id
+    payload2 = json.loads(res2["payload_json"])
+    assert payload2["supersedes_run_id"] == run_1_id
+    assert payload2["supersedes_run_id"] != res2["run_id"]
+    assert res2["source_ref"] == run_1_id
+
+    # Predecessor on day 1 remains completely intact
+    pred = db.get_automation_run_sync(run_1_id)
+    assert pred is not None
+    assert pred["run_date"] == "2026-08-23"
+    assert pred["finished_at"] == t1.isoformat()
+    assert pred["status"] == "failed"
 
 
 def test_exact_completed_run_requires_qualification(tmp_path):
@@ -1053,3 +1038,305 @@ def test_absent_current_snapshot_or_receipts_cannot_reuse_completed_run(tmp_path
     assert orig_in_db is not None
     assert orig_in_db["status"] == "completed"
     assert orig_in_db["finished_at"] == t1.isoformat()
+
+
+def test_snapshot_retained_with_zero_receipts_cannot_reuse_completed_run(tmp_path):
+    """When a snapshot exists on disk but zero receipts exist for the verified trading dates,
+
+    run_due MUST NOT compute a valid fingerprint and MUST NOT reuse an existing completed run.
+    """
+    import shutil
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _verified_calendar(db)
+    store = DataStore(tmp_path / "market")
+    source = _Source()
+    dates = [
+        day.date().isoformat() for day in pd.bdate_range(end="2026-08-21", periods=80)
+    ]
+    for day in dates:
+        frame = source.fetch_market_daily_bars(day)
+        store.ingest_market_daily_batch(
+            trade_date=day, provider_name="unit_fixture", bars=frame
+        )
+
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-04-01"
+        ),
+        data_store=store,
+        source=source,
+    )
+    t1 = datetime(2026, 8, 23, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    res1 = service.run_due(now=t1)
+    assert res1["status"] == "completed"
+    completed_run_id = res1["run_id"]
+
+    # Create store2 with snapshot retained but zero receipts in meta.db
+    store2 = DataStore(tmp_path / "market2")
+    snapshot = store.get_market_universe_snapshot(
+        trade_date="2026-08-21", provider_name="unit_fixture"
+    )
+    store2.save_market_universe_snapshot(
+        trade_date="2026-08-21",
+        provider_name="unit_fixture",
+        members=snapshot["members"],
+    )
+
+    class _FailingBarsSource(_Source):
+        def fetch_market_daily_bars(self, trade_date: str) -> pd.DataFrame:
+            raise RuntimeError("upstream_outage")
+
+    failing_service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-04-01"
+        ),
+        data_store=store2,
+        source=_FailingBarsSource(),
+    )
+    t2 = datetime(2026, 8, 23, 11, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
+    res2 = failing_service.run_due(now=t2)
+
+    # Must NOT reuse completed_run_id!
+    assert res2["run_id"] != completed_run_id
+    assert res2["status"] == "failed"
+
+
+def test_calendar_blocked_repeated_calls_preserve_record_without_rewriting(tmp_path):
+    """Repeated calendar-blocked calls return existing blocked run without rewriting timestamps."""
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    # Calendar is empty, so verified closed trading date is unavailable
+    store = DataStore(tmp_path / "market")
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-04-01"
+        ),
+        data_store=store,
+        source=_Source(),
+    )
+    t1 = datetime(2026, 8, 23, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    res1 = service.run_due(now=t1)
+    assert res1["status"] == "blocked"
+    pending_id = res1["run_id"]
+
+    row_after_first = db.get_automation_run_sync(pending_id)
+    assert row_after_first is not None
+    t1_started = row_after_first["started_at"]
+    t1_updated = row_after_first["updated_at"]
+
+    # Second call at 11:00 on the same date
+    t2 = datetime(2026, 8, 23, 11, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    res2 = service.run_due(now=t2)
+    assert res2["run_id"] == pending_id
+    assert res2["status"] == "blocked"
+
+    row_after_second = db.get_automation_run_sync(pending_id)
+    assert row_after_second is not None
+    # Timestamps are completely preserved; no overwrite occurred
+    assert row_after_second["started_at"] == t1_started
+    assert row_after_second["updated_at"] == t1_updated
+
+
+def test_find_prior_run_handles_malformed_json_and_conflicting_task_key(tmp_path):
+    """find_prior_market_universe_run skips malformed JSON and rejects conflicting explicit task_key."""
+    from server.services.market.market_universe_automation import (
+        find_prior_market_universe_run,
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    task_key = "market_universe_sync:unit_fixture:unit_fixture:2026-08-21"
+
+    # 1. Candidate with malformed JSON
+    db.upsert_automation_run_sync(
+        {
+            "run_id": "run_malformed_json",
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-23",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": "2026-08-23T10:00:00+08:00",
+            "finished_at": "2026-08-23T10:01:00+08:00",
+            "payload": None,
+        }
+    )
+    # Manually corrupt payload_json to simulate disk/store corruption
+    import sqlite3
+
+    with sqlite3.connect(db._path) as conn:
+        conn.execute(
+            "UPDATE automation_runs SET payload_json = '{' WHERE run_id = 'run_malformed_json'"
+        )
+        conn.commit()
+
+    # 2. Candidate with identical trade date and provider, but conflicting explicit task_key
+    db.upsert_automation_run_sync(
+        {
+            "run_id": "run_conflicting_key",
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-23",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": "2026-08-23T10:05:00+08:00",
+            "finished_at": "2026-08-23T10:06:00+08:00",
+            "payload": {
+                "schema_version": "karkinos.market_universe_automation.v7",
+                "trade_date": "2026-08-21",
+                "security_master_provider": "unit_fixture",
+                "daily_bar_provider": "unit_fixture",
+                "task_key": "market_universe_sync:other:other:2026-08-21",
+            },
+        }
+    )
+
+    # 3. Target candidate with matching task_key
+    db.upsert_automation_run_sync(
+        {
+            "run_id": "run_target_valid",
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-23",
+            "status": "completed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": "2026-08-23T09:00:00+08:00",
+            "finished_at": "2026-08-23T09:05:00+08:00",
+            "payload": {
+                "schema_version": "karkinos.market_universe_automation.v7",
+                "trade_date": "2026-08-21",
+                "security_master_provider": "unit_fixture",
+                "daily_bar_provider": "unit_fixture",
+                "task_key": task_key,
+            },
+        }
+    )
+
+    prior = find_prior_market_universe_run(
+        db,
+        task_key=task_key,
+        trade_date="2026-08-21",
+        master_provider_name="unit_fixture",
+        daily_provider_name="unit_fixture",
+    )
+    assert prior is not None
+    assert prior["run_id"] == "run_target_valid"
+
+
+def test_evidence_fingerprint_requires_snapshot_and_complete_date_receipts():
+    """compute_market_coverage_evidence_fingerprint returns None on incomplete or empty coverage."""
+    from server.services.market.market_universe_automation import (
+        compute_market_coverage_evidence_fingerprint,
+    )
+
+    dates = ["2026-08-19", "2026-08-20", "2026-08-21"]
+    receipts_complete = [
+        {"trade_date": d, "provider_name": "fix", "row_count": 100} for d in dates
+    ]
+    receipts_missing_one = [
+        {"trade_date": d, "provider_name": "fix", "row_count": 100} for d in dates[:2]
+    ]
+    receipts_zero_rows = [
+        {"trade_date": d, "provider_name": "fix", "row_count": 0} for d in dates
+    ]
+
+    # Valid complete coverage produces non-empty fingerprint
+    fp_valid = compute_market_coverage_evidence_fingerprint(
+        snapshot_id="snap_1", trading_dates=dates, receipts=receipts_complete
+    )
+    assert fp_valid is not None and len(fp_valid) > 0
+
+    # Incomplete: missing one date
+    assert (
+        compute_market_coverage_evidence_fingerprint(
+            snapshot_id="snap_1", trading_dates=dates, receipts=receipts_missing_one
+        )
+        is None
+    )
+
+    # Incomplete: zero row count
+    assert (
+        compute_market_coverage_evidence_fingerprint(
+            snapshot_id="snap_1", trading_dates=dates, receipts=receipts_zero_rows
+        )
+        is None
+    )
+
+    # Incomplete: empty receipts
+    assert (
+        compute_market_coverage_evidence_fingerprint(
+            snapshot_id="snap_1", trading_dates=dates, receipts=[]
+        )
+        is None
+    )
+
+    # Incomplete: absent snapshot_id
+    assert (
+        compute_market_coverage_evidence_fingerprint(
+            snapshot_id=None, trading_dates=dates, receipts=receipts_complete
+        )
+        is None
+    )
+
+
+def test_atomic_record_run_preserves_colliding_terminal_runs(tmp_path):
+    """_record_run atomically preserves existing terminal runs and allocates distinct successor."""
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-04-01"
+        ),
+        data_store=DataStore(tmp_path / "market"),
+        source=_Source(),
+    )
+    t1 = datetime(2026, 8, 23, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    initial_run_id = "market_universe_sync:2026-08-21:initial_attempt"
+
+    # Seed terminal row in database
+    db.upsert_automation_run_sync(
+        {
+            "run_id": initial_run_id,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-23",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": t1.isoformat(),
+            "finished_at": t1.isoformat(),
+            "payload": {
+                "schema_version": "karkinos.market_universe_automation.v7",
+                "trade_date": "2026-08-21",
+                "attempt": 1,
+            },
+        }
+    )
+
+    # Attempt to record with same run_id but attempt 2 at t2
+    t2 = datetime(2026, 8, 23, 11, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    recorded = service._record_run(
+        run_id=initial_run_id,
+        run_date="2026-08-23",
+        status="failed",
+        now=t2,
+        payload={
+            "schema_version": "karkinos.market_universe_automation.v7",
+            "trade_date": "2026-08-21",
+            "attempt": 2,
+        },
+    )
+
+    # Successor must have distinct run_id and point to initial_run_id
+    assert recorded["run_id"] != initial_run_id
+    assert recorded["source_ref"] == initial_run_id
+    payload_recorded = json.loads(recorded["payload_json"])
+    assert payload_recorded["supersedes_run_id"] == initial_run_id
+
+    # Original terminal row in database remains completely intact and unmodified
+    original_row = db.get_automation_run_sync(initial_run_id)
+    assert original_row is not None
+    assert original_row["started_at"] == t1.isoformat()
+    original_payload = json.loads(original_row["payload_json"])
+    assert original_payload["attempt"] == 1
