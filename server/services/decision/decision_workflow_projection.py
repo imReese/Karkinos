@@ -241,7 +241,11 @@ def strategy_evidence_workflow_task(
     generation_status = (
         str(generation.get("status") or "") if generation is not None else None
     )
-    if generation is not None and not generation.get("generation_verified"):
+    if (
+        generation is not None
+        and generation_status != "unavailable"
+        and not generation.get("generation_verified")
+    ):
         status = "blocked"
         if generation_status == "missed_window":
             required_actions = ["review_daily_generation_schedule"]

@@ -337,7 +337,11 @@ def suppress_unverified_daily_scan_candidates(
         else:
             retained.append(candidate)
     if not suppressed:
-        if not generation.get("generation_verified") and payload.get("summary"):
+        if (
+            generation.get("status") != "unavailable"
+            and not generation.get("generation_verified")
+            and payload.get("summary")
+        ):
             summary = dict(payload.get("summary") or {})
             if "workflow_tasks" in summary:
                 risk_blocked_count = sum(
@@ -596,7 +600,11 @@ def _finish_today_decision_projection(
         if candidates
         else (
             [f"daily_generation_{generation.get('status') or 'unavailable'}"]
-            if generation and not generation.get("generation_verified")
+            if (
+                generation
+                and generation.get("status") != "unavailable"
+                and not generation.get("generation_verified")
+            )
             else ["no_pending_action_tasks"]
         )
     )
