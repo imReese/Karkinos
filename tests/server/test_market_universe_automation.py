@@ -1978,10 +1978,201 @@ def test_collision_handling_rejects_contradictory_and_snapshot_predecessors(tmp_
             "market_universe_snapshot_id": snapshot_id,
         },
     )
-    # Must NOT adopt snapshot_id as supersedes_run_id or prior_run_id
+    # Must NOT adopt snap_cand_id or snapshot_id as predecessor
+    assert run_snap_res["source_ref"] == base_id
     p_snap = json.loads(run_snap_res["payload_json"])
-    assert p_snap.get("supersedes_run_id") != snapshot_id
-    assert p_snap.get("prior_run_id") != snapshot_id
+    assert p_snap["supersedes_run_id"] == base_id
+    assert p_snap["prior_run_id"] == base_id
+    assert run_snap_res["source_ref"] != snap_cand_id
+    assert p_snap["supersedes_run_id"] != snap_cand_id
+    assert run_snap_res["source_ref"] != snapshot_id
+    assert p_snap["supersedes_run_id"] != snapshot_id
+
+    # Scenario 3: Initial collision with row having contradictory ancestry when caller has NO predecessor
+    corrupt_base_id = "market_universe_sync:2026-08-21:corrupt_base"
+    db.upsert_automation_run_sync(
+        {
+            "run_id": corrupt_base_id,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-23",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": t.isoformat(),
+            "finished_at": t.isoformat(),
+            "payload": {
+                "task_key": task_key,
+                "trade_date": "2026-08-21",
+                "supersedes_run_id": "run_X",
+                "prior_run_id": "run_Y_contradicts",
+            },
+        }
+    )
+    run_corrupt = service._record_run(
+        run_id=corrupt_base_id,
+        run_date="2026-08-23",
+        status="failed",
+        now=t,
+        payload={
+            "task_key": task_key,
+            "trade_date": "2026-08-21",
+        },
+    )
+    # The allocator must NOT adopt the corrupt row as its target predecessor
+    p_corrupt = json.loads(run_corrupt["payload_json"])
+    assert p_corrupt.get("supersedes_run_id") is None
+    assert p_corrupt.get("prior_run_id") is None
+    assert run_corrupt["source_ref"] is None
+
+
+def test_validate_run_predecessor_ancestry_rejects_malformed_and_conflicting_aliases():
+    """validate_run_predecessor_ancestry strictly enforces consistency across aliases and source_ref."""
+    from server.services.market.market_universe_automation import (
+        validate_run_predecessor_ancestry,
+    )
+
+    # Malformed explicit empty string alias
+    is_valid, pred = validate_run_predecessor_ancestry(
+        {"payload": {"supersedes_run_id": ""}}
+    )
+    assert not is_valid and pred is None
+
+    # Malformed explicit whitespace alias
+    is_valid, pred = validate_run_predecessor_ancestry(
+        {"payload": {"prior_run_id": "   "}}
+    )
+    assert not is_valid and pred is None
+
+    # Contradictory payload aliases
+    is_valid, pred = validate_run_predecessor_ancestry(
+        {"payload": {"supersedes_run_id": "run_A", "prior_run_id": "run_B"}}
+    )
+    assert not is_valid and pred is None
+
+    # Conflicting source_ref with payload alias
+    is_valid, pred = validate_run_predecessor_ancestry(
+        {
+            "payload": {"supersedes_run_id": "run_A", "prior_run_id": "run_A"},
+            "source_ref": "run_B",
+        }
+    )
+    assert not is_valid and pred is None
+
+    # Explicit None in payload but conflicting source_ref naming a run
+    is_valid, pred = validate_run_predecessor_ancestry(
+        {
+            "payload": {
+                "supersedes_run_id": None,
+                "prior_run_id": None,
+                "market_universe_snapshot_id": "snap_1",
+            },
+            "source_ref": "run_other",
+        }
+    )
+    assert not is_valid and pred is None
+
+    # Self-reference
+    is_valid, pred = validate_run_predecessor_ancestry(
+        {"payload": {"supersedes_run_id": "self_run"}},
+        current_run_id="self_run",
+    )
+    assert not is_valid and pred is None
+
+    # Valid matching aliases and source_ref
+    is_valid, pred = validate_run_predecessor_ancestry(
+        {
+            "payload": {"supersedes_run_id": "valid_run", "prior_run_id": "valid_run"},
+            "source_ref": "valid_run",
+        }
+    )
+    assert is_valid and pred == "valid_run"
+
+    # Valid root run with snapshot source_ref
+    is_valid, pred = validate_run_predecessor_ancestry(
+        {
+            "payload": {
+                "supersedes_run_id": None,
+                "prior_run_id": None,
+                "market_universe_snapshot_id": "snap_1",
+            },
+            "source_ref": "snap_1",
+        }
+    )
+    assert is_valid and pred is None
+
+
+def test_find_prior_run_and_run_due_rejects_contradictory_historical_predecessor(
+    tmp_path,
+):
+    """find_prior_market_universe_run skips rows with contradictory ancestry."""
+    from server.services.market.market_universe_automation import (
+        find_prior_market_universe_run,
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    task_key = "market_universe_sync:unit_fixture:unit_fixture:2026-08-21"
+
+    # Seed corrupt row with contradictory predecessor aliases
+    db.upsert_automation_run_sync(
+        {
+            "run_id": "corrupt_predecessor_run",
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-20",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": "2026-08-20T10:00:00+08:00",
+            "payload": {
+                "task_key": task_key,
+                "trade_date": "2026-08-21",
+                "security_master_provider": "unit_fixture",
+                "daily_bar_provider": "unit_fixture",
+                "supersedes_run_id": "run_1",
+                "prior_run_id": "run_2_contradicts",
+            },
+        }
+    )
+
+    # find_prior_market_universe_run must skip the corrupt row
+    assert (
+        find_prior_market_universe_run(
+            db,
+            task_key=task_key,
+            trade_date="2026-08-21",
+            master_provider_name="unit_fixture",
+            daily_provider_name="unit_fixture",
+        )
+        is None
+    )
+
+    # Seed older valid predecessor
+    db.upsert_automation_run_sync(
+        {
+            "run_id": "valid_older_predecessor",
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-19",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": "2026-08-19T10:00:00+08:00",
+            "payload": {
+                "task_key": task_key,
+                "trade_date": "2026-08-21",
+                "security_master_provider": "unit_fixture",
+                "daily_bar_provider": "unit_fixture",
+                "supersedes_run_id": "root_run",
+                "prior_run_id": "root_run",
+            },
+        }
+    )
+
+    found = find_prior_market_universe_run(
+        db,
+        task_key=task_key,
+        trade_date="2026-08-21",
+        master_provider_name="unit_fixture",
+        daily_provider_name="unit_fixture",
+    )
+    assert found is not None
+    assert found["run_id"] == "valid_older_predecessor"
 
 
 def test_listing_inside_history_window_produces_fingerprint_and_reuses_completed(
