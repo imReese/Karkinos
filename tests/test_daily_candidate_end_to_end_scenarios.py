@@ -5,9 +5,12 @@ import json
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 
+from core.types import AssetClass
+from data.store import DataStore
 from server.ai_runtime.contracts import content_fingerprint
 from server.db import AppDatabase
 from server.services.decision import (
@@ -19,6 +22,7 @@ from server.services.decision.daily_decision_background_schedule import (
 from server.services.decision.daily_decision_evidence_automation import (
     DAILY_CANDIDATE_BACKGROUND_ATTEMPT_RUN_TYPE,
     DailyDecisionEvidenceAutomationService,
+    build_daily_decision_evidence_automation_service,
     run_daily_decision_evidence_automation_loop,
 )
 from server.services.decision.daily_decision_evidence_orchestration import (
@@ -32,12 +36,24 @@ from server.services.decision.decision_workflow_projection import (
     strategy_evidence_workflow_task,
     workflow_tasks,
 )
+from server.services.market.market_universe_truth import MarketUniversePolicy
+from server.services.market.quotes import (
+    build_quote_ingestion_command,
+    persist_quote_ingestion,
+)
 from server.services.risk.trading_controls import TradingControlState
 from server.services.strategy_scan.promoted_strategy_universe_scan import (
     PROMOTED_STRATEGY_UNIVERSE_SCAN_RUN_TYPE,
     PROMOTED_STRATEGY_UNIVERSE_SCAN_SCHEMA_VERSION,
+    PromotedStrategyUniverseScanService,
 )
 from server.services.strategy_scan.status import build_daily_candidate_runtime_status
+from tests.server.test_promoted_strategy_universe_scan import (
+    _calendar,
+    _formula,
+    _freeze_market,
+    _valuation_id,
+)
 from tests.test_daily_decision_evidence_automation import (
     RecordingNotifier,
     _decision,
@@ -869,3 +885,411 @@ def test_schedule_state_observability_fields(tmp_path, monkeypatch) -> None:
         schedule_state=sched,
     )
     assert runtime_status.get("schedule_state") == sched
+
+
+def test_integrated_orchestration_candidate_pipeline(tmp_path) -> None:
+    """Full lifecycle with real scanner evaluation, real quote freezing, risk runner, and verified readback."""
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    market_dates = _calendar(db)
+    store = DataStore(tmp_path / "market")
+    symbols = _freeze_market(store, market_dates)
+    run_date = "2026-08-24"
+
+    strategy_id = "ai_formula_shadow:fixture-winner"
+    db.upsert_strategy_promotion_state_sync(
+        strategy_id=strategy_id,
+        stage="paper_shadow",
+        gate_status="paper_shadow_enabled",
+        live_like_enabled=False,
+        missing_requirements=[],
+        backtest_result_id=1,
+        payload={},
+    )
+
+    strategy = {
+        "formula_ast": _formula(produces_signals=True),
+        "formula_fingerprint": "sha256:fixture-formula",
+        "selected_universe": symbols[:40],
+    }
+    strategy_fingerprint = content_fingerprint(strategy)
+
+    def gate_resolver(_db, requested_strategy_id, *, as_of_date):
+        return {
+            "status": "pass",
+            "promotion": {
+                "daily_strategy_artifact_binding": {
+                    "winner_candidate_id": "fixture-winner",
+                    "run_id": "fixture-run",
+                    "operating_constraints": {
+                        "strategy_artifact_fingerprint": strategy_fingerprint,
+                    },
+                }
+            },
+        }, []
+
+    def strategy_loader(*, candidate_id, run_id):
+        return {
+            "candidate_id": candidate_id,
+            "run_id": run_id,
+            "strategy_artifact_fingerprint": strategy_fingerprint,
+            "strategy": strategy,
+        }
+
+    controls = TradingControlState(db=db)
+    config = SimpleNamespace(data_source="akshare", start_date="2026-04-01")
+    decision_time = datetime(2026, 8, 24, 1, 36, tzinfo=timezone.utc)
+    scanner = PromotedStrategyUniverseScanService(
+        db=db,
+        config=config,
+        data_store=store,
+        policy=MarketUniversePolicy(minimum_master_member_count=40),
+        strategy_gate_resolver=gate_resolver,
+        strategy_loader=strategy_loader,
+        safety_gate_reader=lambda: {
+            "default_execution_mode": "manual_confirmation",
+            "manual_confirmation_required": True,
+            "broker_submission_enabled": False,
+            "kill_switch_enabled": False,
+        },
+        clock=lambda: datetime(2026, 8, 24, 9, 36, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+
+    state = SimpleNamespace(
+        db=db,
+        config=config,
+        data_store=store,
+        scanner=scanner,
+        trading_controls=controls,
+        notifier=RecordingNotifier(),
+    )
+
+    valuation_id = _valuation_id(db)
+
+    async def quote_refresher(_state, symbol, asset_type, *, fetch_run_id=None):
+        command = build_quote_ingestion_command(
+            symbol=symbol,
+            asset_type=asset_type.value
+            if hasattr(asset_type, "value")
+            else str(asset_type),
+            snapshot={
+                "price": 20.0,
+                "timestamp": f"{run_date}T09:34:00+08:00",
+                "quote_status": "live",
+                "provider_name": "akshare",
+                "quote_source": "persisted_fixture",
+            },
+            quote_source="persisted_fixture",
+            provider_name="akshare",
+            provider_status="live",
+            quote_status="live",
+            captured_reason="daily_candidate_freeze",
+            fetch_run_id=fetch_run_id,
+        )
+        persist_quote_ingestion(db, command)
+        return {
+            "symbol": symbol,
+            "status": "refreshed",
+            "price": 20.0,
+            "quote_timestamp": f"{run_date}T09:34:00+08:00",
+        }
+
+    async def read_base_plan(_state):
+        dec = _decision(risk_checked=True)
+        dec["decision_date"] = run_date
+        dec["generated_at"] = f"{run_date}T09:35:00+08:00"
+        dec["summary"]["portfolio"]["valuation_snapshot_id"] = valuation_id
+        dec["summary"]["portfolio"]["valuation_status"] = "complete"
+        dec["summary"]["portfolio"]["fact_authority"] = "persisted_valuation_snapshot"
+        dec["summary"]["portfolio"]["total_equity"] = 100_000.0
+        dec["summary"]["portfolio"]["cash"] = 100_000.0
+        dec["summary"]["portfolio"]["board_buy_permissions"] = {
+            "main": "allowed",
+            "gem": "allowed",
+            "star": "allowed",
+            "b_share": "allowed",
+        }
+        dec["summary"]["account_truth"]["captured_at"] = f"{run_date}T09:30:00+08:00"
+        dec["summary"]["market_data"]["latest_quote_timestamp"] = (
+            f"{run_date}T09:34:00+08:00"
+        )
+        dec["candidates"][0]["evidence"]["strategy"]["order_generation_gate"][
+            "as_of_date"
+        ] = run_date
+        dec["candidates"][0]["evidence"]["data_freshness"] = {
+            "status": "fresh",
+            "price": 20.0,
+            "quote_timestamp": f"{run_date}T09:34:00+08:00",
+            "quote_source": "persisted_fixture",
+        }
+
+        p = _plan(risk_checked=True)
+        p["plan_date"] = run_date
+        p["generated_at"] = f"{run_date}T09:35:00+08:00"
+        for oi in p["order_intents"]:
+            oi["market_quote_timestamp"] = f"{run_date}T09:34:00+08:00"
+        return dec, p
+
+    async def run_risk(_state):
+        return {
+            "status": "completed",
+            "candidate_count": 1,
+            "processed_count": 1,
+            "passed_count": 1,
+            "blocked_count": 0,
+            "skipped_count": 0,
+            "risk_decision_writes_performed": True,
+            "blockers": [],
+        }
+
+    service = build_daily_decision_evidence_automation_service(
+        state,
+        plan_reader=read_base_plan,
+        risk_runner=run_risk,
+        quote_refresher=quote_refresher,
+    )
+    service._account_truth_replay_resolver = _fixture_account_truth_replay
+
+    schedule = project_daily_candidate_background_schedule(db=db, now=decision_time)
+    assert schedule["status"] == "due"
+    assert schedule["due"] is True
+
+    # Real claimed background execution
+    asyncio.run(
+        run_claimed_background_attempt(
+            db=db,
+            service=service,
+            schedule=schedule,
+            clock=lambda: decision_time,
+        )
+    )
+
+    gen = daily_candidate_generation_status(db, run_date, now=decision_time)
+    assert gen["status"] == "completed_with_candidates"
+    assert gen["generation_verified"] is True
+    assert gen["recommendation_authoritative"] is True
+    assert gen["failure_code"] is None
+
+    tasks = workflow_tasks(
+        market_data={"source_health": "live"},
+        account_truth={"gate_status": "pass"},
+        strategy_attribution={"gate_status": "pass"},
+        action_tasks={"pending_count": 0},
+        audit={},
+        candidate_count=1,
+        ready_for_manual_confirmation_count=1,
+        generation=gen,
+    )
+    strategy_task = next(t for t in tasks if t["id"] == "strategy_evidence")
+    assert strategy_task["status"] == "pass"
+
+
+def test_integrated_orchestration_zero_signal_pipeline(tmp_path) -> None:
+    """Full lifecycle with real scanner zero-signal evaluation and verified normal_no_signal projection."""
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    market_dates = _calendar(db)
+    store = DataStore(tmp_path / "market")
+    symbols = _freeze_market(store, market_dates)
+    run_date = "2026-08-24"
+
+    strategy_id = "ai_formula_shadow:fixture-winner"
+    db.upsert_strategy_promotion_state_sync(
+        strategy_id=strategy_id,
+        stage="paper_shadow",
+        gate_status="paper_shadow_enabled",
+        live_like_enabled=False,
+        missing_requirements=[],
+        backtest_result_id=1,
+        payload={},
+    )
+
+    strategy = {
+        "formula_ast": _formula(produces_signals=False),
+        "formula_fingerprint": "sha256:fixture-formula",
+        "selected_universe": symbols[:40],
+    }
+    strategy_fingerprint = content_fingerprint(strategy)
+
+    def gate_resolver(_db, requested_strategy_id, *, as_of_date):
+        return {
+            "status": "pass",
+            "promotion": {
+                "daily_strategy_artifact_binding": {
+                    "winner_candidate_id": "fixture-winner",
+                    "run_id": "fixture-run",
+                    "operating_constraints": {
+                        "strategy_artifact_fingerprint": strategy_fingerprint,
+                    },
+                }
+            },
+        }, []
+
+    def strategy_loader(*, candidate_id, run_id):
+        return {
+            "candidate_id": candidate_id,
+            "run_id": run_id,
+            "strategy_artifact_fingerprint": strategy_fingerprint,
+            "strategy": strategy,
+        }
+
+    controls = TradingControlState(db=db)
+    config = SimpleNamespace(data_source="akshare", start_date="2026-04-01")
+    decision_time = datetime(2026, 8, 24, 1, 36, tzinfo=timezone.utc)
+    scanner = PromotedStrategyUniverseScanService(
+        db=db,
+        config=config,
+        data_store=store,
+        policy=MarketUniversePolicy(minimum_master_member_count=40),
+        strategy_gate_resolver=gate_resolver,
+        strategy_loader=strategy_loader,
+        safety_gate_reader=lambda: {
+            "default_execution_mode": "manual_confirmation",
+            "manual_confirmation_required": True,
+            "broker_submission_enabled": False,
+            "kill_switch_enabled": False,
+        },
+        clock=lambda: datetime(2026, 8, 24, 9, 36, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+
+    state = SimpleNamespace(
+        db=db,
+        config=config,
+        data_store=store,
+        scanner=scanner,
+        trading_controls=controls,
+        notifier=RecordingNotifier(),
+    )
+
+    valuation_id = _valuation_id(db)
+
+    async def quote_refresher(_state, symbol, _asset_type, *, fetch_run_id=None):
+        return {"symbol": symbol, "status": "refreshed", "price": 10.0}
+
+    async def read_base_plan(_state):
+        dec = _decision(risk_checked=True)
+        dec["decision_date"] = run_date
+        dec["generated_at"] = f"{run_date}T09:35:00+08:00"
+        dec["candidates"] = []
+        dec["summary"]["candidate_count"] = 0
+        dec["summary"]["portfolio"]["valuation_snapshot_id"] = valuation_id
+        dec["summary"]["portfolio"]["valuation_status"] = "complete"
+        dec["summary"]["portfolio"]["fact_authority"] = "persisted_valuation_snapshot"
+        dec["summary"]["portfolio"]["total_equity"] = 100_000.0
+        dec["summary"]["portfolio"]["cash"] = 100_000.0
+        dec["summary"]["portfolio"]["board_buy_permissions"] = {
+            "main": "allowed",
+            "gem": "allowed",
+            "star": "allowed",
+            "b_share": "allowed",
+        }
+        dec["summary"]["account_truth"]["captured_at"] = f"{run_date}T09:30:00+08:00"
+        dec["summary"]["market_data"]["latest_quote_timestamp"] = (
+            f"{run_date}T09:34:00+08:00"
+        )
+
+        p = _plan(risk_checked=True)
+        p["plan_date"] = run_date
+        p["generated_at"] = f"{run_date}T09:35:00+08:00"
+        p["order_intents"] = []
+        p["candidate_pool_count"] = 0
+        return dec, p
+
+    async def run_risk(_state):
+        return {
+            "status": "completed",
+            "candidate_count": 0,
+            "processed_count": 0,
+            "passed_count": 0,
+            "blocked_count": 0,
+            "skipped_count": 0,
+            "risk_decision_writes_performed": True,
+            "blockers": [],
+        }
+
+    service = build_daily_decision_evidence_automation_service(
+        state,
+        plan_reader=read_base_plan,
+        risk_runner=run_risk,
+        quote_refresher=quote_refresher,
+    )
+    service._account_truth_replay_resolver = _fixture_account_truth_replay
+
+    schedule = project_daily_candidate_background_schedule(db=db, now=decision_time)
+    assert schedule["status"] == "due"
+    assert schedule["due"] is True
+
+    # Real claimed background execution
+    asyncio.run(
+        run_claimed_background_attempt(
+            db=db,
+            service=service,
+            schedule=schedule,
+            clock=lambda: decision_time,
+        )
+    )
+
+    gen = daily_candidate_generation_status(db, run_date, now=decision_time)
+    assert gen["status"] == "completed_no_signal"
+    assert gen["generation_verified"] is True
+    assert gen["failure_code"] is None
+
+    tasks = workflow_tasks(
+        market_data={"source_health": "live"},
+        account_truth={"gate_status": "pass"},
+        strategy_attribution={"gate_status": "pass"},
+        action_tasks={"pending_count": 0},
+        audit={},
+        candidate_count=0,
+        ready_for_manual_confirmation_count=0,
+        generation=gen,
+    )
+    strategy_task = next(t for t in tasks if t["id"] == "strategy_evidence")
+    assert strategy_task["status"] == "pass"
+
+
+def test_claimed_attempt_cancellation_after_window_outcome(tmp_path) -> None:
+    """An attempt claimed in DB but left unfinished due to cancellation or timeout fails closed after window."""
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _calendar(db)
+    run_date = "2026-08-24"
+
+    attempt_run_id = f"automation:daily-candidate-background-attempt:{run_date}"
+    db.upsert_automation_run_sync(
+        {
+            "run_id": attempt_run_id,
+            "run_type": "daily_candidate_background_attempt",
+            "run_date": run_date,
+            "status": "claimed",
+            "execution_mode": "paper_shadow",
+            "started_at": f"{run_date}T09:35:00+08:00",
+            "finished_at": None,
+            "source_ref": None,
+            "payload": {},
+        }
+    )
+
+    after_window_time = datetime(2026, 8, 24, 1, 46, tzinfo=timezone.utc)
+    schedule = project_daily_candidate_background_schedule(db=db, now=after_window_time)
+    assert schedule["status"] == "claim_unresolved_after_window"
+    assert schedule["due"] is False
+    assert "daily_candidate_claim_unresolved" in schedule["blockers"]
+
+    gen = daily_candidate_generation_status(db, run_date, now=after_window_time)
+    assert gen["status"] == "claim_unresolved"
+    assert gen["generation_verified"] is False
+
+    tasks = workflow_tasks(
+        market_data={"source_health": "live"},
+        account_truth={"gate_status": "pass"},
+        strategy_attribution={"gate_status": "pass"},
+        action_tasks={"pending_count": 0},
+        audit={},
+        candidate_count=0,
+        ready_for_manual_confirmation_count=0,
+        generation=gen,
+    )
+    strategy_task = next(t for t in tasks if t["id"] == "strategy_evidence")
+    assert strategy_task["status"] == "blocked"
+    assert strategy_task["blocking_reasons"] == ["daily_candidate_claim_unresolved"]

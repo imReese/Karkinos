@@ -24,7 +24,12 @@ from server.services.decision.decision_portfolio_projection import (
 )
 
 
-def daily_candidate_generation_status(db: Any, decision_date: str) -> dict[str, Any]:
+def daily_candidate_generation_status(
+    db: Any,
+    decision_date: str,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
     """Separate today's persisted generation outcome from an empty task queue."""
 
     from server.projections.account_action_recommendation import (
@@ -74,7 +79,7 @@ def daily_candidate_generation_status(db: Any, decision_date: str) -> dict[str, 
                 "daily_evidence_run_id": unlinked_evidence[0].get("run_id"),
                 "failure_code": "background_attempt_missing",
             }
-        schedule = project_daily_candidate_background_schedule(db=db)
+        schedule = project_daily_candidate_background_schedule(db=db, now=now)
         return {
             **base,
             "status": (
@@ -96,7 +101,7 @@ def daily_candidate_generation_status(db: Any, decision_date: str) -> dict[str, 
     if attempt_status in {"failed_closed", "interrupted_fail_closed"}:
         return {**base, "status": "failed_closed"}
     if attempt_status == "claimed":
-        schedule = project_daily_candidate_background_schedule(db=db)
+        schedule = project_daily_candidate_background_schedule(db=db, now=now)
         return {
             **base,
             "status": (

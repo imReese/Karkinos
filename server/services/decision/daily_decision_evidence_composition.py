@@ -61,9 +61,10 @@ def build_daily_decision_evidence_automation_service(
         trading_controls=state.trading_controls,
     )
     runtime_config = getattr(state, "config", None)
-    scanner = PromotedStrategyUniverseScanService(
+    scanner = getattr(state, "scanner", None) or PromotedStrategyUniverseScanService(
         db=state.db,
         config=runtime_config,
+        data_store=getattr(state, "data_store", None),
         safety_gate_reader=automation_controls.get_status,
     )
     quote_freezer = DailyCandidateQuoteFreezeService(
