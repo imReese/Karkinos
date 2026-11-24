@@ -129,6 +129,7 @@ def is_qualified_market_universe_coverage_run(
     expected_policy_id: str | None = None,
     expected_policy_fingerprint: str | None = None,
     expected_task_key: str | None = None,
+    expected_panel_size: int | None = None,
 ) -> bool:
     """Validate whether an existing completed run meets strict coverage qualifications.
 
@@ -245,6 +246,22 @@ def is_qualified_market_universe_coverage_run(
         and payload["coverage_evidence_fingerprint"] != expected_fingerprint
     ):
         return False
+
+    if expected_panel_size is not None:
+        rec_policy = payload.get("policy")
+        if not isinstance(rec_policy, Mapping):
+            return False
+        if rec_policy.get("panel_size") != expected_panel_size:
+            return False
+        ready_count = _strict_non_negative_int(payload.get("persisted_bar_ready_count"))
+        if ready_count is None or ready_count < expected_panel_size:
+            return False
+        cross_count = _strict_non_negative_int(
+            payload.get("latest_cross_section_row_count")
+        )
+        if cross_count is None or cross_count < expected_panel_size:
+            return False
+
     return True
 
 
@@ -425,6 +442,7 @@ def validate_run_predecessor_ancestry(
     daily_provider_name: str | None = None,
     legacy_candidate_ids: Sequence[str] | None = None,
     ancestry_cache: dict[str, tuple[bool, str | None]] | None = None,
+    pending_run_date: str | None = None,
 ) -> tuple[bool, str | None]:
     """Validate predecessor ancestry of an automation run or database row.
 
@@ -436,6 +454,15 @@ def validate_run_predecessor_ancestry(
     """
     if not run_or_row or not isinstance(run_or_row, Mapping):
         return True, None
+
+    if pending_run_date is not None:
+        if not _is_matching_pending_blocked_run(
+            run_or_row,
+            run_date=pending_run_date,
+            master_provider_name=master_provider_name,
+            daily_provider_name=daily_provider_name,
+        ):
+            return False, None
 
     # Check for malformed or padded current_run_id
     if current_run_id is not None:
@@ -569,49 +596,65 @@ def validate_run_predecessor_ancestry(
                             ancestry_cache[nid] = (False, None)
                     return False, None  # Missing ancestor link
 
-                # Ancestor must be a market-universe run with object payload
-                if ancestor.get("run_type") != MARKET_UNIVERSE_AUTOMATION_RUN_TYPE:
-                    if ancestry_cache is not None:
-                        for nid in chain_nodes:
-                            ancestry_cache[nid] = (False, None)
-                    return False, None
+                if pending_run_date is not None:
+                    if not _is_matching_pending_blocked_run(
+                        ancestor,
+                        run_date=pending_run_date,
+                        master_provider_name=master_provider_name,
+                        daily_provider_name=daily_provider_name,
+                    ):
+                        if ancestry_cache is not None:
+                            for nid in chain_nodes:
+                                ancestry_cache[nid] = (False, None)
+                        return False, None
+                else:
+                    # Ancestor must be a market-universe run with object payload
+                    if ancestor.get("run_type") != MARKET_UNIVERSE_AUTOMATION_RUN_TYPE:
+                        if ancestry_cache is not None:
+                            for nid in chain_nodes:
+                                ancestry_cache[nid] = (False, None)
+                        return False, None
 
-                anc_payload = ancestor.get("payload")
-                if anc_payload is None:
-                    raw_anc_p = ancestor.get("payload_json")
-                    if raw_anc_p:
-                        try:
-                            anc_payload = json.loads(str(raw_anc_p))
-                        except Exception:
-                            if ancestry_cache is not None:
-                                for nid in chain_nodes:
-                                    ancestry_cache[nid] = (False, None)
-                            return False, None
-                if not isinstance(anc_payload, Mapping):
-                    if ancestry_cache is not None:
-                        for nid in chain_nodes:
-                            ancestry_cache[nid] = (False, None)
-                    return False, None
+                    anc_payload = ancestor.get("payload")
+                    if anc_payload is None:
+                        raw_anc_p = ancestor.get("payload_json")
+                        if raw_anc_p:
+                            try:
+                                anc_payload = json.loads(str(raw_anc_p))
+                            except Exception:
+                                if ancestry_cache is not None:
+                                    for nid in chain_nodes:
+                                        ancestry_cache[nid] = (False, None)
+                                return False, None
+                    if not isinstance(anc_payload, Mapping):
+                        if ancestry_cache is not None:
+                            for nid in chain_nodes:
+                                ancestry_cache[nid] = (False, None)
+                        return False, None
 
-                # Validate ancestor scope and identity without explicit conflicts
-                anc_id = str(ancestor.get("run_id") or curr_pred_id)
-                if not _matches_market_universe_scope(
-                    anc_payload,
-                    run_id=anc_id,
-                    task_key=task_key,
-                    trade_date=trade_date,
-                    master_provider_name=master_provider_name,
-                    daily_provider_name=daily_provider_name,
-                    legacy_candidate_ids=legacy_candidate_ids,
-                ):
-                    if ancestry_cache is not None:
-                        for nid in chain_nodes:
-                            ancestry_cache[nid] = (False, None)
-                    return False, None
+                    # Validate ancestor scope and identity without explicit conflicts
+                    anc_id = str(ancestor.get("run_id") or curr_pred_id)
+                    if not _matches_market_universe_scope(
+                        anc_payload,
+                        run_id=anc_id,
+                        task_key=task_key,
+                        trade_date=trade_date,
+                        master_provider_name=master_provider_name,
+                        daily_provider_name=daily_provider_name,
+                        legacy_candidate_ids=legacy_candidate_ids,
+                    ):
+                        if ancestry_cache is not None:
+                            for nid in chain_nodes:
+                                ancestry_cache[nid] = (False, None)
+                        return False, None
 
                 # Validate ancestor's own predecessor aliases
                 ancestor_valid, next_pred_id = validate_run_predecessor_ancestry(
-                    ancestor, current_run_id=curr_pred_id
+                    ancestor,
+                    current_run_id=curr_pred_id,
+                    pending_run_date=pending_run_date,
+                    master_provider_name=master_provider_name,
+                    daily_provider_name=daily_provider_name,
                 )
                 if not ancestor_valid:
                     if ancestry_cache is not None:
@@ -877,6 +920,9 @@ class MarketUniverseAutomationService:
                             existing_pending,
                             current_run_id=pid,
                             db=self._db,
+                            pending_run_date=run_date,
+                            master_provider_name=master_provider_name,
+                            daily_provider_name=daily_provider_name,
                         )
                         if is_valid_ancestry:
                             return existing_pending
@@ -1005,6 +1051,7 @@ class MarketUniverseAutomationService:
                     expected_policy_id=validation_policy_id,
                     expected_policy_fingerprint=policy_fingerprint,
                     expected_task_key=task_key,
+                    expected_panel_size=self._policy.panel_size,
                 )
             ):
                 return existing
@@ -1030,6 +1077,7 @@ class MarketUniverseAutomationService:
                 expected_policy_id=validation_policy_id,
                 expected_policy_fingerprint=policy_fingerprint,
                 expected_task_key=task_key,
+                expected_panel_size=self._policy.panel_size,
             ):
                 return prior_run
 
@@ -1724,10 +1772,25 @@ class MarketUniverseAutomationService:
         )
         current_run_id = run_id
         initial_run_id = run_id
-        is_valid_caller, verified_predecessor = validate_run_predecessor_ancestry(
-            {"payload": payload, "source_ref": source_ref},
-            current_run_id=run_id,
-        )
+        if status == "blocked":
+            is_valid_caller, verified_predecessor = validate_run_predecessor_ancestry(
+                {
+                    "payload": payload,
+                    "source_ref": source_ref,
+                    "run_type": MARKET_UNIVERSE_AUTOMATION_RUN_TYPE,
+                    "status": "blocked",
+                    "run_date": run_date,
+                },
+                current_run_id=run_id,
+                pending_run_date=run_date,
+                master_provider_name=rec_master,
+                daily_provider_name=rec_daily,
+            )
+        else:
+            is_valid_caller, verified_predecessor = validate_run_predecessor_ancestry(
+                {"payload": payload, "source_ref": source_ref},
+                current_run_id=run_id,
+            )
         if not is_valid_caller:
             verified_predecessor = None
         target_predecessor = verified_predecessor
@@ -1782,6 +1845,7 @@ class MarketUniverseAutomationService:
                     expected_policy_id=payload.get("validation_policy_id"),
                     expected_policy_fingerprint=payload.get("policy_fingerprint"),
                     expected_task_key=payload.get("task_key"),
+                    expected_panel_size=self._policy.panel_size,
                 )
             ):
                 is_valid_ancestry, _ = validate_run_predecessor_ancestry(
@@ -1807,6 +1871,9 @@ class MarketUniverseAutomationService:
                         row,
                         current_run_id=str(row.get("run_id") or current_run_id),
                         db=self._db,
+                        pending_run_date=run_date,
+                        master_provider_name=rec_master,
+                        daily_provider_name=rec_daily,
                     )
                     if is_valid_ancestry:
                         return row
@@ -1814,16 +1881,26 @@ class MarketUniverseAutomationService:
             colliding_id = str(row.get("run_id") or initial_run_id)
             row_task_key = row_payload.get("task_key")
 
-            is_valid_ancestry, row_supersedes = validate_run_predecessor_ancestry(
-                row,
-                current_run_id=colliding_id,
-                db=self._db,
-                task_key=rec_task_key,
-                trade_date=trade_scope,
-                master_provider_name=rec_master,
-                daily_provider_name=rec_daily,
-                legacy_candidate_ids=rec_legacy_ids,
-            )
+            if status == "blocked":
+                is_valid_ancestry, row_supersedes = validate_run_predecessor_ancestry(
+                    row,
+                    current_run_id=colliding_id,
+                    db=self._db,
+                    pending_run_date=run_date,
+                    master_provider_name=rec_master,
+                    daily_provider_name=rec_daily,
+                )
+            else:
+                is_valid_ancestry, row_supersedes = validate_run_predecessor_ancestry(
+                    row,
+                    current_run_id=colliding_id,
+                    db=self._db,
+                    task_key=rec_task_key,
+                    trade_date=trade_scope,
+                    master_provider_name=rec_master,
+                    daily_provider_name=rec_daily,
+                    legacy_candidate_ids=rec_legacy_ids,
+                )
 
             expected_task_key = payload.get("task_key")
             if expected_task_key:

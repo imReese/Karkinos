@@ -3383,6 +3383,8 @@ def test_failed_run_with_null_coverage_fingerprint_throttled_during_backoff(
     assert run_2["status"] == "failed"
 
     # 3. Changed immutable evidence during active backoff window (2 minutes later) bypasses backoff
+    from server.services.market.market_universe_truth import normalize_a_share_members
+
     revised_metadata = [
         {
             "symbol": s,
@@ -3397,7 +3399,7 @@ def test_failed_run_with_null_coverage_fingerprint_throttled_during_backoff(
     store.save_market_universe_snapshot(
         trade_date="2026-08-21",
         provider_name="unit_fixture",
-        members=[{"symbol": s} for s in symbols],
+        members=normalize_a_share_members(symbols),
         capture_started_at=t + timedelta(minutes=2),
         capture_completed_at=t + timedelta(minutes=2),
         source_metadata=revised_metadata,
@@ -3408,6 +3410,10 @@ def test_failed_run_with_null_coverage_fingerprint_throttled_during_backoff(
     p_changed = json.loads(run_changed["payload_json"])
     assert p_changed.get("supersedes_run_id") == run_1_id
     assert p_changed.get("prior_run_id") == run_1_id
+    assert p_changed["blockers"] == ["full_market_persisted_bar_coverage_incomplete"]
+    assert p_changed["evidence_fingerprint"] != p1["evidence_fingerprint"]
+    assert p_changed.get("coverage_evidence_fingerprint") is None
+    assert p_changed["retryable"] is True
 
     # 4. Call after backoff expiry (2 hours later) creates a linked successor to run_changed
     run_3 = service.run_due(now=t + timedelta(hours=2))
@@ -3417,6 +3423,7 @@ def test_failed_run_with_null_coverage_fingerprint_throttled_during_backoff(
     p3 = json.loads(run_3["payload_json"])
     assert p3.get("supersedes_run_id") == run_changed["run_id"]
     assert p3.get("prior_run_id") == run_changed["run_id"]
+    assert p3["blockers"] == ["full_market_persisted_bar_coverage_incomplete"]
 
 
 def test_policy_fingerprint_changes_with_panel_size_and_rejects_cross_qualification(
@@ -3425,6 +3432,7 @@ def test_policy_fingerprint_changes_with_panel_size_and_rejects_cross_qualificat
     """Different panel_size configurations yield different policy fingerprints and reject cross-qualification."""
     from server.ai_runtime.contracts import content_fingerprint
     from server.services.market.market_universe_automation import (
+        MARKET_UNIVERSE_COVERAGE_POLICY_ID,
         is_qualified_market_universe_coverage_run,
     )
     from server.services.market.market_universe_truth import MarketUniversePolicy
@@ -3435,20 +3443,30 @@ def test_policy_fingerprint_changes_with_panel_size_and_rejects_cross_qualificat
     fp_50 = content_fingerprint(policy_50.to_dict())
     assert fp_40 != fp_50
 
+    # Historical policy dict (which omitted panel_size)
+    hist_policy_dict = policy_40.to_dict().copy()
+    hist_policy_dict.pop("panel_size", None)
+    fp_historical_ambiguous = content_fingerprint(hist_policy_dict)
+    assert fp_historical_ambiguous != fp_40
+    assert fp_historical_ambiguous != fp_50
+
     # Seed completion under policy_40
-    completed_row = {
+    completed_row_40 = {
         "run_id": "test_completion_panel_40",
         "run_type": "market_universe_sync",
         "status": "completed",
         "payload_json": json.dumps(
             {
-                "validation_policy_id": "market_universe_coverage:v1",
-                "coverage_validation_policy_id": "market_universe_coverage:v1",
+                "validation_policy_id": MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+                "coverage_validation_policy_id": MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+                "policy": policy_40.to_dict(),
                 "policy_fingerprint": fp_40,
                 "evidence_fingerprint": "ev_fp_test",
                 "coverage_evidence_fingerprint": "ev_fp_test",
                 "market_universe_snapshot_id": "snap_test",
                 "task_key": "market_universe_sync:unit_fixture:unit_fixture:2026-08-21",
+                "persisted_bar_ready_count": 40,
+                "latest_cross_section_row_count": 40,
                 "full_market_history_frozen": True,
                 "blockers": [],
                 "full_market_partial_receipt_dates": [],
@@ -3460,30 +3478,300 @@ def test_policy_fingerprint_changes_with_panel_size_and_rejects_cross_qualificat
         ),
     }
 
-    # Under policy_50, expected_policy_fingerprint is fp_50, which must reject the panel_size=40 run
+    # Historical completion with ambiguous omitted panel_size
+    completed_row_historical = {
+        "run_id": "test_completion_historical_ambiguous",
+        "run_type": "market_universe_sync",
+        "status": "completed",
+        "payload_json": json.dumps(
+            {
+                "validation_policy_id": MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+                "coverage_validation_policy_id": MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+                "policy": hist_policy_dict,
+                "policy_fingerprint": fp_historical_ambiguous,
+                "evidence_fingerprint": "ev_fp_test",
+                "coverage_evidence_fingerprint": "ev_fp_test",
+                "market_universe_snapshot_id": "snap_test",
+                "task_key": "market_universe_sync:unit_fixture:unit_fixture:2026-08-21",
+                "persisted_bar_ready_count": 20,
+                "latest_cross_section_row_count": 20,
+                "full_market_history_frozen": True,
+                "blockers": [],
+                "full_market_partial_receipt_dates": [],
+                "full_market_missing_receipt_dates": [],
+                "full_market_uncovered_symbol_session_count": 0,
+                "full_market_missing_receipt_date_count": 0,
+                "full_market_daily_receipt_count": 5,
+            }
+        ),
+    }
+
+    # Under policy_50, expected_policy_fingerprint is fp_50, which rejects the panel_size=40 run
     assert (
         is_qualified_market_universe_coverage_run(
-            completed_row,
+            completed_row_40,
             expected_snapshot_id="snap_test",
             expected_fingerprint="ev_fp_test",
-            expected_policy_id="market_universe_coverage:v1",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
             expected_policy_fingerprint=fp_50,
             expected_task_key="market_universe_sync:unit_fixture:unit_fixture:2026-08-21",
+            expected_panel_size=50,
         )
         is False
     )
-    # Under policy_40, it qualifies
+    # Under policy_40, completed_row_40 qualifies
     assert (
         is_qualified_market_universe_coverage_run(
-            completed_row,
+            completed_row_40,
             expected_snapshot_id="snap_test",
             expected_fingerprint="ev_fp_test",
-            expected_policy_id="market_universe_coverage:v1",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
             expected_policy_fingerprint=fp_40,
             expected_task_key="market_universe_sync:unit_fixture:unit_fixture:2026-08-21",
+            expected_panel_size=40,
         )
         is True
     )
+    # Historical ambiguous row (missing panel_size / 20 members) rejects under policy_40
+    assert (
+        is_qualified_market_universe_coverage_run(
+            completed_row_historical,
+            expected_snapshot_id="snap_test",
+            expected_fingerprint="ev_fp_test",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            expected_policy_fingerprint=fp_40,
+            expected_task_key="market_universe_sync:unit_fixture:unit_fixture:2026-08-21",
+            expected_panel_size=40,
+        )
+        is False
+    )
+
+
+def test_historical_coverage_under_smaller_panel_size_rejected_in_run_due_with_persisted_evidence(
+    tmp_path,
+):
+    """Real market evidence: a completion produced under panel_size=20 is rejected by run_due under panel_size=40."""
+    from server.services.market.market_universe_truth import (
+        MarketUniversePolicy,
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _verified_calendar(db)
+    store = DataStore(tmp_path / "market")
+
+    # Ingest 20 symbols with complete bars
+    symbols_20 = [f"{600000 + i:06d}" for i in range(20)]
+    dates = ["2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21"]
+    for d in dates:
+        frame = pd.DataFrame(
+            {
+                "symbol": symbols_20,
+                "timestamp": [pd.Timestamp(d)] * len(symbols_20),
+                "open": [10.0] * len(symbols_20),
+                "high": [10.1] * len(symbols_20),
+                "low": [9.9] * len(symbols_20),
+                "close": [10.0] * len(symbols_20),
+                "volume": [1_000_000] * len(symbols_20),
+                "amount": [10_000_000] * len(symbols_20),
+            }
+        )
+        store.ingest_market_daily_batch(
+            trade_date=d, provider_name="unit_fixture", bars=frame
+        )
+
+    class _Source20:
+        def list_symbols(self):
+            return symbols_20
+
+        def list_symbol_metadata(self):
+            return [
+                {
+                    "symbol": s,
+                    "display_name": s,
+                    "provider_symbol": f"{s}.SH",
+                    "provider_name": "unit_fixture",
+                    "source": "stock_master",
+                    "list_date": "2026-01-01",
+                }
+                for s in symbols_20
+            ]
+
+        def fetch_market_daily_bars(self, trade_date: str) -> pd.DataFrame:
+            return pd.DataFrame(
+                {
+                    "symbol": symbols_20,
+                    "timestamp": [pd.Timestamp(trade_date)] * len(symbols_20),
+                    "open": [10.0] * len(symbols_20),
+                    "high": [10.1] * len(symbols_20),
+                    "low": [9.9] * len(symbols_20),
+                    "close": [10.0] * len(symbols_20),
+                    "volume": [1_000_000] * len(symbols_20),
+                    "amount": [10_000_000] * len(symbols_20),
+                }
+            )
+
+    t = datetime(2026, 8, 21, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    clock_time = t
+
+    # 1. Run under policy panel_size=20
+    policy_20 = MarketUniversePolicy(
+        minimum_master_member_count=20, panel_size=20, minimum_history_rows=5
+    )
+    service_20 = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-08-17"
+        ),
+        data_store=store,
+        source=_Source20(),
+        policy=policy_20,
+        capture_clock=lambda: clock_time,
+    )
+    run_20 = service_20.run_due(now=t)
+    assert run_20["status"] == "completed"
+
+    # 2. Upgrade to policy panel_size=40 on the exact same database and market store
+    policy_40 = MarketUniversePolicy(
+        minimum_master_member_count=20, panel_size=40, minimum_history_rows=5
+    )
+    service_40 = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-08-17"
+        ),
+        data_store=store,
+        source=_Source20(),
+        policy=policy_40,
+        capture_clock=lambda: clock_time,
+    )
+    # run_due MUST reject reusing the 20-member completion, re-evaluate coverage, and fail because 20 < 40!
+    run_40 = service_40.run_due(now=t + timedelta(minutes=5))
+    assert run_40["status"] == "failed"
+    assert run_40["run_id"] != run_20["run_id"]
+    p_40 = json.loads(run_40["payload_json"])
+    assert "full_market_persisted_bar_coverage_incomplete" in p_40["blockers"]
+    assert "full_market_latest_cross_section_incomplete" in p_40["blockers"]
+    assert p_40.get("persisted_bar_ready_count") == 20
+    assert p_40.get("minimum_persisted_bar_ready_count") == 40
+
+
+def test_pending_blocked_run_reuse_rejects_cross_scope_ancestors_at_multiple_depths(
+    tmp_path,
+):
+    """Pending blocked run reuse rejects candidate runs whose ancestry contains cross-scope ancestors at depth 1 or depth 2."""
+    from server.services.market.market_universe_automation import (
+        validate_run_predecessor_ancestry,
+    )
+    from server.services.market.market_universe_truth import MarketUniversePolicy
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    store = DataStore(tmp_path / "market")
+    policy = MarketUniversePolicy(minimum_history_rows=2)
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-08-01"
+        ),
+        data_store=store,
+        source=_Source(),
+        policy=policy,
+    )
+    t = datetime(2026, 8, 23, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    run_date = "2026-08-23"
+
+    # Pre-seed conflicting ancestor at depth 2 (different provider)
+    conflicting_depth_2 = {
+        "run_id": "market_universe_sync:pending:2026-08-23:foreign_ancestor",
+        "run_type": "market_universe_sync",
+        "run_date": run_date,
+        "status": "blocked",
+        "execution_mode": "market_data_ingestion",
+        "started_at": t.isoformat(),
+        "finished_at": t.isoformat(),
+        "payload": {
+            "security_master_provider": "foreign_master",
+            "daily_bar_provider": "foreign_daily",
+            "trade_date": None,
+            "blockers": ["verified_closed_trading_date_unavailable"],
+        },
+    }
+    db.upsert_automation_run_sync(conflicting_depth_2)
+
+    # Pre-seed pending run at depth 1 matching scope on surface but superseding conflicting_depth_2
+    pending_depth_1 = {
+        "run_id": "market_universe_sync:pending:2026-08-23:depth_1",
+        "run_type": "market_universe_sync",
+        "run_date": run_date,
+        "status": "blocked",
+        "execution_mode": "market_data_ingestion",
+        "started_at": t.isoformat(),
+        "finished_at": t.isoformat(),
+        "source_ref": conflicting_depth_2["run_id"],
+        "payload": {
+            "security_master_provider": "unit_fixture",
+            "daily_bar_provider": "unit_fixture",
+            "trade_date": None,
+            "blockers": ["verified_closed_trading_date_unavailable"],
+            "supersedes_run_id": conflicting_depth_2["run_id"],
+            "prior_run_id": conflicting_depth_2["run_id"],
+        },
+    }
+    db.upsert_automation_run_sync(pending_depth_1)
+
+    # Pre-seed pending run at canonical pending ID pointing to depth 1
+    canonical_pending_id = f"market_universe_sync:pending:{run_date}"
+    canonical_row = {
+        "run_id": canonical_pending_id,
+        "run_type": "market_universe_sync",
+        "run_date": run_date,
+        "status": "blocked",
+        "execution_mode": "market_data_ingestion",
+        "started_at": t.isoformat(),
+        "finished_at": t.isoformat(),
+        "source_ref": pending_depth_1["run_id"],
+        "payload": {
+            "security_master_provider": "unit_fixture",
+            "daily_bar_provider": "unit_fixture",
+            "trade_date": None,
+            "blockers": ["verified_closed_trading_date_unavailable"],
+            "supersedes_run_id": pending_depth_1["run_id"],
+            "prior_run_id": pending_depth_1["run_id"],
+        },
+    }
+    db.upsert_automation_run_sync(canonical_row)
+
+    # validate_run_predecessor_ancestry MUST reject canonical_row because its ancestor at depth 2 has conflicting providers
+    is_valid, _ = validate_run_predecessor_ancestry(
+        canonical_row,
+        current_run_id=canonical_pending_id,
+        db=db,
+        pending_run_date=run_date,
+        master_provider_name="unit_fixture",
+        daily_provider_name="unit_fixture",
+    )
+    assert is_valid is False
+
+    # Calling run_due targets canonical_pending_id, detects invalid ancestry, refuses to reuse it,
+    # collides on insert, refuses to adopt it as predecessor, and allocates a clean deterministic scoped ID!
+    result = service.run_due(now=t)
+    assert result["status"] == "blocked"
+    assert result["run_id"] != canonical_pending_id
+    assert result["run_id"] != pending_depth_1["run_id"]
+    p_res = json.loads(result["payload_json"])
+    assert p_res.get("supersedes_run_id") != canonical_pending_id
+    assert p_res.get("supersedes_run_id") != pending_depth_1["run_id"]
+
+    # Verify original rows in DB remain completely untouched
+    orig_c = db.get_automation_run_sync(canonical_pending_id)
+    assert orig_c is not None
+    assert orig_c["source_ref"] == pending_depth_1["run_id"]
+    orig_1 = db.get_automation_run_sync(pending_depth_1["run_id"])
+    assert orig_1 is not None
+    assert orig_1["source_ref"] == conflicting_depth_2["run_id"]
+    orig_2 = db.get_automation_run_sync(conflicting_depth_2["run_id"])
+    assert orig_2 is not None
 
 
 def test_ancestor_scope_validation_rejects_explicit_conflicts_and_foreign_run_types(

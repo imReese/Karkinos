@@ -112,10 +112,7 @@ class MarketUniversePolicy:
             "changes_capital_authority": False,
         }
         if self.policy_version == MARKET_UNIVERSE_POLICY_VERSION:
-            if self.panel_size != 40:
-                result["panel_size"] = self.panel_size
-            else:
-                result.pop("panel_size", None)
+            result["panel_size"] = self.panel_size
             result.pop("backfill_candidate_count", None)
             result["scope_kind"] = "full_declared_market"
             result["selection_order"] = "all_eligible_then_symbol_asc"
