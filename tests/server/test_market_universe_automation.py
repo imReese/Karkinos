@@ -2893,6 +2893,50 @@ def test_is_qualified_market_universe_coverage_run_strict_types():
         expected_task_key="expected_task_key",
     )
 
+    # Disqualify if embedded policy is not a Mapping
+    for bad_policy in ["broken", 123, ["policy"], True]:
+        p_bad_policy = dict(base_payload, policy=bad_policy)
+        assert not is_qualified_market_universe_coverage_run(
+            _make_run(p_bad_policy),
+            expected_snapshot_id="snap_1",
+            expected_fingerprint="ev_fp",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            expected_policy_fingerprint="p_fp",
+        )
+
+    # Disqualify if embedded policy content does not match claimed fingerprint
+    from server.contracts.content_identity import content_fingerprint
+
+    real_policy = {"minimum_history_rows": 60, "panel_size": 20}
+    real_policy_fp = content_fingerprint(real_policy)
+    forged_policy = {"minimum_history_rows": 2, "panel_size": 20}
+    p_forged = dict(
+        base_payload,
+        policy=forged_policy,
+        policy_fingerprint=real_policy_fp,
+    )
+    assert not is_qualified_market_universe_coverage_run(
+        _make_run(p_forged),
+        expected_snapshot_id="snap_1",
+        expected_fingerprint="ev_fp",
+        expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+        expected_policy_fingerprint=real_policy_fp,
+    )
+
+    # Qualify if embedded policy content matches claimed and expected fingerprint
+    p_valid_policy = dict(
+        base_payload,
+        policy=real_policy,
+        policy_fingerprint=real_policy_fp,
+    )
+    assert is_qualified_market_universe_coverage_run(
+        _make_run(p_valid_policy),
+        expected_snapshot_id="snap_1",
+        expected_fingerprint="ev_fp",
+        expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+        expected_policy_fingerprint=real_policy_fp,
+    )
+
 
 def test_market_universe_automation_requires_atomic_inserter(tmp_path):
     """MarketUniverseAutomationService raises TypeError when db lacks insert_automation_run_if_absent_sync."""
@@ -3426,6 +3470,28 @@ def test_failed_run_with_null_coverage_fingerprint_throttled_during_backoff(
     assert p3["blockers"] == ["full_market_persisted_bar_coverage_incomplete"]
 
 
+def test_historical_deployment_scope_fingerprint_immutability_and_roundtrip():
+    """Historical deployment scope fingerprint remains strictly immutable and round-trips through MarketUniversePolicy."""
+    from server.services.market.market_universe_truth import (
+        MarketUniversePolicy,
+        market_deployment_scope,
+    )
+
+    policy = MarketUniversePolicy()
+    scope = market_deployment_scope(policy)
+    # Exact canonical historical fingerprint referenced by research datasets and immutable observations
+    expected_historical_fp = (
+        "sha256:887e80eb19f1bbe6df031d1a2b39cf9441129e0093e4ec46d25dea507dfd0153"
+    )
+    assert scope["deployment_scope_fingerprint"] == expected_historical_fp
+
+    # Roundtrip from_dict preserves the identical deployment scope
+    restored = MarketUniversePolicy.from_dict(policy.to_dict())
+    assert restored == policy
+    restored_scope = market_deployment_scope(restored)
+    assert restored_scope["deployment_scope_fingerprint"] == expected_historical_fp
+
+
 def test_policy_fingerprint_changes_with_panel_size_and_rejects_cross_qualification(
     tmp_path,
 ):
@@ -3433,14 +3499,17 @@ def test_policy_fingerprint_changes_with_panel_size_and_rejects_cross_qualificat
     from server.ai_runtime.contracts import content_fingerprint
     from server.services.market.market_universe_automation import (
         MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+        automation_coverage_policy_dict,
         is_qualified_market_universe_coverage_run,
     )
     from server.services.market.market_universe_truth import MarketUniversePolicy
 
     policy_40 = MarketUniversePolicy(panel_size=40)
     policy_50 = MarketUniversePolicy(panel_size=50)
-    fp_40 = content_fingerprint(policy_40.to_dict())
-    fp_50 = content_fingerprint(policy_50.to_dict())
+    dict_40 = automation_coverage_policy_dict(policy_40)
+    dict_50 = automation_coverage_policy_dict(policy_50)
+    fp_40 = content_fingerprint(dict_40)
+    fp_50 = content_fingerprint(dict_50)
     assert fp_40 != fp_50
 
     # Historical policy dict (which omitted panel_size)
@@ -3451,75 +3520,36 @@ def test_policy_fingerprint_changes_with_panel_size_and_rejects_cross_qualificat
     assert fp_historical_ambiguous != fp_50
 
     # Seed completion under policy_40
+    base_payload_40 = {
+        "validation_policy_id": MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+        "coverage_validation_policy_id": MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+        "policy": dict_40,
+        "policy_fingerprint": fp_40,
+        "evidence_fingerprint": "ev_fp_test",
+        "coverage_evidence_fingerprint": "ev_fp_test",
+        "market_universe_snapshot_id": "snap_test",
+        "task_key": "market_universe_sync:unit_fixture:unit_fixture:2026-08-21",
+        "persisted_bar_ready_count": 40,
+        "minimum_persisted_bar_ready_count": 40,
+        "latest_cross_section_row_count": 40,
+        "minimum_latest_cross_section_row_count": 40,
+        "market_universe_member_count": 40,
+        "full_market_history_frozen": True,
+        "blockers": [],
+        "full_market_partial_receipt_dates": [],
+        "full_market_missing_receipt_dates": [],
+        "full_market_uncovered_symbol_session_count": 0,
+        "full_market_missing_receipt_date_count": 0,
+        "full_market_daily_receipt_count": 5,
+    }
     completed_row_40 = {
         "run_id": "test_completion_panel_40",
         "run_type": "market_universe_sync",
         "status": "completed",
-        "payload_json": json.dumps(
-            {
-                "validation_policy_id": MARKET_UNIVERSE_COVERAGE_POLICY_ID,
-                "coverage_validation_policy_id": MARKET_UNIVERSE_COVERAGE_POLICY_ID,
-                "policy": policy_40.to_dict(),
-                "policy_fingerprint": fp_40,
-                "evidence_fingerprint": "ev_fp_test",
-                "coverage_evidence_fingerprint": "ev_fp_test",
-                "market_universe_snapshot_id": "snap_test",
-                "task_key": "market_universe_sync:unit_fixture:unit_fixture:2026-08-21",
-                "persisted_bar_ready_count": 40,
-                "latest_cross_section_row_count": 40,
-                "full_market_history_frozen": True,
-                "blockers": [],
-                "full_market_partial_receipt_dates": [],
-                "full_market_missing_receipt_dates": [],
-                "full_market_uncovered_symbol_session_count": 0,
-                "full_market_missing_receipt_date_count": 0,
-                "full_market_daily_receipt_count": 5,
-            }
-        ),
+        "payload_json": json.dumps(base_payload_40),
     }
 
-    # Historical completion with ambiguous omitted panel_size
-    completed_row_historical = {
-        "run_id": "test_completion_historical_ambiguous",
-        "run_type": "market_universe_sync",
-        "status": "completed",
-        "payload_json": json.dumps(
-            {
-                "validation_policy_id": MARKET_UNIVERSE_COVERAGE_POLICY_ID,
-                "coverage_validation_policy_id": MARKET_UNIVERSE_COVERAGE_POLICY_ID,
-                "policy": hist_policy_dict,
-                "policy_fingerprint": fp_historical_ambiguous,
-                "evidence_fingerprint": "ev_fp_test",
-                "coverage_evidence_fingerprint": "ev_fp_test",
-                "market_universe_snapshot_id": "snap_test",
-                "task_key": "market_universe_sync:unit_fixture:unit_fixture:2026-08-21",
-                "persisted_bar_ready_count": 20,
-                "latest_cross_section_row_count": 20,
-                "full_market_history_frozen": True,
-                "blockers": [],
-                "full_market_partial_receipt_dates": [],
-                "full_market_missing_receipt_dates": [],
-                "full_market_uncovered_symbol_session_count": 0,
-                "full_market_missing_receipt_date_count": 0,
-                "full_market_daily_receipt_count": 5,
-            }
-        ),
-    }
-
-    # Under policy_50, expected_policy_fingerprint is fp_50, which rejects the panel_size=40 run
-    assert (
-        is_qualified_market_universe_coverage_run(
-            completed_row_40,
-            expected_snapshot_id="snap_test",
-            expected_fingerprint="ev_fp_test",
-            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
-            expected_policy_fingerprint=fp_50,
-            expected_task_key="market_universe_sync:unit_fixture:unit_fixture:2026-08-21",
-            expected_panel_size=50,
-        )
-        is False
-    )
-    # Under policy_40, completed_row_40 qualifies
+    # 1. Under policy_40, completed_row_40 qualifies
     assert (
         is_qualified_market_universe_coverage_run(
             completed_row_40,
@@ -3532,25 +3562,105 @@ def test_policy_fingerprint_changes_with_panel_size_and_rejects_cross_qualificat
         )
         is True
     )
-    # Historical ambiguous row (missing panel_size / 20 members) rejects under policy_40
+
+    # 2. Targeted negative guards where expected_policy_fingerprint MATCHES (fp_40),
+    # but specific policy content or count guards independently reject:
+
+    # 2a. Policy dict has missing panel_size (historical format)
+    p_missing_panel = dict(base_payload_40)
+    policy_without_panel = dict_40.copy()
+    policy_without_panel.pop("panel_size", None)
+    p_missing_panel["policy"] = policy_without_panel
+    p_missing_panel["policy_fingerprint"] = fp_40
     assert (
         is_qualified_market_universe_coverage_run(
-            completed_row_historical,
+            {"status": "completed", "payload_json": json.dumps(p_missing_panel)},
             expected_snapshot_id="snap_test",
             expected_fingerprint="ev_fp_test",
             expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
             expected_policy_fingerprint=fp_40,
-            expected_task_key="market_universe_sync:unit_fixture:unit_fixture:2026-08-21",
+            expected_panel_size=40,
+        )
+        is False
+    )
+
+    # 2b. Policy dict has malformed panel_size (float 40.0 or bool True)
+    for bad_panel in (40.0, True, "40"):
+        p_bad_panel = dict(base_payload_40)
+        p_bad_panel["policy"] = {**dict_40, "panel_size": bad_panel}
+        p_bad_panel["policy_fingerprint"] = fp_40
+        assert (
+            is_qualified_market_universe_coverage_run(
+                {"status": "completed", "payload_json": json.dumps(p_bad_panel)},
+                expected_snapshot_id="snap_test",
+                expected_fingerprint="ev_fp_test",
+                expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+                expected_policy_fingerprint=fp_40,
+                expected_panel_size=40,
+            )
+            is False
+        )
+
+    # 2c. Policy content contradictory to claimed fingerprint (minimum_history_rows=2 vs claimed 60)
+    p_contradictory_policy = dict(base_payload_40)
+    p_contradictory_policy["policy"] = {**dict_40, "minimum_history_rows": 2}
+    p_contradictory_policy["policy_fingerprint"] = fp_40
+    assert (
+        is_qualified_market_universe_coverage_run(
+            {"status": "completed", "payload_json": json.dumps(p_contradictory_policy)},
+            expected_snapshot_id="snap_test",
+            expected_fingerprint="ev_fp_test",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            expected_policy_fingerprint=fp_40,
+            expected_panel_size=40,
+        )
+        is False
+    )
+
+    # 2d. Incomplete readiness count under 1000 members (40 ready < 800 required)
+    p_insufficient_ready = dict(base_payload_40)
+    p_insufficient_ready["market_universe_member_count"] = 1000
+    p_insufficient_ready["persisted_bar_ready_count"] = 40
+    p_insufficient_ready["minimum_persisted_bar_ready_count"] = 800
+    assert (
+        is_qualified_market_universe_coverage_run(
+            {"status": "completed", "payload_json": json.dumps(p_insufficient_ready)},
+            expected_snapshot_id="snap_test",
+            expected_fingerprint="ev_fp_test",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            expected_policy_fingerprint=fp_40,
+            expected_panel_size=40,
+        )
+        is False
+    )
+
+    # 2e. Incomplete cross-section count under 1000 members (40 cross-section < 900 required)
+    p_insufficient_cross = dict(base_payload_40)
+    p_insufficient_cross["market_universe_member_count"] = 1000
+    p_insufficient_cross["latest_cross_section_row_count"] = 40
+    p_insufficient_cross["minimum_latest_cross_section_row_count"] = 900
+    assert (
+        is_qualified_market_universe_coverage_run(
+            {"status": "completed", "payload_json": json.dumps(p_insufficient_cross)},
+            expected_snapshot_id="snap_test",
+            expected_fingerprint="ev_fp_test",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            expected_policy_fingerprint=fp_40,
             expected_panel_size=40,
         )
         is False
     )
 
 
-def test_historical_coverage_under_smaller_panel_size_rejected_in_run_due_with_persisted_evidence(
+def test_historical_coverage_under_omitted_panel_size_rejected_in_run_due_with_persisted_evidence(
     tmp_path,
 ):
-    """Real market evidence: a completion produced under panel_size=20 is rejected by run_due under panel_size=40."""
+    """Real market evidence: a genuine historical completion (omitting panel_size from policy) is rejected by run_due under panel_size=40."""
+    from server.contracts.content_identity import content_fingerprint
+    from server.services.market.market_universe_automation import (
+        MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+        compute_market_coverage_evidence_fingerprint,
+    )
     from server.services.market.market_universe_truth import (
         MarketUniversePolicy,
     )
@@ -3614,24 +3724,6 @@ def test_historical_coverage_under_smaller_panel_size_rejected_in_run_due_with_p
     t = datetime(2026, 8, 21, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     clock_time = t
 
-    # 1. Run under policy panel_size=20
-    policy_20 = MarketUniversePolicy(
-        minimum_master_member_count=20, panel_size=20, minimum_history_rows=5
-    )
-    service_20 = MarketUniverseAutomationService(
-        db=db,
-        config=SimpleNamespace(
-            data_source="unit_fixture", tushare_token="", start_date="2026-08-17"
-        ),
-        data_store=store,
-        source=_Source20(),
-        policy=policy_20,
-        capture_clock=lambda: clock_time,
-    )
-    run_20 = service_20.run_due(now=t)
-    assert run_20["status"] == "completed"
-
-    # 2. Upgrade to policy panel_size=40 on the exact same database and market store
     policy_40 = MarketUniversePolicy(
         minimum_master_member_count=20, panel_size=40, minimum_history_rows=5
     )
@@ -3645,15 +3737,86 @@ def test_historical_coverage_under_smaller_panel_size_rejected_in_run_due_with_p
         policy=policy_40,
         capture_clock=lambda: clock_time,
     )
-    # run_due MUST reject reusing the 20-member completion, re-evaluate coverage, and fail because 20 < 40!
-    run_40 = service_40.run_due(now=t + timedelta(minutes=5))
-    assert run_40["status"] == "failed"
-    assert run_40["run_id"] != run_20["run_id"]
-    p_40 = json.loads(run_40["payload_json"])
-    assert "full_market_persisted_bar_coverage_incomplete" in p_40["blockers"]
-    assert "full_market_latest_cross_section_incomplete" in p_40["blockers"]
-    assert p_40.get("persisted_bar_ready_count") == 20
-    assert p_40.get("minimum_persisted_bar_ready_count") == 40
+
+    # 1. Pre-seed verified snapshot and genuine historical completion matching parent representation
+    # (policy omits panel_size and policy_fingerprint was computed without panel_size)
+    service_40._ensure_market_universe_snapshot(
+        trade_date="2026-08-21", master_provider_name="unit_fixture"
+    )
+    snap = store.get_market_universe_snapshot(
+        trade_date="2026-08-21", provider_name="unit_fixture"
+    )
+    assert snap is not None
+
+    parent_policy_dict = policy_40.to_dict()  # Omits panel_size
+    parent_policy_fp = content_fingerprint(parent_policy_dict)
+
+    receipts = store.list_market_daily_ingestion_receipts(
+        start_date="2026-08-17", end_date="2026-08-21", provider_name="unit_fixture"
+    )
+    ev_fp = compute_market_coverage_evidence_fingerprint(
+        snapshot_id=snap["snapshot_id"],
+        trading_dates=dates,
+        receipts=receipts,
+        members=symbols_20,
+        member_metadata=snap.get("member_metadata") or [],
+    )
+    task_key = "market_universe_sync:unit_fixture:unit_fixture:2026-08-21"
+    historical_run_id = "market_universe_sync:2026-08-21:historical_parent_completion"
+
+    historical_row = {
+        "run_id": historical_run_id,
+        "run_type": "market_universe_sync",
+        "run_date": "2026-08-21",
+        "status": "completed",
+        "execution_mode": "market_data_ingestion",
+        "started_at": t.isoformat(),
+        "finished_at": t.isoformat(),
+        "source_ref": snap["snapshot_id"],
+        "payload": {
+            "task_key": task_key,
+            "trade_date": "2026-08-21",
+            "security_master_provider": "unit_fixture",
+            "daily_bar_provider": "unit_fixture",
+            "validation_policy_id": MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            "coverage_validation_policy_id": MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            "policy": parent_policy_dict,
+            "policy_fingerprint": parent_policy_fp,
+            "evidence_fingerprint": ev_fp,
+            "coverage_evidence_fingerprint": ev_fp,
+            "market_universe_snapshot_id": snap["snapshot_id"],
+            "market_universe_member_count": 20,
+            "persisted_bar_ready_count": 20,
+            "minimum_persisted_bar_ready_count": 20,
+            "latest_cross_section_row_count": 20,
+            "minimum_latest_cross_section_row_count": 20,
+            "full_market_history_frozen": True,
+            "blockers": [],
+            "full_market_partial_receipt_dates": [],
+            "full_market_missing_receipt_dates": [],
+            "full_market_uncovered_symbol_session_count": 0,
+            "full_market_missing_receipt_date_count": 0,
+            "full_market_daily_receipt_count": 5,
+        },
+    }
+    db.upsert_automation_run_sync(historical_row)
+
+    # 2. Call run_due under current service with panel_size=40:
+    # Must reject reusing the historical completion, re-evaluate coverage, and record a failed run!
+    run_result = service_40.run_due(now=t + timedelta(minutes=5))
+    assert run_result["status"] == "failed"
+    assert run_result["run_id"] != historical_run_id
+    p_result = json.loads(run_result["payload_json"])
+    assert "full_market_persisted_bar_coverage_incomplete" in p_result["blockers"]
+    assert "full_market_latest_cross_section_incomplete" in p_result["blockers"]
+    assert p_result.get("persisted_bar_ready_count") == 20
+    assert p_result.get("minimum_persisted_bar_ready_count") == 40
+    assert p_result.get("supersedes_run_id") == historical_run_id
+
+    # Verify historical completed row in DB remains completely untouched
+    orig = db.get_automation_run_sync(historical_run_id)
+    assert orig is not None
+    assert orig["status"] == "completed"
 
 
 def test_pending_blocked_run_reuse_rejects_cross_scope_ancestors_at_multiple_depths(

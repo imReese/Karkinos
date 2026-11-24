@@ -45,6 +45,14 @@ MARKET_UNIVERSE_COVERAGE_POLICY_ID = (
 )
 
 
+def automation_coverage_policy_dict(policy: MarketUniversePolicy) -> dict[str, Any]:
+    """Serialize MarketUniversePolicy binding explicit panel_size for automation."""
+    return {
+        **policy.to_dict(),
+        "panel_size": policy.panel_size,
+    }
+
+
 def check_receipts_session_coverage(
     *,
     trading_dates: Sequence[str],
@@ -186,6 +194,17 @@ def is_qualified_market_universe_coverage_run(
         and payload["coverage_validation_policy_id"] != expected_policy_id
     ):
         return False
+
+    rec_policy = payload.get("policy")
+    if rec_policy is not None:
+        if not isinstance(rec_policy, Mapping):
+            return False
+        try:
+            claimed_policy_fp = content_fingerprint(dict(rec_policy))
+        except Exception:
+            return False
+        if payload.get("policy_fingerprint") != claimed_policy_fp:
+            return False
     if payload.get("policy_fingerprint") != expected_policy_fingerprint:
         return False
 
@@ -248,18 +267,43 @@ def is_qualified_market_universe_coverage_run(
         return False
 
     if expected_panel_size is not None:
-        rec_policy = payload.get("policy")
         if not isinstance(rec_policy, Mapping):
             return False
-        if rec_policy.get("panel_size") != expected_panel_size:
+        rec_panel = rec_policy.get("panel_size")
+        if not isinstance(rec_panel, int) or isinstance(rec_panel, bool):
             return False
+        if rec_panel != expected_panel_size:
+            return False
+
         ready_count = _strict_non_negative_int(payload.get("persisted_bar_ready_count"))
-        if ready_count is None or ready_count < expected_panel_size:
-            return False
+        min_ready_count = _strict_non_negative_int(
+            payload.get("minimum_persisted_bar_ready_count")
+        )
         cross_count = _strict_non_negative_int(
             payload.get("latest_cross_section_row_count")
         )
-        if cross_count is None or cross_count < expected_panel_size:
+        min_cross_count = _strict_non_negative_int(
+            payload.get("minimum_latest_cross_section_row_count")
+        )
+        member_count = _strict_non_negative_int(
+            payload.get("market_universe_member_count")
+        )
+
+        calc_min_ready = max(
+            expected_panel_size,
+            int((member_count or 0) * 0.8) if member_count is not None else 0,
+        )
+        effective_min_ready = max(calc_min_ready, min_ready_count or 0)
+
+        calc_min_cross = max(
+            expected_panel_size,
+            int((member_count or 0) * 0.9) if member_count is not None else 0,
+        )
+        effective_min_cross = max(calc_min_cross, min_cross_count or 0)
+
+        if ready_count is None or ready_count < effective_min_ready:
+            return False
+        if cross_count is None or cross_count < effective_min_cross:
             return False
 
     return True
@@ -422,6 +466,25 @@ def _is_matching_pending_blocked_run(
         and payload.get("daily_bar_provider") != daily_provider_name
     ):
         return False
+    recorded_task_key = payload.get("task_key")
+    if recorded_task_key is not None:
+        if not isinstance(recorded_task_key, str) or not recorded_task_key.strip():
+            return False
+        parts = recorded_task_key.strip().split(":")
+        if len(parts) >= 4 and parts[0] == "market_universe_sync":
+            return False
+        if (
+            master_provider_name is not None
+            and len(parts) >= 2
+            and parts[1] != master_provider_name
+        ):
+            return False
+        if (
+            daily_provider_name is not None
+            and len(parts) >= 3
+            and parts[2] != daily_provider_name
+        ):
+            return False
     blockers = payload.get("blockers")
     if (
         not isinstance(blockers, (list, tuple))
@@ -946,7 +1009,9 @@ class MarketUniverseAutomationService:
             f"{master_provider_name}:{daily_provider_name}:{trade_date}"
         )
         validation_policy_id = MARKET_UNIVERSE_COVERAGE_POLICY_ID
-        policy_fingerprint = content_fingerprint(self._policy.to_dict())
+        policy_fingerprint = content_fingerprint(
+            automation_coverage_policy_dict(self._policy)
+        )
 
         start_date = _history_start(self._config, trade_date)
         trading_dates = verified_trading_dates(
@@ -1731,7 +1796,7 @@ class MarketUniverseAutomationService:
                 )
                 or "legacy_injected_source"
             ),
-            "policy": self._policy.to_dict(),
+            "policy": automation_coverage_policy_dict(self._policy),
             "asset_scope": ["stock"],
             "read_endpoints_contact_providers": False,
             "changes_account_truth": False,
