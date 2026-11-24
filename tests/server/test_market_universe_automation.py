@@ -979,3 +979,77 @@ def test_exact_completed_run_requires_qualification(tmp_path):
     assert result["status"] == "failed"
     assert result["run_id"] != target_run_id
     assert result["source_ref"] == target_run_id
+
+
+def test_absent_current_snapshot_or_receipts_cannot_reuse_completed_run(tmp_path):
+    """When a historical run is completed in DB, but the current data store is missing
+
+    the snapshot or daily receipts, run_due MUST NOT reuse the completed run.
+    Instead, it must re-verify and execute recovery.
+    """
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _verified_calendar(db)
+    intact_store = DataStore(tmp_path / "intact_market")
+    source = _Source()
+    dates = [
+        day.date().isoformat() for day in pd.bdate_range(end="2026-08-21", periods=80)
+    ]
+    for day in dates:
+        frame = source.fetch_market_daily_bars(day)
+        intact_store.ingest_market_daily_batch(
+            trade_date=day, provider_name="unit_fixture", bars=frame
+        )
+
+    intact_service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-04-01"
+        ),
+        data_store=intact_store,
+        source=source,
+    )
+    t1 = datetime(2026, 8, 23, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    res1 = intact_service.run_due(now=t1)
+    assert res1["status"] == "completed"
+    run_1_id = res1["run_id"]
+
+    # 1. Positive case: identical intact data store reuses the completed run idempotently
+    source.daily_calls.clear()
+    res1_reuse = intact_service.run_due(
+        now=datetime(2026, 8, 23, 10, 15, tzinfo=ZoneInfo("Asia/Shanghai"))
+    )
+    assert res1_reuse["run_id"] == run_1_id
+    assert res1_reuse["status"] == "completed"
+    assert len(source.daily_calls) == 0  # Zero provider calls on qualified reuse
+
+    # 2. Counterexample case: empty data store (simulating missing snapshot or wiped data directory)
+    # Even though DB contains the completed run_1_id, absent current proof must NOT qualify for reuse!
+    empty_store = DataStore(tmp_path / "empty_market")
+
+    class _FailingDailySource(_Source):
+        def fetch_market_daily_bars(self, trade_date: str) -> pd.DataFrame:
+            raise RuntimeError("provider_temporarily_unavailable")
+
+    failing_source = _FailingDailySource()
+    empty_service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-04-01"
+        ),
+        data_store=empty_store,
+        source=failing_source,
+    )
+
+    t2 = datetime(2026, 8, 23, 11, 5, tzinfo=ZoneInfo("Asia/Shanghai"))
+    res2 = empty_service.run_due(now=t2)
+
+    # Must NOT reuse run_1_id!
+    assert res2["run_id"] != run_1_id
+    # Must fail closed rather than claiming completed
+    assert res2["status"] == "failed"
+    # Original run_1_id in DB remains preserved immutably
+    orig_in_db = db.get_automation_run_sync(run_1_id)
+    assert orig_in_db is not None
+    assert orig_in_db["status"] == "completed"
+    assert orig_in_db["finished_at"] == t1.isoformat()

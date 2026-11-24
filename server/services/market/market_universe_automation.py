@@ -87,8 +87,14 @@ def is_qualified_market_universe_coverage_run(
 
     Avoids blindly trusting status == 'completed' without verifying the underlying
     validation policy identity, evidence completeness, and content fingerprint.
+    Both current verified snapshot identity and evidence fingerprint are strictly
+    required to be non-empty; if current evidence is absent, completion cannot be reused.
     """
     if str(existing.get("status") or "") != "completed":
+        return False
+    if not expected_snapshot_id or not expected_fingerprint:
+        return False
+    if not expected_policy_id or not expected_policy_fingerprint:
         return False
     payload = json.loads(str(existing.get("payload_json") or "{}"))
     if not isinstance(payload, Mapping):
@@ -97,12 +103,9 @@ def is_qualified_market_universe_coverage_run(
     policy_id = payload.get("validation_policy_id") or payload.get(
         "coverage_validation_policy_id"
     )
-    if expected_policy_id and policy_id != expected_policy_id:
+    if policy_id != expected_policy_id:
         return False
-    if (
-        expected_policy_fingerprint
-        and payload.get("policy_fingerprint") != expected_policy_fingerprint
-    ):
+    if payload.get("policy_fingerprint") != expected_policy_fingerprint:
         return False
     # 2. Evidence completeness: no partial dates, no missing symbols, frozen is True, no blockers
     if not payload.get("full_market_history_frozen"):
@@ -116,15 +119,12 @@ def is_qualified_market_universe_coverage_run(
     if int(payload.get("full_market_missing_receipt_date_count") or 0) > 0:
         return False
     # 3. Content identity & fingerprint: master snapshot and daily receipt evidence must match
-    if (
-        expected_snapshot_id
-        and payload.get("market_universe_snapshot_id") != expected_snapshot_id
-    ):
+    if payload.get("market_universe_snapshot_id") != expected_snapshot_id:
         return False
     existing_evidence_fp = payload.get("evidence_fingerprint") or payload.get(
         "coverage_evidence_fingerprint"
     )
-    if expected_fingerprint and existing_evidence_fp != expected_fingerprint:
+    if existing_evidence_fp != expected_fingerprint:
         return False
     return True
 
