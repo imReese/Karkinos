@@ -1688,9 +1688,23 @@ def test_allocation_after_second_collision_preserves_lineage(tmp_path):
     # Also verify task-identity isolation: a collision with an unrelated task key
     # does NOT replace the target predecessor.
     unrelated_task_key = "market_universe_sync:other:other:2026-08-21"
+    known_pred = "market_universe_sync:2026-08-21:my_pred"
+
+    # Pre-compute exact candidate 1 ID generated when colliding at base_id with known_pred
+    unrelated_cand_fp = content_fingerprint(
+        {
+            "initial_run_id": base_id,
+            "colliding_run_id": base_id,
+            "target_predecessor": known_pred,
+            "attempt": 1,
+            "started_at": t.isoformat(),
+        }
+    )
+    unrelated_cand_id = f"market_universe_sync:2026-08-21:{unrelated_cand_fp[:16]}"
+
     db.upsert_automation_run_sync(
         {
-            "run_id": cand_1_id,
+            "run_id": unrelated_cand_id,
             "run_type": "market_universe_sync",
             "run_date": "2026-08-23",
             "status": "failed",
@@ -1704,7 +1718,6 @@ def test_allocation_after_second_collision_preserves_lineage(tmp_path):
             },
         }
     )
-    known_pred = "market_universe_sync:2026-08-21:my_pred"
     run_isolated = service._record_run(
         run_id=base_id,
         run_date="2026-08-23",
@@ -1718,9 +1731,12 @@ def test_allocation_after_second_collision_preserves_lineage(tmp_path):
             "prior_run_id": known_pred,
         },
     )
+    assert run_isolated["run_id"] != base_id
+    assert run_isolated["run_id"] != unrelated_cand_id
+    assert run_isolated["source_ref"] == known_pred
     p_iso = json.loads(run_isolated["payload_json"])
     assert p_iso["supersedes_run_id"] == known_pred
-    assert run_isolated["source_ref"] == known_pred
+    assert p_iso["prior_run_id"] == known_pred
 
 
 def test_listing_inside_history_window_produces_fingerprint_and_reuses_completed(
@@ -2003,6 +2019,28 @@ def test_is_qualified_market_universe_coverage_run_strict_types():
         expected_fingerprint="ev_fp",
         expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
         expected_policy_fingerprint="p_fp",
+    )
+
+    # Disqualify if task_key does not match expected_task_key
+    p_bad_task_key = dict(base_payload, task_key="other_task_key")
+    assert not is_qualified_market_universe_coverage_run(
+        _make_run(p_bad_task_key),
+        expected_snapshot_id="snap_1",
+        expected_fingerprint="ev_fp",
+        expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+        expected_policy_fingerprint="p_fp",
+        expected_task_key="expected_task_key",
+    )
+
+    # Qualify if task_key matches expected_task_key
+    p_good_task_key = dict(base_payload, task_key="expected_task_key")
+    assert is_qualified_market_universe_coverage_run(
+        _make_run(p_good_task_key),
+        expected_snapshot_id="snap_1",
+        expected_fingerprint="ev_fp",
+        expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+        expected_policy_fingerprint="p_fp",
+        expected_task_key="expected_task_key",
     )
 
 

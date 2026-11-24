@@ -128,6 +128,7 @@ def is_qualified_market_universe_coverage_run(
     expected_fingerprint: str | None,
     expected_policy_id: str | None = None,
     expected_policy_fingerprint: str | None = None,
+    expected_task_key: str | None = None,
 ) -> bool:
     """Validate whether an existing completed run meets strict coverage qualifications.
 
@@ -149,6 +150,14 @@ def is_qualified_market_universe_coverage_run(
         return False
     if not isinstance(payload, Mapping):
         return False
+
+    if expected_task_key:
+        recorded_task_key = payload.get("task_key")
+        if (
+            not isinstance(recorded_task_key, str)
+            or recorded_task_key != expected_task_key
+        ):
+            return False
 
     def _strict_non_negative_int(val: Any) -> int | None:
         if isinstance(val, bool):
@@ -529,6 +538,7 @@ class MarketUniverseAutomationService:
                 expected_fingerprint=evidence_fingerprint,
                 expected_policy_id=validation_policy_id,
                 expected_policy_fingerprint=policy_fingerprint,
+                expected_task_key=task_key,
             ):
                 return existing
 
@@ -542,6 +552,7 @@ class MarketUniverseAutomationService:
                 expected_fingerprint=evidence_fingerprint,
                 expected_policy_id=validation_policy_id,
                 expected_policy_fingerprint=policy_fingerprint,
+                expected_task_key=task_key,
             ):
                 return prior_run
 
@@ -1151,13 +1162,14 @@ class MarketUniverseAutomationService:
         trade_scope = payload.get("trade_date") or run_date
         current_run_id = run_id
         initial_run_id = run_id
-        target_predecessor = (
+        verified_predecessor = (
             source_ref
             if source_ref and str(source_ref) != run_id
             else payload.get("supersedes_run_id") or payload.get("prior_run_id")
         )
-        if target_predecessor and str(target_predecessor) == run_id:
-            target_predecessor = None
+        if verified_predecessor and str(verified_predecessor) == run_id:
+            verified_predecessor = None
+        target_predecessor = verified_predecessor
 
         max_attempts = 10
         for attempt in range(max_attempts):
@@ -1198,6 +1210,7 @@ class MarketUniverseAutomationService:
                     expected_fingerprint=payload.get("evidence_fingerprint"),
                     expected_policy_id=payload.get("validation_policy_id"),
                     expected_policy_fingerprint=payload.get("policy_fingerprint"),
+                    expected_task_key=payload.get("task_key"),
                 )
             ):
                 return row
@@ -1218,19 +1231,15 @@ class MarketUniverseAutomationService:
                 row_task_key = None
 
             expected_task_key = payload.get("task_key")
-            is_same_task = bool(
-                not row_task_key
-                or not expected_task_key
-                or row_task_key == expected_task_key
-            )
+            if expected_task_key:
+                is_same_task = bool(
+                    isinstance(row_task_key, str) and row_task_key == expected_task_key
+                )
+            else:
+                is_same_task = bool(row_task_key is None)
+
             if is_same_task:
-                if attempt == 0:
-                    if (
-                        not target_predecessor
-                        or str(target_predecessor) == current_run_id
-                    ):
-                        target_predecessor = colliding_id
-                else:
+                if not verified_predecessor:
                     target_predecessor = colliding_id
 
             attempt_fp = content_fingerprint(
