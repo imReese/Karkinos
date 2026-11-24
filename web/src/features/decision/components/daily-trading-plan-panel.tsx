@@ -434,7 +434,7 @@ function TradingPlanCandidateSignals({
                       prefix={labels.riskGate}
                     />
                     {isHistorical ? (
-                      <span className="rounded bg-[var(--app-muted-bg)] px-1.5 py-0.5 text-xs font-medium text-[var(--app-muted)]">
+                      <span className="rounded border border-[var(--app-border)] bg-[var(--app-surface-raised)] px-1.5 py-0.5 text-xs font-medium text-[var(--app-text-tertiary)]">
                         {locale === 'zh'
                           ? `历史信号 ${signalDate ?? ''}`
                           : `Historical ${signalDate ?? ''}`}
