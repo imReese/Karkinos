@@ -121,6 +121,11 @@ def create_router() -> APIRouter:
                         None,
                     ),
                     background_schedule=background_schedule,
+                    schedule_state=getattr(
+                        state,
+                        "daily_candidate_schedule_state",
+                        None,
+                    ),
                 )
             ),
         ).summary()

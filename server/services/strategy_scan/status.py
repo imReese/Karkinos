@@ -18,6 +18,7 @@ def build_daily_candidate_runtime_status(
     config: Any,
     monitor_task: Any,
     background_schedule: dict[str, Any] | None,
+    schedule_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Project monitor liveness without claiming financial readiness."""
 
@@ -64,6 +65,7 @@ def build_daily_candidate_runtime_status(
         status = "monitor_running_waiting"
         next_safe_action = "keep_service_running_and_prepare_current_evidence"
 
+    state_info = schedule_state if isinstance(schedule_state, dict) else {}
     return {
         "schema_version": DAILY_CANDIDATE_RUNTIME_STATUS_SCHEMA_VERSION,
         "status": status,
@@ -85,6 +87,16 @@ def build_daily_candidate_runtime_status(
         "broker_submission_enabled": False,
         "authorizes_execution": False,
         "changes_capital_authority": False,
+        "last_poll_started_at": state_info.get("last_poll_started_at"),
+        "last_poll_finished_at": state_info.get("last_poll_finished_at"),
+        "last_successful_schedule_check_at": state_info.get(
+            "last_successful_schedule_check_at"
+        ),
+        "next_expected_check_at": state_info.get("next_expected_check_at"),
+        "current_stage": state_info.get("current_stage"),
+        "schedule_state": state_info,
+        "last_exception": state_info.get("last_exception"),
+        "last_exception_at": state_info.get("last_exception_at"),
         "limitations": [
             "Monitor liveness does not prove current Account Truth, market, strategy, fee, risk, or reconciliation readiness.",
             "This projection reads runtime task state and an existing persisted-only schedule projection; it performs no provider or broker call.",

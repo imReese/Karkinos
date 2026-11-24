@@ -6,7 +6,7 @@ import asyncio
 import logging
 import math
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from server.services.account.account_truth_replay import (
@@ -342,28 +342,71 @@ async def run_daily_decision_evidence_automation_loop(
         raise ValueError("daily decision evidence adapters must be supplied together")
     service: DailyDecisionEvidenceAutomationService | None = None
     current_time = clock or (lambda: datetime.now(timezone.utc))
+    schedule_state = getattr(state, "daily_candidate_schedule_state", None)
+    if not isinstance(schedule_state, dict):
+        schedule_state = {}
+        state.daily_candidate_schedule_state = schedule_state
     while True:
         await wait_for_release_activation(sleep=sleep)
+        poll_interval = _daily_decision_poll_interval_seconds(state, interval_seconds)
+        now_dt = current_time()
+        schedule_state["last_poll_started_at"] = now_dt.isoformat()
+        schedule_state["current_stage"] = "evaluating_schedule"
         try:
             schedule = project_daily_candidate_background_schedule(
                 db=state.db,
-                now=current_time(),
+                now=now_dt,
             )
-            if schedule["preparation_check_due"]:
-                roll_forward = await asyncio.to_thread(
-                    roll_forward_daily_broker_statement_for_state,
-                    state=state,
-                    run_date=str(schedule["run_date"]),
+            previous_status = schedule_state.get("latest_schedule_status")
+            schedule_status = str(schedule.get("status") or "unknown")
+            schedule_state["last_successful_schedule_check_at"] = now_dt.isoformat()
+            schedule_state["latest_schedule_status"] = schedule_status
+            schedule_state["latest_schedule_due"] = bool(schedule.get("due"))
+            schedule_state["latest_schedule_blockers"] = list(
+                schedule.get("blockers") or []
+            )
+            schedule_state["run_date"] = schedule.get("run_date")
+            if previous_status != schedule_status:
+                logger.info(
+                    "Daily candidate schedule transition: %s -> %s (run_date=%s, due=%s, blockers=%s)",
+                    previous_status,
+                    schedule_status,
+                    schedule.get("run_date"),
+                    schedule.get("due"),
+                    schedule.get("blockers"),
+                )
+            if schedule.get("preparation_check_due"):
+                schedule_state["current_stage"] = "preparation_check"
+                logger.info(
+                    "Daily candidate preparation check due for %s; rolling forward broker statement",
+                    schedule["run_date"],
+                )
+                roll_forward = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        roll_forward_daily_broker_statement_for_state,
+                        state=state,
+                        run_date=str(schedule["run_date"]),
+                    ),
+                    timeout=30.0,
                 )
                 # A changed file must first pass the independent collector's
                 # stability delay and canonical staging.  Leave the once-only
                 # preparation claim open until the next polling iteration.
                 if roll_forward.status != "rolled_forward":
+                    logger.info(
+                        "Running claimed daily candidate preparation check for %s",
+                        schedule["run_date"],
+                    )
                     await _run_claimed_daily_candidate_preparation_check(
                         state=state,
                         schedule=schedule,
                     )
-            if schedule["due"]:
+            if schedule.get("due"):
+                schedule_state["current_stage"] = "decision_attempt"
+                logger.info(
+                    "Daily candidate decision window open for %s; claiming background attempt",
+                    schedule["run_date"],
+                )
                 if service is None:
                     if plan_reader is None:
                         # Backward-compatible seam for tests that replace the
@@ -378,17 +421,41 @@ async def run_daily_decision_evidence_automation_loop(
                             risk_runner=risk_runner,  # type: ignore[arg-type]
                             quote_refresher=quote_refresher,  # type: ignore[arg-type]
                         )
-                await _run_claimed_background_attempt(
-                    db=state.db,
-                    service=service,
-                    schedule=schedule,
-                    clock=current_time,
+                schedule_state["latest_attempt_claimed_at"] = now_dt.isoformat()
+                await asyncio.wait_for(
+                    _run_claimed_background_attempt(
+                        db=state.db,
+                        service=service,
+                        schedule=schedule,
+                        clock=current_time,
+                    ),
+                    timeout=300.0,
+                )
+            elif schedule_status == "missed_decision_window" and schedule_state.get(
+                "missed_window_logged_date"
+            ) != schedule.get("run_date"):
+                schedule_state["missed_window_logged_date"] = schedule.get("run_date")
+                logger.warning(
+                    "Daily candidate decision window missed for %s (evaluated_at=%s, blockers=%s)",
+                    schedule.get("run_date"),
+                    schedule.get("evaluated_at"),
+                    schedule.get("blockers"),
                 )
         except asyncio.CancelledError:
+            schedule_state["current_stage"] = "cancelled"
             raise
-        except Exception:
+        except Exception as exc:
+            schedule_state["last_exception"] = type(exc).__name__
+            schedule_state["last_exception_message"] = str(exc)
+            schedule_state["last_exception_at"] = current_time().isoformat()
+            schedule_state["current_stage"] = "failed_iteration"
             logger.exception("Unexpected daily decision evidence automation failure")
-        await sleep(_daily_decision_poll_interval_seconds(state, interval_seconds))
+        schedule_state["last_poll_finished_at"] = current_time().isoformat()
+        schedule_state["current_stage"] = "sleeping"
+        schedule_state["next_expected_check_at"] = (
+            current_time() + timedelta(seconds=poll_interval)
+        ).isoformat()
+        await sleep(poll_interval)
 
 
 def _daily_decision_poll_interval_seconds(
