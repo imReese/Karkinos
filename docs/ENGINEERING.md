@@ -44,6 +44,15 @@ Persisted financial-state changes require:
 - migration/replay coverage when material;
 - no invented financial facts during reads.
 
+### Version governance and cache invalidation
+
+- Prohibit incrementing version numbers (schema versions, run ID version prefixes, or payload versions) as a shortcut for cache invalidation, task re-runs, or stale record rejection.
+- Product releases are governed solely by Git tags (`v*`).
+- Schema versions are reserved for genuine, incompatible changes to persisted data contracts; do not increment schema versions for bug fixes or internal logic refinements.
+- Preserve historical audit runs, snapshots, and evidence records immutably without altering their readability or compatibility.
+- Cache invalidation and task reuse must rely on explicit validation policy identities (`validation_policy_id`), content fingerprints (`content_fingerprint`), and domain evidence qualification checks.
+- Name test functions, modules, and commit titles by stable business behavior rather than transient versions (e.g., avoid `v7`/`v8` in names).
+
 ## 3. Refactoring
 
 ```text

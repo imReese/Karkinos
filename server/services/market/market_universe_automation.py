@@ -36,9 +36,89 @@ from server.services.market.market_universe_truth import (
 logger = logging.getLogger(__name__)
 
 MARKET_UNIVERSE_AUTOMATION_SCHEMA_PREFIX = "karkinos.market_universe_automation."
-MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION = "karkinos.market_universe_automation.v8"
+MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION = "karkinos.market_universe_automation.v7"
 MARKET_UNIVERSE_AUTOMATION_RUN_TYPE = "market_universe_sync"
 MARKET_UNIVERSE_AUTOMATION_INTERVAL_SECONDS = 60 * 60
+MARKET_UNIVERSE_COVERAGE_POLICY_ID = (
+    "karkinos.market_universe_coverage.strict_per_symbol.v1"
+)
+
+
+def compute_market_coverage_evidence_fingerprint(
+    *,
+    snapshot_id: str,
+    trading_dates: Sequence[str],
+    receipts: Sequence[Mapping[str, Any]],
+) -> str:
+    """Deterministic content fingerprint binding master snapshot and daily bar receipts."""
+    from server.ai_runtime.contracts import content_fingerprint
+
+    receipt_cores = [
+        {
+            "trade_date": str(r.get("trade_date")),
+            "provider_name": str(r.get("provider_name")),
+            "row_count": int(r.get("row_count") or 0),
+            "dataset_fingerprint": str(r.get("dataset_fingerprint") or ""),
+            "receipt_fingerprint": str(r.get("receipt_fingerprint") or ""),
+        }
+        for r in receipts
+        if str(r.get("trade_date")) in trading_dates
+    ]
+    return content_fingerprint(
+        {
+            "policy_id": MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            "snapshot_id": snapshot_id,
+            "trading_dates": sorted(trading_dates),
+            "receipts": receipt_cores,
+        }
+    )
+
+
+def is_qualified_market_universe_coverage_run(
+    existing: Mapping[str, Any],
+    *,
+    expected_snapshot_id: str | None,
+    expected_fingerprint: str | None,
+) -> bool:
+    """Validate whether an existing completed run meets strict coverage qualifications.
+
+    Avoids blindly trusting status == 'completed' without verifying the underlying
+    validation policy identity, evidence completeness, and content fingerprint.
+    """
+    if str(existing.get("status") or "") != "completed":
+        return False
+    payload = json.loads(str(existing.get("payload_json") or "{}"))
+    if not isinstance(payload, Mapping):
+        return False
+    # 1. Validation policy identity: must be produced under strict per-symbol coverage
+    if (
+        payload.get("coverage_validation_policy_id")
+        != MARKET_UNIVERSE_COVERAGE_POLICY_ID
+    ):
+        return False
+    # 2. Evidence completeness: no partial dates, no missing symbols, frozen is True, no blockers
+    if not payload.get("full_market_history_frozen"):
+        return False
+    if payload.get("blockers"):
+        return False
+    if payload.get("full_market_partial_receipt_dates"):
+        return False
+    if int(payload.get("full_market_uncovered_symbol_session_count") or 0) > 0:
+        return False
+    if int(payload.get("full_market_missing_receipt_date_count") or 0) > 0:
+        return False
+    # 3. Content identity & fingerprint: master snapshot and daily receipt evidence must match
+    if (
+        expected_snapshot_id
+        and payload.get("market_universe_snapshot_id") != expected_snapshot_id
+    ):
+        return False
+    if (
+        expected_fingerprint
+        and payload.get("coverage_evidence_fingerprint") != expected_fingerprint
+    ):
+        return False
+    return True
 
 
 def validate_market_universe_automation_payload(
@@ -162,13 +242,50 @@ class MarketUniverseAutomationService:
                     "retryable": True,
                 },
             )
+        start_date = _history_start(self._config, trade_date)
         run_id = (
-            "market_universe_sync:v8:"
+            "market_universe_sync:v7:"
             f"{master_provider_name}:{daily_provider_name}:{trade_date}"
         )
         existing = self._db.get_automation_run_sync(run_id)
         if existing and str(existing.get("status")) == "completed":
-            return existing
+            payload = json.loads(existing.get("payload_json") or "{}")
+            previous_master = payload.get("market_universe_snapshot_id")
+            latest_master = self._data_store.get_market_universe_snapshot(
+                trade_date=trade_date, provider_name=master_provider_name
+            )
+            repaired_master = bool(
+                latest_master
+                and latest_master.get("source_capture_ids")
+                and latest_master.get("snapshot_id") != previous_master
+            )
+            trading_dates = verified_trading_dates(
+                self._db,
+                start_date=start_date.isoformat(),
+                end_date=trade_date,
+            )
+            current_receipts = self._data_store.list_market_daily_ingestion_receipts(
+                start_date=start_date.isoformat(),
+                end_date=trade_date,
+                provider_name=daily_provider_name,
+            )
+            current_fingerprint = (
+                compute_market_coverage_evidence_fingerprint(
+                    snapshot_id=str(previous_master or ""),
+                    trading_dates=trading_dates,
+                    receipts=current_receipts,
+                )
+                if previous_master
+                else None
+            )
+            if not repaired_master and is_qualified_market_universe_coverage_run(
+                existing,
+                expected_snapshot_id=str(latest_master.get("snapshot_id") or "")
+                if latest_master
+                else None,
+                expected_fingerprint=current_fingerprint,
+            ):
+                return existing
         if existing and str(existing.get("status")) == "failed":
             payload = json.loads(existing.get("payload_json") or "{}")
             previous_master = payload.get("market_universe_snapshot_id")
@@ -406,6 +523,7 @@ class MarketUniverseAutomationService:
                 trading_dates=trading_dates,
                 members=members,
                 member_metadata=snapshot.get("member_metadata") or [],
+                snapshot_id=snapshot.get("snapshot_id"),
             )
             blockers = coverage["blockers"]
             status = "completed" if not blockers else "failed"
@@ -416,6 +534,7 @@ class MarketUniverseAutomationService:
                 now=current,
                 payload={
                     **self._base_payload(master_provider_name, daily_provider_name),
+                    "coverage_validation_policy_id": MARKET_UNIVERSE_COVERAGE_POLICY_ID,
                     "trade_date": trade_date,
                     "market_universe_snapshot_id": snapshot["snapshot_id"],
                     "market_universe_member_count": snapshot["member_count"],
@@ -477,6 +596,7 @@ class MarketUniverseAutomationService:
         trading_dates,
         members,
         member_metadata=(),
+        snapshot_id=None,
     ):
         receipts = self._data_store.list_market_daily_ingestion_receipts(
             start_date=start_date.isoformat(),
@@ -554,6 +674,13 @@ class MarketUniverseAutomationService:
             "minimum_latest_cross_section_row_count": minimum_end_cross_section_count,
             "full_market_history_frozen": not missing_receipt_dates
             and not partial_dates,
+            "coverage_evidence_fingerprint": compute_market_coverage_evidence_fingerprint(
+                snapshot_id=str(snapshot_id or ""),
+                trading_dates=trading_dates,
+                receipts=receipts,
+            )
+            if snapshot_id
+            else None,
             "blockers": blockers,
             "retryable": bool(blockers),
         }

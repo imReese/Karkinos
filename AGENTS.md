@@ -66,6 +66,8 @@ Current scope and frozen areas belong only to `docs/PLAN.md`.
 
 When a repository-wide rule can be checked reliably, prefer enforcing it through linting, type checking, architecture checks, or CI rather than adding more prose rules.
 
+Never increment version numbers (such as schema versions, run ID version prefixes, or payload versions) to solve cache invalidation, task re-runs, or stale record reuse. Use explicit validation policy identities, content fingerprints, and evidence qualification checks instead. Product releases are managed strictly by Git tags (`v*`). Schema versions manage genuine data contract compatibility only and must never be bumped for ordinary bug fixes or cache busting. Preserve historical execution records, audit runs, and evidence immutably; never break older evidence readability or compatibility. Test functions, modules, and commit titles must use stable domain and business behavior naming rather than transient version identifiers (e.g. avoid `v7`/`v8`).
+
 ## 4. Prefer established designs
 
 For substantial quantitative-domain or architecture work, consult `docs/REFERENCES.md` before inventing a Karkinos-specific concept.

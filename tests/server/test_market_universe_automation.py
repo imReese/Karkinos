@@ -401,8 +401,10 @@ def test_subtle_single_symbol_omission_cannot_freeze_full_market_history(tmp_pat
     assert "full_market_daily_symbol_coverage_unverified" in payload["blockers"]
 
 
-def test_stale_retired_v7_completed_run_not_reused_under_v8(tmp_path):
-    """A completed v7 run produced under retired 85% rule is not reused; v8 strictly evaluates and is idempotent."""
+def test_unqualified_completed_market_run_disqualified_and_reverified_under_strict_policy(
+    tmp_path,
+):
+    """A completed run lacking strict validation policy identity is disqualified and re-evaluated strictly."""
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     _verified_calendar(db)
@@ -420,9 +422,9 @@ def test_stale_retired_v7_completed_run_not_reused_under_v8(tmp_path):
             trade_date=day, provider_name="unit_fixture", bars=frame
         )
 
-    # Seed stale v7 completed run in db
-    v7_run_id = "market_universe_sync:v7:unit_fixture:unit_fixture:2026-08-21"
-    v7_payload = {
+    # Seed stale completed run in db that lacks strict validation policy identity
+    sync_run_id = "market_universe_sync:v7:unit_fixture:unit_fixture:2026-08-21"
+    stale_payload = {
         "schema_version": "karkinos.market_universe_automation.v7",
         "trigger": "scheduled_after_close",
         "security_master_provider": "unit_fixture",
@@ -436,14 +438,14 @@ def test_stale_retired_v7_completed_run_not_reused_under_v8(tmp_path):
     }
     db.upsert_automation_run_sync(
         {
-            "run_id": v7_run_id,
+            "run_id": sync_run_id,
             "run_type": "market_universe_sync",
             "run_date": "2026-08-21",
             "status": "completed",
             "execution_mode": "read_only_research",
             "started_at": "2026-08-23T10:00:00+08:00",
             "finished_at": "2026-08-23T10:05:00+08:00",
-            "payload": v7_payload,
+            "payload": stale_payload,
         }
     )
 
@@ -461,24 +463,19 @@ def test_stale_retired_v7_completed_run_not_reused_under_v8(tmp_path):
     )
     payload = json.loads(result["payload_json"])
 
-    # 1. New v8 run evaluated under strict identity rather than reusing stale v7
+    # 1. Existing completed run disqualified due to missing strict policy identity; re-evaluates and fails
     assert (
         result["run_id"]
-        == "market_universe_sync:v8:unit_fixture:unit_fixture:2026-08-21"
+        == "market_universe_sync:v7:unit_fixture:unit_fixture:2026-08-21"
     )
-    assert payload["schema_version"] == "karkinos.market_universe_automation.v8"
+    assert payload["schema_version"] == "karkinos.market_universe_automation.v7"
     assert result["status"] == "failed"
     assert payload["full_market_history_frozen"] is False
     assert payload["full_market_partial_receipt_dates"] == [partial_day]
     assert payload["full_market_uncovered_symbol_session_count"] == 1
     assert "full_market_daily_symbol_coverage_unverified" in payload["blockers"]
 
-    # 2. Old v7 record preserved in db without modification or deletion
-    preserved_v7 = db.get_automation_run_sync(v7_run_id)
-    assert preserved_v7 is not None
-    assert preserved_v7["status"] == "completed"
-
-    # 3. Test valid v8 completion and idempotency on complete data store
+    # 2. Test valid completion with policy identity and idempotency on complete data store
     complete_db = AppDatabase(tmp_path / "complete_app.db")
     complete_db.init_sync()
     _verified_calendar(complete_db)
@@ -502,11 +499,18 @@ def test_stale_retired_v7_completed_run_not_reused_under_v8(tmp_path):
     )
     assert res1["status"] == "completed"
     assert (
-        res1["run_id"] == "market_universe_sync:v8:unit_fixture:unit_fixture:2026-08-21"
+        res1["run_id"] == "market_universe_sync:v7:unit_fixture:unit_fixture:2026-08-21"
     )
-    assert json.loads(res1["payload_json"])["full_market_history_frozen"] is True
+    res1_payload = json.loads(res1["payload_json"])
+    assert res1_payload["schema_version"] == "karkinos.market_universe_automation.v7"
+    assert (
+        res1_payload["coverage_validation_policy_id"]
+        == "karkinos.market_universe_coverage.strict_per_symbol.v1"
+    )
+    assert res1_payload["full_market_history_frozen"] is True
+    assert bool(res1_payload.get("coverage_evidence_fingerprint")) is True
 
-    # Subsequent run_due returns the completed v8 run idempotently
+    # Subsequent run_due returns the completed run idempotently via evidence qualification
     res2 = complete_service.run_due(
         now=datetime(2026, 8, 23, 11, tzinfo=ZoneInfo("Asia/Shanghai"))
     )
