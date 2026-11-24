@@ -2304,6 +2304,66 @@ def test_find_prior_run_and_run_due_rejects_contradictory_historical_predecessor
     assert found["run_id"] == "valid_older_predecessor"
 
 
+def test_ancestor_chain_traversal_supports_deep_acyclic_chains_beyond_ten_links(
+    tmp_path,
+):
+    """validate_run_predecessor_ancestry traverses acyclic predecessor chains beyond ten links without artificial limits."""
+    from server.services.market.market_universe_automation import (
+        find_prior_market_universe_run,
+        validate_run_predecessor_ancestry,
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    task_key = "market_universe_sync:unit_fixture:unit_fixture:2026-08-21"
+    trade_date = "2026-08-21"
+
+    # Chain 13 runs: run_00 (root) through run_12 (depth 12 > 10)
+    for i in range(13):
+        pred_id = f"run_{i - 1:02d}" if i > 0 else None
+        db.upsert_automation_run_sync(
+            {
+                "run_id": f"run_{i:02d}",
+                "run_type": "market_universe_sync",
+                "run_date": "2026-08-21",
+                "status": "failed",
+                "execution_mode": "market_data_ingestion",
+                "started_at": f"2026-08-21T10:{i:02d}:00+08:00",
+                "payload": {
+                    "task_key": task_key,
+                    "trade_date": trade_date,
+                    "security_master_provider": "unit_fixture",
+                    "daily_bar_provider": "unit_fixture",
+                    "supersedes_run_id": pred_id,
+                    "prior_run_id": pred_id,
+                },
+            }
+        )
+
+    row_12 = db.get_automation_run_sync("run_12")
+    assert row_12 is not None
+    is_valid, pred = validate_run_predecessor_ancestry(
+        row_12,
+        db=db,
+        task_key=task_key,
+        trade_date=trade_date,
+        master_provider_name="unit_fixture",
+        daily_provider_name="unit_fixture",
+    )
+    assert is_valid is True
+    assert pred == "run_11"
+
+    prior = find_prior_market_universe_run(
+        db,
+        task_key=task_key,
+        trade_date=trade_date,
+        master_provider_name="unit_fixture",
+        daily_provider_name="unit_fixture",
+    )
+    assert prior is not None
+    assert prior["run_id"] == "run_12"
+
+
 def test_production_run_due_rejects_contradictory_completed_and_recovers_from_self_linked_failure(
     tmp_path,
 ):
@@ -2400,7 +2460,41 @@ def test_production_run_due_rejects_contradictory_completed_and_recovers_from_se
     assert p_run.get("supersedes_run_id") != self_linked_id
     assert p_run.get("prior_run_id") != self_linked_id
 
-    # Part 3: Failure under superseded policy identity/fingerprint must NOT suppress execution under new policy
+    # Part 3: Failure under identical policy throttles, while superseded policy allows fresh execution
+    evidence_fp = p1["evidence_fingerprint"]
+    snapshot_id = p1["market_universe_snapshot_id"]
+    throttled_fail_id = "market_universe_sync:2026-08-21:matching_policy_fail"
+    db.upsert_automation_run_sync(
+        {
+            "run_id": throttled_fail_id,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-21",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": (t + timedelta(hours=2)).isoformat(),
+            "finished_at": (t + timedelta(hours=2)).isoformat(),
+            "payload": {
+                "schema_version": "karkinos.market_universe_automation.v7",
+                "task_key": task_key,
+                "trade_date": trade_date,
+                "security_master_provider": "unit_fixture",
+                "daily_bar_provider": "unit_fixture",
+                "validation_policy_id": val_policy_id,
+                "coverage_validation_policy_id": val_policy_id,
+                "policy_fingerprint": policy_fp,
+                "evidence_fingerprint": evidence_fp,
+                "coverage_evidence_fingerprint": evidence_fp,
+                "market_universe_snapshot_id": snapshot_id,
+                "retryable": False,
+            },
+        }
+    )
+    # When policy and evidence match unretryable failure, run_due is throttled
+    run_throttled = service.run_due(now=t + timedelta(hours=2, minutes=1))
+    assert run_throttled["status"] == "failed"
+    assert run_throttled["run_id"] == throttled_fail_id
+
+    # When policy changes, identical evidence does NOT suppress execution
     superseded_fail_id = "market_universe_sync:2026-08-21:superseded_policy_fail"
     db.upsert_automation_run_sync(
         {
@@ -2409,8 +2503,8 @@ def test_production_run_due_rejects_contradictory_completed_and_recovers_from_se
             "run_date": "2026-08-21",
             "status": "failed",
             "execution_mode": "market_data_ingestion",
-            "started_at": t.isoformat(),
-            "finished_at": t.isoformat(),
+            "started_at": (t + timedelta(hours=2, minutes=5)).isoformat(),
+            "finished_at": (t + timedelta(hours=2, minutes=5)).isoformat(),
             "payload": {
                 "schema_version": "karkinos.market_universe_automation.v7",
                 "task_key": task_key,
@@ -2419,11 +2513,14 @@ def test_production_run_due_rejects_contradictory_completed_and_recovers_from_se
                 "daily_bar_provider": "unit_fixture",
                 "validation_policy_id": "superseded_policy_v0",
                 "policy_fingerprint": "superseded_fingerprint_00",
+                "evidence_fingerprint": evidence_fp,
+                "coverage_evidence_fingerprint": evidence_fp,
+                "market_universe_snapshot_id": snapshot_id,
                 "retryable": False,
             },
         }
     )
-    run_policy_change = service.run_due(now=t + timedelta(hours=2))
+    run_policy_change = service.run_due(now=t + timedelta(hours=2, minutes=10))
     assert run_policy_change["status"] == "completed"
     assert run_policy_change["run_id"] != superseded_fail_id
 
