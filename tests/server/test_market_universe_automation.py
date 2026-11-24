@@ -2494,6 +2494,70 @@ def test_production_run_due_rejects_contradictory_completed_and_recovers_from_se
     assert run_throttled["status"] == "failed"
     assert run_throttled["run_id"] == throttled_fail_id
 
+    # Part 3b: Conflicting coverage policy alias does NOT suppress retry
+    conflicting_policy_fail_id = (
+        "market_universe_sync:2026-08-21:conflicting_policy_fail"
+    )
+    db.upsert_automation_run_sync(
+        {
+            "run_id": conflicting_policy_fail_id,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-21",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": (t + timedelta(hours=2, minutes=3)).isoformat(),
+            "finished_at": (t + timedelta(hours=2, minutes=3)).isoformat(),
+            "payload": {
+                "schema_version": "karkinos.market_universe_automation.v7",
+                "task_key": task_key,
+                "trade_date": trade_date,
+                "security_master_provider": "unit_fixture",
+                "daily_bar_provider": "unit_fixture",
+                "validation_policy_id": val_policy_id,
+                "coverage_validation_policy_id": "conflicting_policy_v0",
+                "policy_fingerprint": policy_fp,
+                "evidence_fingerprint": evidence_fp,
+                "coverage_evidence_fingerprint": evidence_fp,
+                "market_universe_snapshot_id": snapshot_id,
+                "retryable": False,
+            },
+        }
+    )
+    run_conflicting_policy = service.run_due(now=t + timedelta(hours=2, minutes=4))
+    assert run_conflicting_policy["status"] == "completed"
+    assert run_conflicting_policy["run_id"] != conflicting_policy_fail_id
+
+    # Part 3c: Conflicting coverage evidence alias does NOT suppress retry
+    conflicting_ev_fail_id = "market_universe_sync:2026-08-21:conflicting_ev_fail"
+    db.upsert_automation_run_sync(
+        {
+            "run_id": conflicting_ev_fail_id,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-21",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": (t + timedelta(hours=2, minutes=5)).isoformat(),
+            "finished_at": (t + timedelta(hours=2, minutes=5)).isoformat(),
+            "payload": {
+                "schema_version": "karkinos.market_universe_automation.v7",
+                "task_key": task_key,
+                "trade_date": trade_date,
+                "security_master_provider": "unit_fixture",
+                "daily_bar_provider": "unit_fixture",
+                "validation_policy_id": val_policy_id,
+                "coverage_validation_policy_id": val_policy_id,
+                "policy_fingerprint": policy_fp,
+                "evidence_fingerprint": evidence_fp,
+                "coverage_evidence_fingerprint": "conflicting_evidence_fingerprint_old",
+                "market_universe_snapshot_id": snapshot_id,
+                "retryable": False,
+            },
+        }
+    )
+    run_conflicting_ev = service.run_due(now=t + timedelta(hours=2, minutes=6))
+    assert run_conflicting_ev["status"] == "completed"
+    assert run_conflicting_ev["run_id"] != conflicting_ev_fail_id
+
     # When policy changes, identical evidence does NOT suppress execution
     superseded_fail_id = "market_universe_sync:2026-08-21:superseded_policy_fail"
     db.upsert_automation_run_sync(
@@ -2503,8 +2567,8 @@ def test_production_run_due_rejects_contradictory_completed_and_recovers_from_se
             "run_date": "2026-08-21",
             "status": "failed",
             "execution_mode": "market_data_ingestion",
-            "started_at": (t + timedelta(hours=2, minutes=5)).isoformat(),
-            "finished_at": (t + timedelta(hours=2, minutes=5)).isoformat(),
+            "started_at": (t + timedelta(hours=2, minutes=7)).isoformat(),
+            "finished_at": (t + timedelta(hours=2, minutes=7)).isoformat(),
             "payload": {
                 "schema_version": "karkinos.market_universe_automation.v7",
                 "task_key": task_key,
@@ -2850,3 +2914,280 @@ def test_market_universe_automation_requires_atomic_inserter(tmp_path):
             data_store=DataStore(tmp_path / "market"),
             source=_Source(),
         )
+
+
+def test_historical_legacy_fixture_reuse_and_collision_consistency_preserves_lineage(
+    tmp_path,
+):
+    """Historical keyless legacy runs qualify consistently across discovery, reuse, and collision handling."""
+    from server.services.market.market_universe_automation import (
+        find_prior_market_universe_run,
+        market_universe_legacy_candidate_ids,
+        validate_run_predecessor_ancestry,
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    trade_date = "2026-08-21"
+    master_provider = "unit_fixture"
+    daily_provider = "unit_fixture"
+    task_key = f"market_universe_sync:{master_provider}:{daily_provider}:{trade_date}"
+    legacy_ids = market_universe_legacy_candidate_ids(
+        master_provider, daily_provider, trade_date, task_key
+    )
+
+    # Seed historical v7 keyless root with scope fields
+    v7_root_id = (
+        f"market_universe_sync:v7:{master_provider}:{daily_provider}:{trade_date}"
+    )
+    t_v7 = datetime(2026, 8, 20, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    db.upsert_automation_run_sync(
+        {
+            "run_id": v7_root_id,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-20",
+            "status": "completed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": t_v7.isoformat(),
+            "finished_at": t_v7.isoformat(),
+            "payload": {
+                "schema_version": "karkinos.market_universe_automation.v7",
+                "trade_date": trade_date,
+                "security_master_provider": master_provider,
+                "daily_bar_provider": daily_provider,
+                "supersedes_run_id": None,
+                "prior_run_id": None,
+            },
+        }
+    )
+
+    # Seed child run pointing to v7_root_id
+    child_id = "market_universe_sync:2026-08-21:child_of_v7"
+    t_child = datetime(2026, 8, 21, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    child_payload = {
+        "task_key": task_key,
+        "trade_date": trade_date,
+        "security_master_provider": master_provider,
+        "daily_bar_provider": daily_provider,
+        "validation_policy_id": "market_universe_coverage:v1",
+        "coverage_validation_policy_id": "market_universe_coverage:v1",
+        "policy_fingerprint": "p_fp_01",
+        "evidence_fingerprint": "ev_fp_01",
+        "coverage_evidence_fingerprint": "ev_fp_01",
+        "market_universe_snapshot_id": "snap_01",
+        "supersedes_run_id": v7_root_id,
+        "prior_run_id": v7_root_id,
+        "full_market_daily_receipt_count": 5,
+        "full_market_missing_receipt_date_count": 0,
+        "full_market_partial_receipt_date_count": 0,
+        "persisted_bar_ready_count": 5000,
+        "minimum_persisted_bar_ready_count": 100,
+        "latest_cross_section_row_count": 5000,
+        "minimum_latest_cross_section_row_count": 100,
+        "full_market_history_frozen": True,
+        "blockers": [],
+        "full_market_partial_receipt_dates": [],
+        "full_market_missing_receipt_dates": [],
+        "full_market_uncovered_symbol_session_count": 0,
+    }
+    db.upsert_automation_run_sync(
+        {
+            "run_id": child_id,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-21",
+            "status": "completed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": t_child.isoformat(),
+            "finished_at": t_child.isoformat(),
+            "source_ref": v7_root_id,
+            "payload": child_payload,
+        }
+    )
+
+    # 1. find_prior_market_universe_run must find child_id
+    prior = find_prior_market_universe_run(
+        db,
+        task_key=task_key,
+        trade_date=trade_date,
+        master_provider_name=master_provider,
+        daily_provider_name=daily_provider,
+        legacy_candidate_ids=legacy_ids,
+    )
+    assert prior is not None
+    assert prior["run_id"] == child_id
+
+    # 2. validate_run_predecessor_ancestry must validate child_id's ancestry through v7_root_id
+    is_valid, pred = validate_run_predecessor_ancestry(
+        db.get_automation_run_sync(child_id),
+        db=db,
+        task_key=task_key,
+        trade_date=trade_date,
+        master_provider_name=master_provider,
+        daily_provider_name=daily_provider,
+        legacy_candidate_ids=legacy_ids,
+    )
+    assert is_valid is True
+    assert pred == v7_root_id
+
+    # 3. Collision handling in service._record_run must reuse the qualified completion
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-04-01"
+        ),
+        data_store=DataStore(tmp_path / "market"),
+        source=_Source(),
+    )
+    recorded = service._record_run(
+        run_id=child_id,
+        run_date="2026-08-21",
+        status="completed",
+        now=t_child + timedelta(minutes=5),
+        payload=child_payload,
+    )
+    assert recorded["run_id"] == child_id
+
+    # Verify original historical v7 row remains completely untouched
+    orig_v7 = db.get_automation_run_sync(v7_root_id)
+    assert orig_v7 is not None
+    assert orig_v7["started_at"] == t_v7.isoformat()
+
+
+def test_ancestor_scope_validation_rejects_explicit_conflicts_and_foreign_run_types(
+    tmp_path,
+):
+    """validate_run_predecessor_ancestry rejects explicit date/provider conflicts and foreign run types."""
+    from server.services.market.market_universe_automation import (
+        find_prior_market_universe_run,
+        validate_run_predecessor_ancestry,
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    task_key = "market_universe_sync:unit_fixture:unit_fixture:2026-08-21"
+    trade_date = "2026-08-21"
+    master_provider = "unit_fixture"
+    daily_provider = "unit_fixture"
+
+    # Seed ancestor with matching task key but conflicting trade_date (Aug 20 vs Aug 21)
+    db.upsert_automation_run_sync(
+        {
+            "run_id": "anc_conflict_date",
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-20",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": "2026-08-20T10:00:00+08:00",
+            "payload": {
+                "task_key": task_key,
+                "trade_date": "2026-08-20",  # Explicit conflict with 2026-08-21!
+                "security_master_provider": master_provider,
+                "daily_bar_provider": daily_provider,
+            },
+        }
+    )
+    child_bad_date = {
+        "run_id": "child_conflict_date",
+        "payload": {
+            "task_key": task_key,
+            "supersedes_run_id": "anc_conflict_date",
+            "prior_run_id": "anc_conflict_date",
+        },
+    }
+    is_valid, _ = validate_run_predecessor_ancestry(
+        child_bad_date,
+        db=db,
+        task_key=task_key,
+        trade_date=trade_date,
+        master_provider_name=master_provider,
+        daily_provider_name=daily_provider,
+    )
+    assert not is_valid
+
+    # Seed foreign run type at legacy ID
+    legacy_v7_id = (
+        f"market_universe_sync:v7:{master_provider}:{daily_provider}:{trade_date}"
+    )
+    db.upsert_automation_run_sync(
+        {
+            "run_id": legacy_v7_id,
+            "run_type": "forward_seed_preparation",  # Foreign run type!
+            "run_date": "2026-08-21",
+            "status": "completed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": "2026-08-21T10:00:00+08:00",
+            "payload": {
+                "trade_date": trade_date,
+                "security_master_provider": master_provider,
+                "daily_bar_provider": daily_provider,
+            },
+        }
+    )
+    # find_prior_market_universe_run must reject the foreign run type
+    assert (
+        find_prior_market_universe_run(
+            db,
+            task_key=task_key,
+            trade_date=trade_date,
+            master_provider_name=master_provider,
+            daily_provider_name=daily_provider,
+        )
+        is None
+    )
+
+
+def test_prior_discovery_ancestry_traversal_is_linear_and_scope_filtered(tmp_path):
+    """find_prior_market_universe_run filters candidates by scope and caches ancestor validity to avoid quadratic lookups."""
+    from server.services.market.market_universe_automation import (
+        find_prior_market_universe_run,
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    task_key = "market_universe_sync:unit_fixture:unit_fixture:2026-08-21"
+    trade_date = "2026-08-21"
+
+    # Seed 50 descendants of a missing root (chain: 49 -> 48 -> ... -> 0 -> missing_root)
+    pred = "missing_root_id"
+    for i in range(50):
+        run_id = f"descendant_run_{i:03d}"
+        db.upsert_automation_run_sync(
+            {
+                "run_id": run_id,
+                "run_type": "market_universe_sync",
+                "run_date": "2026-08-21",
+                "status": "failed",
+                "execution_mode": "market_data_ingestion",
+                "started_at": f"2026-08-21T10:{i // 60:02d}:{i % 60:02d}+08:00",
+                "payload": {
+                    "task_key": task_key,
+                    "trade_date": trade_date,
+                    "security_master_provider": "unit_fixture",
+                    "daily_bar_provider": "unit_fixture",
+                    "supersedes_run_id": pred,
+                    "prior_run_id": pred,
+                },
+            }
+        )
+        pred = run_id
+
+    getter_call_count = 0
+    orig_getter = db.get_automation_run_sync
+
+    def counted_getter(run_id):
+        nonlocal getter_call_count
+        getter_call_count += 1
+        return orig_getter(run_id)
+
+    db.get_automation_run_sync = counted_getter
+
+    prior = find_prior_market_universe_run(
+        db,
+        task_key=task_key,
+        trade_date=trade_date,
+        master_provider_name="unit_fixture",
+        daily_provider_name="unit_fixture",
+    )
+    assert prior is None
+    # With ancestry caching, each ancestor is fetched at most once, strictly O(N) (< 60 calls)
+    assert getter_call_count <= 60
