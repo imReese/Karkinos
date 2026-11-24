@@ -330,6 +330,43 @@ def _matches_market_universe_scope(
     return False
 
 
+def _row_matches_market_universe_scope(
+    row: Mapping[str, Any] | None,
+    *,
+    run_id: str | None,
+    task_key: str | None,
+    trade_date: str | None,
+    master_provider_name: str | None,
+    daily_provider_name: str | None,
+    legacy_candidate_ids: Sequence[str] | None = None,
+) -> tuple[bool, Mapping[str, Any]]:
+    """Verify that a row has market_universe_sync run_type and matching task scope."""
+    if not isinstance(row, Mapping):
+        return False, {}
+    if row.get("run_type") != MARKET_UNIVERSE_AUTOMATION_RUN_TYPE:
+        return False, {}
+    payload = row.get("payload")
+    if payload is None:
+        raw_payload = row.get("payload_json")
+        if raw_payload:
+            try:
+                payload = json.loads(str(raw_payload))
+            except Exception:
+                return False, {}
+    if not isinstance(payload, Mapping):
+        return False, {}
+    matches = _matches_market_universe_scope(
+        payload,
+        run_id=run_id or str(row.get("run_id") or ""),
+        task_key=task_key,
+        trade_date=trade_date,
+        master_provider_name=master_provider_name,
+        daily_provider_name=daily_provider_name,
+        legacy_candidate_ids=legacy_candidate_ids,
+    )
+    return matches, payload
+
+
 def validate_run_predecessor_ancestry(
     run_or_row: Mapping[str, Any] | None,
     *,
@@ -877,6 +914,15 @@ class MarketUniverseAutomationService:
         # 1. Exact deterministic execution already recorded and completed
         existing = self._db.get_automation_run_sync(run_id)
         if existing and str(existing.get("status")) == "completed":
+            is_valid_scope, _ = _row_matches_market_universe_scope(
+                existing,
+                run_id=run_id,
+                task_key=task_key,
+                trade_date=trade_date,
+                master_provider_name=master_provider_name,
+                daily_provider_name=daily_provider_name,
+                legacy_candidate_ids=legacy_candidate_ids,
+            )
             is_valid_existing, _ = validate_run_predecessor_ancestry(
                 existing,
                 current_run_id=run_id,
@@ -887,15 +933,19 @@ class MarketUniverseAutomationService:
                 daily_provider_name=daily_provider_name,
                 legacy_candidate_ids=legacy_candidate_ids,
             )
-            if is_valid_existing and is_qualified_market_universe_coverage_run(
-                existing,
-                expected_snapshot_id=str(latest_master.get("snapshot_id") or "")
-                if latest_master
-                else None,
-                expected_fingerprint=evidence_fingerprint,
-                expected_policy_id=validation_policy_id,
-                expected_policy_fingerprint=policy_fingerprint,
-                expected_task_key=task_key,
+            if (
+                is_valid_scope
+                and is_valid_existing
+                and is_qualified_market_universe_coverage_run(
+                    existing,
+                    expected_snapshot_id=str(latest_master.get("snapshot_id") or "")
+                    if latest_master
+                    else None,
+                    expected_fingerprint=evidence_fingerprint,
+                    expected_policy_id=validation_policy_id,
+                    expected_policy_fingerprint=policy_fingerprint,
+                    expected_task_key=task_key,
+                )
             ):
                 return existing
 
@@ -1214,25 +1264,14 @@ class MarketUniverseAutomationService:
             return False
 
         if evidence_fingerprint:
-            has_primary_ev = "evidence_fingerprint" in prior_payload
-            has_alias_ev = "coverage_evidence_fingerprint" in prior_payload
-            ev_present = bool(
-                (has_primary_ev and bool(prior_payload["evidence_fingerprint"]))
-                or (
-                    has_alias_ev
-                    and bool(prior_payload["coverage_evidence_fingerprint"])
-                )
-            )
-            ev_matches = (
-                not has_primary_ev
-                or prior_payload["evidence_fingerprint"] == evidence_fingerprint
-            ) and (
-                not has_alias_ev
-                or prior_payload["coverage_evidence_fingerprint"]
-                == evidence_fingerprint
-            )
-            if not (ev_present and ev_matches):
+            primary_ev = prior_payload.get("evidence_fingerprint")
+            coverage_ev = prior_payload.get("coverage_evidence_fingerprint")
+            available_fps = [fp for fp in (primary_ev, coverage_ev) if fp is not None]
+            if not available_fps:
                 return False
+            for fp in available_fps:
+                if fp != evidence_fingerprint:
+                    return False
 
         if prior_payload.get("retryable") is False:
             return True
@@ -1661,9 +1700,19 @@ class MarketUniverseAutomationService:
                 return row
             # Collision with existing terminal run! Atomic preservation.
             existing_status = str(row.get("status") or "")
+            row_matches_scope, row_payload = _row_matches_market_universe_scope(
+                row,
+                run_id=str(row.get("run_id") or current_run_id),
+                task_key=rec_task_key,
+                trade_date=trade_scope,
+                master_provider_name=rec_master,
+                daily_provider_name=rec_daily,
+                legacy_candidate_ids=rec_legacy_ids,
+            )
             if (
                 status == "completed"
                 and existing_status == "completed"
+                and row_matches_scope
                 and is_qualified_market_universe_coverage_run(
                     row,
                     expected_snapshot_id=payload.get("market_universe_snapshot_id"),
@@ -1688,18 +1737,13 @@ class MarketUniverseAutomationService:
             if (
                 status == "blocked"
                 and existing_status == "blocked"
+                and row_matches_scope
                 and str(row.get("run_id") or "") == current_run_id
             ):
                 return row
 
             colliding_id = str(row.get("run_id") or initial_run_id)
-            row_task_key = None
-            try:
-                row_payload = json.loads(str(row.get("payload_json") or "{}"))
-                if isinstance(row_payload, Mapping):
-                    row_task_key = row_payload.get("task_key")
-            except Exception:
-                row_task_key = None
+            row_task_key = row_payload.get("task_key")
 
             is_valid_ancestry, row_supersedes = validate_run_predecessor_ancestry(
                 row,
@@ -1720,7 +1764,7 @@ class MarketUniverseAutomationService:
             else:
                 is_same_task = bool(row_task_key is None)
 
-            if is_same_task and is_valid_ancestry:
+            if is_same_task and row_matches_scope and is_valid_ancestry:
                 if not target_predecessor:
                     target_predecessor = colliding_id
                 elif row_supersedes and row_supersedes == target_predecessor:

@@ -2921,13 +2921,13 @@ def test_historical_legacy_fixture_reuse_and_collision_consistency_preserves_lin
 ):
     """Historical keyless legacy runs qualify consistently across discovery, reuse, and collision handling."""
     from server.services.market.market_universe_automation import (
-        find_prior_market_universe_run,
         market_universe_legacy_candidate_ids,
-        validate_run_predecessor_ancestry,
     )
+    from server.services.market.market_universe_truth import MarketUniversePolicy
 
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
+    _verified_calendar(db)
     trade_date = "2026-08-21"
     master_provider = "unit_fixture"
     daily_provider = "unit_fixture"
@@ -2961,96 +2961,231 @@ def test_historical_legacy_fixture_reuse_and_collision_consistency_preserves_lin
         }
     )
 
-    # Seed child run pointing to v7_root_id
-    child_id = "market_universe_sync:2026-08-21:child_of_v7"
-    t_child = datetime(2026, 8, 21, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
-    child_payload = {
-        "task_key": task_key,
-        "trade_date": trade_date,
-        "security_master_provider": master_provider,
-        "daily_bar_provider": daily_provider,
-        "validation_policy_id": "market_universe_coverage:v1",
-        "coverage_validation_policy_id": "market_universe_coverage:v1",
-        "policy_fingerprint": "p_fp_01",
-        "evidence_fingerprint": "ev_fp_01",
-        "coverage_evidence_fingerprint": "ev_fp_01",
-        "market_universe_snapshot_id": "snap_01",
-        "supersedes_run_id": v7_root_id,
-        "prior_run_id": v7_root_id,
-        "full_market_daily_receipt_count": 5,
-        "full_market_missing_receipt_date_count": 0,
-        "full_market_partial_receipt_date_count": 0,
-        "persisted_bar_ready_count": 5000,
-        "minimum_persisted_bar_ready_count": 100,
-        "latest_cross_section_row_count": 5000,
-        "minimum_latest_cross_section_row_count": 100,
-        "full_market_history_frozen": True,
-        "blockers": [],
-        "full_market_partial_receipt_dates": [],
-        "full_market_missing_receipt_dates": [],
-        "full_market_uncovered_symbol_session_count": 0,
-    }
-    db.upsert_automation_run_sync(
-        {
-            "run_id": child_id,
-            "run_type": "market_universe_sync",
-            "run_date": "2026-08-21",
-            "status": "completed",
-            "execution_mode": "market_data_ingestion",
-            "started_at": t_child.isoformat(),
-            "finished_at": t_child.isoformat(),
-            "source_ref": v7_root_id,
-            "payload": child_payload,
-        }
-    )
-
-    # 1. find_prior_market_universe_run must find child_id
-    prior = find_prior_market_universe_run(
-        db,
-        task_key=task_key,
-        trade_date=trade_date,
-        master_provider_name=master_provider,
-        daily_provider_name=daily_provider,
-        legacy_candidate_ids=legacy_ids,
-    )
-    assert prior is not None
-    assert prior["run_id"] == child_id
-
-    # 2. validate_run_predecessor_ancestry must validate child_id's ancestry through v7_root_id
-    is_valid, pred = validate_run_predecessor_ancestry(
-        db.get_automation_run_sync(child_id),
-        db=db,
-        task_key=task_key,
-        trade_date=trade_date,
-        master_provider_name=master_provider,
-        daily_provider_name=daily_provider,
-        legacy_candidate_ids=legacy_ids,
-    )
-    assert is_valid is True
-    assert pred == v7_root_id
-
-    # 3. Collision handling in service._record_run must reuse the qualified completion
+    policy = MarketUniversePolicy(minimum_history_rows=2)
     service = MarketUniverseAutomationService(
         db=db,
         config=SimpleNamespace(
-            data_source="unit_fixture", tushare_token="", start_date="2026-04-01"
+            data_source="unit_fixture", tushare_token="", start_date="2026-08-01"
         ),
         data_store=DataStore(tmp_path / "market"),
         source=_Source(),
+        policy=policy,
     )
-    recorded = service._record_run(
-        run_id=child_id,
-        run_date="2026-08-21",
-        status="completed",
-        now=t_child + timedelta(minutes=5),
-        payload=child_payload,
-    )
-    assert recorded["run_id"] == child_id
+    t_run = datetime(2026, 8, 21, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
 
-    # Verify original historical v7 row remains completely untouched
+    # 1. Derive completion through production run_due; adopts v7_root_id as predecessor
+    run_1 = service.run_due(now=t_run)
+    assert run_1["status"] == "completed"
+    assert run_1["source_ref"] == v7_root_id
+    p1 = json.loads(run_1["payload_json"])
+    assert p1["supersedes_run_id"] == v7_root_id
+    assert p1["prior_run_id"] == v7_root_id
+    assert p1["task_key"] == task_key
+
+    # 2. Assert exact-ID reuse on second invocation
+    run_2 = service.run_due(now=t_run + timedelta(minutes=5))
+    assert run_2["run_id"] == run_1["run_id"]
+    assert run_2["status"] == "completed"
+
+    # 3. Verify original historical v7 row remains completely untouched
     orig_v7 = db.get_automation_run_sync(v7_root_id)
     assert orig_v7 is not None
     assert orig_v7["started_at"] == t_v7.isoformat()
+    p_v7 = json.loads(orig_v7["payload_json"])
+    assert p_v7["schema_version"] == "karkinos.market_universe_automation.v7"
+    assert p_v7["supersedes_run_id"] is None
+
+
+def test_exact_id_and_collision_reuse_reject_scope_and_run_type_conflicts(
+    tmp_path,
+):
+    """Exact-ID reuse and collision reuse reject completions with conflicting provider or run type."""
+    from server.services.market.market_universe_automation import (
+        _row_matches_market_universe_scope,
+    )
+    from server.services.market.market_universe_truth import MarketUniversePolicy
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _verified_calendar(db)
+    store = DataStore(tmp_path / "market")
+    policy = MarketUniversePolicy(minimum_history_rows=2)
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-08-01"
+        ),
+        data_store=store,
+        source=_Source(),
+        policy=policy,
+    )
+    t = datetime(2026, 8, 21, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+    run_1 = service.run_due(now=t)
+    assert run_1["status"] == "completed"
+    run_1_id = run_1["run_id"]
+    p1 = json.loads(run_1["payload_json"])
+
+    # 1. Alter daily provider in payload of exact deterministic row in DB
+    p1_bad_provider = dict(p1)
+    p1_bad_provider["daily_bar_provider"] = "conflicting_provider"
+    db.upsert_automation_run_sync(
+        {
+            **run_1,
+            "payload": p1_bad_provider,
+        }
+    )
+
+    # run_due must reject exact-ID reuse due to scope conflict, and collision reuse must also reject it
+    run_2 = service.run_due(now=t + timedelta(minutes=5))
+    assert run_2["status"] == "completed"
+    assert run_2["run_id"] != run_1_id
+
+    # 2. Alter run_type of the new row in DB
+    run_2_id = run_2["run_id"]
+    db.upsert_automation_run_sync(
+        {
+            **run_2,
+            "run_type": "other_automation_type",
+            "payload": json.loads(run_2["payload_json"]),
+        }
+    )
+    is_valid_scope, _ = _row_matches_market_universe_scope(
+        db.get_automation_run_sync(run_2_id),
+        run_id=run_2_id,
+        task_key=p1["task_key"],
+        trade_date="2026-08-21",
+        master_provider_name="unit_fixture",
+        daily_provider_name="unit_fixture",
+    )
+    assert is_valid_scope is False
+
+
+def test_collision_predecessor_adoption_rejects_scope_conflicts(
+    tmp_path,
+):
+    """Collision predecessor adoption rejects colliding rows with conflicting daily provider."""
+    from server.services.market.market_universe_truth import MarketUniversePolicy
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _verified_calendar(db)
+    store = DataStore(tmp_path / "market")
+    policy = MarketUniversePolicy(minimum_history_rows=2)
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-08-01"
+        ),
+        data_store=store,
+        source=_Source(),
+        policy=policy,
+    )
+    t = datetime(2026, 8, 21, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    trade_date = "2026-08-21"
+    task_key = f"market_universe_sync:unit_fixture:unit_fixture:{trade_date}"
+    deterministic_id = f"market_universe_sync:{trade_date}:{task_key}"
+
+    # Seed a failed row at deterministic run ID with matching task_key but conflicting daily provider
+    bad_colliding_row = {
+        "run_id": deterministic_id,
+        "run_type": "market_universe_sync",
+        "run_date": trade_date,
+        "status": "failed",
+        "execution_mode": "market_data_ingestion",
+        "started_at": t.isoformat(),
+        "finished_at": t.isoformat(),
+        "payload": {
+            "task_key": task_key,
+            "trade_date": trade_date,
+            "security_master_provider": "unit_fixture",
+            "daily_bar_provider": "conflicting_provider",
+            "supersedes_run_id": None,
+            "prior_run_id": None,
+        },
+    }
+    db.upsert_automation_run_sync(bad_colliding_row)
+
+    # Execute run_due: collides with deterministic_id, but must NOT adopt it as predecessor
+    result = service.run_due(now=t + timedelta(minutes=5))
+    assert result["status"] == "completed"
+    assert result["run_id"] != deterministic_id
+    assert result["source_ref"] != deterministic_id
+    p_result = json.loads(result["payload_json"])
+    assert p_result.get("supersedes_run_id") != deterministic_id
+    assert p_result.get("prior_run_id") != deterministic_id
+
+
+def test_failed_run_with_null_coverage_fingerprint_throttled_during_backoff(
+    tmp_path,
+):
+    """Failed run with null coverage evidence fingerprint is throttled during backoff window when primary fingerprint matches."""
+    from server.services.market.market_universe_truth import MarketUniversePolicy
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _verified_calendar(db)
+    store = DataStore(tmp_path / "market")
+    policy = MarketUniversePolicy(minimum_history_rows=2)
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-08-01"
+        ),
+        data_store=store,
+        source=_Source(),
+        policy=policy,
+    )
+    t = datetime(2026, 8, 21, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    trade_date = "2026-08-21"
+    task_key = f"market_universe_sync:unit_fixture:unit_fixture:{trade_date}"
+    primary_ev_fp = "primary_ev_fp_123"
+
+    failed_row = {
+        "run_id": f"market_universe_sync:{trade_date}:{task_key}",
+        "run_type": "market_universe_sync",
+        "run_date": trade_date,
+        "status": "failed",
+        "execution_mode": "market_data_ingestion",
+        "started_at": t.isoformat(),
+        "finished_at": t.isoformat(),
+        "payload": {
+            "task_key": task_key,
+            "trade_date": trade_date,
+            "security_master_provider": "unit_fixture",
+            "daily_bar_provider": "unit_fixture",
+            "validation_policy_id": "market_universe_coverage:v1",
+            "policy_fingerprint": "policy_fp_123",
+            "evidence_fingerprint": primary_ev_fp,
+            "coverage_evidence_fingerprint": None,
+            "retryable": True,
+        },
+    }
+    db.upsert_automation_run_sync(failed_row)
+
+    persisted_failed_row = db.get_automation_run_sync(failed_row["run_id"])
+    assert persisted_failed_row is not None
+
+    t_check = t + timedelta(minutes=1)
+    is_throttled = service._is_failed_run_throttled(
+        prior_run=persisted_failed_row,
+        current=t_check,
+        latest_master={"snapshot_id": "snap_1"},
+        evidence_fingerprint=primary_ev_fp,
+        validation_policy_id="market_universe_coverage:v1",
+        policy_fingerprint="policy_fp_123",
+    )
+    assert is_throttled is True
+
+    is_throttled_conflict = service._is_failed_run_throttled(
+        prior_run=persisted_failed_row,
+        current=t_check,
+        latest_master={"snapshot_id": "snap_1"},
+        evidence_fingerprint="different_ev_fp",
+        validation_policy_id="market_universe_coverage:v1",
+        policy_fingerprint="policy_fp_123",
+    )
+    assert is_throttled_conflict is False
 
 
 def test_ancestor_scope_validation_rejects_explicit_conflicts_and_foreign_run_types(
