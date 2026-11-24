@@ -288,13 +288,34 @@ def suppress_unverified_daily_scan_candidates(
         strategy = strategy if isinstance(strategy, dict) else {}
         strategy_id = str(signal.get("strategy_id") or "")
         timestamp = parse_action_timestamp(signal.get("timestamp"))
-        scan_origin = (
+        if timestamp is not None and timestamp.date().isoformat() != decision_date:
+            candidate["is_historical"] = True
+            candidate["signal_date"] = timestamp.date().isoformat()
+        is_shadow_scan = (
             strategy_id.startswith("ai_formula_shadow:")
             and strategy.get("strategy_id") == strategy_id
-            and timestamp is not None
-            and timestamp.date().isoformat() == decision_date
             and signal.get("id") is not None
             and candidate.get("action_id") is not None
+        )
+        if (
+            is_shadow_scan
+            and timestamp is not None
+            and timestamp.date().isoformat() != decision_date
+        ):
+            suppressed.append(
+                {
+                    "action_id": candidate["action_id"],
+                    "source_signal_id": signal["id"],
+                    "symbol": candidate.get("symbol"),
+                    "strategy_id": strategy_id,
+                    "reason": "historical_scan_signal",
+                }
+            )
+            continue
+        scan_origin = (
+            is_shadow_scan
+            and timestamp is not None
+            and timestamp.date().isoformat() == decision_date
         )
         if scan_origin and (
             generation.get("recommendation_authoritative") is not True
@@ -316,7 +337,7 @@ def suppress_unverified_daily_scan_candidates(
         else:
             retained.append(candidate)
     if not suppressed:
-        if generation.get("status") == "blocked" and payload.get("summary"):
+        if not generation.get("generation_verified") and payload.get("summary"):
             summary = dict(payload.get("summary") or {})
             if "workflow_tasks" in summary:
                 risk_blocked_count = sum(
@@ -575,7 +596,7 @@ def _finish_today_decision_projection(
         if candidates
         else (
             [f"daily_generation_{generation.get('status') or 'unavailable'}"]
-            if generation and generation.get("status") == "blocked"
+            if generation and not generation.get("generation_verified")
             else ["no_pending_action_tasks"]
         )
     )

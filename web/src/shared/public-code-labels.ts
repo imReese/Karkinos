@@ -297,6 +297,21 @@ export const CODE_LABELS: Record<Locale, LabelMap> = {
       'Reviewed fee schedule fingerprint is invalid',
     daily_candidate_background_window_missed:
       "Today's background decision window was missed",
+    daily_candidate_claim_unresolved:
+      "Today's decision claim was unresolved after the window closed",
+    daily_candidate_attempt_failed_closed:
+      "Today's official decision attempt failed closed",
+    daily_generation_missed_window:
+      "Today's decision generation window (09:35-09:45) was missed",
+    daily_generation_not_generated:
+      "Today's decision candidates have not been generated",
+    daily_generation_unavailable: "Today's decision generation is unavailable",
+    daily_generation_failed_closed:
+      "Today's decision generation attempt failed closed",
+    daily_generation_claim_unresolved:
+      "Today's decision claim was not resolved",
+    daily_generation_unlinked_daily_evidence:
+      "Today's decision evidence is not linked to an attempt",
     valuation_missing: 'Valuation missing',
     valuation_snapshot_not_complete:
       'The current account valuation is incomplete',
@@ -622,6 +637,14 @@ export const CODE_LABELS: Record<Locale, LabelMap> = {
     reviewed_fee_schedule_not_active: '真实费用方案尚未生效',
     reviewed_fee_schedule_review_fingerprint_invalid: '真实费用复核指纹无效',
     daily_candidate_background_window_missed: '已错过今日后台决策窗口',
+    daily_candidate_claim_unresolved: '今日决策认领在窗口关闭后仍未确认',
+    daily_candidate_attempt_failed_closed: '今日正式决策尝试已闭环失败',
+    daily_generation_missed_window: '已错过今日决策生成窗口 (09:35-09:45)',
+    daily_generation_not_generated: '今日尚未生成决策候选建议',
+    daily_generation_unavailable: '今日决策生成不可用',
+    daily_generation_failed_closed: '今日决策尝试已闭环失败',
+    daily_generation_claim_unresolved: '今日决策认领未确认',
+    daily_generation_unlinked_daily_evidence: '今日决策证据未绑定尝试',
     valuation_missing: '缺少估值',
     valuation_snapshot_not_complete: '当前账户估值证据不完整',
     portfolio_total_equity_invalid: '无法从完整证据得到账户总权益',

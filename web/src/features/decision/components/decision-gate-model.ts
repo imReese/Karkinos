@@ -60,14 +60,22 @@ export function decisionGateMatrixItems(
     if (task) {
       let taskStatus = task.status;
       let taskBlockingReasons = task.blocking_reasons;
+      const generationStatus = lane?.generation?.status;
+      const isUnverifiedGeneration =
+        Boolean(generationStatus) &&
+        generationStatus !== 'completed_with_candidates' &&
+        generationStatus !== 'completed_no_signal';
       if (
         gateId === 'strategy_evidence' &&
-        lane?.generation?.status === 'blocked' &&
+        isUnverifiedGeneration &&
         taskStatus === 'pass'
       ) {
         taskStatus = 'blocked';
         taskBlockingReasons = [
-          lane.generation.failure_code ?? 'daily_generation_blocked',
+          lane?.generation?.failure_code ??
+            (generationStatus === 'missed_window'
+              ? 'daily_candidate_background_window_missed'
+              : `daily_generation_${generationStatus}`),
         ];
       }
       const stateLabel = formatPublicStatus(taskStatus, locale);

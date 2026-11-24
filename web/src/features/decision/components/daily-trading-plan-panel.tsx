@@ -375,6 +375,9 @@ function TradingPlanCandidateSignals({
   const labels = useCopy().decision;
   const { locale } = usePreferences();
   const visibleCandidateSignals = candidates.slice(0, 3);
+  const hasHistoricalSignals = visibleCandidateSignals.some((c) =>
+    Boolean((c as Record<string, unknown>).is_historical),
+  );
   return (
     <>
       {plan.order_intent_count === 0 && visibleCandidateSignals.length > 0 ? (
@@ -383,14 +386,22 @@ function TradingPlanCandidateSignals({
           data-testid="decision-daily-candidate-signals"
         >
           <div className="text-sm font-semibold text-[var(--app-text)]">
-            {locale === 'zh'
-              ? '今日候选信号（仅研究，不是订单）'
-              : "Today's candidate signals (research only, not orders)"}
+            {hasHistoricalSignals
+              ? locale === 'zh'
+                ? '历史候选信号（仅供复核参考，非今日建议）'
+                : "Historical candidate signals (reference only, not today's suggestions)"
+              : locale === 'zh'
+                ? '今日候选信号（仅研究，不是订单）'
+                : "Today's candidate signals (research only, not orders)"}
           </div>
           <p className="app-muted mt-1 text-sm leading-6">
-            {locale === 'zh'
-              ? '仅当持仓与行情证据完整、风控通过并生成订单意图后，候选才会进入人工确认。'
-              : 'A candidate reaches manual confirmation only after position and market evidence are complete, risk passes, and an order intent is generated.'}
+            {hasHistoricalSignals
+              ? locale === 'zh'
+                ? '以下为历史保留的候选信号；今日未生成正式建议或已被阻断，不会提交交易。'
+                : 'These are historical candidate signals. Decisions not verified or blocked for today will not become active recommendations.'
+              : locale === 'zh'
+                ? '仅当持仓与行情证据完整、风控通过并生成订单意图后，候选才会进入人工确认。'
+                : 'A candidate reaches manual confirmation only after position and market evidence are complete, risk passes, and an order intent is generated.'}
           </p>
           <div className="mt-3 grid min-w-0 gap-2">
             {visibleCandidateSignals.map((candidate) => {
@@ -402,6 +413,11 @@ function TradingPlanCandidateSignals({
               );
               const blockerReason =
                 blocker?.reason ?? blockerSummary?.reasons[0];
+              const isHistorical = Boolean(
+                (candidate as Record<string, unknown>).is_historical,
+              );
+              const signalDate = (candidate as Record<string, unknown>)
+                .signal_date as string | undefined;
               return (
                 <div
                   className="min-w-0 border-l-2 border-[var(--app-warning)] py-2 pl-3"
@@ -417,6 +433,13 @@ function TradingPlanCandidateSignals({
                       value={candidate.risk_gate_status}
                       prefix={labels.riskGate}
                     />
+                    {isHistorical ? (
+                      <span className="rounded bg-[var(--app-muted-bg)] px-1.5 py-0.5 text-xs font-medium text-[var(--app-muted)]">
+                        {locale === 'zh'
+                          ? `历史信号 ${signalDate ?? ''}`
+                          : `Historical ${signalDate ?? ''}`}
+                      </span>
+                    ) : null}
                   </div>
                   <p className="app-muted mt-1 break-words text-sm">
                     {formatPublicNote(

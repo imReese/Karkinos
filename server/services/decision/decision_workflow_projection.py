@@ -238,12 +238,50 @@ def strategy_evidence_workflow_task(
     generation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     gate_status = str(strategy_attribution.get("gate_status") or "pass")
-    if generation is not None and generation.get("status") == "blocked":
+    generation_status = (
+        str(generation.get("status") or "") if generation is not None else None
+    )
+    if generation is not None and not generation.get("generation_verified"):
         status = "blocked"
-        required_actions = ["review_daily_generation_blockers"]
-        failure_code = str(generation.get("failure_code") or "daily_generation_blocked")
-        blocking_reasons = [failure_code]
-        description = "Daily strategy candidate generation was blocked by market or timing evidence."
+        if generation_status == "missed_window":
+            required_actions = ["review_daily_generation_schedule"]
+            blocking_reasons = ["daily_candidate_background_window_missed"]
+            description = "Today's official decision window (09:35-09:45) was missed without a background attempt."
+        elif generation_status in {"failed_closed", "interrupted_fail_closed"}:
+            failure_code = str(
+                generation.get("failure_code")
+                or "daily_candidate_attempt_failed_closed"
+            )
+            required_actions = ["review_daily_generation_failure"]
+            blocking_reasons = [failure_code]
+            description = "Daily strategy candidate attempt failed closed."
+        elif generation_status == "claim_unresolved":
+            required_actions = ["review_unresolved_claim"]
+            blocking_reasons = ["daily_candidate_claim_unresolved"]
+            description = (
+                "Daily candidate attempt claim remained unresolved after window closed."
+            )
+        elif generation_status == "unlinked_daily_evidence":
+            required_actions = ["review_daily_evidence_provenance"]
+            blocking_reasons = [
+                str(generation.get("failure_code") or "background_attempt_missing")
+            ]
+            description = "Daily decision evidence is missing its corresponding background attempt link."
+        elif generation_status == "running":
+            status = "in_progress"
+            required_actions = ["await_daily_generation_completion"]
+            blocking_reasons = []
+            description = (
+                "Daily strategy candidate generation is currently in progress."
+            )
+        else:
+            required_actions = ["review_daily_generation_blockers"]
+            failure_code = str(
+                generation.get("failure_code")
+                or f"daily_generation_{generation_status or 'blocked'}"
+            )
+            blocking_reasons = [failure_code]
+            description = "Daily strategy candidate generation was blocked by market or timing evidence."
     elif gate_status == "pass":
         status = "pass"
         required_actions = list(strategy_attribution.get("required_actions") or [])
