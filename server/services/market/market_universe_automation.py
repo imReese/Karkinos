@@ -138,6 +138,7 @@ def is_qualified_market_universe_coverage_run(
     expected_policy_fingerprint: str | None = None,
     expected_task_key: str | None = None,
     expected_panel_size: int | None = None,
+    expected_member_count: int | None = None,
 ) -> bool:
     """Validate whether an existing completed run meets strict coverage qualifications.
 
@@ -275,35 +276,44 @@ def is_qualified_market_universe_coverage_run(
         if rec_panel != expected_panel_size:
             return False
 
-        ready_count = _strict_non_negative_int(payload.get("persisted_bar_ready_count"))
-        min_ready_count = _strict_non_negative_int(
-            payload.get("minimum_persisted_bar_ready_count")
-        )
-        cross_count = _strict_non_negative_int(
-            payload.get("latest_cross_section_row_count")
-        )
-        min_cross_count = _strict_non_negative_int(
-            payload.get("minimum_latest_cross_section_row_count")
-        )
         member_count = _strict_non_negative_int(
             payload.get("market_universe_member_count")
         )
-
-        calc_min_ready = max(
-            expected_panel_size,
-            int((member_count or 0) * 0.8) if member_count is not None else 0,
-        )
-        effective_min_ready = max(calc_min_ready, min_ready_count or 0)
-
-        calc_min_cross = max(
-            expected_panel_size,
-            int((member_count or 0) * 0.9) if member_count is not None else 0,
-        )
-        effective_min_cross = max(calc_min_cross, min_cross_count or 0)
-
-        if ready_count is None or ready_count < effective_min_ready:
+        if member_count is None or member_count <= 0:
             return False
-        if cross_count is None or cross_count < effective_min_cross:
+        if expected_member_count is not None and member_count != expected_member_count:
+            return False
+
+        ready_count = _strict_non_negative_int(payload.get("persisted_bar_ready_count"))
+        if ready_count is None:
+            return False
+        min_ready_count = _strict_non_negative_int(
+            payload.get("minimum_persisted_bar_ready_count")
+        )
+        if min_ready_count is None:
+            return False
+
+        cross_count = _strict_non_negative_int(
+            payload.get("latest_cross_section_row_count")
+        )
+        if cross_count is None:
+            return False
+        min_cross_count = _strict_non_negative_int(
+            payload.get("minimum_latest_cross_section_row_count")
+        )
+        if min_cross_count is None:
+            return False
+
+        calc_min_ready = max(expected_panel_size, (member_count * 8) // 10)
+        calc_min_cross = max(expected_panel_size, (member_count * 9) // 10)
+
+        if min_ready_count != calc_min_ready:
+            return False
+        if min_cross_count != calc_min_cross:
+            return False
+        if ready_count < calc_min_ready:
+            return False
+        if cross_count < calc_min_cross:
             return False
 
     return True
@@ -468,22 +478,18 @@ def _is_matching_pending_blocked_run(
         return False
     recorded_task_key = payload.get("task_key")
     if recorded_task_key is not None:
-        if not isinstance(recorded_task_key, str) or not recorded_task_key.strip():
+        if not isinstance(recorded_task_key, str):
             return False
-        parts = recorded_task_key.strip().split(":")
-        if len(parts) >= 4 and parts[0] == "market_universe_sync":
-            return False
-        if (
-            master_provider_name is not None
-            and len(parts) >= 2
-            and parts[1] != master_provider_name
-        ):
-            return False
-        if (
-            daily_provider_name is not None
-            and len(parts) >= 3
-            and parts[2] != daily_provider_name
-        ):
+        clean_task_key = recorded_task_key.strip()
+        expected_pending_keys = set()
+        if master_provider_name and daily_provider_name:
+            expected_pending_keys.add(
+                f"market_universe_sync:{master_provider_name}:{daily_provider_name}"
+            )
+            expected_pending_keys.add(
+                f"market_universe_sync:{master_provider_name}:{daily_provider_name}:pending"
+            )
+        if clean_task_key not in expected_pending_keys:
             return False
     blockers = payload.get("blockers")
     if (
@@ -1117,6 +1123,9 @@ class MarketUniverseAutomationService:
                     expected_policy_fingerprint=policy_fingerprint,
                     expected_task_key=task_key,
                     expected_panel_size=self._policy.panel_size,
+                    expected_member_count=len(master_members)
+                    if latest_master
+                    else None,
                 )
             ):
                 return existing
@@ -1143,6 +1152,7 @@ class MarketUniverseAutomationService:
                 expected_policy_fingerprint=policy_fingerprint,
                 expected_task_key=task_key,
                 expected_panel_size=self._policy.panel_size,
+                expected_member_count=len(master_members) if latest_master else None,
             ):
                 return prior_run
 
@@ -1911,6 +1921,7 @@ class MarketUniverseAutomationService:
                     expected_policy_fingerprint=payload.get("policy_fingerprint"),
                     expected_task_key=payload.get("task_key"),
                     expected_panel_size=self._policy.panel_size,
+                    expected_member_count=payload.get("market_universe_member_count"),
                 )
             ):
                 is_valid_ancestry, _ = validate_run_predecessor_ancestry(

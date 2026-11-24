@@ -83,8 +83,10 @@ def _deployment_scope(observation):
     if selection.get("portfolio_policy_id") != FORMULA_PORTFOLIO_POLICY_ID:
         raise ValueError("observation_portfolio_policy_mismatch")
     policy = MarketUniversePolicy.from_dict(scope["universe_policy"])
-    if scope != market_deployment_scope(policy):
-        raise ValueError("observation_deployment_scope_invalid")
+    canonical_scope = market_deployment_scope(policy)
+    if scope != canonical_scope:
+        if scope != market_deployment_scope(policy, include_panel_size=True):
+            raise ValueError("observation_deployment_scope_invalid")
     return scope
 
 

@@ -146,10 +146,17 @@ def market_deployment_scope(
     policy: MarketUniversePolicy,
     *,
     portfolio_policy_id: str = FORMULA_PORTFOLIO_POLICY_ID,
+    include_panel_size: bool = False,
 ) -> dict[str, Any]:
     """Scope identity binds rules, never today's changing list of members."""
+    policy_dict = policy.to_dict()
+    if include_panel_size:
+        policy_dict = {
+            **policy_dict,
+            "panel_size": policy.panel_size,
+        }
     core = {
-        "universe_policy": policy.to_dict(),
+        "universe_policy": policy_dict,
         "portfolio_policy_id": portfolio_policy_id,
     }
     return {

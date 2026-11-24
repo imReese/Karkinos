@@ -887,6 +887,7 @@ def test_exact_completed_run_requires_qualification(tmp_path):
     """An exact matching completed run ID in DB must still satisfy the qualification contract to be returned."""
     from server.services.market.market_universe_automation import (
         MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+        automation_coverage_policy_dict,
         compute_market_coverage_evidence_fingerprint,
         content_fingerprint,
     )
@@ -936,7 +937,9 @@ def test_exact_completed_run_requires_qualification(tmp_path):
         {
             "task_key": task_key,
             "validation_policy_id": MARKET_UNIVERSE_COVERAGE_POLICY_ID,
-            "policy_fingerprint": content_fingerprint(MarketUniversePolicy().to_dict()),
+            "policy_fingerprint": content_fingerprint(
+                automation_coverage_policy_dict(MarketUniversePolicy())
+            ),
             "evidence_fingerprint": ev_fp,
         }
     )
@@ -3473,6 +3476,7 @@ def test_failed_run_with_null_coverage_fingerprint_throttled_during_backoff(
 def test_historical_deployment_scope_fingerprint_immutability_and_roundtrip():
     """Historical deployment scope fingerprint remains strictly immutable and round-trips through MarketUniversePolicy."""
     from server.services.market.market_universe_truth import (
+        FORMULA_PORTFOLIO_POLICY_ID,
         MarketUniversePolicy,
         market_deployment_scope,
     )
@@ -3490,6 +3494,26 @@ def test_historical_deployment_scope_fingerprint_immutability_and_roundtrip():
     assert restored == policy
     restored_scope = market_deployment_scope(restored)
     assert restored_scope["deployment_scope_fingerprint"] == expected_historical_fp
+
+    # Intermediate serialization compatibility: scope including panel_size is valid in consumers
+    intermediate_scope = market_deployment_scope(policy, include_panel_size=True)
+    assert (
+        intermediate_scope["deployment_scope_fingerprint"]
+        == "sha256:c3fc3472dc931ab8299b3f4750c1204769dea7007292693264a081e97ebecab4"
+    )
+    from server.services.research.research_observation_data_preparation import (
+        _deployment_scope,
+    )
+
+    obs = {
+        "source": {
+            "selection": {
+                "deployment_scope": intermediate_scope,
+                "portfolio_policy_id": FORMULA_PORTFOLIO_POLICY_ID,
+            }
+        }
+    }
+    assert _deployment_scope(obs) == intermediate_scope
 
 
 def test_policy_fingerprint_changes_with_panel_size_and_rejects_cross_qualification(
@@ -3563,22 +3587,23 @@ def test_policy_fingerprint_changes_with_panel_size_and_rejects_cross_qualificat
         is True
     )
 
-    # 2. Targeted negative guards where expected_policy_fingerprint MATCHES (fp_40),
+    # 2. Targeted negative guards where expected_policy_fingerprint MATCHES,
     # but specific policy content or count guards independently reject:
 
     # 2a. Policy dict has missing panel_size (historical format)
     p_missing_panel = dict(base_payload_40)
     policy_without_panel = dict_40.copy()
     policy_without_panel.pop("panel_size", None)
+    fp_missing_panel = content_fingerprint(policy_without_panel)
     p_missing_panel["policy"] = policy_without_panel
-    p_missing_panel["policy_fingerprint"] = fp_40
+    p_missing_panel["policy_fingerprint"] = fp_missing_panel
     assert (
         is_qualified_market_universe_coverage_run(
             {"status": "completed", "payload_json": json.dumps(p_missing_panel)},
             expected_snapshot_id="snap_test",
             expected_fingerprint="ev_fp_test",
             expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
-            expected_policy_fingerprint=fp_40,
+            expected_policy_fingerprint=fp_missing_panel,
             expected_panel_size=40,
         )
         is False
@@ -3586,16 +3611,18 @@ def test_policy_fingerprint_changes_with_panel_size_and_rejects_cross_qualificat
 
     # 2b. Policy dict has malformed panel_size (float 40.0 or bool True)
     for bad_panel in (40.0, True, "40"):
+        policy_bad_panel = {**dict_40, "panel_size": bad_panel}
+        fp_bad_panel = content_fingerprint(policy_bad_panel)
         p_bad_panel = dict(base_payload_40)
-        p_bad_panel["policy"] = {**dict_40, "panel_size": bad_panel}
-        p_bad_panel["policy_fingerprint"] = fp_40
+        p_bad_panel["policy"] = policy_bad_panel
+        p_bad_panel["policy_fingerprint"] = fp_bad_panel
         assert (
             is_qualified_market_universe_coverage_run(
                 {"status": "completed", "payload_json": json.dumps(p_bad_panel)},
                 expected_snapshot_id="snap_test",
                 expected_fingerprint="ev_fp_test",
                 expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
-                expected_policy_fingerprint=fp_40,
+                expected_policy_fingerprint=fp_bad_panel,
                 expected_panel_size=40,
             )
             is False
@@ -3618,10 +3645,13 @@ def test_policy_fingerprint_changes_with_panel_size_and_rejects_cross_qualificat
     )
 
     # 2d. Incomplete readiness count under 1000 members (40 ready < 800 required)
+    # latest_cross_section_row_count is 1000 so cross-section passes, isolating readiness failure
     p_insufficient_ready = dict(base_payload_40)
     p_insufficient_ready["market_universe_member_count"] = 1000
     p_insufficient_ready["persisted_bar_ready_count"] = 40
     p_insufficient_ready["minimum_persisted_bar_ready_count"] = 800
+    p_insufficient_ready["latest_cross_section_row_count"] = 1000
+    p_insufficient_ready["minimum_latest_cross_section_row_count"] = 900
     assert (
         is_qualified_market_universe_coverage_run(
             {"status": "completed", "payload_json": json.dumps(p_insufficient_ready)},
@@ -3635,8 +3665,11 @@ def test_policy_fingerprint_changes_with_panel_size_and_rejects_cross_qualificat
     )
 
     # 2e. Incomplete cross-section count under 1000 members (40 cross-section < 900 required)
+    # persisted_bar_ready_count is 1000 so readiness passes, isolating cross-section failure
     p_insufficient_cross = dict(base_payload_40)
     p_insufficient_cross["market_universe_member_count"] = 1000
+    p_insufficient_cross["persisted_bar_ready_count"] = 1000
+    p_insufficient_cross["minimum_persisted_bar_ready_count"] = 800
     p_insufficient_cross["latest_cross_section_row_count"] = 40
     p_insufficient_cross["minimum_latest_cross_section_row_count"] = 900
     assert (
@@ -3650,6 +3683,192 @@ def test_policy_fingerprint_changes_with_panel_size_and_rejects_cross_qualificat
         )
         is False
     )
+
+    # 2f. Malformed or non-positive market_universe_member_count
+    for bad_members in (None, False, "broken", 0, -10):
+        p_bad_members = dict(base_payload_40)
+        p_bad_members["market_universe_member_count"] = bad_members
+        assert (
+            is_qualified_market_universe_coverage_run(
+                {"status": "completed", "payload_json": json.dumps(p_bad_members)},
+                expected_snapshot_id="snap_test",
+                expected_fingerprint="ev_fp_test",
+                expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+                expected_policy_fingerprint=fp_40,
+                expected_panel_size=40,
+            )
+            is False
+        )
+
+    # 2g. Contradictory member count compared to expected_member_count
+    p_member_mismatch = dict(base_payload_40)
+    p_member_mismatch["market_universe_member_count"] = 500
+    p_member_mismatch["persisted_bar_ready_count"] = 500
+    p_member_mismatch["minimum_persisted_bar_ready_count"] = 400
+    p_member_mismatch["latest_cross_section_row_count"] = 500
+    p_member_mismatch["minimum_latest_cross_section_row_count"] = 450
+    assert (
+        is_qualified_market_universe_coverage_run(
+            {"status": "completed", "payload_json": json.dumps(p_member_mismatch)},
+            expected_snapshot_id="snap_test",
+            expected_fingerprint="ev_fp_test",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            expected_policy_fingerprint=fp_40,
+            expected_panel_size=40,
+            expected_member_count=1000,
+        )
+        is False
+    )
+
+    # 2h. Extremely large integer count avoids OverflowError and evaluates correctly
+    p_large = dict(base_payload_40)
+    p_large["market_universe_member_count"] = 10**400
+    p_large["persisted_bar_ready_count"] = 40
+    p_large["minimum_persisted_bar_ready_count"] = 40
+    assert (
+        is_qualified_market_universe_coverage_run(
+            {"status": "completed", "payload_json": json.dumps(p_large)},
+            expected_snapshot_id="snap_test",
+            expected_fingerprint="ev_fp_test",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            expected_policy_fingerprint=fp_40,
+            expected_panel_size=40,
+        )
+        is False
+    )
+
+    # 2i. Inconsistent claimed minimum counts rejected even if observed counts pass
+    p_bad_min = dict(base_payload_40)
+    p_bad_min["market_universe_member_count"] = 1000
+    p_bad_min["persisted_bar_ready_count"] = 1000
+    p_bad_min["minimum_persisted_bar_ready_count"] = 40  # Should be 800
+    p_bad_min["latest_cross_section_row_count"] = 1000
+    p_bad_min["minimum_latest_cross_section_row_count"] = 900
+    assert (
+        is_qualified_market_universe_coverage_run(
+            {"status": "completed", "payload_json": json.dumps(p_bad_min)},
+            expected_snapshot_id="snap_test",
+            expected_fingerprint="ev_fp_test",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            expected_policy_fingerprint=fp_40,
+            expected_panel_size=40,
+        )
+        is False
+    )
+
+
+def test_historical_coverage_under_smaller_panel_size_rejected_in_run_due_with_persisted_evidence(
+    tmp_path,
+):
+    """Production run_due under panel_size=20 completes, but subsequent run_due under panel_size=40 rejects reuse, re-evaluates, and fails."""
+    from server.services.market.market_universe_truth import (
+        MarketUniversePolicy,
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _verified_calendar(db)
+    store = DataStore(tmp_path / "market")
+
+    symbols_20 = [f"{600000 + i:06d}" for i in range(20)]
+    dates = ["2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21"]
+    for d in dates:
+        frame = pd.DataFrame(
+            {
+                "symbol": symbols_20,
+                "timestamp": [pd.Timestamp(d)] * len(symbols_20),
+                "open": [10.0] * len(symbols_20),
+                "high": [10.1] * len(symbols_20),
+                "low": [9.9] * len(symbols_20),
+                "close": [10.0] * len(symbols_20),
+                "volume": [1_000_000] * len(symbols_20),
+                "amount": [10_000_000] * len(symbols_20),
+            }
+        )
+        store.ingest_market_daily_batch(
+            trade_date=d, provider_name="unit_fixture", bars=frame
+        )
+
+    class _Source20:
+        def list_symbols(self):
+            return symbols_20
+
+        def list_symbol_metadata(self):
+            return [
+                {
+                    "symbol": s,
+                    "display_name": s,
+                    "provider_symbol": f"{s}.SH",
+                    "provider_name": "unit_fixture",
+                    "source": "stock_master",
+                    "list_date": "2026-01-01",
+                }
+                for s in symbols_20
+            ]
+
+        def fetch_market_daily_bars(self, trade_date: str) -> pd.DataFrame:
+            return pd.DataFrame(
+                {
+                    "symbol": symbols_20,
+                    "timestamp": [pd.Timestamp(trade_date)] * len(symbols_20),
+                    "open": [10.0] * len(symbols_20),
+                    "high": [10.1] * len(symbols_20),
+                    "low": [9.9] * len(symbols_20),
+                    "close": [10.0] * len(symbols_20),
+                    "volume": [1_000_000] * len(symbols_20),
+                    "amount": [10_000_000] * len(symbols_20),
+                }
+            )
+
+    t = datetime(2026, 8, 21, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    clock_time = t
+
+    # 1. Run under policy panel_size=20
+    policy_20 = MarketUniversePolicy(
+        minimum_master_member_count=20, panel_size=20, minimum_history_rows=5
+    )
+    service_20 = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-08-17"
+        ),
+        data_store=store,
+        source=_Source20(),
+        policy=policy_20,
+        capture_clock=lambda: clock_time,
+    )
+    run_20 = service_20.run_due(now=t)
+    assert run_20["status"] == "completed"
+    orig_20_before = dict(db.get_automation_run_sync(run_20["run_id"]))
+
+    # 2. Upgrade to policy panel_size=40 on the exact same database and market store
+    policy_40 = MarketUniversePolicy(
+        minimum_master_member_count=20, panel_size=40, minimum_history_rows=5
+    )
+    service_40 = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-08-17"
+        ),
+        data_store=store,
+        source=_Source20(),
+        policy=policy_40,
+        capture_clock=lambda: clock_time,
+    )
+    # run_due MUST reject reusing the 20-member completion, re-evaluate coverage, and fail because 20 < 40!
+    run_40 = service_40.run_due(now=t + timedelta(minutes=5))
+    assert run_40["status"] == "failed"
+    assert run_40["run_id"] != run_20["run_id"]
+    p_40 = json.loads(run_40["payload_json"])
+    assert "full_market_persisted_bar_coverage_incomplete" in p_40["blockers"]
+    assert "full_market_latest_cross_section_incomplete" in p_40["blockers"]
+    assert p_40.get("persisted_bar_ready_count") == 20
+    assert p_40.get("minimum_persisted_bar_ready_count") == 40
+    assert p_40.get("supersedes_run_id") == run_20["run_id"]
+
+    # Verify original panel_size=20 completed row remains completely untouched
+    orig_20_after = dict(db.get_automation_run_sync(run_20["run_id"]))
+    assert orig_20_after == orig_20_before
 
 
 def test_historical_coverage_under_omitted_panel_size_rejected_in_run_due_with_persisted_evidence(
@@ -3800,6 +4019,7 @@ def test_historical_coverage_under_omitted_panel_size_rejected_in_run_due_with_p
         },
     }
     db.upsert_automation_run_sync(historical_row)
+    orig_before = dict(db.get_automation_run_sync(historical_run_id))
 
     # 2. Call run_due under current service with panel_size=40:
     # Must reject reusing the historical completion, re-evaluate coverage, and record a failed run!
@@ -3814,9 +4034,8 @@ def test_historical_coverage_under_omitted_panel_size_rejected_in_run_due_with_p
     assert p_result.get("supersedes_run_id") == historical_run_id
 
     # Verify historical completed row in DB remains completely untouched
-    orig = db.get_automation_run_sync(historical_run_id)
-    assert orig is not None
-    assert orig["status"] == "completed"
+    orig_after = dict(db.get_automation_run_sync(historical_run_id))
+    assert orig_after == orig_before
 
 
 def test_pending_blocked_run_reuse_rejects_cross_scope_ancestors_at_multiple_depths(
@@ -3935,6 +4154,79 @@ def test_pending_blocked_run_reuse_rejects_cross_scope_ancestors_at_multiple_dep
     assert orig_1["source_ref"] == conflicting_depth_2["run_id"]
     orig_2 = db.get_automation_run_sync(conflicting_depth_2["run_id"])
     assert orig_2 is not None
+
+
+def test_pending_blocked_run_predicate_strictly_validates_task_key_identity():
+    """Pending blocked run predicate strictly accepts keyless or scope-bound pending keys, rejecting arbitrary, malformed, or dated keys."""
+    from server.services.market.market_universe_automation import (
+        _is_matching_pending_blocked_run,
+    )
+
+    base_row = {
+        "run_type": "market_universe_sync",
+        "run_date": "2026-08-23",
+        "status": "blocked",
+        "payload": {
+            "security_master_provider": "fixture_master",
+            "daily_bar_provider": "fixture_daily",
+            "trade_date": None,
+            "blockers": ["verified_closed_trading_date_unavailable"],
+        },
+    }
+
+    # 1. Keyless pending record passes
+    assert (
+        _is_matching_pending_blocked_run(
+            base_row,
+            run_date="2026-08-23",
+            master_provider_name="fixture_master",
+            daily_provider_name="fixture_daily",
+        )
+        is True
+    )
+
+    # 2. Scope-bound pending keys pass
+    for valid_key in (
+        "market_universe_sync:fixture_master:fixture_daily",
+        "market_universe_sync:fixture_master:fixture_daily:pending",
+    ):
+        row = {
+            **base_row,
+            "payload": {**base_row["payload"], "task_key": valid_key},
+        }
+        assert (
+            _is_matching_pending_blocked_run(
+                row,
+                run_date="2026-08-23",
+                master_provider_name="fixture_master",
+                daily_provider_name="fixture_daily",
+            )
+            is True
+        )
+
+    # 3. Arbitrary, incomplete, foreign, or dated task keys are rejected
+    for bad_key in (
+        "unknown_task",
+        "market_universe_sync",
+        "other_task:fixture_master:fixture_daily:2025-01-01",
+        "market_universe_sync:fixture_master:fixture_daily:2026-08-21",
+        "market_universe_sync:foreign:foreign",
+        "",
+        123,
+    ):
+        row = {
+            **base_row,
+            "payload": {**base_row["payload"], "task_key": bad_key},
+        }
+        assert (
+            _is_matching_pending_blocked_run(
+                row,
+                run_date="2026-08-23",
+                master_provider_name="fixture_master",
+                daily_provider_name="fixture_daily",
+            )
+            is False
+        )
 
 
 def test_ancestor_scope_validation_rejects_explicit_conflicts_and_foreign_run_types(

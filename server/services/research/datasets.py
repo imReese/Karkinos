@@ -2156,13 +2156,12 @@ def ensure_forward_seed_for_source(
     selection = source.get("source_selection") or source.get("selection") or {}
     scope = selection.get("deployment_scope") or {}
     try:
+        policy = MarketUniversePolicy.from_dict(scope["universe_policy"])
+        canonical_scope = market_deployment_scope(policy)
         if (
-            scope
-            != market_deployment_scope(
-                MarketUniversePolicy.from_dict(scope["universe_policy"])
-            )
-            or scope.get("scope_kind") != "full_declared_market"
-        ):
+            scope != canonical_scope
+            and scope != market_deployment_scope(policy, include_panel_size=True)
+        ) or scope.get("scope_kind") != "full_declared_market":
             raise ValueError("forward_seed_scope_invalid")
         minimum = max(
             int(source["minimum_bars"]),
@@ -2871,9 +2870,11 @@ def resolve_research_simulation_market_inputs(
             return blocked("research_simulation_immutable_dataset_binding_missing")
         scope = selection.deployment_scope or {}
         policy = MarketUniversePolicy.from_dict(scope["universe_policy"])
-        if market_deployment_scope(policy) != scope or set(selection.asset_classes) != {
-            "stock"
-        }:
+        canonical_scope = market_deployment_scope(policy)
+        if (
+            scope != canonical_scope
+            and scope != market_deployment_scope(policy, include_panel_size=True)
+        ) or set(selection.asset_classes) != {"stock"}:
             return blocked("research_simulation_scope_mismatch")
         formula = research_source["formula_ast"]
 
