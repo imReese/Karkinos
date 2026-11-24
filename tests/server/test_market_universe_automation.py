@@ -1845,6 +1845,145 @@ def test_allocation_after_second_collision_preserves_lineage(tmp_path):
     assert p_iso["prior_run_id"] == known_pred
 
 
+def test_collision_handling_rejects_contradictory_and_snapshot_predecessors(tmp_path):
+    """Collision routing rejects colliding rows with conflicting predecessor fields or snapshot source_ref."""
+    from server.ai_runtime.contracts import content_fingerprint
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-04-01"
+        ),
+        data_store=DataStore(tmp_path / "market"),
+        source=_Source(),
+    )
+    t = datetime(2026, 8, 23, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    base_id = "market_universe_sync:2026-08-21:predecessor_defense_base"
+    task_key = "market_universe_sync:unit_fixture:unit_fixture:2026-08-21"
+    initial_pred = "market_universe_sync:2026-08-21:verified_pred"
+
+    # Pre-seed base_id (Run 1)
+    db.upsert_automation_run_sync(
+        {
+            "run_id": base_id,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-23",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": t.isoformat(),
+            "finished_at": t.isoformat(),
+            "payload": {
+                "task_key": task_key,
+                "trade_date": "2026-08-21",
+                "attempt": 1,
+            },
+        }
+    )
+
+    # Compute candidate 1 ID (collides when target_predecessor is initial_pred)
+    cand_1_fp = content_fingerprint(
+        {
+            "initial_run_id": base_id,
+            "colliding_run_id": base_id,
+            "target_predecessor": initial_pred,
+            "attempt": 1,
+            "started_at": t.isoformat(),
+        }
+    )
+    cand_1_id = f"market_universe_sync:2026-08-21:{cand_1_fp[:16]}"
+
+    # Scenario 1: Seed candidate 1 with contradictory predecessor fields
+    db.upsert_automation_run_sync(
+        {
+            "run_id": cand_1_id,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-23",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": t.isoformat(),
+            "finished_at": t.isoformat(),
+            "payload": {
+                "task_key": task_key,
+                "trade_date": "2026-08-21",
+                "supersedes_run_id": initial_pred,
+                "prior_run_id": "contradictory_other_run",
+            },
+        }
+    )
+
+    # Calling _record_run should collide with base_id (attempt 0), then collide with cand_1_id (attempt 1).
+    # Since cand_1_id has contradictory fields, target_predecessor must NOT advance to cand_1_id.
+    run_res = service._record_run(
+        run_id=base_id,
+        run_date="2026-08-23",
+        status="failed",
+        source_ref=initial_pred,
+        now=t,
+        payload={
+            "task_key": task_key,
+            "trade_date": "2026-08-21",
+            "supersedes_run_id": initial_pred,
+            "prior_run_id": initial_pred,
+        },
+    )
+    assert run_res["run_id"] != base_id
+    assert run_res["run_id"] != cand_1_id
+    # Verified predecessor must remain initial_pred, NOT advance to contradictory cand_1_id!
+    assert run_res["source_ref"] == initial_pred
+    p_res = json.loads(run_res["payload_json"])
+    assert p_res["supersedes_run_id"] == initial_pred
+    assert p_res["prior_run_id"] == initial_pred
+
+    # Scenario 2: Colliding row has explicit None for payload predecessor fields but snapshot in source_ref
+    snapshot_id = "market_universe:snapshot:2026-08-21:sha256_mock"
+    snap_cand_fp = content_fingerprint(
+        {
+            "initial_run_id": base_id,
+            "colliding_run_id": base_id,
+            "target_predecessor": base_id,
+            "attempt": 1,
+            "started_at": t.isoformat(),
+        }
+    )
+    snap_cand_id = f"market_universe_sync:2026-08-21:{snap_cand_fp[:16]}"
+    db.upsert_automation_run_sync(
+        {
+            "run_id": snap_cand_id,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-23",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": t.isoformat(),
+            "finished_at": t.isoformat(),
+            "source_ref": snapshot_id,
+            "payload": {
+                "task_key": task_key,
+                "trade_date": "2026-08-21",
+                "supersedes_run_id": None,
+                "prior_run_id": None,
+                "market_universe_snapshot_id": snapshot_id,
+            },
+        }
+    )
+    run_snap_res = service._record_run(
+        run_id=base_id,
+        run_date="2026-08-23",
+        status="failed",
+        now=t,
+        payload={
+            "task_key": task_key,
+            "trade_date": "2026-08-21",
+            "market_universe_snapshot_id": snapshot_id,
+        },
+    )
+    # Must NOT adopt snapshot_id as supersedes_run_id or prior_run_id
+    p_snap = json.loads(run_snap_res["payload_json"])
+    assert p_snap.get("supersedes_run_id") != snapshot_id
+    assert p_snap.get("prior_run_id") != snapshot_id
+
+
 def test_listing_inside_history_window_produces_fingerprint_and_reuses_completed(
     tmp_path,
 ):

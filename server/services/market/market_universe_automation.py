@@ -1162,14 +1162,31 @@ class MarketUniverseAutomationService:
         trade_scope = payload.get("trade_date") or run_date
         current_run_id = run_id
         initial_run_id = run_id
-        verified_predecessor = (
-            source_ref
-            if source_ref and str(source_ref) != run_id
-            else payload.get("supersedes_run_id") or payload.get("prior_run_id")
-        )
+        payload_supersedes = payload.get("supersedes_run_id")
+        payload_prior = payload.get("prior_run_id")
+        snapshot_id = payload.get("market_universe_snapshot_id")
+
+        if (
+            payload_supersedes
+            and payload_prior
+            and str(payload_supersedes) != str(payload_prior)
+        ):
+            verified_predecessor = None
+        else:
+            verified_predecessor = payload_supersedes or payload_prior
+            if (
+                not verified_predecessor
+                and "supersedes_run_id" not in payload
+                and "prior_run_id" not in payload
+            ):
+                if source_ref and (
+                    not snapshot_id or str(source_ref) != str(snapshot_id)
+                ):
+                    verified_predecessor = source_ref
+
         if verified_predecessor and str(verified_predecessor) == run_id:
             verified_predecessor = None
-        target_predecessor = verified_predecessor
+        target_predecessor = str(verified_predecessor) if verified_predecessor else None
 
         max_attempts = 10
         for attempt in range(max_attempts):
@@ -1228,11 +1245,22 @@ class MarketUniverseAutomationService:
                 row_payload = json.loads(str(row.get("payload_json") or "{}"))
                 if isinstance(row_payload, Mapping):
                     row_task_key = row_payload.get("task_key")
-                    row_supersedes = (
-                        row_payload.get("supersedes_run_id")
-                        or row_payload.get("prior_run_id")
-                        or row.get("source_ref")
-                    )
+                    r_supersedes = row_payload.get("supersedes_run_id")
+                    r_prior = row_payload.get("prior_run_id")
+                    r_snapshot = row_payload.get("market_universe_snapshot_id")
+                    if r_supersedes and r_prior and str(r_supersedes) != str(r_prior):
+                        row_supersedes = None
+                    elif r_supersedes or r_prior:
+                        row_supersedes = str(r_supersedes or r_prior)
+                    elif (
+                        "supersedes_run_id" not in row_payload
+                        and "prior_run_id" not in row_payload
+                    ):
+                        r_source = row.get("source_ref")
+                        if r_source and (
+                            not r_snapshot or str(r_source) != str(r_snapshot)
+                        ):
+                            row_supersedes = str(r_source)
             except Exception:
                 row_task_key = None
 
