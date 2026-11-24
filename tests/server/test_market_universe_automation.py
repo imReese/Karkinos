@@ -401,6 +401,119 @@ def test_subtle_single_symbol_omission_cannot_freeze_full_market_history(tmp_pat
     assert "full_market_daily_symbol_coverage_unverified" in payload["blockers"]
 
 
+def test_stale_retired_v7_completed_run_not_reused_under_v8(tmp_path):
+    """A completed v7 run produced under retired 85% rule is not reused; v8 strictly evaluates and is idempotent."""
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _verified_calendar(db)
+    store = DataStore(tmp_path / "market")
+    source = _Source()
+    dates = [
+        day.date().isoformat() for day in pd.bdate_range(end="2026-08-21", periods=80)
+    ]
+    partial_day = dates[20]
+    for day in dates:
+        frame = source.fetch_market_daily_bars(day)
+        if day == partial_day:
+            frame = frame.iloc[:999]  # 999 out of 1000 symbols present
+        store.ingest_market_daily_batch(
+            trade_date=day, provider_name="unit_fixture", bars=frame
+        )
+
+    # Seed stale v7 completed run in db
+    v7_run_id = "market_universe_sync:v7:unit_fixture:unit_fixture:2026-08-21"
+    v7_payload = {
+        "schema_version": "karkinos.market_universe_automation.v7",
+        "trigger": "scheduled_after_close",
+        "security_master_provider": "unit_fixture",
+        "daily_bar_provider": "unit_fixture",
+        "policy": {"schema_version": "karkinos.market_universe_policy.v2"},
+        "asset_scope": "a_share",
+        "full_market_history_frozen": True,
+        "full_market_partial_receipt_dates": [],
+        "full_market_uncovered_symbol_session_count": 0,
+        "blockers": [],
+    }
+    db.upsert_automation_run_sync(
+        {
+            "run_id": v7_run_id,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-21",
+            "status": "completed",
+            "execution_mode": "read_only_research",
+            "started_at": "2026-08-23T10:00:00+08:00",
+            "finished_at": "2026-08-23T10:05:00+08:00",
+            "payload": v7_payload,
+        }
+    )
+
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-04-01"
+        ),
+        data_store=store,
+        source=source,
+    )
+
+    result = service.run_due(
+        now=datetime(2026, 8, 23, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
+    )
+    payload = json.loads(result["payload_json"])
+
+    # 1. New v8 run evaluated under strict identity rather than reusing stale v7
+    assert (
+        result["run_id"]
+        == "market_universe_sync:v8:unit_fixture:unit_fixture:2026-08-21"
+    )
+    assert payload["schema_version"] == "karkinos.market_universe_automation.v8"
+    assert result["status"] == "failed"
+    assert payload["full_market_history_frozen"] is False
+    assert payload["full_market_partial_receipt_dates"] == [partial_day]
+    assert payload["full_market_uncovered_symbol_session_count"] == 1
+    assert "full_market_daily_symbol_coverage_unverified" in payload["blockers"]
+
+    # 2. Old v7 record preserved in db without modification or deletion
+    preserved_v7 = db.get_automation_run_sync(v7_run_id)
+    assert preserved_v7 is not None
+    assert preserved_v7["status"] == "completed"
+
+    # 3. Test valid v8 completion and idempotency on complete data store
+    complete_db = AppDatabase(tmp_path / "complete_app.db")
+    complete_db.init_sync()
+    _verified_calendar(complete_db)
+    complete_store = DataStore(tmp_path / "complete_market")
+    complete_source = _Source()
+    for day in dates:
+        complete_frame = complete_source.fetch_market_daily_bars(day)
+        complete_store.ingest_market_daily_batch(
+            trade_date=day, provider_name="unit_fixture", bars=complete_frame
+        )
+    complete_service = MarketUniverseAutomationService(
+        db=complete_db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-04-01"
+        ),
+        data_store=complete_store,
+        source=complete_source,
+    )
+    res1 = complete_service.run_due(
+        now=datetime(2026, 8, 23, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
+    )
+    assert res1["status"] == "completed"
+    assert (
+        res1["run_id"] == "market_universe_sync:v8:unit_fixture:unit_fixture:2026-08-21"
+    )
+    assert json.loads(res1["payload_json"])["full_market_history_frozen"] is True
+
+    # Subsequent run_due returns the completed v8 run idempotently
+    res2 = complete_service.run_due(
+        now=datetime(2026, 8, 23, 11, tzinfo=ZoneInfo("Asia/Shanghai"))
+    )
+    assert res2["run_id"] == res1["run_id"]
+    assert res2["status"] == "completed"
+
+
 def test_market_universe_routes_security_master_and_daily_bars_separately(
     monkeypatch,
     tmp_path,

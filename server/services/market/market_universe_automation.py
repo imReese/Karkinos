@@ -36,7 +36,7 @@ from server.services.market.market_universe_truth import (
 logger = logging.getLogger(__name__)
 
 MARKET_UNIVERSE_AUTOMATION_SCHEMA_PREFIX = "karkinos.market_universe_automation."
-MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION = "karkinos.market_universe_automation.v7"
+MARKET_UNIVERSE_AUTOMATION_SCHEMA_VERSION = "karkinos.market_universe_automation.v8"
 MARKET_UNIVERSE_AUTOMATION_RUN_TYPE = "market_universe_sync"
 MARKET_UNIVERSE_AUTOMATION_INTERVAL_SECONDS = 60 * 60
 
@@ -163,7 +163,7 @@ class MarketUniverseAutomationService:
                 },
             )
         run_id = (
-            "market_universe_sync:v7:"
+            "market_universe_sync:v8:"
             f"{master_provider_name}:{daily_provider_name}:{trade_date}"
         )
         existing = self._db.get_automation_run_sync(run_id)
