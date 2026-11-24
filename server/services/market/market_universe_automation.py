@@ -285,12 +285,11 @@ def find_prior_market_universe_run(
                     continue
                 if not isinstance(payload, Mapping):
                     continue
-                cand_task_key = payload.get("task_key")
-                if cand_task_key:
-                    if cand_task_key == task_key:
+                if "task_key" in payload:
+                    if payload["task_key"] == task_key:
                         return cand
                     continue
-                # Only evaluate legacy fallback on keyless historical rows
+                # Only evaluate legacy fallback on truly keyless historical rows
                 if cand.get("run_id") in legacy_candidate_ids:
                     return cand
                 if (
@@ -315,8 +314,9 @@ def find_prior_market_universe_run(
                         continue
                     if not isinstance(p, Mapping):
                         continue
-                    if p.get("task_key") and p.get("task_key") != task_key:
-                        continue
+                    if "task_key" in p:
+                        if p.get("task_key") != task_key:
+                            continue
                     return prior
             except Exception:
                 pass
@@ -1223,10 +1223,16 @@ class MarketUniverseAutomationService:
 
             colliding_id = str(row.get("run_id") or initial_run_id)
             row_task_key = None
+            row_supersedes = None
             try:
                 row_payload = json.loads(str(row.get("payload_json") or "{}"))
                 if isinstance(row_payload, Mapping):
                     row_task_key = row_payload.get("task_key")
+                    row_supersedes = (
+                        row_payload.get("supersedes_run_id")
+                        or row_payload.get("prior_run_id")
+                        or row.get("source_ref")
+                    )
             except Exception:
                 row_task_key = None
 
@@ -1239,7 +1245,9 @@ class MarketUniverseAutomationService:
                 is_same_task = bool(row_task_key is None)
 
             if is_same_task:
-                if not verified_predecessor:
+                if not target_predecessor:
+                    target_predecessor = colliding_id
+                elif row_supersedes and str(row_supersedes) == target_predecessor:
                     target_predecessor = colliding_id
 
             attempt_fp = content_fingerprint(

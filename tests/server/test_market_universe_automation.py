@@ -1411,6 +1411,106 @@ def test_find_prior_run_pages_beyond_first_page_when_unrelated_runs_precede(tmp_
     assert prior["run_id"] == "target_predecessor_at_pos_106"
 
 
+def test_find_prior_run_ignores_falsy_task_key_and_does_not_admit_via_fallback(
+    tmp_path,
+):
+    """find_prior_market_universe_run ignores falsy task keys and does not fall back to them."""
+    from server.services.market.market_universe_automation import (
+        find_prior_market_universe_run,
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    valid_task_key = "market_universe_sync:unit_fixture:unit_fixture:2026-08-21"
+
+    # Seed row with falsy empty string task_key matching trade_date and providers
+    db.upsert_automation_run_sync(
+        {
+            "run_id": "malformed_falsy_task_key_run",
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-20",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": "2026-08-20T10:00:00+08:00",
+            "payload": {
+                "task_key": "",
+                "trade_date": "2026-08-21",
+                "security_master_provider": "unit_fixture",
+                "daily_bar_provider": "unit_fixture",
+            },
+        }
+    )
+
+    # When querying for valid_task_key, it must NOT match the falsy row via legacy fallback
+    assert (
+        find_prior_market_universe_run(
+            db,
+            task_key=valid_task_key,
+            trade_date="2026-08-21",
+            master_provider_name="unit_fixture",
+            daily_provider_name="unit_fixture",
+        )
+        is None
+    )
+
+    # Seed row with None task_key matching trade_date and providers
+    db.upsert_automation_run_sync(
+        {
+            "run_id": "none_task_key_run",
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-20",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": "2026-08-20T10:05:00+08:00",
+            "payload": {
+                "task_key": None,
+                "trade_date": "2026-08-21",
+                "security_master_provider": "unit_fixture",
+                "daily_bar_provider": "unit_fixture",
+            },
+        }
+    )
+
+    assert (
+        find_prior_market_universe_run(
+            db,
+            task_key=valid_task_key,
+            trade_date="2026-08-21",
+            master_provider_name="unit_fixture",
+            daily_provider_name="unit_fixture",
+        )
+        is None
+    )
+
+    # Now seed a valid predecessor with matching task_key
+    db.upsert_automation_run_sync(
+        {
+            "run_id": "valid_predecessor_run",
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-20",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": "2026-08-20T10:10:00+08:00",
+            "payload": {
+                "task_key": valid_task_key,
+                "trade_date": "2026-08-21",
+                "security_master_provider": "unit_fixture",
+                "daily_bar_provider": "unit_fixture",
+            },
+        }
+    )
+
+    matched = find_prior_market_universe_run(
+        db,
+        task_key=valid_task_key,
+        trade_date="2026-08-21",
+        master_provider_name="unit_fixture",
+        daily_provider_name="unit_fixture",
+    )
+    assert matched is not None
+    assert matched["run_id"] == "valid_predecessor_run"
+
+
 def test_calendar_blocked_concurrent_conflict_reuses_pending_row(tmp_path):
     """When concurrent callers write a calendar-blocked pending run, the loser reuses the existing pending row."""
     import concurrent.futures
@@ -1488,7 +1588,11 @@ def test_collision_exhaustion_raises_and_never_overwrites_terminal_rows(tmp_path
         candidates.append(next_id)
         curr_colliding = next_id
 
+    pred = None
     for cand_id in candidates:
+        payload = {"attempt": "seed", "candidate_id": cand_id}
+        if pred is not None:
+            payload["supersedes_run_id"] = pred
         db.upsert_automation_run_sync(
             {
                 "run_id": cand_id,
@@ -1498,9 +1602,11 @@ def test_collision_exhaustion_raises_and_never_overwrites_terminal_rows(tmp_path
                 "execution_mode": "market_data_ingestion",
                 "started_at": t.isoformat(),
                 "finished_at": t.isoformat(),
-                "payload": {"attempt": "seed", "candidate_id": cand_id},
+                "source_ref": pred,
+                "payload": payload,
             }
         )
+        pred = cand_id
 
     with pytest.raises(RuntimeError, match="automation_run_collision_exhaustion"):
         service._record_run(
