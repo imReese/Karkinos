@@ -510,8 +510,15 @@ class MarketUniverseAutomationService:
             if session not in trading_dates:
                 continue
             expected = history_session_symbols(members, member_metadata, session)
-            missing = expected - set(receipt.get("symbols") or [])
-            if missing:
+            receipt_symbols = set(receipt.get("symbols") or [])
+            missing = expected - receipt_symbols
+            # A session is only unverified if coverage falls below the cross-section
+            # threshold (accounting for normal non-trading/suspended stocks in A-shares).
+            minimum_session_count = max(
+                self._policy.panel_size,
+                int(len(expected) * 0.85),
+            )
+            if len(receipt_symbols) < minimum_session_count:
                 partial_dates.append(session)
                 missing_symbol_sessions += len(missing)
         if partial_dates:
