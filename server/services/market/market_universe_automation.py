@@ -45,28 +45,57 @@ MARKET_UNIVERSE_COVERAGE_POLICY_ID = (
 )
 
 
+def check_receipts_session_coverage(
+    *,
+    trading_dates: Sequence[str],
+    receipts: Sequence[Mapping[str, Any]],
+    members: Sequence[str] | None = None,
+    member_metadata: Sequence[Mapping[str, Any]] | None = None,
+) -> bool:
+    """Verify that receipts exist for every required trading date and cover all listed symbols."""
+    if not trading_dates or not receipts:
+        return False
+    receipt_by_date = {str(r.get("trade_date")): r for r in receipts}
+    member_symbols = [str(m) for m in members or []]
+    metadata = member_metadata or []
+    for session in trading_dates:
+        receipt = receipt_by_date.get(session)
+        if receipt is None:
+            return False
+        row_count = int(receipt.get("row_count") or 0)
+        if row_count <= 0:
+            return False
+        if member_symbols:
+            expected = history_session_symbols(member_symbols, metadata, session)
+            receipt_symbols = set(receipt.get("symbols") or [])
+            if receipt_symbols and expected and not expected.issubset(receipt_symbols):
+                return False
+            elif expected and row_count < len(expected):
+                return False
+    return True
+
+
 def compute_market_coverage_evidence_fingerprint(
     *,
     snapshot_id: str | None,
     trading_dates: Sequence[str],
     receipts: Sequence[Mapping[str, Any]],
-    expected_member_count: int | None = None,
+    members: Sequence[str] | None = None,
+    member_metadata: Sequence[Mapping[str, Any]] | None = None,
 ) -> str | None:
     """Deterministic content fingerprint binding master snapshot and daily bar receipts.
 
     Returns None if snapshot_id is absent, trading_dates is empty, or receipts
-    do not completely cover all required trading dates with non-zero (and at least
-    expected_member_count) row counts.
+    do not completely cover all required trading dates and listing-aware symbols.
     """
     if not snapshot_id or not trading_dates:
         return None
-    min_count = max(expected_member_count or 1, 1)
-    receipt_dates = {
-        str(r.get("trade_date"))
-        for r in receipts
-        if int(r.get("row_count") or 0) >= min_count
-    }
-    if not set(trading_dates).issubset(receipt_dates):
+    if not check_receipts_session_coverage(
+        trading_dates=trading_dates,
+        receipts=receipts,
+        members=members,
+        member_metadata=member_metadata,
+    ):
         return None
 
     from server.ai_runtime.contracts import content_fingerprint
@@ -106,6 +135,7 @@ def is_qualified_market_universe_coverage_run(
     validation policy identity, evidence completeness, and content fingerprint.
     Both current verified snapshot identity and evidence fingerprint are strictly
     required to be non-empty; if current evidence is absent, completion cannot be reused.
+    Returns False on malformed payloads, unparseable JSON, or invalid count types.
     """
     if str(existing.get("status") or "") != "completed":
         return False
@@ -113,9 +143,19 @@ def is_qualified_market_universe_coverage_run(
         return False
     if not expected_policy_id or not expected_policy_fingerprint:
         return False
-    payload = json.loads(str(existing.get("payload_json") or "{}"))
+    try:
+        payload = json.loads(str(existing.get("payload_json") or "{}"))
+    except Exception:
+        return False
     if not isinstance(payload, Mapping):
         return False
+
+    def _safe_int(val: Any) -> int:
+        try:
+            return int(val or 0)
+        except (ValueError, TypeError):
+            return -1
+
     # 1. Validation policy identity & policy fingerprint
     policy_id = payload.get("validation_policy_id") or payload.get(
         "coverage_validation_policy_id"
@@ -131,11 +171,11 @@ def is_qualified_market_universe_coverage_run(
         return False
     if payload.get("full_market_partial_receipt_dates"):
         return False
-    if int(payload.get("full_market_uncovered_symbol_session_count") or 0) > 0:
+    if _safe_int(payload.get("full_market_uncovered_symbol_session_count")) > 0:
         return False
-    if int(payload.get("full_market_missing_receipt_date_count") or 0) > 0:
+    if _safe_int(payload.get("full_market_missing_receipt_date_count")) > 0:
         return False
-    if int(payload.get("full_market_daily_receipt_count") or 0) <= 0:
+    if _safe_int(payload.get("full_market_daily_receipt_count")) <= 0:
         return False
     if payload.get("full_market_missing_receipt_dates"):
         return False
@@ -159,53 +199,51 @@ def find_prior_market_universe_run(
     daily_provider_name: str,
     run_date: str | None = None,
 ) -> dict[str, Any] | None:
-    """Locate the most recent prior run for this task key, supporting legacy compatibility."""
+    """Locate the most recent prior run for this task key, paging history if necessary."""
     legacy_candidate_ids = (
         task_key,
         f"market_universe_sync:v7:{master_provider_name}:{daily_provider_name}:{trade_date}",
         f"market_universe_sync:v8:{master_provider_name}:{daily_provider_name}:{trade_date}",
     )
-    candidates = []
     lister = getattr(db, "list_automation_runs_sync", None)
     if callable(lister):
-        try:
-            candidates = lister(
-                run_type=MARKET_UNIVERSE_AUTOMATION_RUN_TYPE,
-                limit=100,
-            )
-        except Exception:
-            candidates = []
-    if not candidates:
-        all_lister = getattr(db, "list_all_automation_runs_for_type_sync", None)
-        if callable(all_lister):
+        offset = 0
+        limit = 100
+        while True:
             try:
-                candidates = list(
-                    reversed(all_lister(run_type=MARKET_UNIVERSE_AUTOMATION_RUN_TYPE))
+                page = lister(
+                    run_type=MARKET_UNIVERSE_AUTOMATION_RUN_TYPE,
+                    limit=limit,
+                    offset=offset,
                 )
             except Exception:
-                candidates = []
-
-    for cand in candidates:
-        try:
-            payload = json.loads(str(cand.get("payload_json") or "{}"))
-        except Exception:
-            continue
-        if not isinstance(payload, Mapping):
-            continue
-        cand_task_key = payload.get("task_key")
-        if cand_task_key:
-            if cand_task_key == task_key:
-                return cand
-            continue
-        # Only evaluate legacy fallback on keyless historical rows
-        if cand.get("run_id") in legacy_candidate_ids:
-            return cand
-        if (
-            payload.get("trade_date") == trade_date
-            and payload.get("security_master_provider") == master_provider_name
-            and payload.get("daily_bar_provider") == daily_provider_name
-        ):
-            return cand
+                break
+            if not page:
+                break
+            for cand in page:
+                try:
+                    payload = json.loads(str(cand.get("payload_json") or "{}"))
+                except Exception:
+                    continue
+                if not isinstance(payload, Mapping):
+                    continue
+                cand_task_key = payload.get("task_key")
+                if cand_task_key:
+                    if cand_task_key == task_key:
+                        return cand
+                    continue
+                # Only evaluate legacy fallback on keyless historical rows
+                if cand.get("run_id") in legacy_candidate_ids:
+                    return cand
+                if (
+                    payload.get("trade_date") == trade_date
+                    and payload.get("security_master_provider") == master_provider_name
+                    and payload.get("daily_bar_provider") == daily_provider_name
+                ):
+                    return cand
+            if len(page) < limit:
+                break
+            offset += limit
 
     getter = getattr(db, "get_automation_run_sync", None)
     if callable(getter):
@@ -388,6 +426,14 @@ class MarketUniverseAutomationService:
             run_date=run_date,
         )
 
+        master_members = (
+            [str(m.get("symbol") or "") for m in latest_master.get("members") or []]
+            if latest_master
+            else []
+        )
+        master_metadata = (
+            latest_master.get("member_metadata") or [] if latest_master else []
+        )
         receipt_dates = {str(item.get("trade_date")) for item in current_receipts}
         has_complete_current_receipts = bool(
             trading_dates and receipt_dates.issuperset(trading_dates)
@@ -397,9 +443,8 @@ class MarketUniverseAutomationService:
                 snapshot_id=str(latest_master.get("snapshot_id") or ""),
                 trading_dates=trading_dates,
                 receipts=current_receipts,
-                expected_member_count=int(latest_master.get("member_count") or 0)
-                if latest_master
-                else None,
+                members=master_members,
+                member_metadata=master_metadata,
             )
             if (latest_master and has_complete_current_receipts)
             else None
@@ -527,9 +572,13 @@ class MarketUniverseAutomationService:
                 snapshot_id=snapshot.get("snapshot_id"),
             )
             blockers = coverage["blockers"]
-            status = "completed" if not blockers else "failed"
             final_evidence_fingerprint = (
                 coverage.get("coverage_evidence_fingerprint") or evidence_fingerprint
+            )
+            status = (
+                "completed"
+                if (not blockers and final_evidence_fingerprint)
+                else "failed"
             )
             if final_evidence_fingerprint:
                 execution_fp = content_fingerprint(
@@ -1030,7 +1079,8 @@ class MarketUniverseAutomationService:
                 snapshot_id=str(snapshot_id or ""),
                 trading_dates=trading_dates,
                 receipts=receipts,
-                expected_member_count=len(members),
+                members=members,
+                member_metadata=member_metadata,
             )
             if (snapshot_id and full_coverage)
             else None,
@@ -1079,9 +1129,11 @@ class MarketUniverseAutomationService:
         inserter = getattr(self._db, "insert_automation_run_if_absent_sync", None)
         trade_scope = payload.get("trade_date") or run_date
         current_run_id = run_id
+        initial_run_id = run_id
         current_source_ref = source_ref
 
-        for _ in range(5):
+        max_attempts = 10
+        for attempt in range(max_attempts):
             supersedes = payload.get("supersedes_run_id")
             if supersedes and str(supersedes) == current_run_id:
                 payload["supersedes_run_id"] = None
@@ -1128,24 +1180,33 @@ class MarketUniverseAutomationService:
                     )
                 ):
                     return row
+                if (
+                    status == "blocked"
+                    and existing_status == "blocked"
+                    and str(row.get("run_id") or "") == current_run_id
+                ):
+                    return row
 
+                colliding_id = str(row.get("run_id") or initial_run_id)
                 attempt_fp = content_fingerprint(
                     {
-                        "colliding_run_id": current_run_id,
-                        "supersedes_run_id": current_run_id,
+                        "initial_run_id": initial_run_id,
+                        "colliding_run_id": colliding_id,
+                        "attempt": attempt + 1,
                         "started_at": now.isoformat(),
-                        "payload": payload,
                     }
                 )
-                payload["supersedes_run_id"] = current_run_id
-                payload["prior_run_id"] = current_run_id
-                current_source_ref = current_run_id
+                payload["supersedes_run_id"] = colliding_id
+                payload["prior_run_id"] = colliding_id
+                current_source_ref = colliding_id
                 current_run_id = f"market_universe_sync:{trade_scope}:{attempt_fp[:16]}"
                 continue
             else:
                 return self._db.upsert_automation_run_sync(run_dict)
 
-        return self._db.upsert_automation_run_sync(run_dict)
+        raise RuntimeError(
+            f"automation_run_collision_exhaustion: unable to allocate run identity after {max_attempts} attempts"
+        )
 
 
 def _useful_stock_master_metadata(
