@@ -2070,7 +2070,38 @@ def test_validate_run_predecessor_ancestry_rejects_malformed_and_conflicting_ali
     )
     assert not is_valid and pred is None
 
-    # Self-reference
+    # One explicit string alias and one explicit None (null)
+    is_valid, pred = validate_run_predecessor_ancestry(
+        {"payload": {"supersedes_run_id": "attempt_A", "prior_run_id": None}}
+    )
+    assert not is_valid and pred is None
+
+    # Aliases naming the snapshot ID
+    is_valid, pred = validate_run_predecessor_ancestry(
+        {
+            "payload": {
+                "supersedes_run_id": "snap_1",
+                "prior_run_id": "snap_1",
+                "market_universe_snapshot_id": "snap_1",
+            }
+        }
+    )
+    assert not is_valid and pred is None
+
+    # Numeric source_ref
+    is_valid, pred = validate_run_predecessor_ancestry({"source_ref": 123})
+    assert not is_valid and pred is None
+
+    # Self-reference using persisted run_id without passing current_run_id
+    is_valid, pred = validate_run_predecessor_ancestry(
+        {
+            "run_id": "persisted_run_1",
+            "payload": {"supersedes_run_id": "persisted_run_1"},
+        }
+    )
+    assert not is_valid and pred is None
+
+    # Self-reference with explicit current_run_id
     is_valid, pred = validate_run_predecessor_ancestry(
         {"payload": {"supersedes_run_id": "self_run"}},
         current_run_id="self_run",
@@ -2173,6 +2204,128 @@ def test_find_prior_run_and_run_due_rejects_contradictory_historical_predecessor
     )
     assert found is not None
     assert found["run_id"] == "valid_older_predecessor"
+
+
+def test_production_run_due_rejects_contradictory_completed_and_recovers_from_self_linked_failure(
+    tmp_path,
+):
+    """Production run_due refuses to reuse contradictory completed rows and recovers from self-linked failures."""
+    from server.ai_runtime.contracts import content_fingerprint
+    from server.services.market.market_universe_automation import (
+        MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+    )
+    from server.services.market.market_universe_truth import (
+        MarketUniversePolicy,
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _verified_calendar(db)
+    store = DataStore(tmp_path / "market")
+    policy = MarketUniversePolicy(minimum_history_rows=2)
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-08-01"
+        ),
+        data_store=store,
+        source=_Source(),
+        policy=policy,
+    )
+    t = datetime(2026, 8, 21, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    trade_date = "2026-08-21"
+    task_key = "market_universe_sync:unit_fixture:unit_fixture:2026-08-21"
+
+    # Part 1: Contradictory completed row must NOT be reused by exact-ID or collision
+    val_policy_id = MARKET_UNIVERSE_COVERAGE_POLICY_ID
+    policy_fp = content_fingerprint({"validation_policy_id": val_policy_id})
+    evidence_fp = "evidence_fp_123"
+    exec_fp = content_fingerprint(
+        {
+            "task_key": task_key,
+            "validation_policy_id": val_policy_id,
+            "policy_fingerprint": policy_fp,
+            "evidence_fingerprint": evidence_fp,
+        }
+    )
+    exact_completed_id = f"market_universe_sync:{trade_date}:{exec_fp[:16]}"
+    db.upsert_automation_run_sync(
+        {
+            "run_id": exact_completed_id,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-21",
+            "status": "completed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": t.isoformat(),
+            "finished_at": t.isoformat(),
+            "payload": {
+                "schema_version": "karkinos.market_universe_automation.v7",
+                "task_key": task_key,
+                "trade_date": trade_date,
+                "security_master_provider": "unit_fixture",
+                "daily_bar_provider": "unit_fixture",
+                "validation_policy_id": val_policy_id,
+                "policy_fingerprint": policy_fp,
+                "evidence_fingerprint": evidence_fp,
+                "supersedes_run_id": "attempt_A",
+                "prior_run_id": "attempt_B_contradicts",
+            },
+        }
+    )
+
+    # In _record_run, a completed collision against exact_completed_id must NOT reuse it
+    collided = service._record_run(
+        run_id=exact_completed_id,
+        run_date="2026-08-21",
+        status="completed",
+        now=t,
+        payload={
+            "schema_version": "karkinos.market_universe_automation.v7",
+            "task_key": task_key,
+            "trade_date": trade_date,
+            "validation_policy_id": val_policy_id,
+            "policy_fingerprint": policy_fp,
+            "evidence_fingerprint": evidence_fp,
+        },
+    )
+    assert collided["run_id"] != exact_completed_id
+    original_row = db.get_automation_run_sync(exact_completed_id)
+    assert original_row is not None
+    p_orig = json.loads(original_row["payload_json"])
+    assert p_orig["supersedes_run_id"] == "attempt_A"
+
+    # Part 2: Self-linked failure must NOT suppress recovery in run_due
+    self_linked_id = "market_universe_sync:2026-08-21:self_linked_failure"
+    db.upsert_automation_run_sync(
+        {
+            "run_id": self_linked_id,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-21",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": t.isoformat(),
+            "finished_at": t.isoformat(),
+            "source_ref": self_linked_id,
+            "payload": {
+                "schema_version": "karkinos.market_universe_automation.v7",
+                "task_key": task_key,
+                "trade_date": trade_date,
+                "security_master_provider": "unit_fixture",
+                "daily_bar_provider": "unit_fixture",
+                "retryable": False,
+                "supersedes_run_id": self_linked_id,
+                "prior_run_id": self_linked_id,
+            },
+        }
+    )
+
+    # Production run_due must ignore the self-linked unretryable failure and recover!
+    run_result = service.run_due(now=t + timedelta(hours=1))
+    assert run_result["run_id"] != self_linked_id
+    assert run_result["source_ref"] != self_linked_id
+    p_run = json.loads(run_result["payload_json"])
+    assert p_run.get("supersedes_run_id") != self_linked_id
+    assert p_run.get("prior_run_id") != self_linked_id
 
 
 def test_listing_inside_history_window_produces_fingerprint_and_reuses_completed(

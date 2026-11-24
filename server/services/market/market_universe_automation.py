@@ -263,6 +263,9 @@ def validate_run_predecessor_ancestry(
     if not run_or_row or not isinstance(run_or_row, Mapping):
         return True, None
 
+    persisted_run_id = str(run_or_row.get("run_id") or "").strip() or None
+    target_self_id = current_run_id or persisted_run_id
+
     payload = run_or_row.get("payload")
     if payload is None:
         payload_raw = run_or_row.get("payload_json")
@@ -274,8 +277,16 @@ def validate_run_predecessor_ancestry(
     if not isinstance(payload, Mapping):
         payload = {}
 
-    snapshot_id = payload.get("market_universe_snapshot_id")
+    snapshot_val = payload.get("market_universe_snapshot_id")
+    snapshot_id = snapshot_val.strip() if isinstance(snapshot_val, str) else None
+
     source_ref = run_or_row.get("source_ref")
+    s_ref: str | None = None
+    if source_ref is not None:
+        if not isinstance(source_ref, str) or not source_ref.strip():
+            # Reject non-string or whitespace source_ref
+            return False, None
+        s_ref = source_ref.strip()
 
     # Extract explicit payload predecessor aliases
     has_supersedes = "supersedes_run_id" in payload
@@ -297,29 +308,38 @@ def validate_run_predecessor_ancestry(
                 return False, None
             p_prior = val.strip()
 
-    # If both payload aliases are specified, they must agree
-    if p_supersedes and p_prior and p_supersedes != p_prior:
+    # If both keys are present in payload, their values must match exactly (both None or same string)
+    if has_supersedes and has_prior:
+        if p_supersedes != p_prior:
+            return False, None
+
+    payload_predecessor = p_supersedes if has_supersedes else p_prior
+
+    # An explicit run predecessor must never equal the row's snapshot ID
+    if payload_predecessor and snapshot_id and payload_predecessor == snapshot_id:
         return False, None
 
-    payload_predecessor = p_supersedes or p_prior
-
     # Validate source_ref consistency
-    if source_ref:
-        s_ref = str(source_ref).strip()
-        is_snapshot_ref = bool(snapshot_id and s_ref == str(snapshot_id).strip())
-        if not is_snapshot_ref:
-            # source_ref names an automation run predecessor
-            if payload_predecessor and s_ref != payload_predecessor:
+    if s_ref is not None:
+        is_snapshot_ref = bool(snapshot_id and s_ref == snapshot_id)
+        if is_snapshot_ref:
+            # source_ref names the snapshot: payload predecessor must NOT be set
+            if payload_predecessor is not None:
                 return False, None
-            if (has_supersedes or has_prior) and not payload_predecessor:
-                # Payload explicitly declared no predecessor, but source_ref names a run
+        else:
+            # source_ref names a run predecessor
+            if payload_predecessor is not None:
+                if s_ref != payload_predecessor:
+                    return False, None
+            elif has_supersedes or has_prior:
+                # Payload explicitly declared no predecessor (null), but source_ref names a run
                 return False, None
-            if not payload_predecessor and not has_supersedes and not has_prior:
+            else:
                 # Legacy row with ancestry only in source_ref
                 payload_predecessor = s_ref
 
     if payload_predecessor:
-        if current_run_id and payload_predecessor == current_run_id:
+        if target_self_id and payload_predecessor == target_self_id:
             return False, None
         return True, payload_predecessor
 
@@ -363,7 +383,9 @@ def find_prior_market_universe_run(
                     continue
                 if not isinstance(payload, Mapping):
                     continue
-                is_valid, _ = validate_run_predecessor_ancestry(cand)
+                is_valid, _ = validate_run_predecessor_ancestry(
+                    cand, current_run_id=str(cand.get("run_id") or "")
+                )
                 if not is_valid:
                     continue
                 if "task_key" in payload:
@@ -395,7 +417,10 @@ def find_prior_market_universe_run(
                         continue
                     if not isinstance(p, Mapping):
                         continue
-                    is_valid, _ = validate_run_predecessor_ancestry(prior)
+                    is_valid, _ = validate_run_predecessor_ancestry(
+                        prior,
+                        current_run_id=str(prior.get("run_id") or candidate_id or ""),
+                    )
                     if not is_valid:
                         continue
                     if "task_key" in p:
@@ -614,7 +639,10 @@ class MarketUniverseAutomationService:
         # 1. Exact deterministic execution already recorded and completed
         existing = self._db.get_automation_run_sync(run_id)
         if existing and str(existing.get("status")) == "completed":
-            if is_qualified_market_universe_coverage_run(
+            is_valid_existing, _ = validate_run_predecessor_ancestry(
+                existing, current_run_id=run_id
+            )
+            if is_valid_existing and is_qualified_market_universe_coverage_run(
                 existing,
                 expected_snapshot_id=str(latest_master.get("snapshot_id") or "")
                 if latest_master
@@ -628,7 +656,10 @@ class MarketUniverseAutomationService:
 
         # 2. Check if a qualified prior run matches current evidence and policy
         if prior_run and str(prior_run.get("status")) == "completed":
-            if is_qualified_market_universe_coverage_run(
+            is_valid_prior, _ = validate_run_predecessor_ancestry(
+                prior_run, current_run_id=str(prior_run.get("run_id") or "")
+            )
+            if is_valid_prior and is_qualified_market_universe_coverage_run(
                 prior_run,
                 expected_snapshot_id=str(latest_master.get("snapshot_id") or "")
                 if latest_master
@@ -1296,7 +1327,11 @@ class MarketUniverseAutomationService:
                     expected_task_key=payload.get("task_key"),
                 )
             ):
-                return row
+                is_valid_ancestry, _ = validate_run_predecessor_ancestry(
+                    row, current_run_id=str(row.get("run_id") or current_run_id)
+                )
+                if is_valid_ancestry:
+                    return row
             if (
                 status == "blocked"
                 and existing_status == "blocked"
