@@ -164,22 +164,30 @@ def is_qualified_market_universe_coverage_run(
         return None
 
     # 1. Validation policy identity & policy fingerprint
-    policy_id = payload.get("validation_policy_id") or payload.get(
-        "coverage_validation_policy_id"
-    )
+    primary_policy = payload.get("validation_policy_id")
+    alias_policy = payload.get("coverage_validation_policy_id")
+    if primary_policy and alias_policy and primary_policy != alias_policy:
+        return False
+    policy_id = primary_policy or alias_policy
     if policy_id != expected_policy_id:
         return False
     if payload.get("policy_fingerprint") != expected_policy_fingerprint:
         return False
 
-    # 2. Evidence completeness: no partial dates, no missing symbols, frozen is True, no blockers
+    # 2. Evidence completeness: strict list types, no blockers, frozen is True
     if payload.get("full_market_history_frozen") is not True:
         return False
-    if payload.get("blockers"):
+
+    blockers = payload.get("blockers")
+    if not isinstance(blockers, list) or len(blockers) != 0:
         return False
-    if payload.get("full_market_partial_receipt_dates"):
+
+    partial_dates = payload.get("full_market_partial_receipt_dates")
+    if not isinstance(partial_dates, list) or len(partial_dates) != 0:
         return False
-    if payload.get("full_market_missing_receipt_dates"):
+
+    missing_dates = payload.get("full_market_missing_receipt_dates")
+    if not isinstance(missing_dates, list) or len(missing_dates) != 0:
         return False
 
     uncovered_count = _strict_non_negative_int(
@@ -210,9 +218,11 @@ def is_qualified_market_universe_coverage_run(
     # 3. Content identity & fingerprint: master snapshot and daily receipt evidence must match
     if payload.get("market_universe_snapshot_id") != expected_snapshot_id:
         return False
-    existing_evidence_fp = payload.get("evidence_fingerprint") or payload.get(
-        "coverage_evidence_fingerprint"
-    )
+    primary_fp = payload.get("evidence_fingerprint")
+    alias_fp = payload.get("coverage_evidence_fingerprint")
+    if primary_fp and alias_fp and primary_fp != alias_fp:
+        return False
+    existing_evidence_fp = primary_fp or alias_fp
     if existing_evidence_fp != expected_fingerprint:
         return False
     return True
@@ -1130,25 +1140,26 @@ class MarketUniverseAutomationService:
         trade_scope = payload.get("trade_date") or run_date
         current_run_id = run_id
         initial_run_id = run_id
-        current_source_ref = source_ref
+        target_predecessor = (
+            source_ref
+            if source_ref and str(source_ref) != run_id
+            else payload.get("supersedes_run_id") or payload.get("prior_run_id")
+        )
+        if target_predecessor and str(target_predecessor) == run_id:
+            target_predecessor = None
 
         max_attempts = 10
         for attempt in range(max_attempts):
-            supersedes = payload.get("supersedes_run_id")
-            if supersedes and str(supersedes) == current_run_id:
-                payload["supersedes_run_id"] = None
-            prior = payload.get("prior_run_id")
-            if prior and str(prior) == current_run_id:
-                payload["prior_run_id"] = None
-            resolved_source_ref = (
-                current_source_ref
-                if current_source_ref and str(current_source_ref) != current_run_id
-                else payload.get("supersedes_run_id")
-                or payload.get("prior_run_id")
-                or payload.get("market_universe_snapshot_id")
+            resolved_predecessor = (
+                target_predecessor
+                if target_predecessor and str(target_predecessor) != current_run_id
+                else None
             )
-            if resolved_source_ref and str(resolved_source_ref) == current_run_id:
-                resolved_source_ref = payload.get("market_universe_snapshot_id")
+            resolved_source_ref = resolved_predecessor or payload.get(
+                "market_universe_snapshot_id"
+            )
+            payload["supersedes_run_id"] = resolved_predecessor
+            payload["prior_run_id"] = resolved_predecessor
 
             run_dict = {
                 "run_id": current_run_id,
@@ -1187,17 +1198,18 @@ class MarketUniverseAutomationService:
                 return row
 
             colliding_id = str(row.get("run_id") or initial_run_id)
+            if not target_predecessor or str(target_predecessor) == current_run_id:
+                target_predecessor = colliding_id
+
             attempt_fp = content_fingerprint(
                 {
                     "initial_run_id": initial_run_id,
                     "colliding_run_id": colliding_id,
+                    "target_predecessor": target_predecessor,
                     "attempt": attempt + 1,
                     "started_at": now.isoformat(),
                 }
             )
-            payload["supersedes_run_id"] = colliding_id
-            payload["prior_run_id"] = colliding_id
-            current_source_ref = colliding_id
             current_run_id = f"market_universe_sync:{trade_scope}:{attempt_fp[:16]}"
 
         raise RuntimeError(

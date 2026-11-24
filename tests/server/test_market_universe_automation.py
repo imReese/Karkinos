@@ -1479,6 +1479,7 @@ def test_collision_exhaustion_raises_and_never_overwrites_terminal_rows(tmp_path
             {
                 "initial_run_id": base_id,
                 "colliding_run_id": curr_colliding,
+                "target_predecessor": base_id,
                 "attempt": att + 1,
                 "started_at": t.isoformat(),
             }
@@ -1520,6 +1521,90 @@ def test_collision_exhaustion_raises_and_never_overwrites_terminal_rows(tmp_path
     for r in rows:
         payload = json.loads(r["payload_json"])
         assert payload.get("attempt") == "seed"
+
+
+def test_collision_routing_preserves_latest_retry_predecessor(tmp_path):
+    """When a task has retried, collision on base ID attaches the new attempt to the latest retry, not the base ID."""
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    service = MarketUniverseAutomationService(
+        db=db,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-04-01"
+        ),
+        data_store=DataStore(tmp_path / "market"),
+        source=_Source(),
+    )
+    t1 = datetime(2026, 8, 23, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    t2 = datetime(2026, 8, 23, 10, 5, tzinfo=ZoneInfo("Asia/Shanghai"))
+    t3 = datetime(2026, 8, 23, 10, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+    base_id = "market_universe_sync:2026-08-21:deterministic_base"
+    retry_1_id = "market_universe_sync:2026-08-21:retry_attempt_1"
+
+    # Seed Run 1 (base attempt, failed)
+    db.upsert_automation_run_sync(
+        {
+            "run_id": base_id,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-23",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": t1.isoformat(),
+            "finished_at": t1.isoformat(),
+            "payload": {
+                "schema_version": "karkinos.market_universe_automation.v7",
+                "trade_date": "2026-08-21",
+                "attempt": 1,
+            },
+        }
+    )
+
+    # Seed Run 2 (retry 1, supersedes base_id)
+    db.upsert_automation_run_sync(
+        {
+            "run_id": retry_1_id,
+            "run_type": "market_universe_sync",
+            "run_date": "2026-08-23",
+            "status": "failed",
+            "execution_mode": "market_data_ingestion",
+            "started_at": t2.isoformat(),
+            "finished_at": t2.isoformat(),
+            "source_ref": base_id,
+            "payload": {
+                "schema_version": "karkinos.market_universe_automation.v7",
+                "trade_date": "2026-08-21",
+                "attempt": 2,
+                "supersedes_run_id": base_id,
+                "prior_run_id": base_id,
+            },
+        }
+    )
+
+    # Now Run 3 executes. Caller knows retry_1_id was the prior run,
+    # but the deterministic target identity resolves to base_id.
+    run_3 = service._record_run(
+        run_id=base_id,
+        run_date="2026-08-23",
+        status="failed",
+        source_ref=retry_1_id,
+        now=t3,
+        payload={
+            "schema_version": "karkinos.market_universe_automation.v7",
+            "trade_date": "2026-08-21",
+            "attempt": 3,
+            "supersedes_run_id": retry_1_id,
+            "prior_run_id": retry_1_id,
+        },
+    )
+
+    # Run 3 must allocate a distinct run_id and point to retry_1_id (the latest retry), NOT base_id!
+    assert run_3["run_id"] != base_id
+    assert run_3["run_id"] != retry_1_id
+    assert run_3["source_ref"] == retry_1_id
+    p3 = json.loads(run_3["payload_json"])
+    assert p3["supersedes_run_id"] == retry_1_id
+    assert p3["prior_run_id"] == retry_1_id
 
 
 def test_listing_inside_history_window_produces_fingerprint_and_reuses_completed(
@@ -1734,6 +1819,50 @@ def test_is_qualified_market_universe_coverage_run_strict_types():
             expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
             expected_policy_fingerprint="p_fp",
         )
+
+    # Disqualify if blockers, partial dates, or missing dates are non-lists or non-empty
+    for field in [
+        "blockers",
+        "full_market_partial_receipt_dates",
+        "full_market_missing_receipt_dates",
+    ]:
+        for bad_val in [None, "", 0, {}, "none", ["item"]]:
+            p = dict(base_payload, **{field: bad_val})
+            assert not is_qualified_market_universe_coverage_run(
+                _make_run(p),
+                expected_snapshot_id="snap_1",
+                expected_fingerprint="ev_fp",
+                expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+                expected_policy_fingerprint="p_fp",
+            )
+
+    # Disqualify if validation policy aliases contradict each other
+    p_bad_policy_alias = dict(
+        base_payload,
+        validation_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+        coverage_validation_policy_id="contradictory_policy",
+    )
+    assert not is_qualified_market_universe_coverage_run(
+        _make_run(p_bad_policy_alias),
+        expected_snapshot_id="snap_1",
+        expected_fingerprint="ev_fp",
+        expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+        expected_policy_fingerprint="p_fp",
+    )
+
+    # Disqualify if evidence fingerprint aliases contradict each other
+    p_bad_fp_alias = dict(
+        base_payload,
+        evidence_fingerprint="ev_fp",
+        coverage_evidence_fingerprint="contradictory_fp",
+    )
+    assert not is_qualified_market_universe_coverage_run(
+        _make_run(p_bad_fp_alias),
+        expected_snapshot_id="snap_1",
+        expected_fingerprint="ev_fp",
+        expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+        expected_policy_fingerprint="p_fp",
+    )
 
 
 def test_market_universe_automation_requires_atomic_inserter(tmp_path):
