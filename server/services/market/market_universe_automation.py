@@ -14,6 +14,7 @@ import pandas as pd
 
 from core.types import AssetClass, BarFrequency, Symbol
 from data.manager import build_sources_for_config
+from data.research_market_data import select_replayable_scoped_receipts
 from data.source_policy import MarketDataUseCase
 from data.source_routing import configured_legacy_provider_names
 from data.storage.objects import ContentAddressedObjectStore
@@ -59,10 +60,12 @@ def check_receipts_session_coverage(
     receipts: Sequence[Mapping[str, Any]],
     members: Sequence[str] | None = None,
     member_metadata: Sequence[Mapping[str, Any]] | None = None,
+    scoped_receipts: Sequence[Mapping[str, Any]] | None = None,
 ) -> bool:
     """Verify that receipts exist for every required trading date and cover all listed symbols."""
     if not trading_dates or not receipts:
         return False
+    scoped_receipts = select_replayable_scoped_receipts(receipts, scoped_receipts or ())
     receipt_by_date = {str(r.get("trade_date")): r for r in receipts}
     member_symbols = [str(m) for m in members or []]
     metadata = member_metadata or []
@@ -76,10 +79,29 @@ def check_receipts_session_coverage(
         if member_symbols:
             expected = history_session_symbols(member_symbols, metadata, session)
             receipt_symbols = set(receipt.get("symbols") or [])
-            if receipt_symbols and expected and not expected.issubset(receipt_symbols):
-                return False
-            elif expected and row_count < len(expected):
-                return False
+            halted_in_session = {
+                str(row["symbol"])
+                for row in metadata
+                if row.get("trade_status") == "0"
+                and str(row.get("status_session_date") or "") == session
+            }
+            scoped_in_session = {
+                sym
+                for sc in (scoped_receipts or [])
+                if str(sc.get("trade_date") or "") == session
+                for sym in (sc.get("symbols") or [])
+            }
+            covered = receipt_symbols | scoped_in_session | halted_in_session
+            if expected:
+                if receipt_symbols or scoped_in_session:
+                    if not expected.issubset(covered):
+                        return False
+                else:
+                    total_count = (
+                        row_count + len(scoped_in_session) + len(halted_in_session)
+                    )
+                    if total_count < len(expected):
+                        return False
     return True
 
 
@@ -90,6 +112,7 @@ def compute_market_coverage_evidence_fingerprint(
     receipts: Sequence[Mapping[str, Any]],
     members: Sequence[str] | None = None,
     member_metadata: Sequence[Mapping[str, Any]] | None = None,
+    scoped_receipts: Sequence[Mapping[str, Any]] | None = None,
 ) -> str | None:
     """Deterministic content fingerprint binding master snapshot and daily bar receipts.
 
@@ -98,11 +121,13 @@ def compute_market_coverage_evidence_fingerprint(
     """
     if not snapshot_id or not trading_dates:
         return None
+    scoped_receipts = select_replayable_scoped_receipts(receipts, scoped_receipts or ())
     if not check_receipts_session_coverage(
         trading_dates=trading_dates,
         receipts=receipts,
         members=members,
         member_metadata=member_metadata,
+        scoped_receipts=scoped_receipts,
     ):
         return None
 
@@ -119,14 +144,34 @@ def compute_market_coverage_evidence_fingerprint(
         for r in receipts
         if str(r.get("trade_date")) in trading_dates
     ]
-    return content_fingerprint(
+    scoped_cores = [
         {
-            "policy_id": MARKET_UNIVERSE_COVERAGE_POLICY_ID,
-            "snapshot_id": snapshot_id,
-            "trading_dates": sorted(trading_dates),
-            "receipts": receipt_cores,
+            "trade_date": str(sc.get("trade_date")),
+            "provider_name": str(sc.get("provider_name")),
+            "scope_fingerprint": str(sc.get("scope_fingerprint") or ""),
+            "row_count": int(sc.get("row_count") or 0),
+            "dataset_fingerprint": str(sc.get("dataset_fingerprint") or ""),
+            "receipt_fingerprint": str(sc.get("receipt_fingerprint") or ""),
         }
-    )
+        for sc in (scoped_receipts or [])
+        if str(sc.get("trade_date")) in trading_dates
+    ]
+    payload = {
+        "policy_id": MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+        "snapshot_id": snapshot_id,
+        "trading_dates": sorted(trading_dates),
+        "receipts": receipt_cores,
+    }
+    if scoped_cores:
+        payload["scoped_receipts"] = sorted(
+            scoped_cores,
+            key=lambda x: (
+                x["trade_date"],
+                x["provider_name"],
+                x["scope_fingerprint"],
+            ),
+        )
+    return content_fingerprint(payload)
 
 
 def is_qualified_market_universe_coverage_run(
@@ -267,6 +312,28 @@ def is_qualified_market_universe_coverage_run(
     ):
         return False
 
+    member_count_raw = _strict_non_negative_int(
+        payload.get("market_universe_member_count")
+    )
+    ready_count_raw = _strict_non_negative_int(payload.get("persisted_bar_ready_count"))
+    cross_count_raw = _strict_non_negative_int(
+        payload.get("latest_cross_section_row_count")
+    )
+    if member_count_raw is not None:
+        if ready_count_raw is not None and ready_count_raw > member_count_raw:
+            return False
+        if cross_count_raw is not None and cross_count_raw > member_count_raw:
+            return False
+        excluded_count_raw = _strict_non_negative_int(
+            payload.get("persisted_bar_excluded_count")
+        )
+        if (
+            excluded_count_raw is not None
+            and ready_count_raw is not None
+            and ready_count_raw + excluded_count_raw != member_count_raw
+        ):
+            return False
+
     if expected_panel_size is not None:
         if not isinstance(rec_policy, Mapping):
             return False
@@ -275,6 +342,14 @@ def is_qualified_market_universe_coverage_run(
             return False
         if rec_panel != expected_panel_size:
             return False
+
+        min_master = rec_policy.get("minimum_master_member_count")
+        if isinstance(min_master, int) and not isinstance(min_master, bool):
+            member_count_check = _strict_non_negative_int(
+                payload.get("market_universe_member_count")
+            )
+            if member_count_check is not None and member_count_check < min_master:
+                return False
 
         member_count = _strict_non_negative_int(
             payload.get("market_universe_member_count")
@@ -314,6 +389,16 @@ def is_qualified_market_universe_coverage_run(
         if ready_count < calc_min_ready:
             return False
         if cross_count < calc_min_cross:
+            return False
+        if ready_count > member_count:
+            return False
+        if cross_count > member_count:
+            return False
+
+        excluded_count = _strict_non_negative_int(
+            payload.get("persisted_bar_excluded_count")
+        )
+        if excluded_count is not None and ready_count + excluded_count != member_count:
             return False
 
     return True
@@ -882,6 +967,33 @@ def validate_market_universe_automation_payload(
     return dict(payload)
 
 
+def _snapshot_has_empty_status_roster(
+    objects: ContentAddressedObjectStore,
+    snapshot: Mapping[str, Any],
+    trade_date: str,
+) -> bool:
+    source_capture_ids = snapshot.get("source_capture_ids")
+    if not source_capture_ids:
+        return False
+    from data.market.capture import read_provider_capture
+
+    for cid in source_capture_ids:
+        try:
+            ref = objects.resolve_ref(cid)
+            cap = read_provider_capture(objects, ref)
+            if cap.provider == "baostock" and cap.operation in {
+                "query_all_stock",
+                "daily_stock_status",
+            }:
+                req = json.loads(cap.request_json)
+                day = str(req.get("day") or req.get("trade_date") or "")
+                if day == str(trade_date):
+                    return (cap.record_count or 0) <= 0
+        except Exception:
+            continue
+    return False
+
+
 class MarketUniverseAutomationService:
     """Refresh and freeze the stock master plus full-market bar history."""
 
@@ -1056,6 +1168,16 @@ class MarketUniverseAutomationService:
         has_complete_current_receipts = bool(
             trading_dates and receipt_dates.issuperset(trading_dates)
         )
+        scoped_receipts = []
+        if hasattr(self._data_store, "list_market_daily_scoped_receipts"):
+            try:
+                scoped_receipts = self._data_store.list_market_daily_scoped_receipts(
+                    provider_name=daily_provider_name,
+                    verify=True,
+                )
+            except (ValueError, OSError):
+                scoped_receipts = []
+
         evidence_fingerprint = (
             compute_market_coverage_evidence_fingerprint(
                 snapshot_id=str(latest_master.get("snapshot_id") or ""),
@@ -1063,6 +1185,7 @@ class MarketUniverseAutomationService:
                 receipts=current_receipts,
                 members=master_members,
                 member_metadata=master_metadata,
+                scoped_receipts=scoped_receipts,
             )
             if (latest_master and has_complete_current_receipts)
             else None
@@ -1207,6 +1330,8 @@ class MarketUniverseAutomationService:
                 daily_provider_name=daily_provider_name,
                 trading_dates=trading_dates,
                 members=members,
+                snapshot=snapshot,
+                trade_date=trade_date,
             )
 
             coverage = self._history_coverage(
@@ -1494,6 +1619,22 @@ class MarketUniverseAutomationService:
         capture_lister = getattr(
             self._security_master_source, "capture_symbol_metadata", None
         )
+        has_empty_status = False
+        if (
+            snapshot is not None
+            and callable(capture_lister)
+            and snapshot.get("source_capture_ids")
+        ):
+            try:
+                objects = ContentAddressedObjectStore(
+                    self._data_store._root / "research" / "objects"
+                )
+                has_empty_status = _snapshot_has_empty_status_roster(
+                    objects, snapshot, trade_date
+                )
+            except Exception:
+                has_empty_status = False
+
         if (
             snapshot is None
             or snapshot.get("schema_version")
@@ -1506,6 +1647,7 @@ class MarketUniverseAutomationService:
                 and callable(metadata_lister)
             )
             or (callable(capture_lister) and not snapshot.get("source_capture_ids"))
+            or has_empty_status
         ):
             capture_started_at = self._capture_clock()
             metadata_lister = getattr(
@@ -1587,6 +1729,8 @@ class MarketUniverseAutomationService:
         daily_provider_name: str,
         trading_dates: Sequence[str],
         members: Sequence[str],
+        snapshot: Mapping[str, Any] | None = None,
+        trade_date: str | None = None,
     ) -> tuple[int, int, int, int]:
         updated = 0
         failed = 0
@@ -1603,13 +1747,99 @@ class MarketUniverseAutomationService:
         )
         if callable(batch_fetcher):
             member_set = set(members)
+            member_metadata = (
+                (snapshot.get("member_metadata") or []) if snapshot else []
+            )
+            current_trade_date = (
+                str(trade_date)
+                if trade_date
+                else (
+                    str(snapshot.get("trade_date") or "")
+                    if snapshot
+                    else (str(trading_dates[-1]) if trading_dates else "")
+                )
+            )
             for market_date in trading_dates:
                 receipt = self._data_store.get_market_daily_ingestion_receipt(
                     trade_date=market_date,
                     provider_name=daily_provider_name,
                 )
                 if receipt is not None:
-                    receipt_skipped += 1
+                    if not current_trade_date or str(market_date) != str(
+                        current_trade_date
+                    ):
+                        receipt_skipped += 1
+                        continue
+                    receipt_symbols = set(receipt.get("symbols") or [])
+                    expected_symbols = (
+                        history_session_symbols(members, member_metadata, market_date)
+                        if member_metadata
+                        else member_set
+                    )
+                    halted_symbols = set()
+                    if snapshot is not None and str(
+                        snapshot.get("trade_date") or ""
+                    ) == str(market_date):
+                        from data.store import stock_master_nontrading_instruments
+
+                        try:
+                            halted_symbols = {
+                                key.symbol
+                                for key in stock_master_nontrading_instruments(
+                                    snapshot, session_date=market_date
+                                )
+                            }
+                        except Exception:
+                            halted_symbols = set()
+                    scoped_symbols = set()
+                    if hasattr(self._data_store, "list_market_daily_scoped_receipts"):
+                        try:
+                            scopes = self._data_store.list_market_daily_scoped_receipts(
+                                trade_date=market_date,
+                                provider_name=daily_provider_name,
+                                verify=True,
+                            )
+                            for sc in select_replayable_scoped_receipts(
+                                [receipt], scopes
+                            ):
+                                scoped_symbols.update(sc.get("symbols") or [])
+                        except (ValueError, OSError):
+                            scoped_symbols = set()
+                    covered = receipt_symbols | scoped_symbols | halted_symbols
+                    missing_symbols = expected_symbols - covered
+                    if not missing_symbols or "source_volumes" in receipt:
+                        # The source-volume reader cannot replay additional scopes.
+                        # Coverage stays blocked for any remaining symbols.
+                        receipt_skipped += 1
+                        continue
+
+                    # Unverified missing symbols exist in this partial receipt; attempt bounded recovery
+                    if self._throttle_seconds:
+                        self._sleep(self._throttle_seconds)
+                    remote_attempted += 1
+                    try:
+                        frame = batch_fetcher(market_date)
+                        recovered = frame.loc[
+                            frame["symbol"].astype(str).isin(missing_symbols)
+                        ].copy()
+                        if not recovered.empty:
+                            self._data_store.ingest_scoped_market_daily_batch(
+                                trade_date=market_date,
+                                provider_name=daily_provider_name,
+                                bars=recovered,
+                                symbols=list(recovered["symbol"].astype(str).unique()),
+                            )
+                            updated += 1
+                        else:
+                            receipt_skipped += 1
+                    except Exception:
+                        failed += 1
+                        logger.warning(
+                            "Recovery refresh for missing symbols failed for %s",
+                            market_date,
+                            exc_info=True,
+                        )
+                        break
                     continue
                 if self._throttle_seconds:
                     self._sleep(self._throttle_seconds)
@@ -1704,11 +1934,30 @@ class MarketUniverseAutomationService:
             provider_name=daily_provider_name,
         )
         receipt_dates = {str(item["trade_date"]) for item in receipts}
+        blockers: list[str] = []
+        missing_receipt_dates = sorted(set(trading_dates) - receipt_dates)
+        if missing_receipt_dates:
+            blockers.append("full_market_daily_receipt_coverage_incomplete")
+
+        scoped_receipts: list[dict[str, Any]] = []
+        if hasattr(self._data_store, "list_market_daily_scoped_receipts"):
+            try:
+                scoped_receipts = [
+                    dict(sc)
+                    for sc in self._data_store.list_market_daily_scoped_receipts(
+                        provider_name=daily_provider_name,
+                        verify=True,
+                    )
+                ]
+            except (ValueError, OSError):
+                blockers.append("market_daily_ingestion_receipt_drift")
+
+        scoped_receipts = select_replayable_scoped_receipts(receipts, scoped_receipts)
         frames = self._data_store.load_market_bar_windows(
             symbols=members,
             start_date=start_date.isoformat(),
             end_date=trade_date,
-            receipts=receipts,
+            receipts=[*receipts, *scoped_receipts],
         )
         ready = sum(
             1
@@ -1719,10 +1968,12 @@ class MarketUniverseAutomationService:
                 minimum_rows=self._policy.minimum_history_rows,
             )
         )
-        blockers: list[str] = []
-        missing_receipt_dates = sorted(set(trading_dates) - receipt_dates)
-        if missing_receipt_dates:
-            blockers.append("full_market_daily_receipt_coverage_incomplete")
+        scoped_by_date: dict[str, set[str]] = {}
+        for sc in scoped_receipts:
+            dt = str(sc.get("trade_date") or "")
+            if dt:
+                scoped_by_date.setdefault(dt, set()).update(sc.get("symbols") or [])
+
         partial_dates = []
         missing_symbol_sessions = 0
         for receipt in receipts:
@@ -1730,7 +1981,16 @@ class MarketUniverseAutomationService:
             if session not in trading_dates:
                 continue
             expected = history_session_symbols(members, member_metadata, session)
-            missing = expected - set(receipt.get("symbols") or [])
+            receipt_symbols = set(receipt.get("symbols") or [])
+            halted_in_session = {
+                str(row["symbol"])
+                for row in member_metadata
+                if row.get("trade_status") == "0"
+                and str(row.get("status_session_date") or "") == session
+            }
+            scoped_symbols = scoped_by_date.get(session, set())
+            covered = receipt_symbols | scoped_symbols | halted_in_session
+            missing = expected - covered
             if missing:
                 partial_dates.append(session)
                 missing_symbol_sessions += len(missing)
@@ -1744,7 +2004,13 @@ class MarketUniverseAutomationService:
             ),
             {},
         )
-        end_cross_section_count = int(end_receipt.get("row_count") or 0)
+        end_symbols = set(end_receipt.get("symbols") or [])
+        scoped_end_symbols = scoped_by_date.get(trade_date, set())
+        end_cross_section_count = (
+            len(end_symbols | scoped_end_symbols)
+            if end_symbols
+            else int(end_receipt.get("row_count") or 0)
+        )
         minimum_end_cross_section_count = max(
             self._policy.panel_size,
             int(len(members) * 0.9),
@@ -1774,13 +2040,15 @@ class MarketUniverseAutomationService:
             "latest_cross_section_row_count": end_cross_section_count,
             "minimum_latest_cross_section_row_count": minimum_end_cross_section_count,
             "full_market_history_frozen": not missing_receipt_dates
-            and not partial_dates,
+            and not partial_dates
+            and ("market_daily_ingestion_receipt_drift" not in blockers),
             "coverage_evidence_fingerprint": compute_market_coverage_evidence_fingerprint(
                 snapshot_id=str(snapshot_id or ""),
                 trading_dates=trading_dates,
                 receipts=receipts,
                 members=members,
                 member_metadata=member_metadata,
+                scoped_receipts=scoped_receipts,
             )
             if (snapshot_id and full_coverage)
             else None,

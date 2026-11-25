@@ -11,6 +11,7 @@ import pandas as pd
 import pytest
 
 from core.types import AssetClass, Symbol
+from data.research_market_data import resolve_daily_bar_receipts
 from data.store import DataStore
 from server.db import AppDatabase
 from server.services.market.calendar import (
@@ -292,6 +293,56 @@ def test_full_batch_preserves_source_volumes_and_the_existing_scoped_receipt(tmp
     assert volume(scoped) == 1000 and volume(full) == 1009
     with pytest.raises(ValueError, match="ingestion_receipt_drift"):
         volume({**full, "source_volumes": {"600001": [1000.0, 1010.0]}})
+
+    # Actual resolver selects canonical full receipt and does not append redundant scoped receipt,
+    # avoiding ValueError: market_daily_receipt_storage_authority_conflict in load_market_bar_windows.
+    resolved = resolve_daily_bar_receipts(
+        data_store=store, start_date=_TRADE_DATE, end_date=_TRADE_DATE
+    )
+    assert len(resolved) == 1
+    assert resolved[0]["receipt_fingerprint"] == full["receipt_fingerprint"]
+    assert "source_volumes" in resolved[0]
+
+    replayed = store.load_market_bar_windows(
+        symbols=["600001", "600002"],
+        start_date=_TRADE_DATE,
+        end_date=_TRADE_DATE,
+        receipts=resolved,
+    )
+    assert replayed["600001"]["volume"].iloc[0] == 1009.0
+    assert replayed["600002"]["volume"].iloc[0] == 1000.0
+
+
+def test_resolve_daily_bar_receipts_supplements_recovered_missing_symbols(tmp_path):
+    """resolve_daily_bar_receipts safely supplements non-overlapping recovered scoped symbols without conflict."""
+    store = DataStore(tmp_path / "data")
+    trade_date = _TRADE_DATE
+    partial_bars = _create_bars([("600001", 10.0)])
+    full_receipt = store.ingest_market_daily_batch(
+        trade_date=trade_date, provider_name="unit_fixture", bars=partial_bars
+    )
+    scoped_bars = _create_bars([("600002", 20.0)])
+    scoped_receipt = store.ingest_scoped_market_daily_batch(
+        trade_date=trade_date, provider_name="unit_fixture", bars=scoped_bars
+    )
+
+    resolved = resolve_daily_bar_receipts(
+        data_store=store, start_date=trade_date, end_date=trade_date
+    )
+    assert len(resolved) == 2
+    fps = {r["receipt_fingerprint"] for r in resolved}
+    assert full_receipt["receipt_fingerprint"] in fps
+    assert scoped_receipt["receipt_fingerprint"] in fps
+
+    replayed = store.load_market_bar_windows(
+        symbols=["600001", "600002"],
+        start_date=trade_date,
+        end_date=trade_date,
+        receipts=resolved,
+    )
+    assert "600001" in replayed and "600002" in replayed
+    assert replayed["600001"]["volume"].iloc[0] == 1000.0
+    assert replayed["600002"]["volume"].iloc[0] == 1000.0
 
 
 def test_retry_reopens_historical_full_and_scoped_receipts_without_resigning(tmp_path):

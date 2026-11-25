@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -3528,8 +3528,8 @@ def test_policy_fingerprint_changes_with_panel_size_and_rejects_cross_qualificat
     )
     from server.services.market.market_universe_truth import MarketUniversePolicy
 
-    policy_40 = MarketUniversePolicy(panel_size=40)
-    policy_50 = MarketUniversePolicy(panel_size=50)
+    policy_40 = MarketUniversePolicy(panel_size=40, minimum_master_member_count=40)
+    policy_50 = MarketUniversePolicy(panel_size=50, minimum_master_member_count=50)
     dict_40 = automation_coverage_policy_dict(policy_40)
     dict_50 = automation_coverage_policy_dict(policy_50)
     fp_40 = content_fingerprint(dict_40)
@@ -4367,3 +4367,804 @@ def test_prior_discovery_ancestry_traversal_is_linear_and_scope_filtered(tmp_pat
     assert prior is None
     # With ancestry caching, each ancestor is fetched at most once, strictly O(N) (< 60 calls)
     assert getter_call_count <= 60
+
+
+def test_empty_status_roster_triggers_refetch_and_subsequent_reuse(
+    tmp_path, monkeypatch
+):
+    from data.store import DataStore
+    from server.db import AppDatabase
+    from server.services.market.market_universe_truth import normalize_a_share_members
+    from tests.data.providers.test_official_stock_master import DAYS, _capture
+    from tests.server.test_deployment_scope_datasets import _composed
+
+    p = tmp_path.resolve()
+    objects, _ = _composed(p)
+    store = DataStore(p)
+    app_db = AppDatabase(p / "app.db")
+    app_db.init_sync()
+    trade_date = DAYS[-1].isoformat()
+
+    # Capture initial snapshot with status_rows=[] (empty status roster)
+    rows, refs, started, completed = _capture(objects, status_rows=[])
+    snap = store.save_market_universe_snapshot(
+        trade_date=trade_date,
+        provider_name="akshare",
+        members=normalize_a_share_members([r["symbol"] for r in rows]),
+        capture_started_at=started,
+        capture_completed_at=completed,
+        source_metadata=rows,
+        source_capture_ids=refs,
+    )
+    assert snap is not None
+
+    fetch_count = 0
+
+    class CaptureSource:
+        def capture_symbol_metadata(self, obj_store, *, trade_date):
+            nonlocal fetch_count
+            fetch_count += 1
+            import tests.data.providers.test_official_stock_master as test_master
+
+            monkeypatch.setattr(
+                test_master, "NOW", test_master.NOW + timedelta(minutes=10)
+            )
+            v_rows, v_refs, v_started, v_completed = _capture(
+                obj_store, status_rows=[["sh.600000", "1", "普通股票"]]
+            )
+            return v_rows, v_refs, v_started, v_completed
+
+    from server.services.market.market_universe_truth import MarketUniversePolicy
+
+    svc = MarketUniverseAutomationService(
+        db=app_db,
+        data_store=store,
+        config=SimpleNamespace(data_source="akshare"),
+        source=CaptureSource(),
+        policy=MarketUniversePolicy(minimum_master_member_count=5),
+    )
+
+    # First call: detects empty status roster in existing snapshot, re-fetches
+    res_snap, contacted, _, _, _ = svc._ensure_market_universe_snapshot(
+        trade_date=trade_date,
+        master_provider_name="akshare",
+    )
+    assert contacted is True
+    assert fetch_count == 1
+    assert res_snap is not None
+
+    # Second call: valid status now present, reuses without contacting provider
+    res_snap2, contacted2, _, _, _ = svc._ensure_market_universe_snapshot(
+        trade_date=trade_date,
+        master_provider_name="akshare",
+    )
+    assert contacted2 is False
+    assert fetch_count == 1
+
+
+def test_partial_receipt_with_verified_halts_skips_provider_and_has_no_blockers(
+    tmp_path,
+):
+    from data.store import DataStore
+    from server.db import AppDatabase
+    from server.services.market.market_universe_truth import normalize_a_share_members
+    from tests.data.providers.test_official_stock_master import DAYS, _capture
+    from tests.server.test_deployment_scope_datasets import _composed
+
+    p = tmp_path.resolve()
+    objects, _ = _composed(p)
+    app_db = AppDatabase(p / "app.db")
+    app_db.init_sync()
+    store = DataStore(p)
+    trade_date = DAYS[-1].isoformat()
+
+    rows, refs, started, completed = _capture(
+        objects,
+        status_rows=[["sh.600000", "0", "停牌股票"], ["sz.000001", "1", "普通银行"]],
+    )
+    members_list = normalize_a_share_members([r["symbol"] for r in rows])
+    snap = store.save_market_universe_snapshot(
+        trade_date=trade_date,
+        provider_name="akshare",
+        members=members_list,
+        capture_started_at=started,
+        capture_completed_at=completed,
+        source_metadata=rows,
+        source_capture_ids=refs,
+    )
+    all_syms = [m["symbol"] for m in members_list]
+    active_syms = [s for s in all_syms if s != "600000"]
+
+    bars = pd.DataFrame(
+        {
+            "symbol": active_syms,
+            "timestamp": [pd.Timestamp(trade_date)] * len(active_syms),
+            "open": [10.0] * len(active_syms),
+            "high": [10.1] * len(active_syms),
+            "low": [9.9] * len(active_syms),
+            "close": [10.0] * len(active_syms),
+            "volume": [1000] * len(active_syms),
+            "amount": [10000] * len(active_syms),
+        }
+    )
+    store.ingest_market_daily_batch(
+        trade_date=trade_date, provider_name="akshare", bars=bars
+    )
+
+    class DummySource:
+        def fetch_market_daily_bars(self, dt):
+            raise RuntimeError("Should not be called")
+
+    svc = MarketUniverseAutomationService(
+        db=app_db,
+        data_store=store,
+        config=SimpleNamespace(data_source="akshare"),
+        source=DummySource(),
+    )
+    updated, failed, attempted, skipped = svc._refresh_daily_bars(
+        daily_provider_name="akshare",
+        trading_dates=[trade_date],
+        members=all_syms,
+        snapshot=snap,
+    )
+    assert skipped == 1
+    assert updated == 0
+    assert attempted == 0
+
+    cov = svc._history_coverage(
+        start_date=DAYS[0],
+        trade_date=trade_date,
+        daily_provider_name="akshare",
+        trading_dates=[trade_date],
+        members=all_syms,
+        member_metadata=snap.get("member_metadata"),
+        snapshot_id=snap.get("snapshot_id"),
+    )
+    assert "full_market_daily_symbol_coverage_unverified" not in cov["blockers"]
+    assert cov["full_market_partial_receipt_dates"] == []
+
+
+def test_partial_receipt_with_unverified_missing_recovers_via_scoped_batch(tmp_path):
+    import sqlite3
+
+    from data.store import DataStore
+    from server.db import AppDatabase
+    from server.services.market.market_universe_truth import normalize_a_share_members
+    from tests.data.providers.test_official_stock_master import DAYS, _capture
+    from tests.server.test_deployment_scope_datasets import _composed
+
+    p = tmp_path.resolve()
+    objects, _ = _composed(p)
+    app_db = AppDatabase(p / "app.db")
+    app_db.init_sync()
+    store = DataStore(p)
+    trade_date = DAYS[-1].isoformat()
+
+    rows, refs, started, completed = _capture(
+        objects,
+        status_rows=[["sh.600000", "0", "停牌股票"], ["sz.000001", "1", "普通银行"]],
+    )
+    members_list = normalize_a_share_members([r["symbol"] for r in rows])
+    snap = store.save_market_universe_snapshot(
+        trade_date=trade_date,
+        provider_name="akshare",
+        members=members_list,
+        capture_started_at=started,
+        capture_completed_at=completed,
+        source_metadata=rows,
+        source_capture_ids=refs,
+    )
+    all_syms = [m["symbol"] for m in members_list]
+    initial_syms = [s for s in all_syms if s not in {"600000", "000001"}]
+
+    bars = pd.DataFrame(
+        {
+            "symbol": initial_syms,
+            "timestamp": [pd.Timestamp(trade_date)] * len(initial_syms),
+            "open": [10.0] * len(initial_syms),
+            "high": [10.1] * len(initial_syms),
+            "low": [9.9] * len(initial_syms),
+            "close": [10.0] * len(initial_syms),
+            "volume": [1000] * len(initial_syms),
+            "amount": [10000] * len(initial_syms),
+        }
+    )
+    store.ingest_market_daily_batch(
+        trade_date=trade_date, provider_name="akshare", bars=bars
+    )
+
+    recovered_bars = pd.DataFrame(
+        {
+            "symbol": ["000001"],
+            "timestamp": [pd.Timestamp(trade_date)],
+            "open": [12.0],
+            "high": [12.5],
+            "low": [11.9],
+            "close": [12.2],
+            "volume": [5000],
+            "amount": [60000],
+        }
+    )
+
+    fetch_calls = []
+
+    class ProviderSource:
+        def fetch_market_daily_bars(self, dt):
+            fetch_calls.append(dt)
+            return recovered_bars
+
+    svc = MarketUniverseAutomationService(
+        db=app_db,
+        data_store=store,
+        config=SimpleNamespace(data_source="akshare"),
+        source=ProviderSource(),
+    )
+    updated, failed, attempted, skipped = svc._refresh_daily_bars(
+        daily_provider_name="akshare",
+        trading_dates=[trade_date],
+        members=all_syms,
+        snapshot=snap,
+    )
+    assert len(fetch_calls) == 1
+    assert updated == 1
+    assert skipped == 0
+    assert failed == 0
+
+    scoped_receipts = store.list_market_daily_scoped_receipts(
+        trade_date=trade_date, provider_name="akshare"
+    )
+    assert len(scoped_receipts) == 1
+    assert set(scoped_receipts[0]["symbols"]) == {"000001"}
+
+    cov = svc._history_coverage(
+        start_date=DAYS[0],
+        trade_date=trade_date,
+        daily_provider_name="akshare",
+        trading_dates=[trade_date],
+        members=all_syms,
+        member_metadata=snap.get("member_metadata"),
+        snapshot_id=snap.get("snapshot_id"),
+    )
+    assert "full_market_daily_symbol_coverage_unverified" not in cov["blockers"]
+    assert cov["full_market_partial_receipt_dates"] == []
+    assert cov["full_market_history_frozen"] is True
+
+    # Second call skips provider!
+    updated2, failed2, attempted2, skipped2 = svc._refresh_daily_bars(
+        daily_provider_name="akshare",
+        trading_dates=[trade_date],
+        members=all_syms,
+        snapshot=snap,
+    )
+    assert len(fetch_calls) == 1
+    assert skipped2 == 1
+    assert updated2 == 0
+
+    # Corrupted scoped receipt fingerprint triggers receipt drift blocker and fails closed!
+    with sqlite3.connect(store._meta_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT receipt_json FROM market_daily_scoped_receipts"
+        ).fetchone()
+        assert row is not None
+        corrupted_payload = json.loads(str(row["receipt_json"]))
+        corrupted_payload["receipt_fingerprint"] = (
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        )
+        conn.execute(
+            "UPDATE market_daily_scoped_receipts SET receipt_json = ?",
+            (json.dumps(corrupted_payload),),
+        )
+
+    cov_corrupt = svc._history_coverage(
+        start_date=DAYS[0],
+        trade_date=trade_date,
+        daily_provider_name="akshare",
+        trading_dates=[trade_date],
+        members=all_syms,
+        member_metadata=snap.get("member_metadata"),
+        snapshot_id=snap.get("snapshot_id"),
+    )
+    assert "market_daily_ingestion_receipt_drift" in cov_corrupt["blockers"]
+    assert cov_corrupt["full_market_history_frozen"] is False
+    assert cov_corrupt["coverage_evidence_fingerprint"] is None
+    assert trade_date in cov_corrupt["full_market_partial_receipt_dates"]
+    assert cov_corrupt["full_market_uncovered_symbol_session_count"] > 0
+
+
+def test_partial_receipt_unresolved_missing_blocks(tmp_path):
+    from data.store import DataStore
+    from server.db import AppDatabase
+    from server.services.market.market_universe_truth import normalize_a_share_members
+    from tests.data.providers.test_official_stock_master import DAYS, _capture
+    from tests.server.test_deployment_scope_datasets import _composed
+
+    p = tmp_path.resolve()
+    objects, _ = _composed(p)
+    app_db = AppDatabase(p / "app.db")
+    app_db.init_sync()
+    store = DataStore(p)
+    trade_date = DAYS[-1].isoformat()
+
+    rows, refs, started, completed = _capture(
+        objects,
+        status_rows=[["sh.600000", "0", "停牌股票"], ["sz.000001", "1", "普通银行"]],
+    )
+    members_list = normalize_a_share_members([r["symbol"] for r in rows])
+    snap = store.save_market_universe_snapshot(
+        trade_date=trade_date,
+        provider_name="akshare",
+        members=members_list,
+        capture_started_at=started,
+        capture_completed_at=completed,
+        source_metadata=rows,
+        source_capture_ids=refs,
+    )
+    all_syms = [m["symbol"] for m in members_list]
+    initial_syms = [s for s in all_syms if s not in {"600000", "000001"}]
+
+    bars = pd.DataFrame(
+        {
+            "symbol": initial_syms,
+            "timestamp": [pd.Timestamp(trade_date)] * len(initial_syms),
+            "open": [10.0] * len(initial_syms),
+            "high": [10.1] * len(initial_syms),
+            "low": [9.9] * len(initial_syms),
+            "close": [10.0] * len(initial_syms),
+            "volume": [1000] * len(initial_syms),
+            "amount": [10000] * len(initial_syms),
+        }
+    )
+    store.ingest_market_daily_batch(
+        trade_date=trade_date, provider_name="akshare", bars=bars
+    )
+
+    class ProviderSource:
+        def fetch_market_daily_bars(self, dt):
+            # Still returns bars without 000001
+            return bars
+
+    svc = MarketUniverseAutomationService(
+        db=app_db,
+        data_store=store,
+        config=SimpleNamespace(data_source="akshare"),
+        source=ProviderSource(),
+    )
+    svc._refresh_daily_bars(
+        daily_provider_name="akshare",
+        trading_dates=[trade_date],
+        members=all_syms,
+        snapshot=snap,
+    )
+
+    cov = svc._history_coverage(
+        start_date=DAYS[0],
+        trade_date=trade_date,
+        daily_provider_name="akshare",
+        trading_dates=[trade_date],
+        members=all_syms,
+        member_metadata=snap.get("member_metadata"),
+        snapshot_id=snap.get("snapshot_id"),
+    )
+    assert "full_market_daily_symbol_coverage_unverified" in cov["blockers"]
+    assert trade_date in cov["full_market_partial_receipt_dates"]
+
+
+def test_tdx_provider_configured_truthfulness(monkeypatch):
+    from server.routes.settings import _provider_configured
+    from server.services.market_views.health_inputs import provider_configured
+
+    fake_state = SimpleNamespace(config=SimpleNamespace(data_source="akshare"))
+
+    monkeypatch.delenv("KARKINOS_TDX_DATA_SERVICE_KEY", raising=False)
+    assert provider_configured(fake_state, "tdx") is False
+    assert _provider_configured(fake_state.config, "tdx") is False
+
+    monkeypatch.setenv("KARKINOS_TDX_DATA_SERVICE_KEY", "test_key_12345")
+    assert provider_configured(fake_state, "tdx") is True
+    assert _provider_configured(fake_state.config, "tdx") is True
+
+
+def test_is_qualified_market_universe_coverage_run_bounds_and_master_validation():
+    from server.ai_runtime.contracts import content_fingerprint
+    from server.services.market.market_universe_automation import (
+        MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+        is_qualified_market_universe_coverage_run,
+    )
+
+    policy_dict = {
+        "panel_size": 2,
+        "minimum_history_rows": 1,
+        "minimum_master_member_count": 100,
+    }
+    pfp = content_fingerprint(policy_dict)
+
+    base_payload = {
+        "validation_policy_id": MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+        "policy": policy_dict,
+        "policy_fingerprint": pfp,
+        "evidence_fingerprint": "efp_123",
+        "market_universe_snapshot_id": "snap_123",
+        "task_key": "market_universe_sync:akshare:akshare:2026-08-24",
+        "full_market_daily_receipt_count": 1,
+        "full_market_missing_receipt_date_count": 0,
+        "full_market_partial_receipt_date_count": 0,
+        "full_market_uncovered_symbol_session_count": 0,
+        "full_market_missing_receipt_dates": [],
+        "full_market_partial_receipt_dates": [],
+        "market_universe_member_count": 5581,
+        "persisted_bar_ready_count": 5000,
+        "persisted_bar_excluded_count": 581,
+        "minimum_persisted_bar_ready_count": 4464,  # 5581 * 8 // 10
+        "latest_cross_section_row_count": 5500,
+        "minimum_latest_cross_section_row_count": 5022,  # 5581 * 9 // 10
+        "full_market_history_frozen": True,
+        "blockers": [],
+    }
+
+    def _row(payload: dict) -> dict:
+        return {
+            "run_id": "test_run_123",
+            "run_type": "market_universe_sync",
+            "status": "completed",
+            "payload_json": json.dumps(payload),
+        }
+
+    # 1. Base run is fully qualified
+    assert (
+        is_qualified_market_universe_coverage_run(
+            _row(base_payload),
+            expected_snapshot_id="snap_123",
+            expected_fingerprint="efp_123",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            expected_policy_fingerprint=pfp,
+            expected_panel_size=2,
+        )
+        is True
+    )
+
+    # 2. Impossible ready count (> member_count) MUST be disqualified
+    impossible_ready = {
+        **base_payload,
+        "persisted_bar_ready_count": 5681,  # 100 more than 5581 members
+        "persisted_bar_excluded_count": 0,
+    }
+    assert (
+        is_qualified_market_universe_coverage_run(
+            _row(impossible_ready),
+            expected_snapshot_id="snap_123",
+            expected_fingerprint="efp_123",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            expected_policy_fingerprint=pfp,
+            expected_panel_size=2,
+        )
+        is False
+    )
+
+    # 3. Impossible cross section count (> member_count) MUST be disqualified
+    impossible_cross = {
+        **base_payload,
+        "latest_cross_section_row_count": 5681,  # 100 more than 5581 members
+    }
+    assert (
+        is_qualified_market_universe_coverage_run(
+            _row(impossible_cross),
+            expected_snapshot_id="snap_123",
+            expected_fingerprint="efp_123",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            expected_policy_fingerprint=pfp,
+            expected_panel_size=2,
+        )
+        is False
+    )
+
+    # 4. Inconsistent excluded count (ready + excluded != member_count) MUST be disqualified
+    inconsistent_excluded = {
+        **base_payload,
+        "persisted_bar_excluded_count": 100,  # 5000 + 100 = 5100 != 5581
+    }
+    assert (
+        is_qualified_market_universe_coverage_run(
+            _row(inconsistent_excluded),
+            expected_snapshot_id="snap_123",
+            expected_fingerprint="efp_123",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            expected_policy_fingerprint=pfp,
+            expected_panel_size=2,
+        )
+        is False
+    )
+
+    # 5. Master count below policy minimum MUST be disqualified
+    below_min_policy = {
+        **policy_dict,
+        "minimum_master_member_count": 6000,
+    }
+    below_min_master = {
+        **base_payload,
+        "policy": below_min_policy,
+        "policy_fingerprint": content_fingerprint(below_min_policy),
+    }
+    assert (
+        is_qualified_market_universe_coverage_run(
+            _row(below_min_master),
+            expected_snapshot_id="snap_123",
+            expected_fingerprint="efp_123",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            expected_policy_fingerprint=content_fingerprint(below_min_policy),
+            expected_panel_size=2,
+        )
+        is False
+    )
+
+    # 6. Default policy with min_master=1000 and small panel member_count=40 MUST be disqualified
+    # without exempting member_count <= expected_panel_size
+    small_panel_under_min_master = {
+        **base_payload,
+        "market_universe_member_count": 40,
+        "persisted_bar_ready_count": 40,
+        "minimum_persisted_bar_ready_count": 40,
+        "latest_cross_section_row_count": 40,
+        "minimum_latest_cross_section_row_count": 40,
+        "persisted_bar_excluded_count": 0,
+    }
+    small_panel_policy = {
+        **policy_dict,
+        "panel_size": 40,
+        "minimum_master_member_count": 1000,
+    }
+    small_panel_under_min_master["policy"] = small_panel_policy
+    small_panel_under_min_master["policy_fingerprint"] = content_fingerprint(
+        small_panel_policy
+    )
+    assert (
+        is_qualified_market_universe_coverage_run(
+            _row(small_panel_under_min_master),
+            expected_snapshot_id="snap_123",
+            expected_fingerprint="efp_123",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            expected_policy_fingerprint=content_fingerprint(small_panel_policy),
+            expected_panel_size=40,
+            expected_member_count=40,
+        )
+        is False
+    )
+
+    # But with an explicit valid small policy (min_master=40), it qualifies:
+    small_panel_valid_policy = {
+        **policy_dict,
+        "panel_size": 40,
+        "minimum_master_member_count": 40,
+    }
+    small_panel_valid = {
+        **small_panel_under_min_master,
+        "policy": small_panel_valid_policy,
+        "policy_fingerprint": content_fingerprint(small_panel_valid_policy),
+    }
+    assert (
+        is_qualified_market_universe_coverage_run(
+            _row(small_panel_valid),
+            expected_snapshot_id="snap_123",
+            expected_fingerprint="efp_123",
+            expected_policy_id=MARKET_UNIVERSE_COVERAGE_POLICY_ID,
+            expected_policy_fingerprint=content_fingerprint(small_panel_valid_policy),
+            expected_panel_size=40,
+            expected_member_count=40,
+        )
+        is True
+    )
+
+
+def test_scoped_batch_recovery_full_run_due_and_subsequent_reuse(tmp_path):
+    from data.store import DataStore
+    from server.db import AppDatabase
+    from server.services.market.market_universe_truth import MarketUniversePolicy
+
+    p = tmp_path.resolve()
+    db = AppDatabase(p / "app.db")
+    db.init_sync()
+    _verified_calendar(db)
+    store = DataStore(p / "market")
+    trade_date = "2026-08-21"
+
+    all_20 = [f"{600000 + i:06d}" for i in range(20)]
+    partial_19 = all_20[:-1]
+
+    class _ScopedRecoverySource:
+        def __init__(self):
+            self.fetch_calls = []
+
+        def list_symbols(self):
+            return all_20
+
+        def list_symbol_metadata(self):
+            return [
+                {
+                    "symbol": s,
+                    "display_name": s,
+                    "provider_symbol": f"{s}.SH",
+                    "provider_name": "unit_fixture",
+                    "source": "stock_master",
+                    "list_date": "2026-01-01",
+                }
+                for s in all_20
+            ]
+
+        def fetch_market_daily_bars(self, dt: str) -> pd.DataFrame:
+            self.fetch_calls.append(dt)
+            return pd.DataFrame(
+                {
+                    "symbol": ["600019"],
+                    "timestamp": [pd.Timestamp(dt)],
+                    "open": [10.0],
+                    "high": [10.1],
+                    "low": [9.9],
+                    "close": [10.0],
+                    "volume": [1_000_000],
+                    "amount": [10_000_000],
+                }
+            )
+
+    # Ingest full batch for 2026-08-20
+    day_0_bars = pd.DataFrame(
+        {
+            "symbol": all_20,
+            "timestamp": [pd.Timestamp("2026-08-20")] * len(all_20),
+            "open": [10.0] * len(all_20),
+            "high": [10.1] * len(all_20),
+            "low": [9.9] * len(all_20),
+            "close": [10.0] * len(all_20),
+            "volume": [1000] * len(all_20),
+            "amount": [10000] * len(all_20),
+        }
+    )
+    store.ingest_market_daily_batch(
+        trade_date="2026-08-20",
+        provider_name="unit_fixture",
+        bars=day_0_bars,
+    )
+
+    # Ingest partial batch containing ONLY the first 19 symbols for 2026-08-21
+    partial_bars = pd.DataFrame(
+        {
+            "symbol": partial_19,
+            "timestamp": [pd.Timestamp(trade_date)] * len(partial_19),
+            "open": [10.0] * len(partial_19),
+            "high": [10.1] * len(partial_19),
+            "low": [9.9] * len(partial_19),
+            "close": [10.0] * len(partial_19),
+            "volume": [1000] * len(partial_19),
+            "amount": [10000] * len(partial_19),
+        }
+    )
+    store.ingest_market_daily_batch(
+        trade_date=trade_date,
+        provider_name="unit_fixture",
+        bars=partial_bars,
+    )
+
+    src = _ScopedRecoverySource()
+    policy_20 = MarketUniversePolicy(
+        minimum_master_member_count=20,
+        panel_size=20,
+        minimum_history_rows=2,
+    )
+    svc = MarketUniverseAutomationService(
+        db=db,
+        data_store=store,
+        config=SimpleNamespace(
+            data_source="unit_fixture", tushare_token="", start_date="2026-08-20"
+        ),
+        source=src,
+        policy=policy_20,
+    )
+
+    t = datetime(2026, 8, 21, 16, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+    # First run_due: executes recovery, succeeds with valid evidence fingerprint
+    run_1 = svc.run_due(now=t)
+    assert run_1["status"] == "completed"
+    assert len(src.fetch_calls) == 1
+    p1 = json.loads(run_1["payload_json"])
+    assert p1["evidence_fingerprint"] is not None
+    assert len(p1["evidence_fingerprint"]) == 64
+    assert p1["full_market_history_frozen"] is True
+    assert p1["blockers"] == []
+
+    # Second run_due: reuses completed run without contacting provider!
+    run_2 = svc.run_due(now=t + timedelta(minutes=5))
+    assert run_2["status"] == "completed"
+    assert run_2["run_id"] == run_1["run_id"]
+    assert len(src.fetch_calls) == 1  # No additional provider call!
+
+
+def test_source_volume_receipt_does_not_certify_unreplayable_scope(tmp_path):
+    from datetime import date
+
+    from data.research_market_data import resolve_daily_bar_receipts
+    from data.store import DataStore
+    from server.services.market.market_universe_truth import MarketUniversePolicy
+
+    root = tmp_path.resolve()
+    db = AppDatabase(root / "app.db")
+    db.init_sync()
+    _verified_calendar(db)
+    store = DataStore(root / "market")
+    day, previous = "2026-08-21", "2026-08-20"
+    symbols = [str(600001 + i) for i in range(20)]
+
+    def bars(names, session):
+        return pd.DataFrame(
+            {
+                "symbol": names,
+                "timestamp": [pd.Timestamp(session)] * len(names),
+                "open": 10.0,
+                "high": 10.1,
+                "low": 9.9,
+                "close": 10.0,
+                "volume": 1000.0,
+                "amount": 10000.0,
+            }
+        )
+
+    store.ingest_scoped_market_daily_batch(
+        trade_date=day, provider_name="akshare", bars=bars(symbols[:1], day)
+    )
+    partial = bars(symbols[:-1], day)
+    partial.loc[0, "volume"] = 1009.0
+    full = store.ingest_market_daily_batch(
+        trade_date=day, provider_name="tushare", bars=partial
+    )
+    assert "source_volumes" in full
+    store.ingest_market_daily_batch(
+        trade_date=previous, provider_name="tushare", bars=bars(symbols, previous)
+    )
+    store.ingest_scoped_market_daily_batch(
+        trade_date=day, provider_name="tushare", bars=bars(symbols[-1:], day)
+    )
+
+    class Source:
+        def list_symbols(self):
+            return symbols
+
+        def fetch_market_daily_bars(self, session):
+            pytest.fail("Unsupported supplemental authority must not be fetched again")
+
+    svc = MarketUniverseAutomationService(
+        db=db,
+        data_store=store,
+        config=SimpleNamespace(data_source="tushare", start_date=previous),
+        source=Source(),
+        policy=MarketUniversePolicy(
+            minimum_master_member_count=20, panel_size=4, minimum_history_rows=2
+        ),
+    )
+    coverage = svc._history_coverage(
+        start_date=date.fromisoformat(previous),
+        trade_date=day,
+        daily_provider_name="tushare",
+        trading_dates=[previous, day],
+        members=symbols,
+        snapshot_id="test-snapshot",
+    )
+    assert coverage["full_market_history_frozen"] is False
+    assert coverage["full_market_uncovered_symbol_session_count"] == 1
+    assert coverage["coverage_evidence_fingerprint"] is None
+    assert "full_market_daily_symbol_coverage_unverified" in coverage["blockers"]
+    receipts = resolve_daily_bar_receipts(
+        data_store=store,
+        start_date=previous,
+        end_date=day,
+        preferred_provider="tushare",
+    )
+    frames = store.load_market_bar_windows(
+        symbols=symbols, start_date=previous, end_date=day, receipts=receipts
+    )
+    assert frames[symbols[0]]["volume"].iloc[-1] == 1009.0
+    assert frames[symbols[-1]]["timestamp"].iloc[-1].date().isoformat() == previous
+    assert svc._refresh_daily_bars(
+        daily_provider_name="tushare",
+        trading_dates=[previous, day],
+        members=symbols,
+        trade_date=day,
+    ) == (0, 0, 0, 2)

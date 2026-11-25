@@ -202,6 +202,48 @@ def verified_daily_market_frames(
     return frames
 
 
+def select_replayable_scoped_receipts(
+    full_receipts: Sequence[Mapping[str, Any]],
+    scoped_receipts: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Admit verified supplements only for the chosen full receipt authority.
+
+    A source-volume receipt must be replayed alone; an incompatible or
+    redundant scope cannot close a coverage gap. Callers verify the persisted
+    receipts before using this selector.
+    """
+    full_by_date = {str(r.get("trade_date") or ""): r for r in full_receipts}
+    covered = {
+        day: set(receipt.get("symbols") or []) for day, receipt in full_by_date.items()
+    }
+    admitted: list[dict[str, Any]] = []
+    for scope in sorted(
+        scoped_receipts,
+        key=lambda r: (
+            str(r.get("trade_date") or ""),
+            -len(r.get("symbols") or []),
+            str(r.get("provider_name") or ""),
+            str(r.get("scope_fingerprint") or ""),
+        ),
+    ):
+        day = str(scope.get("trade_date") or "")
+        full = full_by_date.get(day)
+        if (
+            full is None
+            or "source_volumes" in full
+            or scope.get("provider_name") != full.get("provider_name")
+            or scope.get("storage_authority") != full.get("storage_authority")
+            or scope.get("receipt_fingerprint")
+            in (full.get("scoped_receipt_fingerprints") or ())
+        ):
+            continue
+        symbols = set(scope.get("symbols") or [])
+        if symbols - covered[day]:
+            admitted.append(dict(scope))
+            covered[day].update(symbols)
+    return admitted
+
+
 def resolve_daily_bar_receipts(
     *,
     data_store: Any,
@@ -272,6 +314,12 @@ def resolve_daily_bar_receipts(
 
             candidates.sort(key=rank)
             selected.append(candidates[0])
+    if hasattr(data_store, "list_market_daily_scoped_receipts"):
+        scoped = data_store.list_market_daily_scoped_receipts(
+            provider_name=preferred if preferred else None,
+            verify=True,
+        )
+        selected.extend(select_replayable_scoped_receipts(selected, scoped))
     return selected
 
 

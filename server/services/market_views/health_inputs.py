@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 from core.types import AssetClass, InstrumentKey, InstrumentType, Symbol
 from data.source_policy import (
@@ -145,6 +146,16 @@ def provider_requires_token(provider_name: str) -> bool:
 
 
 def provider_configured(state, provider_name: str) -> bool:
+    if provider_name == "tdx":
+        dataset_service = getattr(state, "dataset_service", None)
+        if dataset_service is not None and hasattr(dataset_service, "_settings"):
+            return bool(getattr(dataset_service._settings, "configured", False))
+        from data.providers.tdx import TdxRuntimeSettings
+
+        try:
+            return TdxRuntimeSettings.from_environment(os.environ).configured
+        except Exception:
+            return False
     if provider_requires_token(provider_name):
         return bool(getattr(state.config, "tushare_token", ""))
     return provider_name in {"akshare", "tushare"}

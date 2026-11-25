@@ -131,7 +131,7 @@ class DataSourceStatusResponse(BaseModel):
     latest_persistent_quote_timestamp: str | None = None
     persistent_cache_status: str = "unknown"
     available_providers: list[str] = Field(
-        default_factory=lambda: ["akshare", "tushare"]
+        default_factory=lambda: ["akshare", "tushare", "tdx"]
     )
 
 

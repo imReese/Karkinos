@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import is_dataclass, replace
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -66,6 +67,13 @@ def _require_configured_provider_credential(provider_name: str, config) -> None:
 
 
 def _provider_configured(config, provider_name: str) -> bool:
+    if provider_name == "tdx":
+        from data.providers.tdx import TdxRuntimeSettings
+
+        try:
+            return TdxRuntimeSettings.from_environment(os.environ).configured
+        except Exception:
+            return False
     if _provider_requires_token(provider_name):
         return bool(getattr(config, "tushare_token", ""))
     return provider_name in {"akshare", "tushare"}
