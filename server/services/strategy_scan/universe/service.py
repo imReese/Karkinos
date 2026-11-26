@@ -257,6 +257,9 @@ class PromotedStrategyUniverseScanService:
         )
         if not valuation_snapshot_id:
             blockers.append("valuation_snapshot_identity_missing")
+        ledger_fingerprint = portfolio_summary.get("ledger_fingerprint")
+        ledger_cutoff_id = portfolio_summary.get("ledger_cutoff_id")
+        quote_set_fingerprint = portfolio_summary.get("quote_set_fingerprint")
         return {
             "total_equity": total_equity,
             "stock_equity": stock_equity,
@@ -268,6 +271,15 @@ class PromotedStrategyUniverseScanService:
             "board_buy_permissions": portfolio_summary.get("board_buy_permissions"),
             "valuation_status": valuation_status,
             "valuation_snapshot_id": valuation_snapshot_id,
+            "ledger_cutoff_id": int(ledger_cutoff_id or 0)
+            if ledger_cutoff_id is not None
+            else None,
+            "ledger_fingerprint": str(ledger_fingerprint)
+            if ledger_fingerprint is not None
+            else None,
+            "quote_set_fingerprint": str(quote_set_fingerprint)
+            if quote_set_fingerprint is not None
+            else None,
             "valuation_lanes": list(portfolio_summary.get("valuation_lanes") or []),
             "symbols": sorted(
                 {
@@ -610,9 +622,23 @@ class PromotedStrategyUniverseScanService:
                     valuation = build_current_valuation_snapshot(
                         self._db, persist=False, now=self._clock()
                     )
-                    if (
-                        not is_asset_class_valuation_healthy(valuation, "stock")
-                        or valuation.get("snapshot_id")
+                    if not is_asset_class_valuation_healthy(valuation, "stock"):
+                        changed.append("current_portfolio_valuation_changed")
+                    bound_ledger = portfolio.get("ledger_fingerprint")
+                    if bound_ledger is not None:
+                        if (
+                            valuation.get("ledger_fingerprint") != bound_ledger
+                            or int(valuation.get("ledger_cutoff_id") or 0)
+                            != int(portfolio.get("ledger_cutoff_id") or 0)
+                            or (
+                                valuation.get("cash") is not None
+                                and portfolio.get("cash") is not None
+                                and valuation.get("cash") != portfolio.get("cash")
+                            )
+                        ):
+                            changed.append("current_portfolio_ledger_changed")
+                    elif (
+                        valuation.get("snapshot_id")
                         != portfolio["valuation_snapshot_id"]
                     ):
                         changed.append("current_portfolio_valuation_changed")

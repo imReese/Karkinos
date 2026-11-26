@@ -9,6 +9,10 @@ from typing import Any
 
 from core.types import InstrumentType
 from server.ai_runtime.contracts import content_fingerprint
+from server.services.account.valuation import (
+    is_asset_class_valuation_healthy,
+    valuation_snapshot_from_row,
+)
 from server.services.market.market_universe_automation import verified_trading_dates
 from server.services.market.market_universe_truth import (
     MarketUniversePolicy,
@@ -19,6 +23,7 @@ from server.services.strategy_scan.universe.evaluation import (
     active_action_blockers,
     aggregate_ranked_signals,
     automation_safety_blockers,
+    board_buy_blocker,
     cash_buffer_ratio,
     evaluate_promoted_strategy_market,
     market_evaluation_cache_key,
@@ -197,6 +202,7 @@ def current_scan_input_blockers(
             symbols=members,
             start_date=start_date,
             end_date=market_date,
+            receipts=receipts,
         )
     except Exception:
         market_replay_ready = False
@@ -214,15 +220,44 @@ def current_scan_input_blockers(
         held_symbols=held_symbols,
         reserve_ratio=reserve_ratio,
     )
-    if dict(scan.get("portfolio_binding") or {}) != current_portfolio_binding:
+    bound_binding = dict(scan.get("portfolio_binding") or {})
+    current_held_symbol_fingerprint = "sha256:" + content_fingerprint(held_symbols)
+    bound_ledger = bound_binding.get("ledger_fingerprint")
+
+    if not is_asset_class_valuation_healthy(portfolio, "stock"):
+        blockers.append("promoted_strategy_scan_current_portfolio_changed")
+    elif bound_ledger is not None and portfolio.get("ledger_fingerprint") is not None:
+        if (
+            portfolio.get("ledger_fingerprint") != bound_ledger
+            or int(portfolio.get("ledger_cutoff_id") or 0)
+            != int(bound_binding.get("ledger_cutoff_id") or 0)
+            or bound_binding.get("held_symbol_fingerprint")
+            != current_held_symbol_fingerprint
+            or bound_binding.get("available_cash") != portfolio.get("cash")
+            or str(bound_binding.get("cash_buffer_ratio") or "") != str(reserve_ratio)
+        ):
+            blockers.append("promoted_strategy_scan_current_portfolio_changed")
+    elif bound_binding != current_portfolio_binding:
         blockers.append("promoted_strategy_scan_current_portfolio_changed")
 
     if market_replay_ready and not strategy_blockers and promoted:
-        total_equity = portfolio["total_equity"]
+        bound_equity = bound_binding.get("bound_equity")
+        if bound_equity is None:
+            valuation_snapshot_id = bound_binding.get("valuation_snapshot_id")
+            if valuation_snapshot_id and hasattr(db, "get_valuation_snapshot_sync"):
+                raw_snap = db.get_valuation_snapshot_sync(valuation_snapshot_id)
+                if raw_snap is not None:
+                    snap_row = valuation_snapshot_from_row(raw_snap)
+                    bound_equity = snap_row.get("total_equity")
         evaluation_equity = (
-            total_equity
-            if isinstance(total_equity, (int, float)) and total_equity > 0
-            else 100_000.0
+            float(bound_equity)
+            if isinstance(bound_equity, (int, float)) and bound_equity > 0
+            else (
+                float(portfolio["total_equity"])
+                if isinstance(portfolio.get("total_equity"), (int, float))
+                and portfolio["total_equity"] > 0
+                else 100_000.0
+            )
         )
         exact_frames, cross_sections, bindings, exact_blockers = (
             load_exact_formula_market_inputs(
@@ -297,11 +332,15 @@ def current_scan_input_blockers(
                 for strategy_id in current_by_id
             ):
                 blockers.append("promoted_strategy_scan_current_universe_truth_changed")
+            bound_portfolio = {
+                **portfolio,
+                "total_equity": evaluation_equity,
+            }
             account_signals, account_blocked_buys = account_eligible_signals(
                 raw_signals,
                 config=config,
                 decision_date=decision_date,
-                portfolio=portfolio,
+                portfolio=bound_portfolio,
                 policy=policy,
                 cash_buffer_ratio=reserve_ratio,
                 db=db,
@@ -324,6 +363,26 @@ def current_scan_input_blockers(
                 blockers.append(
                     "promoted_strategy_scan_current_signal_selection_changed"
                 )
+
+            current_permissions = portfolio.get("board_buy_permissions")
+            current_permissions_dict = (
+                dict(current_permissions)
+                if isinstance(current_permissions, Mapping)
+                else {}
+            )
+            for row in selected_signals:
+                if row.get("direction") == "buy":
+                    blocker = board_buy_blocker(
+                        row["symbol"], current_permissions_dict, decision_date
+                    )
+                    if blocker:
+                        blockers.append(
+                            "promoted_strategy_scan_current_board_permission_changed:"
+                            + blocker
+                        )
+                elif row.get("direction") == "sell":
+                    if str(row["symbol"]) not in held_symbols:
+                        blockers.append("promoted_strategy_scan_holding_changed")
     return list(dict.fromkeys(blockers))
 
 

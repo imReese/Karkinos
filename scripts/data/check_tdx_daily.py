@@ -391,11 +391,18 @@ def main(argv: list[str] | None = None) -> int:
         if not args.allow_network or args.output_dir is None:
             parser.error("内部检查进程必须显式允许联网并指定隔离目录")
         sys.path.insert(0, str(REPO_ROOT))
-        payload = _run_pipeline(args.symbol, args.date, args.output_dir)
-        args._worker_report.write_text(
-            json.dumps(payload, ensure_ascii=False, allow_nan=False), encoding="utf-8"
-        )
-        return 0 if payload["status"] == "ok" else 1
+        try:
+            payload = _run_pipeline(args.symbol, args.date, args.output_dir)
+        except BaseException as exc:
+            payload = _failure("worker", "check_failed", exc)
+        try:
+            args._worker_report.write_text(
+                json.dumps(payload, ensure_ascii=False, allow_nan=False),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+        return 0 if payload.get("status") == "ok" else 1
 
     root = args.output_dir.expanduser().resolve() if args.output_dir else None
     if root is not None and (root.exists() or root.is_relative_to(REPO_ROOT)):

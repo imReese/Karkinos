@@ -13,6 +13,9 @@ from core.types import AssetClass
 from data.store import DataStore
 from server.ai_runtime.contracts import content_fingerprint
 from server.db import AppDatabase
+from server.projections.valuation_snapshot import (
+    build_current_valuation_snapshot,
+)
 from server.services.decision import (
     daily_decision_evidence_automation as automation_module,
 )
@@ -48,6 +51,7 @@ from server.services.strategy_scan.promoted_strategy_universe_scan import (
     PromotedStrategyUniverseScanService,
 )
 from server.services.strategy_scan.status import build_daily_candidate_runtime_status
+from server.services.strategy_scan.universe import service as universe_service_module
 from tests.server.test_promoted_strategy_universe_scan import (
     _calendar,
     _formula,
@@ -1293,3 +1297,919 @@ def test_claimed_attempt_cancellation_after_window_outcome(tmp_path) -> None:
     strategy_task = next(t for t in tasks if t["id"] == "strategy_evidence")
     assert strategy_task["status"] == "blocked"
     assert strategy_task["blocking_reasons"] == ["daily_candidate_claim_unresolved"]
+
+
+def _setup_quote_drift_environment(tmp_path):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    market_dates = _calendar(db)
+    store = DataStore(tmp_path / "market")
+    symbols = _freeze_market(store, market_dates)
+    run_date = "2026-08-24"
+
+    # Seed ledger with initial cash and a held position (100 shares of 600001)
+    db.insert_ledger_entry_sync(
+        entry_type="cash_deposit",
+        timestamp=f"{run_date}T08:30:00+08:00",
+        amount=100_000.0,
+        asset_class="cash",
+        source_ref="deposit-initial",
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        timestamp=f"{run_date}T08:35:00+08:00",
+        amount=1000.0,
+        symbol="600001",
+        direction="buy",
+        quantity=100,
+        price=10.0,
+        fee_breakdown_json=json.dumps(
+            {
+                "commission": 0.0,
+                "stamp_duty": 0.0,
+                "transfer_fee": 0.0,
+                "total_fee": 0.0,
+            }
+        ),
+        asset_class="stock",
+        source_ref="seed-position-600001",
+    )
+
+    # Seed fresh quotes for held position and universe
+    db.upsert_latest_quote_sync(
+        symbol="600001",
+        asset_type="stock",
+        price=10.0,
+        quote_timestamp=f"{run_date}T09:34:00+08:00",
+        quote_source="persisted_fixture",
+        quote_status="live",
+    )
+    for s in symbols[1:40]:
+        db.upsert_latest_quote_sync(
+            symbol=s,
+            asset_type="stock",
+            price=20.0,
+            quote_timestamp=f"{run_date}T09:34:00+08:00",
+            quote_source="persisted_fixture",
+            quote_status="live",
+        )
+
+    # Publish initial valuation snapshot at 09:35:55
+    initial_val = db.publish_current_valuation_snapshot_sync(
+        now=datetime(2026, 8, 24, 9, 35, 55, tzinfo=ZoneInfo("Asia/Shanghai"))
+    )
+    assert initial_val["status"] == "complete"
+
+    strategy_id = "ai_formula_shadow:fixture"
+    db.upsert_strategy_promotion_state_sync(
+        strategy_id=strategy_id,
+        stage="paper_shadow",
+        gate_status="paper_shadow_enabled",
+        live_like_enabled=False,
+        missing_requirements=[],
+        backtest_result_id=1,
+        payload={},
+    )
+
+    base_dec = _decision(risk_checked=True)
+    base_binding = base_dec["candidates"][0]["evidence"]["strategy"][
+        "order_generation_gate"
+    ]["promotion"]["daily_strategy_artifact_binding"]
+
+    def gate_resolver(_db, requested_strategy_id, *, as_of_date):
+        return {
+            "status": "pass",
+            "promotion": {
+                "daily_strategy_artifact_binding": base_binding,
+            },
+        }, []
+
+    def strategy_loader(*, candidate_id, run_id):
+        return {
+            "candidate_id": candidate_id,
+            "run_id": run_id,
+            "strategy_artifact_fingerprint": base_binding["operating_constraints"][
+                "strategy_artifact_fingerprint"
+            ],
+            "strategy": {
+                "formula_ast": _formula(produces_signals=True),
+                "formula_fingerprint": "3" * 64,
+                "selected_universe": symbols[:40],
+            },
+        }
+
+    controls = TradingControlState(db=db)
+    config = SimpleNamespace(data_source="akshare", start_date="2026-04-01")
+    decision_time = datetime(2026, 8, 24, 1, 36, tzinfo=timezone.utc)
+    clock_dt = datetime(2026, 8, 24, 9, 36, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+    scanner = PromotedStrategyUniverseScanService(
+        db=db,
+        config=config,
+        data_store=store,
+        policy=MarketUniversePolicy(minimum_master_member_count=40),
+        strategy_gate_resolver=gate_resolver,
+        strategy_loader=strategy_loader,
+        safety_gate_reader=lambda: {
+            "default_execution_mode": "manual_confirmation",
+            "manual_confirmation_required": True,
+            "broker_submission_enabled": False,
+            "kill_switch_enabled": False,
+        },
+        clock=lambda: clock_dt,
+    )
+
+    state = SimpleNamespace(
+        db=db,
+        config=config,
+        data_store=store,
+        scanner=scanner,
+        trading_controls=controls,
+        notifier=RecordingNotifier(),
+    )
+
+    return {
+        "db": db,
+        "store": store,
+        "symbols": symbols,
+        "run_date": run_date,
+        "strategy_id": strategy_id,
+        "decision_time": decision_time,
+        "clock_dt": clock_dt,
+        "scanner": scanner,
+        "state": state,
+    }
+
+
+def test_daily_publication_recovers_across_intraday_quote_drift(
+    tmp_path, monkeypatch
+) -> None:
+    """Reproduces today's real failure: normal intraday quote updates during scan & before plan read."""
+    env = _setup_quote_drift_environment(tmp_path)
+    db = env["db"]
+    run_date = env["run_date"]
+    decision_time = env["decision_time"]
+    scanner = env["scanner"]
+    state = env["state"]
+    strategy_id = env["strategy_id"]
+
+    injection_state = {
+        "quote_update_1_fired": False,
+        "quote_update_2_fired": False,
+        "risk_checked": False,
+    }
+
+    # Hook 1: Inject quote update during scan evaluation (outside write transaction)
+    orig_eval = scanner._evaluate_promoted_strategies
+
+    def hooked_eval(*args, **kwargs):
+        res = orig_eval(*args, **kwargs)
+        if not injection_state["quote_update_1_fired"]:
+            injection_state["quote_update_1_fired"] = True
+            # Update quote for 600001 at 09:36:20 (intraday drift during scan calculation)
+            db.upsert_latest_quote_sync(
+                symbol="600001",
+                asset_type="stock",
+                price=10.5,
+                quote_timestamp=f"{run_date}T09:36:20+08:00",
+                quote_source="persisted_fixture",
+                quote_status="live",
+            )
+            val2 = db.publish_current_valuation_snapshot_sync(
+                now=datetime(2026, 8, 24, 9, 36, 28, tzinfo=ZoneInfo("Asia/Shanghai"))
+            )
+            assert val2["status"] == "complete"
+        return res
+
+    scanner._evaluate_promoted_strategies = hooked_eval
+
+    # Hook 2: Inject quote update between scan persistence and current_input_blockers
+    orig_current_input_blockers = scanner.current_input_blockers
+
+    def hooked_current_input_blockers(*args, **kwargs):
+        if not injection_state["quote_update_2_fired"]:
+            injection_state["quote_update_2_fired"] = True
+            # Update quote for 600002 at 09:37:25
+            db.upsert_latest_quote_sync(
+                symbol="600002",
+                asset_type="stock",
+                price=20.8,
+                quote_timestamp=f"{run_date}T09:37:25+08:00",
+                quote_source="persisted_fixture",
+                quote_status="live",
+            )
+            val3 = db.publish_current_valuation_snapshot_sync(
+                now=datetime(2026, 8, 24, 9, 37, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
+            )
+            assert val3["status"] == "complete"
+            if "portfolio_summary" in kwargs:
+                kwargs["portfolio_summary"] = {
+                    **kwargs["portfolio_summary"],
+                    "valuation_snapshot_id": val3["snapshot_id"],
+                    "total_equity": 100_000.0,
+                    "quote_set_fingerprint": val3["quote_set_fingerprint"],
+                }
+        return orig_current_input_blockers(*args, **kwargs)
+
+    scanner.current_input_blockers = hooked_current_input_blockers
+
+    async def quote_refresher(_state, symbol, asset_type, *, fetch_run_id=None):
+        command = build_quote_ingestion_command(
+            symbol=symbol,
+            asset_type=asset_type.value
+            if hasattr(asset_type, "value")
+            else str(asset_type),
+            snapshot={
+                "price": 10.0 if symbol == "600001" else 20.0,
+                "timestamp": f"{run_date}T09:36:30+08:00",
+                "quote_status": "live",
+                "provider_name": "akshare",
+                "quote_source": "persisted_fixture",
+            },
+            quote_source="persisted_fixture",
+            provider_name="akshare",
+            provider_status="live",
+            quote_status="live",
+            captured_reason="daily_candidate_freeze",
+            fetch_run_id=fetch_run_id,
+        )
+        persist_quote_ingestion(db, command)
+        return {
+            "symbol": symbol,
+            "status": "refreshed",
+            "price": 10.0 if symbol == "600001" else 20.0,
+            "quote_timestamp": f"{run_date}T09:36:30+08:00",
+        }
+
+    async def read_base_plan(_state):
+        checked = bool(injection_state["risk_checked"])
+        val = build_current_valuation_snapshot(
+            db,
+            persist=False,
+            now=datetime(2026, 8, 24, 9, 36, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        )
+        dec = _decision(risk_checked=checked)
+        dec["decision_date"] = run_date
+        dec["generated_at"] = f"{run_date}T09:35:00+08:00"
+        dec["summary"]["portfolio"]["valuation_snapshot_id"] = val["snapshot_id"]
+        dec["summary"]["portfolio"]["valuation_status"] = val["status"]
+        dec["summary"]["portfolio"]["fact_authority"] = "persisted_valuation_snapshot"
+        dec["summary"]["portfolio"]["total_equity"] = 100_000.0
+        dec["summary"]["portfolio"]["cash"] = 99_000.0
+        dec["summary"]["portfolio"]["ledger_fingerprint"] = val["ledger_fingerprint"]
+        dec["summary"]["portfolio"]["ledger_cutoff_id"] = val["ledger_cutoff_id"]
+        dec["summary"]["portfolio"]["quote_set_fingerprint"] = val[
+            "quote_set_fingerprint"
+        ]
+        dec["summary"]["portfolio"]["symbols"] = ["600001"]
+        dec["summary"]["portfolio"]["stock_symbols"] = ["600001"]
+        dec["summary"]["portfolio"]["instrument_types"] = {"600001": "stock"}
+        dec["summary"]["portfolio"]["board_buy_permissions"] = {
+            "main": "allowed",
+            "gem": "allowed",
+            "star": "allowed",
+            "b_share": "allowed",
+        }
+        dec["summary"]["account_truth"]["captured_at"] = f"{run_date}T09:30:00+08:00"
+        dec["summary"]["market_data"]["latest_quote_timestamp"] = (
+            f"{run_date}T09:34:00+08:00"
+        )
+        cand = dec["candidates"][0]
+        cand["action_id"] = 1
+        cand["symbol"] = "600001"
+        cand["direction"] = "sell"
+        cand["side"] = "sell"
+        cand["asset_class"] = "stock"
+        cand["evidence"]["strategy"]["order_generation_gate"]["as_of_date"] = run_date
+        dec["candidates"] = [cand]
+
+        p = _plan(risk_checked=checked)
+        p["plan_date"] = run_date
+        p["generated_at"] = f"{run_date}T09:35:00+08:00"
+        if p["order_intents"]:
+            oi = p["order_intents"][0]
+            oi["action_id"] = 1
+            oi["symbol"] = "600001"
+            oi["side"] = "sell"
+            oi["direction"] = "sell"
+            oi["asset_class"] = "stock"
+            oi["market_quote_timestamp"] = f"{run_date}T09:34:00+08:00"
+            p["order_intents"] = [oi]
+        return dec, p
+
+    async def run_risk(_state):
+        injection_state["risk_checked"] = True
+        return {
+            "status": "completed",
+            "candidate_count": 1,
+            "processed_count": 1,
+            "passed_count": 1,
+            "blocked_count": 0,
+            "skipped_count": 0,
+            "risk_decision_writes_performed": True,
+            "blockers": [],
+        }
+
+    service = build_daily_decision_evidence_automation_service(
+        state,
+        plan_reader=read_base_plan,
+        risk_runner=run_risk,
+        quote_refresher=quote_refresher,
+    )
+    service._account_truth_replay_resolver = _fixture_account_truth_replay
+
+    schedule = project_daily_candidate_background_schedule(db=db, now=decision_time)
+    assert schedule["status"] == "due"
+    assert schedule["due"] is True
+
+    # Real claimed background execution
+    asyncio.run(
+        run_claimed_background_attempt(
+            db=db,
+            service=service,
+            schedule=schedule,
+            clock=lambda: decision_time,
+        )
+    )
+
+    assert injection_state["quote_update_1_fired"] is True
+    assert injection_state["quote_update_2_fired"] is True
+
+    # Generation status must be completed_with_candidates and fully authoritative
+    gen = daily_candidate_generation_status(db, run_date, now=decision_time)
+    assert gen["status"] == "completed_with_candidates"
+    assert gen["generation_verified"] is True
+    assert gen["recommendation_authoritative"] is True
+    assert gen["failure_code"] is None
+
+    # Verify workflow tasks
+    tasks = workflow_tasks(
+        market_data={"source_health": "live"},
+        account_truth={"gate_status": "pass"},
+        strategy_attribution={"gate_status": "pass"},
+        action_tasks={"pending_count": 0},
+        audit={},
+        candidate_count=1,
+        ready_for_manual_confirmation_count=1,
+        generation=gen,
+    )
+    strategy_task = next(t for t in tasks if t["id"] == "strategy_evidence")
+    assert strategy_task["status"] == "pass"
+    assert strategy_task["blocking_reasons"] == []
+
+    # Verify candidates are NOT suppressed by suppress_unverified_daily_scan_candidates
+    dec_read, _ = asyncio.run(read_base_plan(state))
+    payload = {
+        "lane": "daily",
+        "decision": "sell",
+        "decision_date": run_date,
+        "summary": {"workflow_tasks": tasks},
+        "candidates": dec_read["candidates"],
+        "generation": gen,
+        "no_action_reasons": [],
+    }
+    projected = suppress_unverified_daily_scan_candidates(payload)
+    assert projected["decision"] == "sell"
+    assert len(projected["candidates"]) == 1
+    assert projected["candidates"][0]["symbol"] == "600001"
+
+
+def test_daily_publication_blocks_on_real_ledger_mutation(
+    tmp_path, monkeypatch
+) -> None:
+    """Negative test: A real ledger mutation before authority validation blocks scan and suppresses candidates."""
+    env = _setup_quote_drift_environment(tmp_path)
+    db = env["db"]
+    run_date = env["run_date"]
+    decision_time = env["decision_time"]
+    state = env["state"]
+    strategy_id = env["strategy_id"]
+
+    orig_persist = universe_service_module.persist_recommendation_tasks
+
+    def hooked_persist(*, db, decision_date, signals, current_authority_validator):
+        def wrapped_validator():
+            # Mutate the ledger with an unexpected cash fee during scan
+            db.insert_ledger_entry_sync(
+                entry_type="fee",
+                timestamp=f"{run_date}T09:36:20+08:00",
+                amount=50.0,
+                asset_class="cash",
+                source_ref="ledger-mutation-drift",
+            )
+            db.publish_current_valuation_snapshot_sync(
+                now=datetime(2026, 8, 24, 9, 36, 28, tzinfo=ZoneInfo("Asia/Shanghai"))
+            )
+            return current_authority_validator()
+
+        return orig_persist(
+            db=db,
+            decision_date=decision_date,
+            signals=signals,
+            current_authority_validator=wrapped_validator,
+        )
+
+    monkeypatch.setattr(
+        universe_service_module, "persist_recommendation_tasks", hooked_persist
+    )
+
+    async def quote_refresher(_state, symbol, asset_type, *, fetch_run_id=None):
+        return {"symbol": symbol, "status": "refreshed", "price": 20.0}
+
+    async def read_base_plan(_state):
+        val = build_current_valuation_snapshot(
+            db,
+            persist=False,
+            now=datetime(2026, 8, 24, 9, 36, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        )
+        dec = _decision(risk_checked=False)
+        dec["decision_date"] = run_date
+        dec["generated_at"] = f"{run_date}T09:35:00+08:00"
+        dec["summary"]["portfolio"]["valuation_snapshot_id"] = val["snapshot_id"]
+        dec["summary"]["portfolio"]["valuation_status"] = val["status"]
+        dec["summary"]["portfolio"]["fact_authority"] = "persisted_valuation_snapshot"
+        dec["summary"]["portfolio"]["total_equity"] = 100_000.0
+        dec["summary"]["portfolio"]["cash"] = 99_000.0
+        dec["summary"]["portfolio"]["ledger_fingerprint"] = val["ledger_fingerprint"]
+        dec["summary"]["portfolio"]["ledger_cutoff_id"] = val["ledger_cutoff_id"]
+        dec["summary"]["portfolio"]["quote_set_fingerprint"] = val[
+            "quote_set_fingerprint"
+        ]
+        dec["summary"]["portfolio"]["symbols"] = ["600001"]
+        dec["summary"]["portfolio"]["stock_symbols"] = ["600001"]
+        dec["summary"]["portfolio"]["instrument_types"] = {"600001": "stock"}
+        dec["summary"]["account_truth"]["captured_at"] = f"{run_date}T09:30:00+08:00"
+        dec["summary"]["market_data"]["latest_quote_timestamp"] = (
+            f"{run_date}T09:34:00+08:00"
+        )
+        cand = dec["candidates"][0]
+        cand["action_id"] = 1
+        cand["symbol"] = "600001"
+        cand["direction"] = "sell"
+        cand["side"] = "sell"
+        cand["asset_class"] = "stock"
+        cand["evidence"]["strategy"]["order_generation_gate"]["as_of_date"] = run_date
+        dec["candidates"] = [cand]
+        p = _plan(risk_checked=False)
+        p["plan_date"] = run_date
+        return dec, p
+
+    async def run_risk(_state):
+        return {"status": "skipped", "candidate_count": 0, "blockers": []}
+
+    service = build_daily_decision_evidence_automation_service(
+        state,
+        plan_reader=read_base_plan,
+        risk_runner=run_risk,
+        quote_refresher=quote_refresher,
+    )
+    service._account_truth_replay_resolver = _fixture_account_truth_replay
+
+    schedule = project_daily_candidate_background_schedule(db=db, now=decision_time)
+    asyncio.run(
+        run_claimed_background_attempt(
+            db=db,
+            service=service,
+            schedule=schedule,
+            clock=lambda: decision_time,
+        )
+    )
+
+    gen = daily_candidate_generation_status(db, run_date, now=decision_time)
+    assert gen["generation_verified"] is False
+    assert gen["status"] in {"blocked", "no_candidates"}
+
+    candidate = {
+        "candidate_id": f"cand-sell-{run_date}",
+        "action_id": 1,
+        "symbol": "600001",
+        "direction": "sell",
+        "side": "sell",
+        "evidence": {
+            "strategy": {"strategy_id": strategy_id},
+            "signal": {
+                "id": 1,
+                "strategy_id": strategy_id,
+                "timestamp": f"{run_date}T09:35:00+08:00",
+            },
+        },
+    }
+    payload = {
+        "lane": "daily",
+        "decision": "review_required",
+        "decision_date": run_date,
+        "summary": {},
+        "candidates": [candidate],
+        "generation": gen,
+        "no_action_reasons": [],
+    }
+    projected = suppress_unverified_daily_scan_candidates(payload)
+    assert projected["candidates"] == []
+    assert projected["decision"] == "no_action"
+
+
+def test_daily_publication_blocks_on_revoked_strategy(tmp_path, monkeypatch) -> None:
+    """Negative test: Revoking strategy promotion fails closed and blocks decision evidence."""
+    env = _setup_quote_drift_environment(tmp_path)
+    db = env["db"]
+    run_date = env["run_date"]
+    decision_time = env["decision_time"]
+    state = env["state"]
+    strategy_id = env["strategy_id"]
+
+    orig_persist = universe_service_module.persist_recommendation_tasks
+
+    def hooked_persist(*, db, decision_date, signals, current_authority_validator):
+        def wrapped_validator():
+            # Revoke strategy promotion right before authority check
+            db.upsert_strategy_promotion_state_sync(
+                strategy_id=strategy_id,
+                stage="retired",
+                gate_status="paper_shadow_disabled",
+                live_like_enabled=False,
+                missing_requirements=["promoted_strategy_retired"],
+                backtest_result_id=1,
+                payload={},
+            )
+            return current_authority_validator()
+
+        return orig_persist(
+            db=db,
+            decision_date=decision_date,
+            signals=signals,
+            current_authority_validator=wrapped_validator,
+        )
+
+    monkeypatch.setattr(
+        universe_service_module, "persist_recommendation_tasks", hooked_persist
+    )
+
+    async def quote_refresher(_state, symbol, asset_type, *, fetch_run_id=None):
+        return {"symbol": symbol, "status": "refreshed", "price": 20.0}
+
+    async def read_base_plan(_state):
+        val = build_current_valuation_snapshot(
+            db,
+            persist=False,
+            now=datetime(2026, 8, 24, 9, 36, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        )
+        dec = _decision(risk_checked=False)
+        dec["decision_date"] = run_date
+        dec["generated_at"] = f"{run_date}T09:35:00+08:00"
+        dec["summary"]["portfolio"]["valuation_snapshot_id"] = val["snapshot_id"]
+        dec["summary"]["portfolio"]["valuation_status"] = val["status"]
+        dec["summary"]["portfolio"]["fact_authority"] = "persisted_valuation_snapshot"
+        dec["summary"]["portfolio"]["total_equity"] = 100_000.0
+        dec["summary"]["portfolio"]["cash"] = 99_000.0
+        dec["summary"]["portfolio"]["ledger_fingerprint"] = val["ledger_fingerprint"]
+        dec["summary"]["portfolio"]["ledger_cutoff_id"] = val["ledger_cutoff_id"]
+        dec["summary"]["portfolio"]["quote_set_fingerprint"] = val[
+            "quote_set_fingerprint"
+        ]
+        dec["summary"]["portfolio"]["symbols"] = ["600001"]
+        dec["summary"]["portfolio"]["stock_symbols"] = ["600001"]
+        dec["summary"]["portfolio"]["instrument_types"] = {"600001": "stock"}
+        dec["summary"]["account_truth"]["captured_at"] = f"{run_date}T09:30:00+08:00"
+        dec["summary"]["market_data"]["latest_quote_timestamp"] = (
+            f"{run_date}T09:34:00+08:00"
+        )
+        cand = dec["candidates"][0]
+        cand["action_id"] = 1
+        cand["symbol"] = "600001"
+        cand["direction"] = "sell"
+        cand["side"] = "sell"
+        cand["asset_class"] = "stock"
+        cand["evidence"]["strategy"]["order_generation_gate"]["as_of_date"] = run_date
+        dec["candidates"] = [cand]
+        p = _plan(risk_checked=False)
+        p["plan_date"] = run_date
+        return dec, p
+
+    async def run_risk(_state):
+        return {"status": "skipped", "candidate_count": 0, "blockers": []}
+
+    service = build_daily_decision_evidence_automation_service(
+        state,
+        plan_reader=read_base_plan,
+        risk_runner=run_risk,
+        quote_refresher=quote_refresher,
+    )
+    service._account_truth_replay_resolver = _fixture_account_truth_replay
+
+    schedule = project_daily_candidate_background_schedule(db=db, now=decision_time)
+    asyncio.run(
+        run_claimed_background_attempt(
+            db=db,
+            service=service,
+            schedule=schedule,
+            clock=lambda: decision_time,
+        )
+    )
+
+    gen = daily_candidate_generation_status(db, run_date, now=decision_time)
+    assert gen["generation_verified"] is False
+
+    candidate = {
+        "candidate_id": f"cand-sell-{run_date}",
+        "action_id": 1,
+        "symbol": "600001",
+        "direction": "sell",
+        "side": "sell",
+        "evidence": {
+            "strategy": {"strategy_id": strategy_id},
+            "signal": {
+                "id": 1,
+                "strategy_id": strategy_id,
+                "timestamp": f"{run_date}T09:35:00+08:00",
+            },
+        },
+    }
+    payload = {
+        "lane": "daily",
+        "decision": "review_required",
+        "decision_date": run_date,
+        "summary": {},
+        "candidates": [candidate],
+        "generation": gen,
+        "no_action_reasons": [],
+    }
+    projected = suppress_unverified_daily_scan_candidates(payload)
+    assert projected["candidates"] == []
+    assert projected["decision"] == "no_action"
+
+
+def test_daily_publication_blocks_on_unhealthy_valuation(tmp_path, monkeypatch) -> None:
+    """Negative test: Stale or degraded valuation fails closed and suppresses candidates."""
+    env = _setup_quote_drift_environment(tmp_path)
+    db = env["db"]
+    run_date = env["run_date"]
+    decision_time = env["decision_time"]
+    state = env["state"]
+    strategy_id = env["strategy_id"]
+
+    orig_persist = universe_service_module.persist_recommendation_tasks
+
+    def hooked_persist(*, db, decision_date, signals, current_authority_validator):
+        def wrapped_validator():
+            # Mark quote for 600001 as missing, making valuation degraded
+            db.upsert_latest_quote_sync(
+                symbol="600001",
+                asset_type="stock",
+                price=10.0,
+                quote_timestamp=f"{run_date}T09:34:00+08:00",
+                quote_source="persisted_fixture",
+                quote_status="missing",
+            )
+            val = db.publish_current_valuation_snapshot_sync(
+                now=datetime(2026, 8, 24, 9, 36, 28, tzinfo=ZoneInfo("Asia/Shanghai"))
+            )
+            assert val["status"] == "degraded"
+            return current_authority_validator()
+
+        return orig_persist(
+            db=db,
+            decision_date=decision_date,
+            signals=signals,
+            current_authority_validator=wrapped_validator,
+        )
+
+    monkeypatch.setattr(
+        universe_service_module, "persist_recommendation_tasks", hooked_persist
+    )
+
+    async def quote_refresher(_state, symbol, asset_type, *, fetch_run_id=None):
+        return {"symbol": symbol, "status": "refreshed", "price": 20.0}
+
+    async def read_base_plan(_state):
+        val = build_current_valuation_snapshot(
+            db,
+            persist=False,
+            now=datetime(2026, 8, 24, 9, 36, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        )
+        dec = _decision(risk_checked=False)
+        dec["decision_date"] = run_date
+        dec["generated_at"] = f"{run_date}T09:35:00+08:00"
+        dec["summary"]["portfolio"]["valuation_snapshot_id"] = val["snapshot_id"]
+        dec["summary"]["portfolio"]["valuation_status"] = val["status"]
+        dec["summary"]["portfolio"]["fact_authority"] = "persisted_valuation_snapshot"
+        dec["summary"]["portfolio"]["total_equity"] = 100_000.0
+        dec["summary"]["portfolio"]["cash"] = 99_000.0
+        dec["summary"]["portfolio"]["ledger_fingerprint"] = val["ledger_fingerprint"]
+        dec["summary"]["portfolio"]["ledger_cutoff_id"] = val["ledger_cutoff_id"]
+        dec["summary"]["portfolio"]["quote_set_fingerprint"] = val[
+            "quote_set_fingerprint"
+        ]
+        dec["summary"]["portfolio"]["symbols"] = ["600001"]
+        dec["summary"]["portfolio"]["stock_symbols"] = ["600001"]
+        dec["summary"]["portfolio"]["instrument_types"] = {"600001": "stock"}
+        dec["summary"]["account_truth"]["captured_at"] = f"{run_date}T09:30:00+08:00"
+        dec["summary"]["market_data"]["latest_quote_timestamp"] = (
+            f"{run_date}T09:34:00+08:00"
+        )
+        cand = dec["candidates"][0]
+        cand["action_id"] = 1
+        cand["symbol"] = "600001"
+        cand["direction"] = "sell"
+        cand["side"] = "sell"
+        cand["asset_class"] = "stock"
+        cand["evidence"]["strategy"]["order_generation_gate"]["as_of_date"] = run_date
+        dec["candidates"] = [cand]
+        p = _plan(risk_checked=False)
+        p["plan_date"] = run_date
+        return dec, p
+
+    async def run_risk(_state):
+        return {"status": "skipped", "candidate_count": 0, "blockers": []}
+
+    service = build_daily_decision_evidence_automation_service(
+        state,
+        plan_reader=read_base_plan,
+        risk_runner=run_risk,
+        quote_refresher=quote_refresher,
+    )
+    service._account_truth_replay_resolver = _fixture_account_truth_replay
+
+    schedule = project_daily_candidate_background_schedule(db=db, now=decision_time)
+    asyncio.run(
+        run_claimed_background_attempt(
+            db=db,
+            service=service,
+            schedule=schedule,
+            clock=lambda: decision_time,
+        )
+    )
+
+    gen = daily_candidate_generation_status(db, run_date, now=decision_time)
+    assert gen["generation_verified"] is False
+
+    candidate = {
+        "candidate_id": f"cand-sell-{run_date}",
+        "action_id": 1,
+        "symbol": "600001",
+        "direction": "sell",
+        "side": "sell",
+        "evidence": {
+            "strategy": {"strategy_id": strategy_id},
+            "signal": {
+                "id": 1,
+                "strategy_id": strategy_id,
+                "timestamp": f"{run_date}T09:35:00+08:00",
+            },
+        },
+    }
+    payload = {
+        "lane": "daily",
+        "decision": "review_required",
+        "decision_date": run_date,
+        "summary": {},
+        "candidates": [candidate],
+        "generation": gen,
+        "no_action_reasons": [],
+    }
+    projected = suppress_unverified_daily_scan_candidates(payload)
+    assert projected["candidates"] == []
+    assert projected["decision"] == "no_action"
+
+
+def test_daily_publication_duplicate_attempt_is_idempotent(tmp_path) -> None:
+    """Duplicate attempts for an already completed daily decision run are idempotent."""
+    env = _setup_quote_drift_environment(tmp_path)
+    db = env["db"]
+    run_date = env["run_date"]
+    decision_time = env["decision_time"]
+    state = env["state"]
+    strategy_id = env["strategy_id"]
+
+    run_count = {"calls": 0}
+
+    async def quote_refresher(_state, symbol, asset_type, *, fetch_run_id=None):
+        command = build_quote_ingestion_command(
+            symbol=symbol,
+            asset_type=asset_type.value
+            if hasattr(asset_type, "value")
+            else str(asset_type),
+            snapshot={
+                "price": 10.0 if symbol == "600001" else 20.0,
+                "timestamp": f"{run_date}T09:36:30+08:00",
+                "quote_status": "live",
+                "provider_name": "akshare",
+                "quote_source": "persisted_fixture",
+            },
+            quote_source="persisted_fixture",
+            provider_name="akshare",
+            provider_status="live",
+            quote_status="live",
+            captured_reason="daily_candidate_freeze",
+            fetch_run_id=fetch_run_id,
+        )
+        persist_quote_ingestion(db, command)
+        return {
+            "symbol": symbol,
+            "status": "refreshed",
+            "price": 10.0 if symbol == "600001" else 20.0,
+            "quote_timestamp": f"{run_date}T09:36:30+08:00",
+        }
+
+    async def read_base_plan(_state):
+        val = build_current_valuation_snapshot(
+            db,
+            persist=False,
+            now=datetime(2026, 8, 24, 9, 36, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        )
+        dec = _decision(risk_checked=True)
+        dec["decision_date"] = run_date
+        dec["generated_at"] = f"{run_date}T09:35:00+08:00"
+        dec["summary"]["portfolio"]["valuation_snapshot_id"] = val["snapshot_id"]
+        dec["summary"]["portfolio"]["valuation_status"] = val["status"]
+        dec["summary"]["portfolio"]["fact_authority"] = "persisted_valuation_snapshot"
+        dec["summary"]["portfolio"]["total_equity"] = 100_000.0
+        dec["summary"]["portfolio"]["cash"] = 99_000.0
+        dec["summary"]["portfolio"]["ledger_fingerprint"] = val["ledger_fingerprint"]
+        dec["summary"]["portfolio"]["ledger_cutoff_id"] = val["ledger_cutoff_id"]
+        dec["summary"]["portfolio"]["quote_set_fingerprint"] = val[
+            "quote_set_fingerprint"
+        ]
+        dec["summary"]["portfolio"]["symbols"] = ["600001"]
+        dec["summary"]["portfolio"]["stock_symbols"] = ["600001"]
+        dec["summary"]["portfolio"]["instrument_types"] = {"600001": "stock"}
+        dec["summary"]["account_truth"]["captured_at"] = f"{run_date}T09:30:00+08:00"
+        dec["summary"]["market_data"]["latest_quote_timestamp"] = (
+            f"{run_date}T09:34:00+08:00"
+        )
+        cand = dec["candidates"][0]
+        cand["action_id"] = 1
+        cand["symbol"] = "600001"
+        cand["direction"] = "sell"
+        cand["side"] = "sell"
+        cand["asset_class"] = "stock"
+        cand["evidence"]["strategy"]["order_generation_gate"]["as_of_date"] = run_date
+        dec["candidates"] = [cand]
+
+        p = _plan(risk_checked=True)
+        p["plan_date"] = run_date
+        p["generated_at"] = f"{run_date}T09:35:00+08:00"
+        if p["order_intents"]:
+            oi = p["order_intents"][0]
+            oi["action_id"] = 1
+            oi["symbol"] = "600001"
+            oi["side"] = "sell"
+            oi["direction"] = "sell"
+            oi["asset_class"] = "stock"
+            oi["market_quote_timestamp"] = f"{run_date}T09:34:00+08:00"
+            p["order_intents"] = [oi]
+        return dec, p
+
+    async def run_risk(_state):
+        run_count["calls"] += 1
+        return {
+            "status": "completed",
+            "candidate_count": 1,
+            "processed_count": 1,
+            "passed_count": 1,
+            "blocked_count": 0,
+            "skipped_count": 0,
+            "risk_decision_writes_performed": True,
+            "blockers": [],
+        }
+
+    service = build_daily_decision_evidence_automation_service(
+        state,
+        plan_reader=read_base_plan,
+        risk_runner=run_risk,
+        quote_refresher=quote_refresher,
+    )
+    service._account_truth_replay_resolver = _fixture_account_truth_replay
+
+    schedule = project_daily_candidate_background_schedule(db=db, now=decision_time)
+    assert schedule["status"] == "due"
+
+    # First attempt
+    asyncio.run(
+        run_claimed_background_attempt(
+            db=db,
+            service=service,
+            schedule=schedule,
+            clock=lambda: decision_time,
+        )
+    )
+
+    gen1 = daily_candidate_generation_status(db, run_date, now=decision_time)
+    assert gen1["status"] == "completed_with_candidates"
+    first_calls = run_count["calls"]
+    assert first_calls > 0
+
+    # Project schedule again: should not be due
+    schedule2 = project_daily_candidate_background_schedule(db=db, now=decision_time)
+    assert schedule2["status"] in {"completed", "already_attempted"}
+    assert schedule2["due"] is False
+
+    # Second attempt execution: returns immediately without re-running
+    asyncio.run(
+        run_claimed_background_attempt(
+            db=db,
+            service=service,
+            schedule=schedule2,
+            clock=lambda: decision_time,
+        )
+    )
+    assert run_count["calls"] == first_calls

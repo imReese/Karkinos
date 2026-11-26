@@ -713,7 +713,7 @@ def portfolio_scan_binding(
         "board_buy_permissions": permissions,
         "stock_position_market_values": portfolio.get("stock_position_market_values"),
     }
-    return {
+    result: dict[str, Any] = {
         "valuation_snapshot_id": portfolio["valuation_snapshot_id"] or None,
         "valuation_status": portfolio["valuation_status"],
         "held_symbol_fingerprint": "sha256:" + content_fingerprint(held_symbols),
@@ -724,6 +724,12 @@ def portfolio_scan_binding(
         "board_buy_permissions_fingerprint": permissions.get("evidence_fingerprint"),
         "capital_constraint_fingerprint": "sha256:" + content_fingerprint(capital),
     }
+    if portfolio.get("ledger_fingerprint") is not None:
+        result["ledger_fingerprint"] = str(portfolio["ledger_fingerprint"])
+        result["ledger_cutoff_id"] = int(portfolio.get("ledger_cutoff_id") or 0)
+    if portfolio.get("total_equity") is not None:
+        result["bound_equity"] = float(portfolio["total_equity"])
+    return result
 
 
 def _nonnegative_decimal(value: Any) -> Decimal | None:

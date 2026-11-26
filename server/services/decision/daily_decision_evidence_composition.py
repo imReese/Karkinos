@@ -268,6 +268,15 @@ def promoted_scan_cache_key(
     *,
     promotion_state_identity: str = "",
 ) -> tuple[object, ...]:
+    ledger_fingerprint = portfolio.get("ledger_fingerprint")
+    if ledger_fingerprint is not None:
+        return (
+            decision_date,
+            promotion_state_identity,
+            int(portfolio.get("ledger_cutoff_id") or 0),
+            str(ledger_fingerprint),
+            portfolio.get("valuation_status"),
+        )
     return (
         decision_date,
         promotion_state_identity,

@@ -1211,73 +1211,22 @@ class MarketUniverseAutomationService:
             task_key=task_key,
         )
 
-        # 1. Exact deterministic execution already recorded and completed
-        existing = self._db.get_automation_run_sync(run_id)
-        if existing and str(existing.get("status")) == "completed":
-            is_valid_scope, _ = _row_matches_market_universe_scope(
-                existing,
-                run_id=run_id,
-                task_key=task_key,
-                trade_date=trade_date,
-                master_provider_name=master_provider_name,
-                daily_provider_name=daily_provider_name,
-                legacy_candidate_ids=legacy_candidate_ids,
-            )
-            is_valid_existing, _ = validate_run_predecessor_ancestry(
-                existing,
-                current_run_id=run_id,
-                db=self._db,
-                task_key=task_key,
-                trade_date=trade_date,
-                master_provider_name=master_provider_name,
-                daily_provider_name=daily_provider_name,
-                legacy_candidate_ids=legacy_candidate_ids,
-            )
-            if (
-                is_valid_scope
-                and is_valid_existing
-                and is_qualified_market_universe_coverage_run(
-                    existing,
-                    expected_snapshot_id=str(latest_master.get("snapshot_id") or "")
-                    if latest_master
-                    else None,
-                    expected_fingerprint=evidence_fingerprint,
-                    expected_policy_id=validation_policy_id,
-                    expected_policy_fingerprint=policy_fingerprint,
-                    expected_task_key=task_key,
-                    expected_panel_size=self._policy.panel_size,
-                    expected_member_count=len(master_members)
-                    if latest_master
-                    else None,
-                )
-            ):
-                return existing
-
-        # 2. Check if a qualified prior run matches current evidence and policy
-        if prior_run and str(prior_run.get("status")) == "completed":
-            is_valid_prior, _ = validate_run_predecessor_ancestry(
-                prior_run,
-                current_run_id=str(prior_run.get("run_id") or ""),
-                db=self._db,
-                task_key=task_key,
-                trade_date=trade_date,
-                master_provider_name=master_provider_name,
-                daily_provider_name=daily_provider_name,
-                legacy_candidate_ids=legacy_candidate_ids,
-            )
-            if is_valid_prior and is_qualified_market_universe_coverage_run(
-                prior_run,
-                expected_snapshot_id=str(latest_master.get("snapshot_id") or "")
-                if latest_master
-                else None,
-                expected_fingerprint=evidence_fingerprint,
-                expected_policy_id=validation_policy_id,
-                expected_policy_fingerprint=policy_fingerprint,
-                expected_task_key=task_key,
-                expected_panel_size=self._policy.panel_size,
-                expected_member_count=len(master_members) if latest_master else None,
-            ):
-                return prior_run
+        reusable_run = self._resolve_reusable_completed_run(
+            run_id=run_id,
+            prior_run=prior_run,
+            task_key=task_key,
+            trade_date=trade_date,
+            master_provider_name=master_provider_name,
+            daily_provider_name=daily_provider_name,
+            legacy_candidate_ids=legacy_candidate_ids,
+            latest_master=latest_master,
+            master_members=master_members,
+            evidence_fingerprint=evidence_fingerprint,
+            validation_policy_id=validation_policy_id,
+            policy_fingerprint=policy_fingerprint,
+        )
+        if reusable_run is not None:
+            return reusable_run
 
         # 3. Throttle / backoff check if prior run failed with identical inputs
         if self._is_failed_run_throttled(
@@ -1435,6 +1384,90 @@ class MarketUniverseAutomationService:
                 stock_master_useful_name_count=stock_master_useful_name_count,
                 instrument_metadata_persisted_count=instrument_metadata_persisted_count,
             )
+
+    def _resolve_reusable_completed_run(
+        self,
+        *,
+        run_id: str,
+        prior_run: dict[str, Any] | None,
+        task_key: str,
+        trade_date: str,
+        master_provider_name: str,
+        daily_provider_name: str,
+        legacy_candidate_ids: tuple[str, ...],
+        latest_master: dict[str, Any] | None,
+        master_members: list[str],
+        evidence_fingerprint: str | None,
+        validation_policy_id: str,
+        policy_fingerprint: str,
+    ) -> dict[str, Any] | None:
+        existing = self._db.get_automation_run_sync(run_id)
+        if existing and str(existing.get("status")) == "completed":
+            is_valid_scope, _ = _row_matches_market_universe_scope(
+                existing,
+                run_id=run_id,
+                task_key=task_key,
+                trade_date=trade_date,
+                master_provider_name=master_provider_name,
+                daily_provider_name=daily_provider_name,
+                legacy_candidate_ids=legacy_candidate_ids,
+            )
+            is_valid_existing, _ = validate_run_predecessor_ancestry(
+                existing,
+                current_run_id=run_id,
+                db=self._db,
+                task_key=task_key,
+                trade_date=trade_date,
+                master_provider_name=master_provider_name,
+                daily_provider_name=daily_provider_name,
+                legacy_candidate_ids=legacy_candidate_ids,
+            )
+            if (
+                is_valid_scope
+                and is_valid_existing
+                and is_qualified_market_universe_coverage_run(
+                    existing,
+                    expected_snapshot_id=str(latest_master.get("snapshot_id") or "")
+                    if latest_master
+                    else None,
+                    expected_fingerprint=evidence_fingerprint,
+                    expected_policy_id=validation_policy_id,
+                    expected_policy_fingerprint=policy_fingerprint,
+                    expected_task_key=task_key,
+                    expected_panel_size=self._policy.panel_size,
+                    expected_member_count=len(master_members)
+                    if latest_master
+                    else None,
+                )
+            ):
+                return existing
+
+        if prior_run and str(prior_run.get("status")) == "completed":
+            is_valid_prior, _ = validate_run_predecessor_ancestry(
+                prior_run,
+                current_run_id=str(prior_run.get("run_id") or ""),
+                db=self._db,
+                task_key=task_key,
+                trade_date=trade_date,
+                master_provider_name=master_provider_name,
+                daily_provider_name=daily_provider_name,
+                legacy_candidate_ids=legacy_candidate_ids,
+            )
+            if is_valid_prior and is_qualified_market_universe_coverage_run(
+                prior_run,
+                expected_snapshot_id=str(latest_master.get("snapshot_id") or "")
+                if latest_master
+                else None,
+                expected_fingerprint=evidence_fingerprint,
+                expected_policy_id=validation_policy_id,
+                expected_policy_fingerprint=policy_fingerprint,
+                expected_task_key=task_key,
+                expected_panel_size=self._policy.panel_size,
+                expected_member_count=len(master_members) if latest_master else None,
+            ):
+                return prior_run
+
+        return None
 
     def _handle_run_due_failure(
         self,

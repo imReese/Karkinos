@@ -92,9 +92,12 @@ def sdk_env(tmp_path: Path) -> dict[str, str]:
     vendor.mkdir()
     (vendor / "tdxaidata.py").write_text(_FAKE_SDK, encoding="utf-8")
     (vendor / "TdxAiData.ini").write_text("do not rewrite SDK configuration")
+    pythonpath = str(vendor)
+    if "PYTHONPATH" in os.environ and os.environ["PYTHONPATH"]:
+        pythonpath = f"{vendor}{os.pathsep}{os.environ['PYTHONPATH']}"
     return {
         **os.environ,
-        "PYTHONPATH": str(vendor),
+        "PYTHONPATH": pythonpath,
         "TDX_TEST_IMPORTED": str(tmp_path / "imported"),
         "TDX_TEST_CALLS": str(tmp_path / "calls.jsonl"),
         "TDX_TEST_RUNTIME": str(tmp_path / "runtime-path"),
