@@ -5,6 +5,8 @@ from __future__ import annotations
 from decimal import ROUND_FLOOR, Decimal
 from typing import Any
 
+from execution.manual_trade_fees import resolve_manual_trade_fee_breakdown
+
 _BOARD_LOT_ASSET_CLASSES = {"stock", "etf"}
 _DEFAULT_MIN_CASH_BUFFER_RATIO = Decimal("0.03")
 _DEFAULT_MAX_SINGLE_SYMBOL_WEIGHT = Decimal("0.35")
@@ -49,6 +51,7 @@ def allocate_action_tasks(
         total_equity=total_equity,
         available_buy_cash=remaining_buy_cash,
         max_single_symbol_weight=max_single_symbol_weight,
+        config=config,
         require_persisted_quote_price=require_persisted_quote_price,
     )
     allocated: list[dict[str, Any]] = []
@@ -101,7 +104,14 @@ def allocate_action_tasks(
                 buy_allocations.get(index, _ZERO),
             )
             remaining_buy_cash = max(
-                remaining_buy_cash - allocation_quantity * price,
+                remaining_buy_cash
+                - _buy_order_cost(
+                    config=config,
+                    asset_class=asset_class,
+                    symbol=symbol,
+                    quantity=allocation_quantity,
+                    price=price,
+                ),
                 _ZERO,
             )
             effective_target_weight = (
@@ -154,6 +164,7 @@ def _allocate_buy_quantities(
     total_equity: Decimal,
     available_buy_cash: Decimal,
     max_single_symbol_weight: Decimal,
+    config: Any,
     require_persisted_quote_price: bool,
 ) -> dict[int, Decimal]:
     demands: list[dict[str, Any]] = []
@@ -187,6 +198,7 @@ def _allocate_buy_quantities(
         demands.append(
             {
                 "index": index,
+                "symbol": symbol,
                 "asset_class": asset_class,
                 "price": price,
                 "desired_delta": desired_delta,
@@ -205,13 +217,28 @@ def _allocate_buy_quantities(
         for demand in board_demands:
             index = int(demand["index"])
             lot_quantity = Decimal("100")
-            lot_notional = lot_quantity * demand["price"]
-            if allocations[index] + lot_quantity > demand["desired_delta"]:
+            next_quantity = allocations[index] + lot_quantity
+            if next_quantity > demand["desired_delta"]:
                 continue
-            if lot_notional > remaining_cash:
+            current_cost = _buy_order_cost(
+                config=config,
+                asset_class=str(demand["asset_class"]),
+                symbol=str(demand["symbol"]),
+                quantity=allocations[index],
+                price=demand["price"],
+            )
+            next_cost = _buy_order_cost(
+                config=config,
+                asset_class=str(demand["asset_class"]),
+                symbol=str(demand["symbol"]),
+                quantity=next_quantity,
+                price=demand["price"],
+            )
+            incremental_cost = next_cost - current_cost
+            if incremental_cost > remaining_cash:
                 continue
-            allocations[index] += lot_quantity
-            remaining_cash -= lot_notional
+            allocations[index] = next_quantity
+            remaining_cash -= incremental_cost
             progressed = True
         if not progressed:
             break
@@ -241,6 +268,29 @@ def _allocate_buy_quantities(
                 ),
             )
     return allocations
+
+
+def _buy_order_cost(
+    *,
+    config: Any,
+    asset_class: str,
+    symbol: str,
+    quantity: Decimal,
+    price: Decimal,
+) -> Decimal:
+    if quantity <= 0 or price <= 0:
+        return _ZERO
+    gross = quantity * price
+    fee = resolve_manual_trade_fee_breakdown(
+        config,
+        asset_class=asset_class,
+        direction="buy",
+        quantity=float(quantity),
+        price=float(price),
+        symbol=symbol,
+    )
+    total_fee = Decimal(str(fee.total_fee)) if fee is not None else _ZERO
+    return gross + max(total_fee, _ZERO)
 
 
 def _portfolio_equity(portfolio: Any, cash: Decimal) -> Decimal:

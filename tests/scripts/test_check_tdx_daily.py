@@ -215,7 +215,8 @@ def test_live_check_uses_default_sdk_loader_and_replays_real_pipeline(
     assert report["bar"]["available_at"] == report["bar"]["captured_at"]
     assert _PRIVATE not in completed.stdout + completed.stderr
     assert not Path(Path(sdk_env["TDX_TEST_RUNTIME"]).read_text()).exists()
-    assert (Path(sdk_env["PYTHONPATH"]) / "TdxAiData.ini").read_text() == (
+    vendor_dir = Path(sdk_env["PYTHONPATH"].split(os.pathsep)[0])
+    assert (vendor_dir / "TdxAiData.ini").read_text() == (
         "do not rewrite SDK configuration"
     )
     assert _calls(sdk_env) == [

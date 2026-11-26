@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from math import isfinite
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,10 @@ from server.contracts.ai_shadow_research_qualification import (
     qualification_source_binding,
 )
 from server.contracts.recommendation_publication import publication_source_blocker
+from server.services.account.valuation import (
+    portfolio_stock_valuation_from_snapshot,
+    valuation_snapshot_from_row,
+)
 from server.services.account.valuation_snapshot import is_asset_class_valuation_healthy
 from server.services.ai_shadow.ai_shadow_research_daily_artifacts import (
     DailyStrategyArtifactRejected,
@@ -39,6 +44,7 @@ from server.services.strategy_scan.universe.evaluation import (
     aggregate_ranked_signals,
     automation_safety_blockers,
     board_buy_blocker,
+    buy_candidates_cash_requirement,
     cash_buffer_ratio,
     decision_window_blockers,
     evaluate_promoted_strategy_market,
@@ -73,6 +79,129 @@ PROMOTED_STRATEGY_UNIVERSE_SCAN_RUN_TYPE = "promoted_strategy_universe_scan"
 StrategyGateResolver = Callable[..., tuple[dict[str, Any], list[str]]]
 StrategyLoader = Callable[..., dict[str, Any]]
 SafetyGateReader = Callable[[], Mapping[str, Any]]
+
+
+def _nonnegative_decimal(value: Any) -> Decimal | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        number = Decimal(str(value))
+    except Exception:
+        return None
+    return number if number.is_finite() and number >= 0 else None
+
+
+def _validate_current_market_and_portfolio_authority(
+    *,
+    db: Any,
+    config: Any,
+    policy: Any,
+    data_store: Any,
+    portfolio: Mapping[str, Any],
+    market: Mapping[str, Any],
+    decision_date: str,
+    market_date: str,
+    sells: Sequence[Mapping[str, Any]],
+    buys: Sequence[Mapping[str, Any]],
+    clock: Callable[[], datetime],
+) -> list[str]:
+    from server.services.account.valuation_snapshot import (
+        build_current_valuation_snapshot,
+    )
+
+    changed: list[str] = []
+    try:
+        valuation = build_current_valuation_snapshot(db, persist=False, now=clock())
+        if not is_asset_class_valuation_healthy(valuation, "stock"):
+            changed.append("current_portfolio_valuation_changed")
+        bound_ledger = portfolio.get("ledger_fingerprint")
+        if bound_ledger is not None:
+            bound_val_id = portfolio.get("valuation_snapshot_id")
+            if not bound_val_id or not hasattr(db, "get_valuation_snapshot_sync"):
+                changed.append("current_portfolio_bound_valuation_missing")
+            else:
+                raw_snap = db.get_valuation_snapshot_sync(bound_val_id)
+                if raw_snap is None:
+                    changed.append("current_portfolio_bound_valuation_missing")
+                else:
+                    bound_snap = valuation_snapshot_from_row(dict(raw_snap))
+                    if not is_asset_class_valuation_healthy(bound_snap, "stock"):
+                        changed.append("current_portfolio_bound_valuation_unhealthy")
+            if (
+                valuation.get("ledger_fingerprint") != bound_ledger
+                or int(valuation.get("ledger_cutoff_id") or 0)
+                != int(portfolio.get("ledger_cutoff_id") or 0)
+                or (
+                    valuation.get("cash") is not None
+                    and portfolio.get("cash") is not None
+                    and valuation.get("cash") != portfolio.get("cash")
+                )
+            ):
+                changed.append("current_portfolio_ledger_changed")
+            live_valuation = portfolio_stock_valuation_from_snapshot(
+                db, valuation, config=config
+            )
+            current_held = set(live_valuation["stock_symbols"])
+            for row in sells:
+                if str(row["symbol"]) not in current_held:
+                    changed.append(f"current_portfolio_holding_missing:{row['symbol']}")
+            reserve_ratio = cash_buffer_ratio(config)
+            live_cash = live_valuation["cash"]
+            live_equity = live_valuation["evaluation_equity"]
+            live_reserve = live_equity * reserve_ratio
+            live_available = max(Decimal(0), live_cash - live_reserve)
+            live_quotes_by_symbol: dict[str, Decimal] = {}
+            if hasattr(db, "get_latest_quotes_sync"):
+                for q in db.get_latest_quotes_sync():
+                    sym = str(q.get("symbol") or "")
+                    q_price = _nonnegative_decimal(q.get("price"))
+                    if sym and q_price is not None and q_price > 0:
+                        live_quotes_by_symbol[sym] = q_price
+            min_required_buy_cash = buy_candidates_cash_requirement(
+                buys,
+                config=config,
+                policy=policy,
+                live_quotes_by_symbol=live_quotes_by_symbol,
+            )
+            if min_required_buy_cash > live_available:
+                changed.append("current_portfolio_cash_insufficient")
+        elif valuation.get("snapshot_id") != portfolio["valuation_snapshot_id"]:
+            changed.append("current_portfolio_valuation_changed")
+        if prior_verified_trading_date(db, decision_date) != market_date:
+            changed.append("current_market_session_changed")
+        snapshot = dict(
+            data_store.get_market_universe_snapshot(trade_date=market_date) or {}
+        )
+        if snapshot != market["snapshot"]:
+            changed.append("current_market_universe_changed")
+        receipts = resolve_daily_bar_receipts(
+            data_store=data_store,
+            start_date=market["history_start"],
+            end_date=market_date,
+            config=config,
+            snapshot=snapshot,
+        )
+        if receipts != market["receipts"]:
+            changed.append("current_market_receipts_changed")
+        if (
+            verified_trading_dates(
+                db,
+                start_date=market["history_start"],
+                end_date=market_date,
+            )
+            != market["trading_dates"]
+        ):
+            changed.append("current_market_calendar_changed")
+    except (
+        AttributeError,
+        KeyError,
+        LookupError,
+        OSError,
+        TypeError,
+        ValueError,
+    ):
+        changed.append("current_account_or_market_evidence_unavailable")
+    return changed
 
 
 class PromotedStrategyUniverseScanService:
@@ -599,6 +728,7 @@ class PromotedStrategyUniverseScanService:
                         changed.append(blocker)
                 permissions = resolve_board_buy_permissions(self._config, decision_date)
                 buys = [row for row in selected_signals if row["direction"] == "buy"]
+                sells = [row for row in selected_signals if row["direction"] == "sell"]
                 _, board_blockers = policy_entry_signals(
                     buys,
                     portfolio={**portfolio, "board_buy_permissions": permissions},
@@ -618,70 +748,21 @@ class PromotedStrategyUniverseScanService:
                             changed.append(
                                 "current_board_permission_changed:" + blocker
                             )
-                try:
-                    valuation = build_current_valuation_snapshot(
-                        self._db, persist=False, now=self._clock()
-                    )
-                    if not is_asset_class_valuation_healthy(valuation, "stock"):
-                        changed.append("current_portfolio_valuation_changed")
-                    bound_ledger = portfolio.get("ledger_fingerprint")
-                    if bound_ledger is not None:
-                        if (
-                            valuation.get("ledger_fingerprint") != bound_ledger
-                            or int(valuation.get("ledger_cutoff_id") or 0)
-                            != int(portfolio.get("ledger_cutoff_id") or 0)
-                            or (
-                                valuation.get("cash") is not None
-                                and portfolio.get("cash") is not None
-                                and valuation.get("cash") != portfolio.get("cash")
-                            )
-                        ):
-                            changed.append("current_portfolio_ledger_changed")
-                    elif (
-                        valuation.get("snapshot_id")
-                        != portfolio["valuation_snapshot_id"]
-                    ):
-                        changed.append("current_portfolio_valuation_changed")
-                    if (
-                        prior_verified_trading_date(self._db, decision_date)
-                        != market_date
-                    ):
-                        changed.append("current_market_session_changed")
-                    snapshot = dict(
-                        self._data_store.get_market_universe_snapshot(
-                            trade_date=market_date
-                        )
-                        or {}
-                    )
-                    if snapshot != market["snapshot"]:
-                        changed.append("current_market_universe_changed")
-                    receipts = resolve_daily_bar_receipts(
-                        data_store=self._data_store,
-                        start_date=market["history_start"],
-                        end_date=market_date,
+                changed.extend(
+                    _validate_current_market_and_portfolio_authority(
+                        db=self._db,
                         config=self._config,
-                        snapshot=snapshot,
+                        policy=self._policy,
+                        data_store=self._data_store,
+                        portfolio=portfolio,
+                        market=market,
+                        decision_date=decision_date,
+                        market_date=market_date,
+                        sells=sells,
+                        buys=buys,
+                        clock=self._clock,
                     )
-                    if receipts != market["receipts"]:
-                        changed.append("current_market_receipts_changed")
-                    if (
-                        verified_trading_dates(
-                            self._db,
-                            start_date=market["history_start"],
-                            end_date=market_date,
-                        )
-                        != market["trading_dates"]
-                    ):
-                        changed.append("current_market_calendar_changed")
-                except (
-                    AttributeError,
-                    KeyError,
-                    LookupError,
-                    OSError,
-                    TypeError,
-                    ValueError,
-                ):
-                    changed.append("current_account_or_market_evidence_unavailable")
+                )
                 if market.get("formula_dataset_bindings"):
                     _, _, reopened, exact_blockers = load_exact_formula_market_inputs(
                         self._db,

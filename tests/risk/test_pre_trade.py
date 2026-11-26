@@ -296,3 +296,45 @@ def test_pre_trade_risk_preview_reuses_rules_without_publishing_or_auditing(
     }
     assert orders == []
     assert db.get_risk_decisions_sync() == []
+
+
+def test_pre_trade_risk_blocks_sell_exceeding_t1_available_qty() -> None:
+    from risk.pre_trade import preview_pre_trade_risk
+
+    controls = TradingControlState()
+    context = StaticContextProvider(
+        controls,
+        positions={
+            Symbol("600001"): SimpleNamespace(
+                quantity=Decimal("200"),
+                available_qty=Decimal("100"),
+                market_value=Decimal("2000"),
+            )
+        },
+    ).snapshot()
+    sell_intent = OrderIntentEvent(
+        timestamp=datetime(2026, 8, 24, 9, 36),
+        intent_id="INTENT-SELL-1",
+        strategy_id="unit_test",
+        symbol=Symbol("600001"),
+        side=OrderSide.SELL,
+        target_weight=Decimal("0"),
+        quantity=Decimal("200"),
+        reference_price=Decimal("10"),
+    )
+    blocked = preview_pre_trade_risk(intent=sell_intent, context=context)
+    assert blocked["passed"] is False
+    assert "t1_available_quantity_insufficient" in blocked["reasons"]
+
+    valid_sell = OrderIntentEvent(
+        timestamp=datetime(2026, 8, 24, 9, 36),
+        intent_id="INTENT-SELL-2",
+        strategy_id="unit_test",
+        symbol=Symbol("600001"),
+        side=OrderSide.SELL,
+        target_weight=Decimal("0"),
+        quantity=Decimal("100"),
+        reference_price=Decimal("10"),
+    )
+    allowed = preview_pre_trade_risk(intent=valid_sell, context=context)
+    assert allowed["passed"] is True

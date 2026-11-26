@@ -57,6 +57,7 @@ def decision_portfolio_context(state: Any) -> dict[str, Any]:
             and get_portfolio_read_request_state() is None
             else nullcontext()
         )
+        as_of_now = get_shanghai_now()
         with snapshot_scope:
             snapshot = (
                 current_valuation_snapshot(state)
@@ -85,10 +86,17 @@ def decision_portfolio_context(state: Any) -> dict[str, Any]:
                         SimpleNamespace(initial_cash=0, assets=[]),
                     ),
                 )
-            portfolio, instruments = resolve_projection_sources(
-                projection_state,
-                latest_quotes=quotes,
-            )
+            try:
+                portfolio, instruments = resolve_projection_sources(
+                    projection_state,
+                    latest_quotes=quotes,
+                    as_of=as_of_now,
+                )
+            except TypeError:
+                portfolio, instruments = resolve_projection_sources(
+                    projection_state,
+                    latest_quotes=quotes,
+                )
         return {
             "portfolio": portfolio,
             "instruments": instruments,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Protocol
+from typing import Any, Protocol
 
 from core.event_bus import EventBus
 from core.events import OrderEvent, OrderIntentEvent, RiskAlertEvent, RiskDecisionEvent
@@ -225,6 +225,11 @@ def _pre_trade_reasons(
     ):
         reasons.append("order notional exceeds max_order_notional")
 
+    if intent.side == OrderSide.SELL:
+        sellable_qty = _position_sellable_quantity(ctx.positions.get(intent.symbol))
+        if sellable_qty is not None and intent.quantity > sellable_qty:
+            reasons.append("t1_available_quantity_insufficient")
+
     if (
         intent.side == OrderSide.BUY
         and Decimal(risk_inputs["projected_cash"]) < policy.min_cash_reserve
@@ -251,6 +256,23 @@ def _position_market_value(position: Position | None) -> Decimal:
     if position is None:
         return ZERO
     return Decimal(str(getattr(position, "market_value", ZERO)))
+
+
+def _position_sellable_quantity(position: Position | Any | None) -> Decimal | None:
+    if position is None:
+        return None
+    for name in (
+        "t1_available_quantity",
+        "sellable_quantity",
+        "available_quantity",
+        "available_qty",
+        "quantity",
+        "shares",
+    ):
+        value = getattr(position, name, None)
+        if value is not None:
+            return Decimal(str(value))
+    return None
 
 
 def _policy_metadata(policy: PreTradePolicy) -> dict[str, str | None]:

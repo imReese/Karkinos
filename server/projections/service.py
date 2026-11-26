@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from core.types import InstrumentType
 from domain.portfolio_accounting import (
@@ -42,6 +43,8 @@ _DIVIDEND_TYPES = {"dividend"}
 _CASH_INTEREST_TYPES = {"cash_interest", "interest_income"}
 _FEE_TYPES = {"fee"}
 _MANUAL_ADJUSTMENT_TYPES = {"manual_adjustment"}
+_SHANGHAI = ZoneInfo("Asia/Shanghai")
+_T_PLUS_1_TYPES = frozenset({InstrumentType.STOCK, InstrumentType.ETF})
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,12 +140,20 @@ def build_portfolio_projection(
     *,
     initial_cash: float | Decimal = 0,
     latest_quotes: Mapping[str, Any] | None = None,
+    settlement_date: date | datetime | None = None,
+    instrument_types: Mapping[str, InstrumentType] | None = None,
 ) -> PortfolioProjection:
     """Reconstruct portfolio state from a sequence of ledger entries."""
     projection = PortfolioProjection(cash=_as_decimal(initial_cash))
+    target_date = _settlement_target_date(settlement_date)
 
     for entry in _sorted_entries(entries):
-        _apply_ledger_entry(projection, entry)
+        _apply_ledger_entry(
+            projection,
+            entry,
+            settlement_date=target_date,
+            instrument_types=instrument_types,
+        )
 
     _apply_valuations(projection, latest_quotes or {})
     projection.total_equity = (
@@ -159,6 +170,8 @@ def build_portfolio_projection_from_db(
     *,
     initial_cash: float | Decimal = 0,
     latest_quotes: Mapping[str, Any] | None = None,
+    settlement_date: date | datetime | None = None,
+    instrument_types: Mapping[str, InstrumentType] | None = None,
     batch_size: int = 500,
 ) -> PortfolioProjection:
     """Load every ledger entry from the DB and reconstruct the projection."""
@@ -176,6 +189,8 @@ def build_portfolio_projection_from_db(
         entries,
         initial_cash=initial_cash,
         latest_quotes=latest_quotes,
+        settlement_date=settlement_date,
+        instrument_types=instrument_types,
     )
 
 
@@ -375,7 +390,46 @@ def _require_entry_decimal(entry: LedgerEntry, field: str) -> Decimal:
     return value
 
 
-def _apply_ledger_entry(projection: PortfolioProjection, entry: LedgerEntry) -> None:
+def _settlement_target_date(value: date | datetime | None) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        resolved = (
+            value if value.tzinfo is not None else value.replace(tzinfo=_SHANGHAI)
+        )
+        return resolved.astimezone(_SHANGHAI).date()
+    return value
+
+
+def _entry_shanghai_date(entry: LedgerEntry) -> date:
+    text = str(entry.timestamp or "").strip().replace("Z", "+00:00")
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_SHANGHAI)
+    return parsed.astimezone(_SHANGHAI).date()
+
+
+def _is_t_plus_1_trade(
+    symbol: str,
+    entry: LedgerEntry,
+    instrument_types: Mapping[str, InstrumentType] | None,
+) -> bool:
+    resolved = instrument_types.get(symbol) if instrument_types else None
+    if resolved is None and entry.asset_class:
+        try:
+            resolved = InstrumentType.from_persisted(entry.asset_class)
+        except ValueError:
+            resolved = None
+    return resolved in _T_PLUS_1_TYPES
+
+
+def _apply_ledger_entry(
+    projection: PortfolioProjection,
+    entry: LedgerEntry,
+    *,
+    settlement_date: date | None = None,
+    instrument_types: Mapping[str, InstrumentType] | None = None,
+) -> None:
     entry_type = (entry.entry_type or "").strip().lower()
     if entry_type in _CASH_DEPOSIT_TYPES:
         amount = _require_entry_decimal(entry, "amount")
@@ -390,7 +444,12 @@ def _apply_ledger_entry(projection: PortfolioProjection, entry: LedgerEntry) -> 
         return
 
     if entry_type in _BUY_TYPES or entry_type in _SELL_TYPES:
-        _apply_trade_entry(projection, entry)
+        _apply_trade_entry(
+            projection,
+            entry,
+            settlement_date=settlement_date,
+            instrument_types=instrument_types,
+        )
         return
 
     if entry_type in _DIVIDEND_TYPES or entry_type in _CASH_INTEREST_TYPES:
@@ -412,7 +471,13 @@ def _apply_ledger_entry(projection: PortfolioProjection, entry: LedgerEntry) -> 
     raise ValueError(f"Unsupported ledger entry_type: {entry.entry_type!r}")
 
 
-def _apply_trade_entry(projection: PortfolioProjection, entry: LedgerEntry) -> None:
+def _apply_trade_entry(
+    projection: PortfolioProjection,
+    entry: LedgerEntry,
+    *,
+    settlement_date: date | None = None,
+    instrument_types: Mapping[str, InstrumentType] | None = None,
+) -> None:
     symbol = _require_text(entry.symbol, "symbol")
     quantity = _require_entry_decimal(entry, "quantity")
     price = _require_entry_decimal(entry, "price")
@@ -425,7 +490,19 @@ def _apply_trade_entry(projection: PortfolioProjection, entry: LedgerEntry) -> N
         projection.positions[symbol] = position
 
     if side == "buy":
-        _apply_buy(projection, position, quantity, price, commission)
+        freeze_buy = (
+            settlement_date is not None
+            and _is_t_plus_1_trade(symbol, entry, instrument_types)
+            and _entry_shanghai_date(entry) >= settlement_date
+        )
+        _apply_buy(
+            projection,
+            position,
+            quantity,
+            price,
+            commission,
+            freeze_buy=freeze_buy,
+        )
         return
 
     if side == "sell":
@@ -448,6 +525,8 @@ def _apply_buy(
     quantity: Decimal,
     price: Decimal,
     commission: Decimal,
+    *,
+    freeze_buy: bool = False,
 ) -> None:
     if position.quantity == ZERO:
         position.closed_at = None
@@ -463,6 +542,8 @@ def _apply_buy(
 
     position.broker_displayed_cost_basis += added_cost
     position.quantity += quantity
+    if freeze_buy:
+        position.frozen_qty += quantity
     position.commission_paid += commission
     _sync_broker_cost_basis(position)
     position.sync_available_qty()
@@ -495,8 +576,11 @@ def _apply_sell(
     position.quantity -= quantity
     if position.quantity == ZERO:
         position.avg_cost = ZERO
+        position.frozen_qty = ZERO
         position.broker_displayed_cost_basis = ZERO
         position.closed_at = closed_at
+    elif position.frozen_qty > position.quantity:
+        position.frozen_qty = position.quantity
     _sync_broker_cost_basis(position)
     position.sync_available_qty()
 
@@ -582,8 +666,11 @@ def _apply_manual_adjustment(
     position.quantity = previous_quantity + delta
     if position.quantity == ZERO:
         position.avg_cost = ZERO
+        position.frozen_qty = ZERO
         if previous_quantity != ZERO:
             position.closed_at = entry.timestamp
     elif previous_quantity == ZERO:
         position.closed_at = None
+    elif position.frozen_qty > position.quantity:
+        position.frozen_qty = position.quantity
     position.sync_available_qty()

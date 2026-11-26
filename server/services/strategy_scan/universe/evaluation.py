@@ -476,6 +476,7 @@ def _legacy_account_signals(
         board = identity[0]["board"] if identity else "unknown"
         reason = board_buy_blocker(symbol, permission_evidence, decision_date)
         price = _nonnegative_decimal(signal.get("frozen_close"))
+        minimum_cost: Decimal | None = None
         if reason is None and (price is None or price == 0):
             reason = "frozen_price_invalid"
         if reason is None and remaining is None:
@@ -513,10 +514,8 @@ def _legacy_account_signals(
             continue
         seen_symbols.add(symbol)
         selected_buys.append(signal)
-        if remaining is not None and price is not None:
-            remaining -= (
-                price * policy.lot_size * (Decimal("1") + policy.fee_buffer_rate)
-            )
+        if remaining is not None and minimum_cost is not None:
+            remaining -= minimum_cost
     return [*exits, *selected_buys], blocked
 
 
@@ -693,6 +692,61 @@ def cash_buffer_ratio(config: Any) -> Decimal:
         configured = getattr(config, "min_cash_buffer_ratio", None)
     ratio = _nonnegative_decimal(configured)
     return ratio if ratio is not None and ratio <= 1 else _DEFAULT_CASH_BUFFER_RATIO
+
+
+def buy_candidates_cash_requirement(
+    buys: Sequence[Mapping[str, Any]],
+    *,
+    config: Any,
+    policy: Any,
+    live_quotes_by_symbol: Mapping[str, Decimal],
+) -> Decimal:
+    """Compute fee-inclusive cash required by candidate buys without netting sells."""
+    from domain.instrument import make_research_stock
+
+    total_required = Decimal("0")
+    policy_lot_size = int(getattr(policy, "lot_size", 100) or 100)
+    config_lot_size = getattr(config, "lot_size", None)
+    for row in buys:
+        symbol = str(row["symbol"])
+        price = (
+            live_quotes_by_symbol.get(symbol)
+            or _nonnegative_decimal(row.get("frozen_close"))
+            or Decimal("0")
+        )
+        if price <= 0:
+            continue
+        lot_size = make_research_stock(symbol, symbol).lot_size
+        if (
+            isinstance(config_lot_size, int)
+            and not isinstance(config_lot_size, bool)
+            and config_lot_size > 0
+        ):
+            lot_size = max(lot_size, config_lot_size)
+        lot_size = max(lot_size, policy_lot_size)
+        planned_qty = _nonnegative_decimal(
+            row.get("allocation_quantity") or row.get("quantity")
+        )
+        quantity = (
+            max(planned_qty, Decimal(lot_size))
+            if planned_qty is not None and planned_qty > 0
+            else Decimal(lot_size)
+        )
+        gross = price * quantity
+        asset_class = str(row.get("asset_class") or "stock").strip().lower() or "stock"
+        fee = resolve_manual_trade_fee_breakdown(
+            config,
+            asset_class=asset_class,
+            direction="buy",
+            quantity=float(quantity),
+            price=float(price),
+            symbol=symbol,
+        )
+        configured_fee = (
+            _nonnegative_decimal(fee.total_fee) if fee is not None else None
+        )
+        total_required += gross + (configured_fee or Decimal("0"))
+    return total_required
 
 
 def portfolio_scan_binding(

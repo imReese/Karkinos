@@ -5,12 +5,14 @@ from __future__ import annotations
 import copy
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any
 
 from core.types import InstrumentType
 from server.ai_runtime.contracts import content_fingerprint
 from server.services.account.valuation import (
     is_asset_class_valuation_healthy,
+    portfolio_stock_valuation_from_snapshot,
     valuation_snapshot_from_row,
 )
 from server.services.market.market_universe_automation import verified_trading_dates
@@ -24,6 +26,7 @@ from server.services.strategy_scan.universe.evaluation import (
     aggregate_ranked_signals,
     automation_safety_blockers,
     board_buy_blocker,
+    buy_candidates_cash_requirement,
     cash_buffer_ratio,
     evaluate_promoted_strategy_market,
     market_evaluation_cache_key,
@@ -37,6 +40,163 @@ from server.services.strategy_scan.universe.evaluation import (
 from server.services.strategy_scan.universe.formula_inputs import (
     load_exact_formula_market_inputs,
 )
+
+
+def _nonnegative_decimal(value: Any) -> Decimal | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        number = Decimal(str(value))
+    except Exception:
+        return None
+    return number if number.is_finite() and number >= 0 else None
+
+
+def _verify_bound_valuation(
+    *,
+    db: Any,
+    bound_val_id: str | None,
+    bound_ledger: str | None,
+    bound_cutoff: int | None,
+    blockers: list[str],
+) -> dict[str, Any] | None:
+    if not bound_val_id:
+        if bound_ledger is not None:
+            blockers.append("promoted_strategy_scan_current_portfolio_changed")
+        return None
+    if not hasattr(db, "get_valuation_snapshot_sync"):
+        if bound_ledger is not None:
+            blockers.append("promoted_strategy_scan_current_portfolio_changed")
+        return None
+    raw_snap = db.get_valuation_snapshot_sync(bound_val_id)
+    if (
+        raw_snap is None
+        or not isinstance(raw_snap, Mapping)
+        or "snapshot_id" not in raw_snap
+    ):
+        if bound_ledger is not None:
+            blockers.append("promoted_strategy_scan_current_portfolio_changed")
+        return None
+    bound_snap = valuation_snapshot_from_row(dict(raw_snap))
+    if not is_asset_class_valuation_healthy(bound_snap, "stock"):
+        blockers.append("promoted_strategy_scan_current_portfolio_changed")
+    if bound_ledger is not None and (
+        bound_snap.get("ledger_fingerprint") != bound_ledger
+        or int(bound_snap.get("ledger_cutoff_id") or 0) != int(bound_cutoff or 0)
+    ):
+        blockers.append("promoted_strategy_scan_current_portfolio_changed")
+    return bound_snap
+
+
+def _validate_current_portfolio_binding(
+    *,
+    portfolio: Mapping[str, Any],
+    bound_binding: Mapping[str, Any],
+    current_portfolio_binding: Mapping[str, Any],
+    held_symbols: list[str],
+    reserve_ratio: Any,
+    bound_val_id: str | None,
+    bound_ledger: str | None,
+    blockers: list[str],
+) -> None:
+    has_valuation_metadata = any(
+        key in portfolio
+        for key in (
+            "valuation_status",
+            "status",
+            "valuation_lanes",
+            "valuation_snapshot_id",
+            "fact_authority",
+        )
+    )
+    if (
+        has_valuation_metadata or bound_val_id is not None or bound_ledger is not None
+    ) and not is_asset_class_valuation_healthy(portfolio, "stock"):
+        blockers.append("promoted_strategy_scan_current_portfolio_changed")
+        return
+    if bound_ledger is not None and portfolio.get("ledger_fingerprint") is not None:
+        current_held_symbol_fingerprint = "sha256:" + content_fingerprint(held_symbols)
+        if (
+            portfolio.get("ledger_fingerprint") != bound_ledger
+            or int(portfolio.get("ledger_cutoff_id") or 0)
+            != int(bound_binding.get("ledger_cutoff_id") or 0)
+            or bound_binding.get("held_symbol_fingerprint")
+            != current_held_symbol_fingerprint
+            or bound_binding.get("available_cash") != portfolio.get("cash")
+            or str(bound_binding.get("cash_buffer_ratio") or "") != str(reserve_ratio)
+        ):
+            blockers.append("promoted_strategy_scan_current_portfolio_changed")
+        return
+    if bound_binding != current_portfolio_binding:
+        blockers.append("promoted_strategy_scan_current_portfolio_changed")
+
+
+def _build_frozen_replay_portfolio(
+    *,
+    db: Any,
+    config: Any = None,
+    portfolio: Mapping[str, Any],
+    bound_binding: Mapping[str, Any],
+    bound_snap: Mapping[str, Any] | None,
+    bound_val_id: str | None,
+    blockers: list[str],
+) -> tuple[dict[str, Any], float]:
+    frozen_portfolio: dict[str, Any] | None = None
+    evaluation_equity: float | None = None
+    if (
+        bound_val_id
+        and bound_snap is not None
+        and bound_binding.get("ledger_fingerprint") is not None
+    ):
+        try:
+            replayed = portfolio_stock_valuation_from_snapshot(
+                db,
+                bound_snap,
+                config=config,
+            )
+            evaluation_equity = float(replayed["evaluation_equity"])
+            frozen_position_values = {
+                symbol: float(value)
+                for symbol, value in replayed["stock_position_market_values"].items()
+            }
+            frozen_portfolio = {
+                **portfolio,
+                "valuation_snapshot_id": bound_val_id,
+                "valuation_status": bound_snap.get("status", "complete"),
+                "valuation_lanes": list(
+                    bound_snap.get("valuation_lanes")
+                    or portfolio.get("valuation_lanes")
+                    or []
+                ),
+                "fact_authority": "persisted_valuation_snapshot",
+                "total_equity": evaluation_equity,
+                "stock_equity": float(replayed["stock_equity"]),
+                "cash": float(replayed["cash"]),
+                "stock_position_market_values": frozen_position_values,
+                "stock_symbols": list(replayed["stock_symbols"]),
+            }
+        except Exception:
+            frozen_portfolio = None
+            evaluation_equity = None
+            blockers.append("promoted_strategy_scan_current_portfolio_changed")
+    if frozen_portfolio is None or evaluation_equity is None:
+        bound_equity = bound_binding.get("bound_equity")
+        evaluation_equity = (
+            float(bound_equity)
+            if isinstance(bound_equity, (int, float)) and bound_equity > 0
+            else (
+                float(portfolio["total_equity"])
+                if isinstance(portfolio.get("total_equity"), (int, float))
+                and portfolio["total_equity"] > 0
+                else 100_000.0
+            )
+        )
+        frozen_portfolio = {
+            **portfolio,
+            "total_equity": evaluation_equity,
+            "stock_symbols": portfolio_stock_symbols(portfolio, []),
+        }
+    return frozen_portfolio, evaluation_equity
 
 
 def portfolio_stock_symbols(
@@ -221,43 +381,36 @@ def current_scan_input_blockers(
         reserve_ratio=reserve_ratio,
     )
     bound_binding = dict(scan.get("portfolio_binding") or {})
-    current_held_symbol_fingerprint = "sha256:" + content_fingerprint(held_symbols)
     bound_ledger = bound_binding.get("ledger_fingerprint")
+    bound_val_id = bound_binding.get("valuation_snapshot_id")
 
-    if not is_asset_class_valuation_healthy(portfolio, "stock"):
-        blockers.append("promoted_strategy_scan_current_portfolio_changed")
-    elif bound_ledger is not None and portfolio.get("ledger_fingerprint") is not None:
-        if (
-            portfolio.get("ledger_fingerprint") != bound_ledger
-            or int(portfolio.get("ledger_cutoff_id") or 0)
-            != int(bound_binding.get("ledger_cutoff_id") or 0)
-            or bound_binding.get("held_symbol_fingerprint")
-            != current_held_symbol_fingerprint
-            or bound_binding.get("available_cash") != portfolio.get("cash")
-            or str(bound_binding.get("cash_buffer_ratio") or "") != str(reserve_ratio)
-        ):
-            blockers.append("promoted_strategy_scan_current_portfolio_changed")
-    elif bound_binding != current_portfolio_binding:
-        blockers.append("promoted_strategy_scan_current_portfolio_changed")
+    bound_snap = _verify_bound_valuation(
+        db=db,
+        bound_val_id=bound_val_id,
+        bound_ledger=bound_ledger,
+        bound_cutoff=bound_binding.get("ledger_cutoff_id"),
+        blockers=blockers,
+    )
+    _validate_current_portfolio_binding(
+        portfolio=portfolio,
+        bound_binding=bound_binding,
+        current_portfolio_binding=current_portfolio_binding,
+        held_symbols=held_symbols,
+        reserve_ratio=reserve_ratio,
+        bound_val_id=bound_val_id,
+        bound_ledger=bound_ledger,
+        blockers=blockers,
+    )
 
     if market_replay_ready and not strategy_blockers and promoted:
-        bound_equity = bound_binding.get("bound_equity")
-        if bound_equity is None:
-            valuation_snapshot_id = bound_binding.get("valuation_snapshot_id")
-            if valuation_snapshot_id and hasattr(db, "get_valuation_snapshot_sync"):
-                raw_snap = db.get_valuation_snapshot_sync(valuation_snapshot_id)
-                if raw_snap is not None:
-                    snap_row = valuation_snapshot_from_row(raw_snap)
-                    bound_equity = snap_row.get("total_equity")
-        evaluation_equity = (
-            float(bound_equity)
-            if isinstance(bound_equity, (int, float)) and bound_equity > 0
-            else (
-                float(portfolio["total_equity"])
-                if isinstance(portfolio.get("total_equity"), (int, float))
-                and portfolio["total_equity"] > 0
-                else 100_000.0
-            )
+        frozen_portfolio, evaluation_equity = _build_frozen_replay_portfolio(
+            db=db,
+            config=config,
+            portfolio=portfolio,
+            bound_binding=bound_binding,
+            bound_snap=bound_snap,
+            bound_val_id=bound_val_id,
+            blockers=blockers,
         )
         exact_frames, cross_sections, bindings, exact_blockers = (
             load_exact_formula_market_inputs(
@@ -332,15 +485,11 @@ def current_scan_input_blockers(
                 for strategy_id in current_by_id
             ):
                 blockers.append("promoted_strategy_scan_current_universe_truth_changed")
-            bound_portfolio = {
-                **portfolio,
-                "total_equity": evaluation_equity,
-            }
             account_signals, account_blocked_buys = account_eligible_signals(
                 raw_signals,
                 config=config,
                 decision_date=decision_date,
-                portfolio=bound_portfolio,
+                portfolio=frozen_portfolio,
                 policy=policy,
                 cash_buffer_ratio=reserve_ratio,
                 db=db,
@@ -370,6 +519,26 @@ def current_scan_input_blockers(
                 if isinstance(current_permissions, Mapping)
                 else {}
             )
+            live_cash = _nonnegative_decimal(portfolio.get("cash"))
+            live_equity = _nonnegative_decimal(
+                portfolio.get("total_equity") or portfolio.get("stock_equity")
+            )
+            live_reserve = (
+                live_equity * reserve_ratio if live_equity is not None else Decimal(0)
+            )
+            live_available = (
+                max(Decimal(0), live_cash - live_reserve)
+                if live_cash is not None
+                else Decimal(0)
+            )
+            live_quotes_by_symbol: dict[str, Decimal] = {}
+            if bound_ledger is not None and hasattr(db, "get_latest_quotes_sync"):
+                for q in db.get_latest_quotes_sync():
+                    sym = str(q.get("symbol") or "")
+                    q_price = _nonnegative_decimal(q.get("price"))
+                    if sym and q_price is not None and q_price > 0:
+                        live_quotes_by_symbol[sym] = q_price
+            buy_rows: list[Mapping[str, Any]] = []
             for row in selected_signals:
                 if row.get("direction") == "buy":
                     blocker = board_buy_blocker(
@@ -380,9 +549,18 @@ def current_scan_input_blockers(
                             "promoted_strategy_scan_current_board_permission_changed:"
                             + blocker
                         )
+                    buy_rows.append(row)
                 elif row.get("direction") == "sell":
                     if str(row["symbol"]) not in held_symbols:
                         blockers.append("promoted_strategy_scan_holding_changed")
+            min_required_buy_cash = buy_candidates_cash_requirement(
+                buy_rows,
+                config=config,
+                policy=policy,
+                live_quotes_by_symbol=live_quotes_by_symbol,
+            )
+            if min_required_buy_cash > live_available:
+                blockers.append("promoted_strategy_scan_current_cash_insufficient")
     return list(dict.fromkeys(blockers))
 
 

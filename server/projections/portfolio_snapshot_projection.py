@@ -45,6 +45,7 @@ from server.projections.quote_status import (
 from server.services.account.valuation_snapshot import valuation_identity_fields
 from server.services.market.asset_metadata import resolve_asset_metadata
 from server.services.market.calendar import project_market_session
+from server.services.market.hours import get_shanghai_now
 from server.valuation.service import value_position
 
 Operation = Callable[..., Any]
@@ -298,10 +299,17 @@ def build_portfolio_snapshot_sync(
         )
         for symbol, quote in quotes_from_valuation_snapshot(valuation_snapshot).items()
     }
-    portfolio, instruments = ports.resolve_projection_sources(
-        state,
-        latest_quotes=latest_quotes,
-    )
+    try:
+        portfolio, instruments = ports.resolve_projection_sources(
+            state,
+            latest_quotes=latest_quotes,
+            as_of=now or get_shanghai_now(),
+        )
+    except TypeError:
+        portfolio, instruments = ports.resolve_projection_sources(
+            state,
+            latest_quotes=latest_quotes,
+        )
     if portfolio is None:
         return PortfolioSnapshotBuildResult(
             snapshot=PortfolioSnapshot(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -1237,6 +1238,10 @@ def test_integrated_orchestration_zero_signal_pipeline(tmp_path) -> None:
     assert gen["status"] == "completed_no_signal"
     assert gen["generation_verified"] is True
     assert gen["failure_code"] is None
+    from server.services.decision.daily_decision_report import get_daily_decision_report
+
+    no_signal_report = get_daily_decision_report(db, run_date)
+    assert no_signal_report["status"] == "completed_no_signal"
 
     tasks = workflow_tasks(
         market_data={"source_health": "live"},
@@ -1299,7 +1304,14 @@ def test_claimed_attempt_cancellation_after_window_outcome(tmp_path) -> None:
     assert strategy_task["blocking_reasons"] == ["daily_candidate_claim_unresolved"]
 
 
-def _setup_quote_drift_environment(tmp_path):
+def _setup_quote_drift_environment(
+    tmp_path,
+    *,
+    initial_cash: float = 100_000.0,
+    buy_date: str = "2026-08-24",
+    buy_timestamp: str | None = None,
+    seed_holding: bool = True,
+):
     db = AppDatabase(tmp_path / "app.db")
     db.init_sync()
     market_dates = _calendar(db)
@@ -1307,33 +1319,44 @@ def _setup_quote_drift_environment(tmp_path):
     symbols = _freeze_market(store, market_dates)
     run_date = "2026-08-24"
 
-    # Seed ledger with initial cash and a held position (100 shares of 600001)
+    # Seed ledger with initial cash and optional held position (100 shares of 600001)
+    deposit_time = (
+        f"{buy_date}T08:30:00+08:00"
+        if buy_date != run_date
+        else f"{run_date}T08:30:00+08:00"
+    )
+    buy_time = buy_timestamp or (
+        f"{buy_date}T10:00:00+08:00"
+        if buy_date != run_date
+        else f"{run_date}T09:31:00+08:00"
+    )
     db.insert_ledger_entry_sync(
         entry_type="cash_deposit",
-        timestamp=f"{run_date}T08:30:00+08:00",
-        amount=100_000.0,
+        timestamp=deposit_time,
+        amount=initial_cash,
         asset_class="cash",
         source_ref="deposit-initial",
     )
-    db.insert_ledger_entry_sync(
-        entry_type="trade_buy",
-        timestamp=f"{run_date}T08:35:00+08:00",
-        amount=1000.0,
-        symbol="600001",
-        direction="buy",
-        quantity=100,
-        price=10.0,
-        fee_breakdown_json=json.dumps(
-            {
-                "commission": 0.0,
-                "stamp_duty": 0.0,
-                "transfer_fee": 0.0,
-                "total_fee": 0.0,
-            }
-        ),
-        asset_class="stock",
-        source_ref="seed-position-600001",
-    )
+    if seed_holding:
+        db.insert_ledger_entry_sync(
+            entry_type="trade_buy",
+            timestamp=buy_time,
+            amount=1000.0,
+            symbol="600001",
+            direction="buy",
+            quantity=100,
+            price=10.0,
+            fee_breakdown_json=json.dumps(
+                {
+                    "commission": 0.0,
+                    "stamp_duty": 0.0,
+                    "transfer_fee": 0.0,
+                    "total_fee": 0.0,
+                }
+            ),
+            asset_class="stock",
+            source_ref="seed-position-600001",
+        )
 
     # Seed fresh quotes for held position and universe
     db.upsert_latest_quote_sync(
@@ -1441,77 +1464,191 @@ def _setup_quote_drift_environment(tmp_path):
     }
 
 
+def _seed_reconciled_broker_statement(
+    db: AppDatabase,
+    *,
+    run_date: str,
+    cash_balance: float,
+    buy_entries: list[tuple[str, str, float, float]] | None = None,
+    snapshot_time: str | None = None,
+) -> str:
+    """Import a broker CSV matching the seeded ledger into BrokerEvidenceRepository."""
+    from account_truth.broker_evidence import BrokerEvidenceRepository
+    from account_truth.broker_statement import parse_broker_statement_csv
+
+    buys = buy_entries or []
+    initial_deposit = cash_balance + sum(qty * px for _, _, qty, px in buys)
+    snap_at = snapshot_time or f"{run_date}T09:30:00+08:00"
+    rows = [
+        "event_id,event_type,occurred_at,settled_at,symbol,instrument_name,asset_class,currency,quantity,price,gross_amount,fee,tax,net_amount,cash_balance,position_quantity,cost_basis,note,transfer_fee,cost_basis_method",
+        f"dep-1,transfer_in,2026-08-21T08:30:00+08:00,2026-08-21,,,,CNY,0,0,{initial_deposit:.2f},0.00,0.00,{initial_deposit:.2f},{initial_deposit:.2f},,,deposit,0.00,",
+    ]
+    running_cash = initial_deposit
+    totals: dict[str, tuple[float, float]] = {}
+    for index, (ts, sym, qty, px) in enumerate(buys, start=1):
+        gross = qty * px
+        running_cash -= gross
+        prev_qty, prev_cost = totals.get(sym, (0.0, 0.0))
+        new_qty = prev_qty + qty
+        new_avg = (prev_qty * prev_cost + gross) / new_qty if new_qty > 0 else 0.0
+        totals[sym] = (new_qty, new_avg)
+        buy_day = ts.split("T")[0]
+        rows.append(
+            f"buy-{index},trade_buy,{ts},{buy_day},{sym},合成股票{sym},stock,CNY,{qty:g},{px:.2f},{gross:.2f},0.00,0.00,-{gross:.2f},{running_cash:.2f},{new_qty:g},{new_avg:.2f},buy,0.00,moving_average_buy_cost"
+        )
+    rows.append(
+        f"cash-snap,cash_snapshot,{snap_at},{run_date},,,,CNY,0,0,0.00,0.00,0.00,0.00,{cash_balance:.2f},,,cash,0.00,"
+    )
+    if totals:
+        for sym, (qty, avg) in totals.items():
+            rows.append(
+                f"pos-{sym},position_snapshot,{snap_at},{run_date},{sym},合成股票{sym},stock,CNY,0,0,0.00,0.00,0.00,0.00,{cash_balance:.2f},{qty:g},{avg:.2f},pos,0.00,moving_average_buy_cost"
+            )
+    else:
+        rows.append(
+            f"pos-empty,position_snapshot,{snap_at},{run_date},600001,合成股票600001,stock,CNY,0,0,0.00,0.00,0.00,0.00,{cash_balance:.2f},0,0.00,pos,0.00,moving_average_buy_cost"
+        )
+    import_run = BrokerEvidenceRepository(db._path).save_preview(
+        parse_broker_statement_csv("\n".join(rows) + "\n"),
+        source_name="fixture-broker.csv",
+    )
+    return import_run.import_run_id
+
+
 def test_daily_publication_recovers_across_intraday_quote_drift(
     tmp_path, monkeypatch
 ) -> None:
-    """Reproduces today's real failure: normal intraday quote updates during scan & before plan read."""
-    env = _setup_quote_drift_environment(tmp_path)
+    """End-to-end real publication path with real Account Truth, replay, quote updates, risk, plan, and report."""
+    import server.account_truth_gate as account_truth_gate
+    import server.services.decision.decision_portfolio_projection as decision_portfolio_projection
+    import server.services.decision.decision_projection as decision_projection
+    from server.services.account.valuation import portfolio_equity_from_valuation
+    from server.services.decision.daily_decision_report import get_daily_decision_report
+    from server.services.decision.decision_application import (
+        run_batch_pre_trade_risk_for_state,
+    )
+    from server.services.decision.operations_projection import (
+        current_decision_and_trading_plan,
+    )
+
+    env = _setup_quote_drift_environment(
+        tmp_path, initial_cash=200_000.0, buy_date="2026-08-21"
+    )
     db = env["db"]
     run_date = env["run_date"]
-    decision_time = env["decision_time"]
     scanner = env["scanner"]
     state = env["state"]
-    strategy_id = env["strategy_id"]
+
+    fixed_now_sh = datetime(2026, 8, 24, 9, 38, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    fixed_now_utc = datetime(2026, 8, 24, 1, 38, 0, tzinfo=timezone.utc)
+    scanner._clock = lambda: fixed_now_sh
+
+    monkeypatch.setattr(
+        decision_portfolio_projection,
+        "get_shanghai_now",
+        lambda: fixed_now_sh,
+    )
+
+    class MockDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now_utc if tz == timezone.utc else fixed_now_sh
+
+    monkeypatch.setattr(decision_projection, "datetime", MockDateTime)
+    monkeypatch.setattr(account_truth_gate, "datetime", MockDateTime)
+
+    import_run_id = _seed_reconciled_broker_statement(
+        db,
+        run_date=run_date,
+        cash_balance=199_000.0,
+        buy_entries=[("2026-08-21T10:00:00+08:00", "600001", 100.0, 10.0)],
+    )
+    val_initial = db.publish_current_valuation_snapshot_sync(now=fixed_now_sh)
+    initial_equity = float(portfolio_equity_from_valuation(db, val_initial))
+    assert initial_equity == 200_000.0
+
+    base_dec = _decision(risk_checked=True)
+    base_gate = base_dec["candidates"][0]["evidence"]["strategy"][
+        "order_generation_gate"
+    ]
+
+    def pass_order_generation_gate(_db, requested_strategy_id, *, as_of_date):
+        g = copy.deepcopy(base_gate)
+        g["as_of_date"] = run_date
+        g["strategy_id"] = requested_strategy_id
+        return g, []
+
+    monkeypatch.setattr(
+        "server.services.research.strategy_promotion_pipeline.resolve_strategy_order_generation_gate",
+        pass_order_generation_gate,
+    )
+    monkeypatch.setattr(
+        "server.services.decision.decision_application.resolve_strategy_order_generation_gate",
+        pass_order_generation_gate,
+    )
 
     injection_state = {
         "quote_update_1_fired": False,
         "quote_update_2_fired": False,
-        "risk_checked": False,
+        "equity_after_update_1": None,
+        "equity_after_update_2": None,
     }
 
-    # Hook 1: Inject quote update during scan evaluation (outside write transaction)
-    orig_eval = scanner._evaluate_promoted_strategies
+    # Update 1: Held quote changes during persist_actions=True scan before authority check
+    orig_persist = universe_service_module.persist_recommendation_tasks
 
-    def hooked_eval(*args, **kwargs):
-        res = orig_eval(*args, **kwargs)
+    def hooked_persist(*, db, decision_date, signals, current_authority_validator):
         if not injection_state["quote_update_1_fired"]:
             injection_state["quote_update_1_fired"] = True
-            # Update quote for 600001 at 09:36:20 (intraday drift during scan calculation)
             db.upsert_latest_quote_sync(
                 symbol="600001",
                 asset_type="stock",
                 price=10.5,
-                quote_timestamp=f"{run_date}T09:36:20+08:00",
+                quote_timestamp=f"{run_date}T09:36:40+08:00",
                 quote_source="persisted_fixture",
                 quote_status="live",
             )
-            val2 = db.publish_current_valuation_snapshot_sync(
-                now=datetime(2026, 8, 24, 9, 36, 28, tzinfo=ZoneInfo("Asia/Shanghai"))
-            )
+            val2 = db.publish_current_valuation_snapshot_sync(now=fixed_now_sh)
             assert val2["status"] == "complete"
-        return res
+            injection_state["equity_after_update_1"] = float(
+                portfolio_equity_from_valuation(db, val2)
+            )
+            assert injection_state["equity_after_update_1"] == 200_050.0
 
-    scanner._evaluate_promoted_strategies = hooked_eval
+        return orig_persist(
+            db=db,
+            decision_date=decision_date,
+            signals=signals,
+            current_authority_validator=current_authority_validator,
+        )
 
-    # Hook 2: Inject quote update between scan persistence and current_input_blockers
-    orig_current_input_blockers = scanner.current_input_blockers
+    monkeypatch.setattr(
+        universe_service_module, "persist_recommendation_tasks", hooked_persist
+    )
 
-    def hooked_current_input_blockers(*args, **kwargs):
-        if not injection_state["quote_update_2_fired"]:
+    # Update 2: Held quote changes AFTER action persistence and BEFORE production plan reader
+    async def hooked_plan_reader(target_state):
+        if (
+            injection_state["quote_update_1_fired"]
+            and not injection_state["quote_update_2_fired"]
+            and db.get_action_tasks_sync(statuses=["pending"], limit=20)
+        ):
             injection_state["quote_update_2_fired"] = True
-            # Update quote for 600002 at 09:37:25
             db.upsert_latest_quote_sync(
-                symbol="600002",
+                symbol="600001",
                 asset_type="stock",
-                price=20.8,
+                price=10.8,
                 quote_timestamp=f"{run_date}T09:37:25+08:00",
                 quote_source="persisted_fixture",
                 quote_status="live",
             )
-            val3 = db.publish_current_valuation_snapshot_sync(
-                now=datetime(2026, 8, 24, 9, 37, 30, tzinfo=ZoneInfo("Asia/Shanghai"))
-            )
+            val3 = db.publish_current_valuation_snapshot_sync(now=fixed_now_sh)
             assert val3["status"] == "complete"
-            if "portfolio_summary" in kwargs:
-                kwargs["portfolio_summary"] = {
-                    **kwargs["portfolio_summary"],
-                    "valuation_snapshot_id": val3["snapshot_id"],
-                    "total_equity": 100_000.0,
-                    "quote_set_fingerprint": val3["quote_set_fingerprint"],
-                }
-        return orig_current_input_blockers(*args, **kwargs)
-
-    scanner.current_input_blockers = hooked_current_input_blockers
+            injection_state["equity_after_update_2"] = float(
+                portfolio_equity_from_valuation(db, val3)
+            )
+            assert injection_state["equity_after_update_2"] == 200_080.0
+        return await current_decision_and_trading_plan(target_state)
 
     async def quote_refresher(_state, symbol, asset_type, *, fetch_run_id=None):
         command = build_quote_ingestion_command(
@@ -1541,137 +1678,830 @@ def test_daily_publication_recovers_across_intraday_quote_drift(
             "quote_timestamp": f"{run_date}T09:36:30+08:00",
         }
 
-    async def read_base_plan(_state):
-        checked = bool(injection_state["risk_checked"])
-        val = build_current_valuation_snapshot(
-            db,
-            persist=False,
-            now=datetime(2026, 8, 24, 9, 36, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
-        )
-        dec = _decision(risk_checked=checked)
-        dec["decision_date"] = run_date
-        dec["generated_at"] = f"{run_date}T09:35:00+08:00"
-        dec["summary"]["portfolio"]["valuation_snapshot_id"] = val["snapshot_id"]
-        dec["summary"]["portfolio"]["valuation_status"] = val["status"]
-        dec["summary"]["portfolio"]["fact_authority"] = "persisted_valuation_snapshot"
-        dec["summary"]["portfolio"]["total_equity"] = 100_000.0
-        dec["summary"]["portfolio"]["cash"] = 99_000.0
-        dec["summary"]["portfolio"]["ledger_fingerprint"] = val["ledger_fingerprint"]
-        dec["summary"]["portfolio"]["ledger_cutoff_id"] = val["ledger_cutoff_id"]
-        dec["summary"]["portfolio"]["quote_set_fingerprint"] = val[
-            "quote_set_fingerprint"
-        ]
-        dec["summary"]["portfolio"]["symbols"] = ["600001"]
-        dec["summary"]["portfolio"]["stock_symbols"] = ["600001"]
-        dec["summary"]["portfolio"]["instrument_types"] = {"600001": "stock"}
-        dec["summary"]["portfolio"]["board_buy_permissions"] = {
-            "main": "allowed",
-            "gem": "allowed",
-            "star": "allowed",
-            "b_share": "allowed",
-        }
-        dec["summary"]["account_truth"]["captured_at"] = f"{run_date}T09:30:00+08:00"
-        dec["summary"]["market_data"]["latest_quote_timestamp"] = (
-            f"{run_date}T09:34:00+08:00"
-        )
-        cand = dec["candidates"][0]
-        cand["action_id"] = 1
-        cand["symbol"] = "600001"
-        cand["direction"] = "sell"
-        cand["side"] = "sell"
-        cand["asset_class"] = "stock"
-        cand["evidence"]["strategy"]["order_generation_gate"]["as_of_date"] = run_date
-        dec["candidates"] = [cand]
-
-        p = _plan(risk_checked=checked)
-        p["plan_date"] = run_date
-        p["generated_at"] = f"{run_date}T09:35:00+08:00"
-        if p["order_intents"]:
-            oi = p["order_intents"][0]
-            oi["action_id"] = 1
-            oi["symbol"] = "600001"
-            oi["side"] = "sell"
-            oi["direction"] = "sell"
-            oi["asset_class"] = "stock"
-            oi["market_quote_timestamp"] = f"{run_date}T09:34:00+08:00"
-            p["order_intents"] = [oi]
-        return dec, p
-
-    async def run_risk(_state):
-        injection_state["risk_checked"] = True
-        return {
-            "status": "completed",
-            "candidate_count": 1,
-            "processed_count": 1,
-            "passed_count": 1,
-            "blocked_count": 0,
-            "skipped_count": 0,
-            "risk_decision_writes_performed": True,
-            "blockers": [],
-        }
-
+    # Use real production build_account_truth_replay_evidence (no _account_truth_replay_resolver override)
     service = build_daily_decision_evidence_automation_service(
         state,
-        plan_reader=read_base_plan,
-        risk_runner=run_risk,
+        plan_reader=hooked_plan_reader,
+        risk_runner=run_batch_pre_trade_risk_for_state,
         quote_refresher=quote_refresher,
     )
-    service._account_truth_replay_resolver = _fixture_account_truth_replay
 
-    schedule = project_daily_candidate_background_schedule(db=db, now=decision_time)
+    schedule = project_daily_candidate_background_schedule(db=db, now=fixed_now_utc)
     assert schedule["status"] == "due"
     assert schedule["due"] is True
 
-    # Real claimed background execution
     asyncio.run(
         run_claimed_background_attempt(
             db=db,
             service=service,
             schedule=schedule,
-            clock=lambda: decision_time,
+            clock=lambda: fixed_now_utc,
         )
     )
 
     assert injection_state["quote_update_1_fired"] is True
     assert injection_state["quote_update_2_fired"] is True
 
-    # Generation status must be completed_with_candidates and fully authoritative
-    gen = daily_candidate_generation_status(db, run_date, now=decision_time)
+    # Verify single cohesive run across attempt -> daily evidence -> scan -> risk -> plan -> report
+    gen = daily_candidate_generation_status(db, run_date, now=fixed_now_utc)
     assert gen["status"] == "completed_with_candidates"
     assert gen["generation_verified"] is True
     assert gen["recommendation_authoritative"] is True
     assert gen["failure_code"] is None
 
-    # Verify workflow tasks
-    tasks = workflow_tasks(
-        market_data={"source_health": "live"},
-        account_truth={"gate_status": "pass"},
-        strategy_attribution={"gate_status": "pass"},
-        action_tasks={"pending_count": 0},
-        audit={},
-        candidate_count=1,
-        ready_for_manual_confirmation_count=1,
-        generation=gen,
+    risk_decisions = db.get_risk_decisions_sync()
+    assert len(risk_decisions) == 5
+    assert all(r.get("passed") in (1, True) for r in risk_decisions)
+    risk_by_decision_id = {r["decision_id"]: r for r in risk_decisions}
+
+    dec_read, plan_read = asyncio.run(current_decision_and_trading_plan(state))
+    assert dec_read["summary"]["account_truth"]["import_run_id"] == import_run_id
+    assert dec_read["summary"]["account_truth"]["gate_status"] == "pass"
+    assert dec_read["summary"]["portfolio"]["total_equity"] == 200_080.0
+    assert len(dec_read["candidates"]) == 5
+    assert len(plan_read["order_intents"]) == 5
+    for cand in dec_read["candidates"]:
+        assert cand.get("action_id") is not None
+        assert cand.get("risk_gate_status") == "passed"
+        assert cand.get("manual_confirmation_status") == "ready_for_manual_confirmation"
+        risk_decision_id = cand["evidence"]["risk_gate"]["decision_id"]
+        assert risk_decision_id in risk_by_decision_id
+
+    report = get_daily_decision_report(db, run_date)
+    assert report["status"] == "formal_candidate"
+    assert report["authoritative_candidate_count"] == 5
+    assert report["reason_codes"] == []
+    assert len(report["attempts"]) == 1
+    assert report["attempts"][0]["run_id"] == gen["attempt_run_id"]
+    assert report["attempts"][0]["result_run_id"] == gen["daily_evidence_run_id"]
+    assert report["attempts"][0]["scan_run_id"] == gen["scan_run_id"]
+    assert len(report["daily_evidence_runs"]) == 1
+    assert report["daily_evidence_runs"][0]["run_id"] == gen["daily_evidence_run_id"]
+    assert report["daily_evidence_runs"][0]["scan_run_id"] == gen["scan_run_id"]
+    assert [c["action_id"] for c in report["candidates"]] == [
+        c["action_id"] for c in dec_read["candidates"]
+    ]
+    assert all(c["report_authoritative"] is True for c in report["candidates"])
+
+    # Real production Account Truth replay binding must be persisted and valid
+    evidence_row = json.loads(
+        db.get_automation_run_sync(gen["daily_evidence_run_id"])["payload_json"]
     )
-    strategy_task = next(t for t in tasks if t["id"] == "strategy_evidence")
-    assert strategy_task["status"] == "pass"
-    assert strategy_task["blocking_reasons"] == []
+    replay_binding = evidence_row["input_snapshot"]["account_truth_replay_evidence"]
+    assert replay_binding["status"] == "pass"
+    assert replay_binding["account_truth_ref"] == f"account_truth:{import_run_id}"
 
     # Verify candidates are NOT suppressed by suppress_unverified_daily_scan_candidates
-    dec_read, _ = asyncio.run(read_base_plan(state))
     payload = {
         "lane": "daily",
-        "decision": "sell",
+        "decision": "review_required",
         "decision_date": run_date,
-        "summary": {"workflow_tasks": tasks},
+        "summary": {},
         "candidates": dec_read["candidates"],
         "generation": gen,
         "no_action_reasons": [],
     }
     projected = suppress_unverified_daily_scan_candidates(payload)
-    assert projected["decision"] == "sell"
-    assert len(projected["candidates"]) == 1
-    assert projected["candidates"][0]["symbol"] == "600001"
+    assert len(projected["candidates"]) == 5
+    assert projected["decision"] == "review_required"
+
+
+def test_daily_publication_blocks_on_missing_bound_valuation_evidence(
+    tmp_path, monkeypatch
+) -> None:
+    """Negative test (Blocker B): If the bound valuation snapshot disappears, scan input blockers fail closed."""
+    env = _setup_quote_drift_environment(
+        tmp_path, initial_cash=200_000.0, buy_date="2026-08-21"
+    )
+    db = env["db"]
+    run_date = env["run_date"]
+    scanner = env["scanner"]
+
+    val = db.publish_current_valuation_snapshot_sync(
+        now=datetime(2026, 8, 24, 9, 36, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    )
+    portfolio_summary = {
+        "valuation_snapshot_id": val["snapshot_id"],
+        "valuation_status": val["status"],
+        "total_equity": 200_000.0,
+        "cash": 199_000.0,
+        "symbols": ["600001"],
+        "stock_symbols": ["600001"],
+        "instrument_types": {"600001": "stock"},
+        "ledger_cutoff_id": val["ledger_cutoff_id"],
+        "ledger_fingerprint": val["ledger_fingerprint"],
+        "quote_set_fingerprint": val["quote_set_fingerprint"],
+        "fact_authority": "persisted_valuation_snapshot",
+        "stock_position_market_values": {"600001": 1000.0},
+    }
+    scan_result = scanner.run_once(
+        decision_date=run_date,
+        portfolio_summary=portfolio_summary,
+        persist_actions=True,
+    )
+    assert scan_result["status"] == "completed"
+    persisted_scan = scan_result
+
+    # Baseline: no blockers
+    blockers = scanner.current_input_blockers(
+        scan=persisted_scan,
+        portfolio_summary=portfolio_summary,
+    )
+    assert blockers == []
+
+    # Probe: monkeypatch db.get_valuation_snapshot_sync to return None for original snapshot
+    orig_get_val = db.get_valuation_snapshot_sync
+
+    def mocked_get_val(snapshot_id):
+        if snapshot_id == val["snapshot_id"]:
+            return None
+        return orig_get_val(snapshot_id)
+
+    monkeypatch.setattr(db, "get_valuation_snapshot_sync", mocked_get_val)
+
+    # Must fail closed with portfolio changed
+    drifted_blockers = scanner.current_input_blockers(
+        scan=persisted_scan,
+        portfolio_summary=portfolio_summary,
+    )
+    assert "promoted_strategy_scan_current_portfolio_changed" in drifted_blockers
+
+
+def test_daily_publication_blocks_on_material_price_drift_lot_constraint(
+    tmp_path,
+) -> None:
+    """Negative test (Blocker B): Material live quote spike making 1-lot buys unaffordable blocks scan consumption."""
+    env = _setup_quote_drift_environment(
+        tmp_path, initial_cash=10_000.0, buy_date="2026-08-21"
+    )
+    db = env["db"]
+    run_date = env["run_date"]
+    scanner = env["scanner"]
+
+    # Held 600001 (100 shares @ 10 = 1000), cash = 9000, equity = 10000, available = 8700
+    # 4 buys at 20.0 -> min 1-lot cost = 8000 <= 8700
+    val = db.publish_current_valuation_snapshot_sync(
+        now=datetime(2026, 8, 24, 9, 36, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    )
+    portfolio_summary = {
+        "valuation_snapshot_id": val["snapshot_id"],
+        "valuation_status": val["status"],
+        "total_equity": 10_000.0,
+        "cash": 9_000.0,
+        "symbols": ["600001"],
+        "stock_symbols": ["600001"],
+        "instrument_types": {"600001": "stock"},
+        "ledger_cutoff_id": val["ledger_cutoff_id"],
+        "ledger_fingerprint": val["ledger_fingerprint"],
+        "quote_set_fingerprint": val["quote_set_fingerprint"],
+        "fact_authority": "persisted_valuation_snapshot",
+        "stock_position_market_values": {"600001": 1000.0},
+    }
+    scan_result = scanner.run_once(
+        decision_date=run_date,
+        portfolio_summary=portfolio_summary,
+        persist_actions=True,
+    )
+    assert scan_result["status"] == "completed"
+    assert (
+        scanner.current_input_blockers(
+            scan=scan_result, portfolio_summary=portfolio_summary
+        )
+        == []
+    )
+
+    # Material live price spike on buy candidate 600050 (20.0 -> 45.0) pushes min 1-lot cost to 10500 > 8700
+    db.upsert_latest_quote_sync(
+        symbol="600050",
+        asset_type="stock",
+        price=45.0,
+        quote_timestamp=f"{run_date}T09:37:00+08:00",
+        quote_source="persisted_fixture",
+        quote_status="live",
+    )
+    val_drifted = db.publish_current_valuation_snapshot_sync(
+        now=datetime(2026, 8, 24, 9, 37, 5, tzinfo=ZoneInfo("Asia/Shanghai"))
+    )
+    drifted_summary = {
+        **portfolio_summary,
+        "valuation_snapshot_id": val_drifted["snapshot_id"],
+        "quote_set_fingerprint": val_drifted["quote_set_fingerprint"],
+    }
+    drifted_blockers = scanner.current_input_blockers(
+        scan=scan_result,
+        portfolio_summary=drifted_summary,
+    )
+    assert "promoted_strategy_scan_current_cash_insufficient" in drifted_blockers
+
+
+def _run_sell_pipeline_control(
+    tmp_path,
+    monkeypatch,
+    *,
+    entries: list[tuple[str, str, float, float]],
+    cash_balance: float,
+):
+    """Run the real scan -> risk -> trading plan -> report pipeline with sell signal guaranteed."""
+    import server.account_truth_gate as account_truth_gate
+    import server.services.decision.decision_portfolio_projection as decision_portfolio_projection
+    import server.services.decision.decision_projection as decision_projection
+    from server.services.decision.daily_decision_report import get_daily_decision_report
+    from server.services.decision.decision_application import (
+        run_batch_pre_trade_risk_for_state,
+    )
+    from server.services.decision.operations_projection import (
+        current_decision_and_trading_plan,
+    )
+
+    initial_cash = cash_balance + sum(qty * px for _, _, qty, px in entries)
+    env = _setup_quote_drift_environment(
+        tmp_path, initial_cash=initial_cash, seed_holding=False
+    )
+    db = env["db"]
+    run_date = env["run_date"]
+    scanner = env["scanner"]
+    state = env["state"]
+
+    for index, (ts, sym, qty, px) in enumerate(entries, start=1):
+        db.insert_ledger_entry_sync(
+            entry_type="trade_buy",
+            timestamp=ts,
+            amount=qty * px,
+            symbol=sym,
+            direction="buy",
+            quantity=qty,
+            price=px,
+            fee_breakdown_json=json.dumps(
+                {
+                    "commission": 0.0,
+                    "stamp_duty": 0.0,
+                    "transfer_fee": 0.0,
+                    "total_fee": 0.0,
+                }
+            ),
+            asset_class="stock",
+            source_ref=f"seed-{sym}-{index}",
+        )
+
+    fixed_now_sh = datetime(2026, 8, 24, 9, 36, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    fixed_now_utc = datetime(2026, 8, 24, 1, 36, 0, tzinfo=timezone.utc)
+    scanner._clock = lambda: fixed_now_sh
+    monkeypatch.setattr(
+        decision_portfolio_projection,
+        "get_shanghai_now",
+        lambda: fixed_now_sh,
+    )
+
+    class MockDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now_utc if tz == timezone.utc else fixed_now_sh
+
+    monkeypatch.setattr(decision_projection, "datetime", MockDateTime)
+    monkeypatch.setattr(account_truth_gate, "datetime", MockDateTime)
+
+    db.publish_current_valuation_snapshot_sync(now=fixed_now_sh)
+    _seed_reconciled_broker_statement(
+        db,
+        run_date=run_date,
+        cash_balance=cash_balance,
+        buy_entries=entries,
+        snapshot_time=f"{run_date}T09:32:00+08:00",
+    )
+
+    base_dec = _decision(risk_checked=True)
+    base_gate = base_dec["candidates"][0]["evidence"]["strategy"][
+        "order_generation_gate"
+    ]
+
+    def pass_order_generation_gate(_db, requested_strategy_id, *, as_of_date):
+        g = copy.deepcopy(base_gate)
+        g["as_of_date"] = run_date
+        g["strategy_id"] = requested_strategy_id
+        return g, []
+
+    monkeypatch.setattr(
+        "server.services.research.strategy_promotion_pipeline.resolve_strategy_order_generation_gate",
+        pass_order_generation_gate,
+    )
+    monkeypatch.setattr(
+        "server.services.decision.decision_application.resolve_strategy_order_generation_gate",
+        pass_order_generation_gate,
+    )
+
+    async def quote_refresher(_state, symbol, asset_type, *, fetch_run_id=None):
+        command = build_quote_ingestion_command(
+            symbol=symbol,
+            asset_type=asset_type.value
+            if hasattr(asset_type, "value")
+            else str(asset_type),
+            snapshot={
+                "price": 10.0 if symbol == "600001" else 20.0,
+                "timestamp": f"{run_date}T09:35:30+08:00",
+                "quote_status": "live",
+                "provider_name": "akshare",
+                "quote_source": "persisted_fixture",
+            },
+            quote_source="persisted_fixture",
+            provider_name="akshare",
+            provider_status="live",
+            quote_status="live",
+            captured_reason="daily_candidate_freeze",
+            fetch_run_id=fetch_run_id,
+        )
+        persist_quote_ingestion(db, command)
+        return {
+            "symbol": symbol,
+            "status": "refreshed",
+            "price": 10.0 if symbol == "600001" else 20.0,
+            "quote_timestamp": f"{run_date}T09:35:30+08:00",
+        }
+
+    service = build_daily_decision_evidence_automation_service(
+        state,
+        plan_reader=current_decision_and_trading_plan,
+        risk_runner=run_batch_pre_trade_risk_for_state,
+        quote_refresher=quote_refresher,
+    )
+    schedule = project_daily_candidate_background_schedule(db=db, now=fixed_now_utc)
+    asyncio.run(
+        run_claimed_background_attempt(
+            db=db,
+            service=service,
+            schedule=schedule,
+            clock=lambda: fixed_now_utc,
+        )
+    )
+    dec, plan = asyncio.run(current_decision_and_trading_plan(state))
+    ctx = decision_portfolio_projection.decision_portfolio_context(state)
+    scans = [
+        json.loads(r["payload_json"])
+        for r in db.list_automation_runs_sync(
+            run_type=PROMOTED_STRATEGY_UNIVERSE_SCAN_RUN_TYPE,
+            run_date=run_date,
+            limit=10,
+            offset=0,
+        )
+    ]
+    report = get_daily_decision_report(db, run_date)
+    return {
+        "db": db,
+        "env": env,
+        "ctx": ctx,
+        "scans": scans,
+        "dec": dec,
+        "plan": plan,
+        "report": report,
+    }
+
+
+def test_daily_publication_blocks_t1_violation_for_same_day_buy(
+    tmp_path, monkeypatch
+) -> None:
+    """Verify A-share T+1 sellable quantities across prior-day, same-day, and mixed lots plus T+0 funds."""
+    from decimal import Decimal
+
+    from core.types import InstrumentType
+    from server.ledger.models import LedgerEntry
+    from server.projections.service import build_portfolio_projection
+
+    # Control 1: Prior-day 100 shares -> sellable 100, risk passed, manual confirm ready, report authoritative
+    prior = _run_sell_pipeline_control(
+        tmp_path / "prior",
+        monkeypatch,
+        entries=[("2026-08-21T10:00:00+08:00", "600001", 100.0, 10.0)],
+        cash_balance=199_000.0,
+    )
+    prior_sell_signals = [
+        s
+        for s in prior["scans"][-1]["selected_signals"]
+        if s["symbol"] == "600001" and s["direction"] == "sell"
+    ]
+    assert len(prior_sell_signals) == 1
+    prior_pos = prior["ctx"]["portfolio"].positions["600001"]
+    assert prior_pos.quantity == Decimal("100")
+    assert prior_pos.available_qty == Decimal("100")
+    prior_intents = [
+        i
+        for i in prior["plan"]["order_intents"]
+        if i.get("symbol") == "600001" and i.get("side") == "sell"
+    ]
+    assert len(prior_intents) == 1
+    assert prior_intents[0]["estimated_quantity"] == 100.0
+    assert prior_intents[0]["risk_gate_status"] == "passed"
+    assert (
+        prior_intents[0]["manual_confirmation_status"]
+        == "ready_for_manual_confirmation"
+    )
+    prior_t1 = next(
+        c
+        for c in prior_intents[0]["constraint_checks"]
+        if c["id"] == "t1_available_quantity"
+    )
+    assert prior_t1["status"] == "pass"
+    assert prior_t1["available_quantity"] == 100.0
+    prior_report_sell = next(
+        c
+        for c in prior["report"]["candidates"]
+        if c["symbol"] == "600001" and c["direction"] == "sell"
+    )
+    assert prior_report_sell["report_authoritative"] is True
+
+    # Control 2: Same-day 09:31 buy 100 shares -> target sell exists, 09:36 sellable=0, blocked & never authoritative
+    same_day = _run_sell_pipeline_control(
+        tmp_path / "same_day",
+        monkeypatch,
+        entries=[("2026-08-24T09:31:00+08:00", "600001", 100.0, 10.0)],
+        cash_balance=199_000.0,
+    )
+    same_sell_signals = [
+        s
+        for s in same_day["scans"][-1]["selected_signals"]
+        if s["symbol"] == "600001" and s["direction"] == "sell"
+    ]
+    assert len(same_sell_signals) == 1
+    same_pos = same_day["ctx"]["portfolio"].positions["600001"]
+    assert same_pos.quantity == Decimal("100")
+    assert same_pos.frozen_qty == Decimal("100")
+    assert same_pos.available_qty == Decimal("0")
+    same_cand = next(
+        c
+        for c in same_day["dec"]["candidates"]
+        if c["symbol"] == "600001" and c["action"] == "sell"
+    )
+    assert same_cand["allocation_quantity"] == 0.0
+    assert same_cand["allocation_status"] == "no_position_available_to_sell"
+    assert same_cand["allocation_evidence"]["available_quantity"] == 0.0
+    assert same_cand["risk_gate_status"] != "passed"
+    assert same_cand["manual_confirmation_status"] != "ready_for_manual_confirmation"
+    same_sell_intents = [
+        i
+        for i in same_day["plan"]["order_intents"]
+        if i.get("symbol") == "600001" and i.get("side") == "sell"
+    ]
+    assert same_sell_intents == []
+    assert any(
+        b.get("symbol") == "600001" and b.get("reason") == "awaiting_risk_gate"
+        for b in same_day["plan"]["blockers"]
+    )
+    same_report_sell = next(
+        c
+        for c in same_day["report"]["candidates"]
+        if c["symbol"] == "600001" and c["direction"] == "sell"
+    )
+    assert same_report_sell["report_authoritative"] is False
+    assert same_day["report"]["status"] != "completed_no_signal"
+
+    # Control 3: Prior-day 100 + today 09:31 100 -> 200 total, max sellable = 100
+    mixed_lots = _run_sell_pipeline_control(
+        tmp_path / "mixed_lots",
+        monkeypatch,
+        entries=[
+            ("2026-08-21T10:00:00+08:00", "600001", 100.0, 10.0),
+            ("2026-08-24T09:31:00+08:00", "600001", 100.0, 10.0),
+        ],
+        cash_balance=198_000.0,
+    )
+    mixed_pos = mixed_lots["ctx"]["portfolio"].positions["600001"]
+    assert mixed_pos.quantity == Decimal("200")
+    assert mixed_pos.frozen_qty == Decimal("100")
+    assert mixed_pos.available_qty == Decimal("100")
+    mixed_intents = [
+        i
+        for i in mixed_lots["plan"]["order_intents"]
+        if i.get("symbol") == "600001" and i.get("side") == "sell"
+    ]
+    assert len(mixed_intents) == 1
+    assert mixed_intents[0]["estimated_quantity"] == 100.0
+    assert mixed_intents[0]["risk_gate_status"] == "passed"
+    assert (
+        mixed_intents[0]["manual_confirmation_status"]
+        == "ready_for_manual_confirmation"
+    )
+    mixed_t1 = next(
+        c
+        for c in mixed_intents[0]["constraint_checks"]
+        if c["id"] == "t1_available_quantity"
+    )
+    assert mixed_t1["status"] == "pass"
+    assert mixed_t1["available_quantity"] == 100.0
+
+    # Preserve T+0 open-end fund sellability on same-day subscription/buy
+    fund_proj = build_portfolio_projection(
+        [
+            LedgerEntry(
+                id=1,
+                timestamp="2026-08-24T09:31:00+08:00",
+                entry_type="trade_buy",
+                amount=Decimal("1000"),
+                symbol="018125",
+                direction="buy",
+                quantity=Decimal("1000"),
+                price=Decimal("1"),
+                asset_class="open_end_fund",
+            )
+        ],
+        settlement_date=date(2026, 8, 24),
+        instrument_types={"018125": InstrumentType.OPEN_END_FUND},
+    )
+    assert fund_proj.positions["018125"].frozen_qty == Decimal("0")
+    assert fund_proj.positions["018125"].available_qty == Decimal("1000")
+
+
+def test_daily_publication_enforces_fee_inclusive_buying_power_on_quote_drift(
+    tmp_path, monkeypatch
+) -> None:
+    """Verify fee-inclusive buying power checks at both pre-persist and post-persist quote hikes."""
+    from decimal import Decimal
+
+    import server.services.decision.decision_portfolio_projection as decision_portfolio_projection
+
+    def _run_case(name: str, *, initial_cash: float, hike_when: str) -> dict[str, Any]:
+        env = _setup_quote_drift_environment(
+            tmp_path / name, initial_cash=initial_cash, buy_date="2026-08-21"
+        )
+        db = env["db"]
+        run_date = env["run_date"]
+        scanner = env["scanner"]
+        fixed_sh = datetime(2026, 8, 24, 9, 36, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+        scanner._clock = lambda: fixed_sh
+        monkeypatch.setattr(
+            decision_portfolio_projection, "get_shanghai_now", lambda: fixed_sh
+        )
+        db.publish_current_valuation_snapshot_sync(now=fixed_sh)
+        summary = decision_portfolio_projection.portfolio_state_summary(env["state"])
+
+        def _hike_quotes(ts: str) -> None:
+            # 4 * 100 shares at [21.74, 21.74, 21.75, 21.75] = 8,698 gross, 8,718.08698 with fees
+            for sym, px in (
+                ("600050", 21.74),
+                ("600049", 21.74),
+                ("600048", 21.75),
+                ("600047", 21.75),
+            ):
+                db.upsert_latest_quote_sync(
+                    symbol=sym,
+                    asset_type="stock",
+                    price=px,
+                    quote_timestamp=ts,
+                    quote_source="persisted_fixture",
+                    quote_status="live",
+                )
+
+        if hike_when == "before_persist":
+            orig_persist = universe_service_module.persist_recommendation_tasks
+
+            def hooked_persist(
+                *, db, decision_date, signals, current_authority_validator
+            ):
+                _hike_quotes(f"{run_date}T09:36:10+08:00")
+                return orig_persist(
+                    db=db,
+                    decision_date=decision_date,
+                    signals=signals,
+                    current_authority_validator=current_authority_validator,
+                )
+
+            monkeypatch.setattr(
+                universe_service_module, "persist_recommendation_tasks", hooked_persist
+            )
+        scan = scanner.run_once(
+            decision_date=run_date, portfolio_summary=summary, persist_actions=True
+        )
+        blockers_after = []
+        if hike_when == "after_persist":
+            _hike_quotes(f"{run_date}T09:36:30+08:00")
+            db.publish_current_valuation_snapshot_sync(now=fixed_sh)
+            drifted_summary = decision_portfolio_projection.portfolio_state_summary(
+                env["state"]
+            )
+            blockers_after = scanner.current_input_blockers(
+                scan=scan, portfolio_summary=drifted_summary
+            )
+        return {
+            "db": db,
+            "scan": scan,
+            "blockers_after": blockers_after,
+            "scanner": scanner,
+            "summary": summary,
+        }
+
+    # 8,700 available (cash=9,000, equity=10,000, reserve=300; sell 600001 not netted):
+    # gross=8,698 <= 8,700, but fee-inclusive=8,718.08698 > 8,700
+    pre_blocked = _run_case(
+        "pre_hike", initial_cash=10_000.0, hike_when="before_persist"
+    )
+    assert pre_blocked["scan"]["status"] == "blocked"
+    assert any(
+        "current_portfolio_cash_insufficient" in b
+        for b in pre_blocked["scan"]["blockers"]
+    )
+    assert pre_blocked["db"].get_action_tasks_sync(statuses=["pending"], limit=20) == []
+
+    post_blocked = _run_case(
+        "post_hike", initial_cash=10_000.0, hike_when="after_persist"
+    )
+    assert post_blocked["scan"]["status"] == "completed"
+    assert (
+        "promoted_strategy_scan_current_cash_insufficient"
+        in post_blocked["blockers_after"]
+    )
+
+    # Sufficient-budget control (cash=9,020, equity=10,020, reserve=300.6 -> available=8,719.40 >= 8,718.08698)
+    sufficient = _run_case(
+        "sufficient", initial_cash=10_020.0, hike_when="after_persist"
+    )
+    assert sufficient["scan"]["status"] == "completed"
+    assert sufficient["blockers_after"] == []
+    assert (
+        sufficient["scanner"].current_input_blockers(
+            scan=sufficient["scan"], portfolio_summary=sufficient["summary"]
+        )
+        == []
+    )
+
+    # Re-allocation control when T-1 closes / allocation already require configured fees
+    from server.services.portfolio.allocation import allocate_action_tasks
+    from server.services.strategy_scan.universe.evaluation import (
+        _legacy_account_signals,
+    )
+
+    raw_buys = [
+        {
+            "strategy_id": sufficient["scan"]["strategy_bindings"][0]["strategy_id"],
+            "symbol": sym,
+            "direction": "buy",
+            "target_weight": 0.25,
+            "frozen_close": px,
+            "ranking_liquidity": 10_000_000.0 - idx,
+            "asset_class": "stock",
+        }
+        for idx, (sym, px) in enumerate(
+            [("600050", 21.74), ("600049", 21.74), ("600048", 21.75), ("600047", 21.75)]
+        )
+    ]
+    admitted, blocked_buys = _legacy_account_signals(
+        raw_buys,
+        config=SimpleNamespace(data_source="akshare", start_date="2026-04-01"),
+        decision_date="2026-08-24",
+        portfolio={
+            "cash": 9_000.0,
+            "total_equity": 10_000.0,
+            "fact_authority": "persisted_valuation_snapshot",
+            "board_buy_permissions": {"main": "allowed"},
+        },
+        policy=MarketUniversePolicy(
+            minimum_master_member_count=40,
+            fee_buffer_rate=Decimal("0"),
+        ),
+        cash_buffer_ratio=Decimal("0.03"),
+    )
+    assert [row["symbol"] for row in admitted] == ["600050", "600049", "600048"]
+    assert blocked_buys == [
+        {
+            "strategy_id": sufficient["scan"]["strategy_bindings"][0]["strategy_id"],
+            "symbol": "600047",
+            "board": "sse_main",
+            "reason": "insufficient_cash_for_one_lot",
+        }
+    ]
+    allocated_actions = allocate_action_tasks(
+        [
+            {"id": idx + 1, **row, "price": row["frozen_close"]}
+            for idx, row in enumerate(raw_buys)
+        ],
+        portfolio=SimpleNamespace(cash=9_000.0, total_equity=10_000.0, positions={}),
+        quotes={row["symbol"]: {"price": row["frozen_close"]} for row in raw_buys},
+        config=SimpleNamespace(
+            min_cash_buffer_ratio=0.03, max_single_symbol_weight=0.35
+        ),
+    )
+    assert [item["allocation_quantity"] for item in allocated_actions] == [
+        100.0,
+        100.0,
+        100.0,
+        0.0,
+    ]
+
+
+def test_mixed_stock_and_fund_scan_revalidates_cleanly_when_fund_nav_missing(
+    tmp_path, monkeypatch
+) -> None:
+    """Verify initial scan and frozen replay agree on stock-only scope even when fund 018125 lacks NAV."""
+    import server.services.decision.decision_portfolio_projection as decision_portfolio_projection
+    from server.services.strategy_scan.universe.validation import (
+        _build_frozen_replay_portfolio,
+    )
+
+    env = _setup_quote_drift_environment(
+        tmp_path, initial_cash=200_000.0, buy_date="2026-08-21"
+    )
+    db = env["db"]
+    run_date = env["run_date"]
+    scanner = env["scanner"]
+    fixed_sh = datetime(2026, 8, 24, 9, 36, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+    scanner._clock = lambda: fixed_sh
+    monkeypatch.setattr(
+        decision_portfolio_projection, "get_shanghai_now", lambda: fixed_sh
+    )
+    monkeypatch.setattr(
+        "server.projections.valuation_snapshot.get_shanghai_now",
+        lambda now=None: now or fixed_sh,
+    )
+
+    # Second stock + 3 open-end funds where 018125 lacks NAV
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        timestamp="2026-08-21T10:00:00+08:00",
+        amount=2000.0,
+        symbol="600002",
+        direction="buy",
+        quantity=100.0,
+        price=20.0,
+        fee_breakdown_json=json.dumps({"commission": 0.0, "total_fee": 0.0}),
+        asset_class="stock",
+        source_ref="seed-600002",
+    )
+    for sym in ("018125", "018126", "018127"):
+        db.insert_ledger_entry_sync(
+            entry_type="trade_buy",
+            timestamp="2026-08-21T10:00:00+08:00",
+            amount=1000.0,
+            symbol=sym,
+            direction="buy",
+            quantity=1000.0,
+            price=1.0,
+            fee_breakdown_json=json.dumps({"commission": 0.0, "total_fee": 0.0}),
+            asset_class="open_end_fund",
+            source_ref=f"seed-{sym}",
+        )
+    db.upsert_latest_quote_sync(
+        symbol="018126",
+        asset_type="open_end_fund",
+        price=1.02,
+        quote_timestamp="2026-08-21T15:00:00+08:00",
+        quote_source="persisted_fixture",
+        quote_status="confirmed",
+    )
+    db.upsert_latest_quote_sync(
+        symbol="018127",
+        asset_type="open_end_fund",
+        price=1.03,
+        quote_timestamp="2026-08-21T15:00:00+08:00",
+        quote_source="persisted_fixture",
+        quote_status="confirmed",
+    )
+    val = db.publish_current_valuation_snapshot_sync(now=fixed_sh)
+    assert val["status"] == "missing"
+
+    summary = decision_portfolio_projection.portfolio_state_summary(env["state"])
+    assert summary["total_equity"] is None
+    assert summary["stock_equity"] == 197_000.0
+
+    scan = scanner.run_once(
+        decision_date=run_date, portfolio_summary=summary, persist_actions=True
+    )
+    assert scan["status"] == "completed"
+    assert scan["blockers"] == []
+    assert scanner.current_input_blockers(scan=scan, portfolio_summary=summary) == []
+
+    replay_blockers: list[str] = []
+    frozen_portfolio, eval_equity = _build_frozen_replay_portfolio(
+        db=db,
+        config=env["state"].config,
+        portfolio=summary,
+        bound_binding=scan["portfolio_binding"],
+        bound_snap=val,
+        bound_val_id=val["snapshot_id"],
+        blockers=replay_blockers,
+    )
+    assert replay_blockers == []
+    assert frozen_portfolio["stock_symbols"] == ["600001", "600002"]
+    assert eval_equity == 197_000.0
+
+    # Missing stock quote itself must still fail closed
+    db.upsert_latest_quote_sync(
+        symbol="600002",
+        asset_type="stock",
+        price=20.0,
+        quote_timestamp=f"{run_date}T09:35:00+08:00",
+        quote_source="persisted_fixture",
+        quote_status="missing",
+    )
+    val_stock_missing = db.publish_current_valuation_snapshot_sync(now=fixed_sh)
+    bad_summary = decision_portfolio_projection.portfolio_state_summary(env["state"])
+    assert "promoted_strategy_scan_current_portfolio_changed" in (
+        scanner.current_input_blockers(scan=scan, portfolio_summary=bad_summary)
+    )
+    assert val_stock_missing["status"] != "complete"
+
+    # Missing frozen snapshot must still fail closed
+    orig_get_val = db.get_valuation_snapshot_sync
+    monkeypatch.setattr(db, "get_valuation_snapshot_sync", lambda _sid: None)
+    assert "promoted_strategy_scan_current_portfolio_changed" in (
+        scanner.current_input_blockers(scan=scan, portfolio_summary=summary)
+    )
+    monkeypatch.setattr(db, "get_valuation_snapshot_sync", orig_get_val)
 
 
 def test_daily_publication_blocks_on_real_ledger_mutation(

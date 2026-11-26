@@ -172,6 +172,7 @@ def t1_check(
             "t1_available_quantity",
             "sellable_quantity",
             "available_quantity",
+            "available_qty",
             "quantity",
             "shares",
         ),

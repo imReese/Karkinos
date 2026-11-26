@@ -408,6 +408,7 @@ def resolve_projection_sources(
     state,
     *,
     latest_quotes: dict[str, dict] | None = None,
+    as_of: date | datetime | None = None,
 ) -> tuple[object | None, dict]:
     scheduler = state.scheduler
     portfolio = scheduler.portfolio if scheduler else None
@@ -419,12 +420,14 @@ def resolve_projection_sources(
     latest_quotes = (
         collect_latest_quotes(state) if latest_quotes is None else latest_quotes
     )
+    effective_as_of = as_of or get_shanghai_now()
     read_snapshot = portfolio_read_snapshot_for_state(state)
     if read_snapshot is not None:
         rebuilt = rebuild_portfolio_from_entries(
             state.config,
             read_snapshot.ledger_rows,
             latest_quotes=latest_quotes,
+            as_of=effective_as_of,
         )
         return rebuilt.portfolio, rebuilt.instruments
     if hasattr(state.db, "get_ledger_entries_sync"):
@@ -432,6 +435,7 @@ def resolve_projection_sources(
             state.config,
             state.db,
             latest_quotes=latest_quotes,
+            as_of=effective_as_of,
         )
         return rebuilt.portfolio, rebuilt.instruments
 

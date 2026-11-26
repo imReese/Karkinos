@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from datetime import date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
@@ -29,6 +30,8 @@ def rebuild_portfolio_from_ledger(
     config: Any,
     db: Any,
     latest_quotes: dict[str, dict[str, Any]] | None = None,
+    *,
+    as_of: date | datetime | None = None,
 ) -> SimpleNamespace:
     """Recreate runtime state exclusively from canonical ledger facts."""
 
@@ -37,6 +40,7 @@ def rebuild_portfolio_from_ledger(
         config,
         ledger_entries,
         latest_quotes=latest_quotes,
+        as_of=as_of,
     )
 
 
@@ -44,6 +48,8 @@ def rebuild_portfolio_from_entries(
     config: Any,
     entries: Sequence[LedgerEntry | Mapping[str, Any]],
     latest_quotes: dict[str, dict[str, Any]] | None = None,
+    *,
+    as_of: date | datetime | None = None,
 ) -> SimpleNamespace:
     """Recreate runtime state from one caller-owned immutable ledger snapshot."""
 
@@ -52,7 +58,7 @@ def rebuild_portfolio_from_entries(
         for entry in entries
     ]
     latest_quotes = latest_quotes or {}
-    instrument_types = _instrument_types_by_symbol(config, ledger_entries)
+    instrument_types = resolve_instrument_types_by_symbol(config, ledger_entries)
     valuation_quotes = _quotes_matching_instrument_types(
         latest_quotes,
         instrument_types,
@@ -61,6 +67,8 @@ def rebuild_portfolio_from_entries(
         ledger_entries,
         initial_cash=Decimal("0"),
         latest_quotes=valuation_quotes,
+        settlement_date=as_of,
+        instrument_types=instrument_types,
     )
 
     portfolio = Portfolio(
@@ -144,7 +152,7 @@ def _load_ledger_entries(db: Any, *, batch_size: int = 500) -> list[LedgerEntry]
     return [LedgerEntry.from_row(dict(row)) for row in rows]
 
 
-def _instrument_types_by_symbol(
+def resolve_instrument_types_by_symbol(
     config: Any,
     entries: Sequence[LedgerEntry],
 ) -> dict[str, InstrumentType]:
@@ -163,6 +171,13 @@ def _instrument_types_by_symbol(
     for symbol, raw_values in evidence.items():
         result[symbol] = _resolve_instrument_type(symbol, raw_values)
     return result
+
+
+def _instrument_types_by_symbol(
+    config: Any,
+    entries: Sequence[LedgerEntry],
+) -> dict[str, InstrumentType]:
+    return resolve_instrument_types_by_symbol(config, entries)
 
 
 def _quotes_matching_instrument_types(
