@@ -453,6 +453,8 @@ class QuoteFactsRepositoryMixin:
                     {
                         "quote_source": quote_source,
                         "quote_status": quote_status,
+                        "provider_status": provider_status,
+                        "stale_reason": stale_reason,
                         "nav_date": nav_date,
                         "quote_timestamp": timestamp,
                         "price": price,

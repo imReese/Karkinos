@@ -51,6 +51,9 @@ class ProviderQuote:
     exchange: str | None = None
     market: str | None = None
     metadata: dict[str, Any] | None = None
+    quote_status: str | None = None
+    provider_status: str | None = None
+    stale_reason: str | None = None
 
     def to_payload(self) -> dict[str, Any]:
         """Return the dict-compatible quote payload used by routes and scheduler."""
@@ -68,6 +71,9 @@ class ProviderQuote:
             "turnover": self.turnover,
             "quote_source": self.quote_source,
             "nav_date": self.nav_date,
+            "quote_status": self.quote_status,
+            "provider_status": self.provider_status,
+            "stale_reason": self.stale_reason,
             "display_name": self.display_name,
             "previous_close": self.previous_close,
             "previous_close_date": self.previous_close_date,
@@ -130,11 +136,14 @@ def normalize_provider_quote(
         provider_name=provider_value,
         provider_symbol=provider_symbol_value,
         price=price,
-        timestamp=str(payload.get("timestamp") or ""),
+        timestamp=str(payload.get("timestamp") or payload.get("quote_timestamp") or ""),
         volume=_optional_float(payload.get("volume")),
         turnover=_optional_float(payload.get("turnover")),
         quote_source=_optional_str(payload.get("quote_source")),
         nav_date=_optional_str(payload.get("nav_date")),
+        quote_status=_optional_str(payload.get("quote_status")),
+        provider_status=_optional_str(payload.get("provider_status")),
+        stale_reason=_optional_str(payload.get("stale_reason")),
         display_name=display_name,
         previous_close=_optional_float(payload.get("previous_close")),
         previous_close_date=_optional_str(payload.get("previous_close_date")),

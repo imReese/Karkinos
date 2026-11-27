@@ -13,7 +13,10 @@ from core.types import AssetClass, InstrumentType, Symbol
 from domain.instrument import Instrument
 from domain.portfolio import Portfolio
 from server.contracts.quote_ingestion import QuoteIngestionCommand
-from server.services.market.quotes import validated_previous_close_date
+from server.services.market.quotes import (
+    resolve_daily_close_evidence,
+    validated_previous_close_date,
+)
 
 from .contracts import (
     SchedulerConfig,
@@ -641,18 +644,22 @@ class SchedulerLoop:
         previous_close_date = validated_previous_close_date(
             reported_previous_close_date, quote_timestamp=evidence.quote_timestamp
         )
-        quote_timestamp = datetime.fromisoformat(evidence.quote_timestamp)
-        daily_close_price: float | None = None
-        daily_close_date: str | None = None
-        daily_close_source: str | None = None
-        if previous_close is not None and previous_close_date:
-            daily_close_price = previous_close
-            daily_close_date = previous_close_date
-            daily_close_source = "reported_previous_close"
-        elif quote_timestamp.time() >= self._dependencies.afternoon_close:
-            daily_close_price = float(market_event.close)
-            daily_close_date = quote_timestamp.date().isoformat()
-            daily_close_source = "scheduler_close"
+        daily_close_price, daily_close_date, daily_close_source = (
+            resolve_daily_close_evidence(
+                asset_type=market_event.instrument_type.value,
+                price=float(market_event.close),
+                quote_timestamp=evidence.quote_timestamp,
+                quote_source=evidence.quote_source,
+                provider_status=evidence.provider_status,
+                quote_status=evidence.quote_status,
+                stale_reason=evidence.stale_reason,
+                nav_date=snapshot.get("nav_date"),
+                previous_close=previous_close,
+                previous_close_date=previous_close_date,
+                allow_scheduler_close=True,
+                afternoon_close=self._dependencies.afternoon_close,
+            )
+        )
 
         raw_metadata = snapshot.get("metadata")
         metadata = dict(raw_metadata) if isinstance(raw_metadata, dict) else {}

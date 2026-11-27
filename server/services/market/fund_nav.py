@@ -16,8 +16,10 @@ from core.types import AssetClass, InstrumentType, Symbol
 from data.manager import build_sources
 from data.market_data import (
     PUBLISHED_FUND_NAV_QUOTE_SOURCES,
+    fund_nav_quote_status,
     has_unverified_fund_confirmation,
     is_fund_estimate_quote_source,
+    is_healthy_published_fund_nav,
 )
 from data.source_policy import MarketDataUseCase, source_policy_for_config
 from data.source_routing import preferred_legacy_provider
@@ -327,21 +329,25 @@ def normalize_fund_nav_snapshot(
     provider_name = str(
         snapshot.get("provider_name") or snapshot.get("provider") or source_name
     )
-    timestamp = str(snapshot.get("timestamp") or now.isoformat())
+    timestamp = str(
+        snapshot.get("timestamp") or snapshot.get("quote_timestamp") or ""
+    ).strip()
+    if not timestamp:
+        raise ValueError(
+            str(
+                snapshot.get("stale_reason") or "fund snapshot missing source timestamp"
+            )
+        )
     nav_date = snapshot.get("nav_date")
     if not nav_date and quote_source.strip().lower() in _CONFIRMED_FUND_NAV_SOURCES:
         nav_date = fund_nav_pricing_date(None, timestamp)
-    is_confirmed = quote_source.strip().lower() in _CONFIRMED_FUND_NAV_SOURCES
+        if not nav_date:
+            raise ValueError("missing_nav_date")
     is_estimate = is_fund_estimate_quote_source(quote_source)
-    quote_status = (
-        "confirmed" if is_confirmed else str(snapshot.get("quote_status") or "live")
-    )
-    stale_reason = (
-        None
-        if is_confirmed
-        else (
-            str(snapshot.get("stale_reason")) if snapshot.get("stale_reason") else None
-        )
+    provider_status = str(snapshot.get("provider_status") or "live").strip().lower()
+    stale_reason = snapshot.get("stale_reason") or None
+    quote_status = fund_nav_quote_status(
+        quote_source, snapshot.get("quote_status"), provider_status, stale_reason
     )
     previous_close = (
         float(snapshot["previous_close"])
@@ -398,7 +404,7 @@ def normalize_fund_nav_snapshot(
         "timestamp": timestamp,
         "quote_source": quote_source,
         "provider_name": provider_name,
-        "provider_status": "live",
+        "provider_status": provider_status,
         "quote_status": quote_status,
         "stale_reason": stale_reason,
         "captured_reason": "fund_nav_sync",
@@ -427,7 +433,12 @@ def _is_healthy_published_nav_fact(row: dict[str, Any]) -> bool:
         or semantics.get("pricing_authority") != "authoritative"
     ):
         return False
-    status = str(row.get("quote_status") or "live").strip().lower()
+    status = fund_nav_quote_status(
+        quote_source,
+        row.get("quote_status"),
+        row.get("provider_status"),
+        row.get("stale_reason"),
+    )
     return status in _HEALTHY_PUBLISHED_NAV_STATUSES
 
 
@@ -521,8 +532,22 @@ def _evaluate_fund_quote_precedence(
         or has_unverified_fund_confirmation(incoming_source, quote.get("quote_status"))
     ):
         return "block", "fund_quote_source_unresolvable"
-    source_is_confirmed = incoming_source in PUBLISHED_FUND_NAV_QUOTE_SOURCES
-    source_is_estimate = is_fund_estimate_quote_source(incoming_source)
+    incoming_quote_status = quote.get("quote_status")
+    source_is_confirmed = is_healthy_published_fund_nav(
+        incoming_source,
+        incoming_quote_status,
+        quote.get("provider_status"),
+        quote.get("stale_reason"),
+    )
+    source_is_estimate = (
+        is_fund_estimate_quote_source(incoming_source)
+        or incoming_quote_status == "estimated"
+    )
+    if incoming_source in PUBLISHED_FUND_NAV_QUOTE_SOURCES and not (
+        source_is_confirmed or source_is_estimate
+    ):
+        # An explicitly degraded observation has no authority to challenge a published price.
+        return "stage", None
 
     incoming_nav_date = _effective_fund_nav_date(quote)
     latest_quote, published_nav_rows, same_instant_rows = _read_fund_precedence_facts(
@@ -819,24 +844,22 @@ def refresh_fund_nav_quotes(
                     and quote_source not in _CONFIRMED_FUND_NAV_SOURCES
                 ):
                     raise ValueError("fund source returned an unconfirmed NAV estimate")
-                if confirmation_only:
-                    confirmed_timestamp = _parse_timestamp(
-                        snapshot.get("nav_date") or snapshot.get("timestamp")
-                    )
-                    if (
-                        confirmed_timestamp is None
-                        or confirmed_timestamp.date().isoformat()
-                        != confirmation_target_date
-                    ):
-                        raise ValueError(
-                            "confirmed fund NAV is not published for the target date"
-                        )
                 quote = normalize_fund_nav_snapshot(
                     symbol=symbol,
                     snapshot=dict(snapshot),
                     source_name=source_name,
                     now=current,
                 )
+                if quote["quote_status"] == "error":
+                    raise ValueError(
+                        str(quote.get("stale_reason") or "fund source provider error")
+                    )
+                if confirmation_only and not is_confirmed_fund_nav_quote(
+                    quote, target_date=confirmation_target_date
+                ):
+                    raise ValueError(
+                        "confirmed fund NAV is not published for the target date"
+                    )
                 pending_quotes[symbol] = quote
                 last_error = None
                 break
@@ -981,6 +1004,7 @@ def refresh_fund_nav_quotes(
             "provider_name": quote["provider_name"],
             "quote_status": quote["quote_status"],
             "provider_status": quote["provider_status"],
+            "stale_reason": quote.get("stale_reason"),
             "captured_reason": quote["captured_reason"],
             "nav_date": quote["nav_date"],
         }

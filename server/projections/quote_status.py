@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from data.market_data import (
     FUND_ESTIMATE_QUOTE_SOURCES,
     PUBLISHED_FUND_NAV_QUOTE_SOURCES,
+    fund_nav_quote_status,
     is_fund_estimate_quote_source,
 )
 from server.contracts.quote_ingestion import fund_nav_pricing_date
@@ -31,10 +32,22 @@ _DEGRADED_VALUATION_STATUSES = {
 }
 
 
+def _observation_status(row: dict) -> str:
+    source = quote_source_name(row)
+    if source in PUBLISHED_FUND_NAV_QUOTE_SOURCES:
+        return fund_nav_quote_status(
+            source,
+            row.get("quote_status"),
+            row.get("provider_status"),
+            row.get("stale_reason"),
+        )
+    return str(row.get("quote_status") or "live").strip().lower()
+
+
 def quote_valuation_status(quote: dict) -> str:
     """Classify whether one persisted quote can support account valuation."""
 
-    quote_status_value = str(quote.get("quote_status") or "live").strip().lower()
+    quote_status_value = _observation_status(quote)
     if quote_status_value in _MISSING_VALUATION_STATUSES:
         return "missing"
     if quote_status_value not in {
@@ -318,7 +331,7 @@ def quote_pricing_semantics(
         row.get("quote_timestamp") or row.get("timestamp")
     )
     as_of = timestamp.isoformat() if timestamp else None
-    status = str(row.get("quote_status") or "").strip().lower()
+    status = _observation_status(row)
     source = quote_source_name(row)
     kind = "unknown"
     authority = "unknown"
@@ -384,7 +397,7 @@ def quote_status(
     *,
     now: datetime | None = None,
 ) -> str:
-    raw_status = str(quote.get("quote_status") or "").strip().lower() if quote else ""
+    raw_status = _observation_status(quote) if quote else ""
     if raw_status in _MISSING_VALUATION_STATUSES | {"stale", "estimated"}:
         return raw_status
     if raw_status in {

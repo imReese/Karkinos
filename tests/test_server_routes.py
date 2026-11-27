@@ -4539,42 +4539,84 @@ def test_fetch_latest_snapshot_persists_reported_previous_close(monkeypatch):
 
     saved_command: dict[str, object] = {}
 
-    fake_state = SimpleNamespace(
+    fake_stock_state = SimpleNamespace(
+        config=SimpleNamespace(
+            data_source="akshare",
+            tushare_token="",
+            assets=[{"symbol": "600001", "asset_class": "stock"}],
+            live_poll_interval=120,
+        ),
+        db=_quote_ingestion_spy(saved_command),
+    )
+
+    class AkshareStockSource:
+        def fetch_latest(self, symbol, asset_class):
+            return {
+                "price": 10.55,
+                "volume": 1000.0,
+                "timestamp": "2026-04-22T10:30:00+08:00",
+                "previous_close": 10.42,
+                "previous_close_date": "2026-04-21",
+            }
+
+    monkeypatch.setattr(
+        "server.services.market.providers._quote_sources",
+        lambda **kwargs: {"akshare": AkshareStockSource()},
+    )
+
+    stock_response = market_routes._fetch_latest_snapshot(
+        fake_stock_state, "600001", market_routes.AssetClass.STOCK
+    )
+
+    assert stock_response["price"] == 10.55
+    assert saved_command["symbol"] == "600001"
+    assert saved_command["asset_type"] == "stock"
+    assert saved_command["daily_close_date"] == "2026-04-21"
+    assert saved_command["daily_close_price"] == 10.42
+    assert saved_command["daily_close_source"] == "reported_previous_close"
+
+    # Open-end fund previous_close from non-authoritative/estimate sources stays
+    # auditable on the quote observation without occupying official daily close.
+    fund_command: dict[str, object] = {}
+    fake_fund_state = SimpleNamespace(
         config=SimpleNamespace(
             data_source="akshare",
             tushare_token="",
             assets=[{"symbol": "019999", "asset_class": "fund"}],
             live_poll_interval=120,
         ),
-        db=_quote_ingestion_spy(saved_command),
+        db=_quote_ingestion_spy(fund_command),
     )
 
-    class AkshareSource:
+    class AkshareFundEstimateSource:
         def fetch_latest(self, symbol, asset_class):
             return {
                 "price": 2.2503,
                 "volume": None,
-                "timestamp": "2026-04-22",
+                "timestamp": "2026-04-22T14:30:00+08:00",
+                "quote_source": "sina_fund_estimate",
                 "previous_close": 2.2606,
                 "previous_close_date": "2026-04-21",
             }
 
     monkeypatch.setattr(
         "server.services.market.providers._quote_sources",
-        lambda **kwargs: {"akshare": AkshareSource()},
+        lambda **kwargs: {"akshare": AkshareFundEstimateSource()},
     )
 
     response = market_routes._fetch_latest_snapshot(
-        fake_state, "019999", market_routes.AssetClass.FUND
+        fake_fund_state, "019999", market_routes.AssetClass.FUND
     )
 
     assert response["price"] == 2.2503
-    assert saved_command["quote_timestamp"] == "2026-04-22"
-    assert saved_command["symbol"] == "019999"
-    assert saved_command["asset_type"] == "open_end_fund"
-    assert saved_command["daily_close_date"] == "2026-04-21"
-    assert saved_command["daily_close_price"] == 2.2606
-    assert saved_command["daily_close_source"] == "reported_previous_close"
+    assert fund_command["quote_timestamp"] == "2026-04-22T14:30:00+08:00"
+    assert fund_command["symbol"] == "019999"
+    assert fund_command["asset_type"] == "open_end_fund"
+    assert fund_command["previous_close"] == 2.2606
+    assert fund_command["previous_close_date"] == "2026-04-21"
+    assert fund_command["daily_close_date"] is None
+    assert fund_command["daily_close_price"] is None
+    assert fund_command["daily_close_source"] is None
 
 
 def test_portfolio_live_holdings_prefers_reported_previous_close_from_latest_quote(

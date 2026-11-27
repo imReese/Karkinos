@@ -22,9 +22,11 @@ import pandas as pd
 
 from core.types import AssetClass, BarFrequency, InstrumentType, Symbol
 from data.market_calendar import build_market_calendar_provider
+from data.market_data import fund_nav_quote_status
 from data.providers.akshare import AKShareSource
 from data.providers.tdx import TdxSource
 from data.store import DataStore
+from server.contracts.quote_ingestion import fund_nav_pricing_date
 from server.persistence.market_calendar import MarketCalendarRepository
 from server.projections.quote_status import parse_quote_timestamp
 from server.runtime_paths import resolve_data_dir
@@ -605,10 +607,31 @@ class MarketSyncService:
                 )
                 vol = float(q.get("volume") or 0.0)
                 turnover = float(q.get("turnover") or 0.0)
-                quote_ts = q.get("quote_timestamp") or q.get("timestamp") or now_iso
+                source_ts = q.get("quote_timestamp") or q.get("timestamp")
+                quote_ts = source_ts or now_iso
                 nav_date = q.get("nav_date")
                 provider_name = str(q.get("provider_name") or "tdx")
                 quote_source = str(q.get("quote_source") or f"{provider_name}_realtime")
+
+                quote_status = str(q.get("quote_status") or "live")
+                if target.instrument_type is InstrumentType.OPEN_END_FUND:
+                    quote_status = fund_nav_quote_status(
+                        quote_source,
+                        quote_status,
+                        q.get("provider_status"),
+                        q.get("stale_reason"),
+                    )
+                    if not fund_nav_pricing_date(
+                        nav_date, source_ts
+                    ) and quote_status in {
+                        "confirmed",
+                        "fresh",
+                        "live",
+                        "healthy",
+                        "ok",
+                    }:
+                        # The capture time can identify a raw observation, not a published NAV date.
+                        quote_status = "confirmed_nav_missing"
 
                 if db is not None:
                     close_date = _daily_close_trade_date(
@@ -629,7 +652,7 @@ class MarketSyncService:
                         quote_source=quote_source,
                         provider_name=provider_name,
                         provider_status=q.get("provider_status"),
-                        quote_status=str(q.get("quote_status") or "live"),
+                        quote_status=quote_status,
                         captured_reason="market_sync",
                         fetch_run_id=None,
                         captured_at=now_iso,

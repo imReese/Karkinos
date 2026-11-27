@@ -8,8 +8,13 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 
 from core.types import AssetClass, Symbol
+from data.market_data import (
+    PUBLISHED_FUND_NAV_QUOTE_SOURCES,
+    fund_nav_quote_status,
+)
 from data.source_policy import MarketDataUseCase
 from data.source_routing import data_sources_for_use_case
+from server.contracts.quote_ingestion import fund_nav_pricing_date
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +71,7 @@ def load_provider_quote_payload(
     configured_source_name = legacy_configured_source or source_chain[0][0]
 
     snapshot = None
+    fund_status = None
     selected_source_name = configured_source_name
     last_error: Exception | None = None
     fallback_reason_code: str | None = None
@@ -82,6 +88,33 @@ def load_provider_quote_payload(
                     else provider_timeout_seconds
                 ),
             )
+            if snapshot and asset_class == AssetClass.FUND:
+                source_tag = (
+                    snapshot.get("quote_source")
+                    or snapshot.get("source")
+                    or source_name
+                )
+                fund_status = fund_nav_quote_status(
+                    source_tag,
+                    snapshot.get("quote_status"),
+                    snapshot.get("provider_status"),
+                    snapshot.get("stale_reason"),
+                )
+                if fund_status == "error":
+                    raise ValueError(
+                        str(snapshot.get("stale_reason") or "provider_error")
+                    )
+                source_time = snapshot.get("timestamp") or snapshot.get(
+                    "quote_timestamp"
+                )
+                if not source_time or (
+                    str(source_tag).strip().lower() in PUBLISHED_FUND_NAV_QUOTE_SOURCES
+                    and not snapshot.get("nav_date")
+                    and not fund_nav_pricing_date(None, source_time)
+                ):
+                    raise ValueError(
+                        str(snapshot.get("stale_reason") or "missing_nav_date")
+                    )
             last_error = None
         except Exception as exc:
             logger.warning(
@@ -103,27 +136,38 @@ def load_provider_quote_payload(
             raise last_error
         return None
 
+    quote_source = (
+        snapshot.get("quote_source") or snapshot.get("source") or selected_source_name
+    )
+    provider_status = snapshot.get("provider_status") or (
+        "fallback" if selected_source_name != configured_source_name else "live"
+    )
+    nav_date_value = snapshot.get("nav_date")
+    timestamp = snapshot.get("timestamp") or snapshot.get("quote_timestamp")
+    quote_status = fund_status or str(snapshot.get("quote_status") or "live")
+    if asset_class == AssetClass.FUND:
+        if (
+            not nav_date_value
+            and str(quote_source).strip().lower() in PUBLISHED_FUND_NAV_QUOTE_SOURCES
+        ):
+            nav_date_value = fund_nav_pricing_date(None, timestamp) or None
+
     payload = {
         "symbol": symbol,
         "asset_class": asset_class.value,
         "price": snapshot["price"],
         "volume": snapshot.get("volume"),
-        "timestamp": snapshot.get("timestamp"),
+        "timestamp": timestamp,
         "source": snapshot.get("source") or selected_source_name,
-        "quote_source": snapshot.get("quote_source")
-        or snapshot.get("source")
-        or selected_source_name,
+        "quote_source": quote_source,
         "provider_name": snapshot.get("provider_name") or selected_source_name,
         "provider_symbol": snapshot.get("provider_symbol") or symbol,
         "exchange": snapshot.get("exchange"),
         "market": snapshot.get("market"),
-        "quote_status": "live",
-        "provider_status": (
-            "fallback" if selected_source_name != configured_source_name else "live"
-        ),
-        "stale_reason": fallback_reason_code,
-        "nav_date": snapshot.get("nav_date")
-        or (snapshot.get("timestamp") if asset_class == AssetClass.FUND else None),
+        "quote_status": quote_status,
+        "provider_status": provider_status,
+        "stale_reason": snapshot.get("stale_reason") or fallback_reason_code,
+        "nav_date": nav_date_value,
     }
     source_metadata = snapshot.get("metadata")
     if isinstance(source_metadata, dict):

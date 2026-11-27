@@ -8,8 +8,11 @@ from datetime import datetime, timedelta
 from typing import Any, Callable
 
 from core.events import MarketEvent
+from core.types import InstrumentType
 from data.market_data import (
+    PUBLISHED_FUND_NAV_QUOTE_SOURCES,
     MarketDataStatus,
+    fund_nav_quote_status,
     is_fund_estimate_quote_source,
     normalize_market_data_status,
 )
@@ -18,6 +21,7 @@ from data.source_routing import (
     configured_legacy_provider_names,
     preferred_legacy_provider,
 )
+from server.contracts.quote_ingestion import fund_nav_pricing_date
 from server.projections.quote_status import (
     expected_quote_date,
     parse_quote_timestamp,
@@ -233,6 +237,18 @@ def scheduler_quote_evidence(
 
     source_is_estimate = is_fund_estimate_quote_source(quote_source)
     raw_quote_status = snapshot.get("quote_status")
+    if event.instrument_type is InstrumentType.OPEN_END_FUND:
+        if (
+            quote_source.lower() in PUBLISHED_FUND_NAV_QUOTE_SOURCES
+            and not fund_nav_pricing_date(snapshot.get("nav_date"), raw_timestamp)
+        ):
+            raise RuntimeError(f"scheduler fund NAV date missing: {event.symbol}")
+        raw_quote_status = fund_nav_quote_status(
+            quote_source,
+            raw_quote_status,
+            provider_status,
+            snapshot.get("stale_reason"),
+        )
     quote_status = normalize_market_data_status(
         MarketDataStatus.ESTIMATED
         if source_is_estimate

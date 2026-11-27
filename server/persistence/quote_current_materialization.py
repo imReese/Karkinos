@@ -9,6 +9,7 @@ from typing import Any
 
 from data.market_data import (
     PUBLISHED_FUND_NAV_QUOTE_SOURCES,
+    fund_nav_quote_status,
     has_unverified_fund_confirmation,
 )
 from server.contracts.quote_ingestion import (
@@ -23,6 +24,13 @@ from server.persistence.quote_schema_migrations import (
 )
 
 _STATE_TABLE = "quote_current_materialization_state"
+# Keep the frozen partial-index predicate intact, then filter provider quality
+# for legacy rows written before ingestion normalized these flags.
+_PROVIDER_QUALITY_SQL = """
+    coalesce(nullif(lower(trim(provider_status)), ''), 'live')
+        IN ('live', 'confirmed', 'fresh', 'healthy', 'ok', 'success', 'fallback')
+    AND trim(coalesce(stale_reason, '')) = ''
+"""
 
 
 def published_nav_rows_on_connection(
@@ -41,7 +49,7 @@ def published_nav_rows_on_connection(
         SELECT quote_instant_utc, {PUBLISHED_NAV_DATE_SQL} AS pricing_date
         FROM quote_snapshots
         WHERE symbol = ? AND instrument_type = 'open_end_fund'
-          AND {PUBLISHED_NAV_SQL_PREDICATE} {cutoff}
+          AND {PUBLISHED_NAV_SQL_PREDICATE} AND {_PROVIDER_QUALITY_SQL} {cutoff}
         ORDER BY {PUBLISHED_NAV_DATE_SQL} DESC, quote_instant_utc DESC, id DESC
         """,
         params,
@@ -66,11 +74,11 @@ def published_nav_rows_on_connection(
         f"""
         SELECT * FROM quote_snapshots
         WHERE symbol = ? AND instrument_type = 'open_end_fund'
-          AND quote_instant_utc = ? {cutoff}
+          AND quote_instant_utc = ? AND {_PROVIDER_QUALITY_SQL} {cutoff}
         UNION
         SELECT * FROM quote_snapshots
         WHERE symbol = ? AND instrument_type = 'open_end_fund'
-          AND {PUBLISHED_NAV_SQL_PREDICATE}
+          AND {PUBLISHED_NAV_SQL_PREDICATE} AND {_PROVIDER_QUALITY_SQL}
           AND {PUBLISHED_NAV_DATE_SQL} = ? {cutoff}
         ORDER BY id
         """,
@@ -87,7 +95,7 @@ def published_nav_rows_for_date(
         f"""
         SELECT * FROM quote_snapshots
         WHERE symbol = ? AND instrument_type = 'open_end_fund'
-          AND {PUBLISHED_NAV_SQL_PREDICATE}
+          AND {PUBLISHED_NAV_SQL_PREDICATE} AND {_PROVIDER_QUALITY_SQL}
           AND (
               ({PUBLISHED_NAV_DATE_SQL} >= ? AND {PUBLISHED_NAV_DATE_SQL} < date(?, '+1 day'))
               OR {PUBLISHED_NAV_DATE_SQL} NOT GLOB '????-??-??*'
@@ -110,7 +118,22 @@ def require_fund_nav_write_authority(
     source = str(candidate.get("quote_source") or "").strip().lower()
     if has_unverified_fund_confirmation(source, candidate.get("quote_status")):
         raise ValueError("fund quote source authority unresolved")
-    if source in PUBLISHED_FUND_NAV_QUOTE_SOURCES:
+    status = fund_nav_quote_status(
+        source,
+        candidate.get("quote_status"),
+        candidate.get("provider_status"),
+        candidate.get("stale_reason"),
+    )
+    if source in PUBLISHED_FUND_NAV_QUOTE_SOURCES and status in {
+        "live",
+        "confirmed",
+        "fresh",
+        "healthy",
+        "cache",
+        "cached",
+        "cache_only",
+        "cache_only_after_market_data_permission_fallback",
+    }:
         pricing_date = fund_nav_pricing_date(
             candidate.get("nav_date"), candidate.get("quote_timestamp")
         )
@@ -123,7 +146,7 @@ def require_fund_nav_write_authority(
             f"""
             SELECT * FROM latest_quotes
             WHERE symbol = ? AND asset_type IN ('fund', 'open_end_fund')
-              AND {PUBLISHED_NAV_SQL_PREDICATE}
+              AND {PUBLISHED_NAV_SQL_PREDICATE} AND {_PROVIDER_QUALITY_SQL}
             """,
             (symbol,),
         )

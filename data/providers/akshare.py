@@ -386,13 +386,17 @@ class OpenEndFundMixin:
         if price is None:
             return None
 
-        payload = {
+        published_timestamp = _date_from_epoch_ms(latest.get("x"))
+        payload: dict[str, object] = {
             "price": price,
             "volume": None,
-            "timestamp": _date_from_epoch_ms(latest.get("x")),
+            "timestamp": published_timestamp,
             "source": "akshare",
             "quote_source": "eastmoney_fund_page",
         }
+        if published_timestamp is None:
+            payload["quote_status"] = "stale"
+            payload["stale_reason"] = "missing_nav_date"
         if name_match:
             display_name = name_match.group(1).strip()
             if display_name:

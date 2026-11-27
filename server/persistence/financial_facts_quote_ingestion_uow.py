@@ -13,16 +13,18 @@ from core.types import InstrumentKey
 from data.market_data import (
     PUBLISHED_FUND_NAV_QUOTE_SOURCES,
     is_fund_estimate_quote_source,
+    is_healthy_published_fund_nav,
 )
 from server.contracts.quote_ingestion import (
     PUBLISHED_QUOTE_RUN_STATUSES,
     DailyCloseEvidenceConflict,
     QuoteIngestionCommand,
+    fund_nav_pricing_date,
     quote_authority_conflict_fields,
     validate_quote_authority_time,
 )
 from server.persistence.connection import DateTimeNow, connect_sqlite
-from server.persistence.database_normalization import stable_json_fingerprint
+from server.persistence.database_normalization import json_dict, stable_json_fingerprint
 from server.persistence.database_serialization import (
     metadata_payload_value,
     serialize_metadata_json,
@@ -39,6 +41,7 @@ from server.persistence.financial_facts_valuation import (
 from server.persistence.quote_current_materialization import (
     advance_quote_snapshot_checkpoint_on_connection,
     published_nav_changed_since_checkpoint,
+    published_nav_rows_for_date,
     published_nav_rows_on_connection,
     require_fund_nav_write_authority,
 )
@@ -432,27 +435,43 @@ def _materialize_quote(
             command.to_dict(),
         )
         if conflict_fields:
+            financial_conflicts = [
+                f
+                for f in conflict_fields
+                if f
+                in {
+                    "price",
+                    "nav_date",
+                    "daily_close_price",
+                    "daily_close_date",
+                }
+            ]
+            official_fund_corroboration = (
+                command.asset_type == "open_end_fund"
+                and set(conflict_fields) <= {"quote_source", "provider_name"}
+                and is_healthy_published_fund_nav(
+                    existing_latest["quote_source"],
+                    existing_latest["quote_status"],
+                    existing_latest["provider_status"],
+                    existing_latest["stale_reason"],
+                )
+                and is_healthy_published_fund_nav(
+                    command.quote_source,
+                    command.quote_status,
+                    command.provider_status,
+                    command.stale_reason,
+                )
+            )
             if (
                 command.fetch_run_id
                 and existing_latest["fetch_run_id"] != command.fetch_run_id
             ):
-                financial_conflicts = [
-                    f
-                    for f in conflict_fields
-                    if f
-                    in {
-                        "price",
-                        "nav_date",
-                        "daily_close_price",
-                        "daily_close_date",
-                    }
-                ]
                 if financial_conflicts:
                     raise ValueError(
                         "quote authority facts conflict at the same timestamp: "
                         + ",".join(financial_conflicts)
                     )
-            else:
+            elif not official_fund_corroboration:
                 raise ValueError(
                     "quote authority facts conflict at the same timestamp: "
                     + ",".join(conflict_fields)
@@ -567,13 +586,40 @@ def _materialize_daily_close(
     *,
     materialized_at: str,
 ) -> None:
-    if command.daily_close_price is None or command.daily_close_date is None:
+    if not _has_source_daily_close(command):
         return
     existing = _existing_daily_close(conn, command)
     if existing is not None:
-        if _daily_close_conflicts(existing, command):
+        if not _daily_close_conflicts(conn, existing, command):
+            return
+        writer = _superseded_estimate_writer(conn, existing, command)
+        if writer is None:
             raise DailyCloseEvidenceConflict()
-        return
+        insert_event_sync(
+            conn,
+            event_type="market.daily_close.legacy_reconciled",
+            timestamp=materialized_at,
+            entity_type="instrument",
+            entity_id=command.symbol,
+            source="daily_close_snapshots_v2",
+            source_ref=str(existing["id"]),
+            payload={
+                "instrument_type": command.asset_type,
+                "trade_date": command.daily_close_date,
+                "old_close_price": existing["close_price"],
+                "old_close_source": existing["source"],
+                "old_captured_at": existing["captured_at"],
+                "old_run_id": writer["fetch_run_id"],
+                "old_quote_source": writer["quote_source"],
+                "old_quote_snapshot_id": writer["id"],
+                "old_payload_fingerprint": writer["payload_fingerprint"],
+                "new_close_price": command.daily_close_price,
+                "new_quote_source": command.quote_source,
+                "new_run_id": command.fetch_run_id,
+                "new_quote_timestamp": command.quote_timestamp,
+                "new_payload_fingerprint": stable_json_fingerprint(command.to_dict()),
+            },
+        )
     conn.execute(
         """
         INSERT INTO daily_close_snapshots_v2
@@ -610,18 +656,114 @@ def _existing_daily_close(conn: sqlite3.Connection, command: QuoteIngestionComma
     ).fetchone()
 
 
-def _daily_close_conflicts(existing, command: QuoteIngestionCommand) -> bool:
-    if command.daily_close_price is None:
-        raise ValueError("daily close price is missing")
+def _has_source_daily_close(command: QuoteIngestionCommand) -> bool:
+    if command.daily_close_date is None:
+        return False
+    if command.asset_type != "open_end_fund":
+        return True
+    # Old staged commands may still carry the estimated previous close.
     return (
-        float(existing["close_price"]) != float(command.daily_close_price)
-        or not _same_instrument_identity(
-            str(existing["instrument_type"]),
-            command.asset_type,
+        is_healthy_published_fund_nav(
+            command.quote_source,
+            command.quote_status,
+            command.provider_status,
+            command.stale_reason,
         )
-        or str(existing["source"])
-        != (command.daily_close_source or "reported_previous_close")
+        and command.daily_close_source is not None
+        and bool(command.daily_close_source.strip())
+        and command.daily_close_source.strip().lower()
+        in {
+            str(command.quote_source or "").strip().lower(),
+            str(command.provider_name or "").strip().lower(),
+        }
+        and command.daily_close_date
+        == fund_nav_pricing_date(command.nav_date, command.quote_timestamp)
+        and command.daily_close_date
+        <= fund_nav_pricing_date(None, command.quote_timestamp)
+        and command.daily_close_price == command.price
     )
+
+
+def _daily_close_conflicts(
+    conn: sqlite3.Connection, existing: sqlite3.Row, command: QuoteIngestionCommand
+) -> bool:
+    if existing["close_price"] != command.daily_close_price:
+        return True
+    old_source = str(existing["source"])
+    new_source = command.daily_close_source or "reported_previous_close"
+    if old_source == new_source:
+        return False
+    # Independent, dated confirmation can corroborate a matching previous close.
+    # Keep the previous writer's identity; equal prices alone do not prove its origin.
+    if command.asset_type != "open_end_fund":
+        return True
+    if old_source in PUBLISHED_FUND_NAV_QUOTE_SOURCES | {"reported_previous_close"}:
+        return False
+    # Market sync can label the daily close with the provider's name instead
+    # of its published feed. Bind that label to the exact persisted observation.
+    return not any(
+        row["provider_name"] == old_source
+        and row["created_at"] == existing["captured_at"]
+        and row["price"] == existing["close_price"]
+        and is_healthy_published_fund_nav(
+            row["quote_source"],
+            row["quote_status"],
+            row["provider_status"],
+            row["stale_reason"],
+        )
+        for row in published_nav_rows_for_date(
+            conn, command.symbol, existing["trade_date"]
+        )
+    )
+
+
+def _superseded_estimate_writer(
+    conn: sqlite3.Connection, existing: sqlite3.Row, command: QuoteIngestionCommand
+) -> sqlite3.Row | None:
+    if (
+        command.asset_type != "open_end_fund"
+        or existing["source"] != "reported_previous_close"
+    ):
+        return None
+    # The old writer materialized the observation and its derived close in the
+    # same transaction, with the same timestamp. Keep ambiguous joins unresolved.
+    writers = conn.execute(
+        """
+        SELECT s.id, s.fetch_run_id, s.price, s.timestamp, s.quote_source,
+               r.status, i.payload_json, i.payload_fingerprint
+        FROM quote_snapshots AS s
+        LEFT JOIN quote_fetch_runs AS r ON r.run_id = s.fetch_run_id
+        LEFT JOIN quote_ingestion_items AS i
+          ON i.run_id = s.fetch_run_id AND i.symbol = s.symbol AND i.asset_type = s.instrument_type
+        WHERE s.symbol = ? AND s.instrument_type = ? AND s.created_at = ?
+        LIMIT 2
+        """,
+        (command.symbol, command.asset_type, existing["captured_at"]),
+    ).fetchall()
+    if len(writers) != 1:
+        return None
+    writer = writers[0]
+    if writer["status"] != "success" or not is_fund_estimate_quote_source(
+        writer["quote_source"]
+    ):
+        return None
+    payload = json_dict(writer["payload_json"])
+    if not payload or stable_json_fingerprint(payload) != writer["payload_fingerprint"]:
+        return None
+    required = {
+        "fetch_run_id": writer["fetch_run_id"],
+        "symbol": command.symbol,
+        "asset_type": command.asset_type,
+        "price": writer["price"],
+        "quote_timestamp": writer["timestamp"],
+        "quote_source": writer["quote_source"],
+        "previous_close": existing["close_price"],
+        "previous_close_date": existing["trade_date"],
+        "daily_close_price": existing["close_price"],
+        "daily_close_date": existing["trade_date"],
+        "daily_close_source": existing["source"],
+    }
+    return writer if all(payload.get(k) == v for k, v in required.items()) else None
 
 
 def _daily_close_batch_binding(conn, staged, *, run_id, scope) -> dict[str, Any]:
@@ -636,7 +778,7 @@ def _daily_close_batch_binding(conn, staged, *, run_id, scope) -> dict[str, Any]
                 "payload_fingerprint": fingerprint,
             }
         )
-        if command.daily_close_date is None:
+        if not _has_source_daily_close(command):
             continue
         existing = _existing_daily_close(conn, command)
         required_facts.append(
@@ -652,7 +794,8 @@ def _daily_close_batch_binding(conn, staged, *, run_id, scope) -> dict[str, Any]
                 },
                 "existing": dict(existing) if existing is not None else None,
                 "conflicting": existing is not None
-                and _daily_close_conflicts(existing, command),
+                and _daily_close_conflicts(conn, existing, command)
+                and _superseded_estimate_writer(conn, existing, command) is None,
             }
         )
     return {
@@ -668,12 +811,6 @@ def _quote_identity_aliases(instrument_type: str) -> tuple[str, ...]:
     if instrument_type in {"open_end_fund", "fund"}:
         return ("open_end_fund", "fund")
     return (instrument_type,)
-
-
-def _same_instrument_identity(left: str, right: str) -> bool:
-    return bool(
-        set(_quote_identity_aliases(left)) & set(_quote_identity_aliases(right))
-    )
 
 
 def _materialize_instrument_metadata(

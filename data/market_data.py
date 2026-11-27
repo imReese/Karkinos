@@ -34,6 +34,56 @@ def is_fund_estimate_quote_source(value: Any) -> bool:
     return str(value or "").strip().lower() in FUND_ESTIMATE_QUOTE_SOURCES
 
 
+def fund_nav_quote_status(
+    quote_source: Any, quote_status: Any, provider_status: Any, stale_reason: Any = None
+) -> str:
+    """Preserve upstream quality before assigning any default to a NAV observation."""
+    provider = str(provider_status or "live").strip().lower()
+    status = str(quote_status or "").strip().lower()
+    if provider in {"stale", "cache", "cached"}:
+        return "stale"
+    if provider not in {
+        "live",
+        "confirmed",
+        "fresh",
+        "healthy",
+        "ok",
+        "success",
+        "fallback",
+    }:
+        return "error"
+    if status in {
+        "error",
+        "failed",
+        "missing",
+        "unknown",
+        "unavailable",
+        "conflict",
+        "conflicting",
+    }:
+        return "error"
+    if status in {"estimated", "estimate"}:
+        return "estimated"
+    if stale_reason or status == "stale":
+        return "stale"
+    if status:
+        return status
+    if str(quote_source or "").strip().lower() in PUBLISHED_FUND_NAV_QUOTE_SOURCES:
+        return "confirmed"
+    return "live"
+
+
+def is_healthy_published_fund_nav(
+    quote_source: Any, quote_status: Any, provider_status: Any, stale_reason: Any = None
+) -> bool:
+    """Can a provider observation establish a fresh, published fund NAV?"""
+    return str(
+        quote_source or ""
+    ).strip().lower() in PUBLISHED_FUND_NAV_QUOTE_SOURCES and fund_nav_quote_status(
+        quote_source, quote_status, provider_status, stale_reason
+    ) in {"confirmed", "live", "fresh", "healthy", "ok"}
+
+
 class MarketDataStatus(Enum):
     """Shared status vocabulary for market data reliability."""
 

@@ -826,6 +826,12 @@ def test_http_etf_sync_does_not_overwrite_same_code_fund_close(
             None,
             id="confirmed-nav-missing-observation-time",
         ),
+        pytest.param(
+            InstrumentType.OPEN_END_FUND,
+            {"quote_source": "eastmoney_fund_page"},
+            None,
+            id="fund-receipt-without-observation-time-or-nav-date",
+        ),
     ],
 )
 def test_quote_sync_daily_close_requires_source_session_evidence(
@@ -918,6 +924,16 @@ def test_quote_sync_daily_close_requires_source_session_evidence(
         assert (
             quote["quote_timestamp"]
             == sync_quote_clock.astimezone(ZoneInfo("UTC")).isoformat()
+        )
+    if kind is InstrumentType.OPEN_END_FUND and not (
+        evidence.get("nav_date")
+        or evidence.get("timestamp")
+        or evidence.get("quote_timestamp")
+    ):
+        assert quote["quote_status"] == "confirmed_nav_missing"
+        assert (
+            db.list_fund_quote_precedence_facts_sync("510300")["published_nav_rows"]
+            == []
         )
     closes = _daily_closes(db)
     if expected_close_date is None:
