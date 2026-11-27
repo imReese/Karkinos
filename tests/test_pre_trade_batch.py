@@ -979,3 +979,137 @@ def test_batch_pre_trade_risk_rejects_prior_risk_decision_without_new_writes(
 def _assert_no_risk_batch_writes(db: AppDatabase) -> None:
     assert db.get_risk_decisions_sync() == []
     assert db.list_events_sync(source="risk_decisions") == []
+
+
+def test_fund_publication_recovery_incident_still_blocks_stock_pre_trade_risk(
+    tmp_path,
+) -> None:
+    from server.contracts.quote_ingestion import QuoteIngestionCommand
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _add_action(db, source_signal_id=1, symbol="603659", target_weight=0.05, price=17.0)
+    db.insert_ledger_entry_sync(
+        entry_type="cash_deposit",
+        timestamp="2026-07-01T09:00:00+08:00",
+        amount=100000.0,
+        created_at="2026-07-01T09:00:01+08:00",
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        symbol="018125",
+        direction="buy",
+        quantity=1000.0,
+        price=1.80,
+        amount=1800.0,
+        gross_amount=1800.0,
+        net_cash_impact=-1800.0,
+        asset_class="open_end_fund",
+        timestamp="2026-07-01T10:00:00+08:00",
+        created_at="2026-07-01T10:00:01+08:00",
+    )
+    db.create_quote_fetch_run(
+        run_id="seed-stock-and-fund",
+        started_at="2026-07-01T15:00:00+08:00",
+        trigger="manual",
+        provider="akshare",
+        symbol_count=2,
+        status="running",
+        metadata={
+            "requested_symbols": ["603659", "018125"],
+            "instrument_types": ["stock", "open_end_fund"],
+        },
+    )
+    db.persist_quote_ingestion_sync(
+        QuoteIngestionCommand(
+            symbol="603659",
+            asset_type="stock",
+            price=17.0,
+            volume=1000,
+            quote_timestamp="2026-07-01T15:00:00+08:00",
+            captured_at="2026-07-01T15:00:05+08:00",
+            quote_source="tencent_realtime_quote",
+            provider_name="tencent",
+            fetch_run_id="seed-stock-and-fund",
+        )
+    )
+    db.persist_quote_ingestion_sync(
+        QuoteIngestionCommand(
+            symbol="018125",
+            asset_type="open_end_fund",
+            price=1.8028,
+            volume=0.0,
+            quote_timestamp="2026-07-02T09:30:00+08:00",
+            captured_at="2026-07-02T09:30:05+08:00",
+            quote_source="eastmoney_fund_page",
+            provider_name="akshare",
+            quote_status="confirmed",
+            nav_date="2026-07-02",
+            fetch_run_id="seed-stock-and-fund",
+        )
+    )
+    db.finish_quote_fetch_run(
+        run_id="seed-stock-and-fund",
+        finished_at="2026-07-02T09:30:06+08:00",
+        status="success",
+        success_count=2,
+        failure_count=0,
+        metadata={
+            "requested_symbols": ["603659", "018125"],
+            "instrument_types": ["stock", "open_end_fund"],
+        },
+    )
+    evidence = _persisted_evidence_binding(db)
+
+    # Inject a genuine conflicting confirmed NAV failure scoped to 018125.
+    db.create_quote_fetch_run(
+        run_id="fund-confirmed-conflict",
+        started_at="2026-07-02T09:35:00+08:00",
+        trigger="fund_nav_sync",
+        provider="tushare",
+        asset_type="open_end_fund",
+        symbol_count=1,
+        status="running",
+        metadata={
+            "requested_symbols": ["018125"],
+            "instrument_types": ["open_end_fund"],
+        },
+    )
+    db.persist_quote_ingestion_sync(
+        QuoteIngestionCommand(
+            symbol="018125",
+            asset_type="open_end_fund",
+            price=1.8500,
+            volume=0.0,
+            quote_timestamp="2026-07-02T09:30:00+08:00",
+            captured_at="2026-07-02T09:35:01+08:00",
+            quote_source="tushare_fund_nav",
+            provider_name="tushare",
+            quote_status="confirmed",
+            nav_date="2026-07-02",
+            fetch_run_id="fund-confirmed-conflict",
+        )
+    )
+    failed = db.finish_quote_fetch_run(
+        run_id="fund-confirmed-conflict",
+        finished_at="2026-07-02T09:35:02+08:00",
+        status="success",
+        success_count=1,
+        failure_count=0,
+        metadata={
+            "requested_symbols": ["018125"],
+            "instrument_types": ["open_end_fund"],
+        },
+    )
+    assert failed is not None and failed["status"] == "failed"
+
+    result = run_pre_trade_risk_batch(
+        db=db,
+        context_provider=StaticContextProvider(_context(cash="100000")),
+        policy=PreTradePolicy(execution_mode="manual"),
+        evidence_binding=evidence,
+        tasks=_allocated_tasks(db),
+    )
+    assert result["status"] == "blocked_by_evidence_drift"
+    assert {"code": "valuation_publication_recovery_required"} in result["blockers"]
+    _assert_no_risk_batch_writes(db)

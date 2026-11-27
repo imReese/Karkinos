@@ -10,12 +10,22 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from core.types import AssetClass, InstrumentType, Symbol
 from data.manager import build_sources
-from data.market_data import is_fund_estimate_quote_source
+from data.market_data import (
+    PUBLISHED_FUND_NAV_QUOTE_SOURCES,
+    is_fund_estimate_quote_source,
+)
 from data.source_policy import MarketDataUseCase, source_policy_for_config
 from data.source_routing import preferred_legacy_provider
+from server.contracts.quote_ingestion import (
+    quote_authority_conflict_fields,
+    quote_timestamp_instant,
+)
+from server.persistence.financial_fact_event_payloads import quote_instant_storage_key
+from server.projections.quote_status import quote_pricing_semantics
 from server.services.market.hours import get_shanghai_now
 from server.services.market.quotes import (
     build_quote_ingestion_command,
@@ -25,10 +35,21 @@ from server.services.market.quotes import (
 logger = logging.getLogger(__name__)
 
 FUND_NAV_SYNC_TTL_SECONDS = 15 * 60
-_CONFIRMED_FUND_NAV_SOURCES = {
-    "eastmoney_fund_page",
-    "tushare_fund_nav",
-}
+_CONFIRMED_FUND_NAV_SOURCES = PUBLISHED_FUND_NAV_QUOTE_SOURCES
+_SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
+_HEALTHY_PUBLISHED_NAV_STATUSES = frozenset(
+    {
+        "live",
+        "confirmed",
+        "fresh",
+        "healthy",
+        "cache",
+        "cached",
+        "cache_only",
+        "cache_only_after_market_data_permission_fallback",
+    }
+)
+_UNRESOLVABLE_SOURCE_TOKENS = frozenset({"", "unknown", "none", "null"})
 
 
 @dataclass(slots=True)
@@ -37,6 +58,7 @@ class FundNavSyncResult:
     skipped: list[str] = field(default_factory=list)
     failed: dict[str, str] = field(default_factory=dict)
     quotes: dict[str, dict[str, Any]] = field(default_factory=dict)
+    skipped_details: dict[str, dict[str, Any]] = field(default_factory=dict)
     run_id: str | None = None
     request_id: str | None = None
     idempotent_replay: bool = False
@@ -115,10 +137,21 @@ def _replay_fund_nav_result(
     if refreshed and not publication_ready:
         refreshed = []
         failed.setdefault("__publication__", "quote_batch_publication_failed")
+    raw_skipped_details = metadata.get("skipped_details")
+    skipped_details = (
+        {
+            str(key): dict(value)
+            for key, value in raw_skipped_details.items()
+            if isinstance(value, dict)
+        }
+        if isinstance(raw_skipped_details, dict)
+        else {}
+    )
     return FundNavSyncResult(
         refreshed=refreshed,
         skipped=_string_list(metadata.get("skipped_symbols")),
         failed=failed,
+        skipped_details=skipped_details,
         run_id=str(row["run_id"]),
         request_id=request_id,
         idempotent_replay=True,
@@ -381,6 +414,226 @@ def normalize_fund_nav_snapshot(
     }
 
 
+def _effective_fund_nav_date(quote: dict[str, Any]) -> str:
+    nav_date = str(quote.get("nav_date") or "").strip()
+    if nav_date:
+        return nav_date
+    raw_timestamp = str(
+        quote.get("timestamp") or quote.get("quote_timestamp") or ""
+    ).strip()
+    if not raw_timestamp:
+        return ""
+    return (
+        quote_timestamp_instant(raw_timestamp)
+        .astimezone(_SHANGHAI_TZ)
+        .date()
+        .isoformat()
+    )
+
+
+def _is_healthy_published_nav_fact(row: dict[str, Any]) -> bool:
+    quote_source = str(row.get("quote_source") or "").strip().lower()
+    if quote_source not in PUBLISHED_FUND_NAV_QUOTE_SOURCES:
+        return False
+    semantics = quote_pricing_semantics({**row, "asset_type": "open_end_fund"})
+    if (
+        semantics.get("pricing_kind") != "published_nav"
+        or semantics.get("pricing_authority") != "authoritative"
+    ):
+        return False
+    status = str(row.get("quote_status") or "live").strip().lower()
+    return status in _HEALTHY_PUBLISHED_NAV_STATUSES
+
+
+def _read_fund_precedence_facts(
+    db: Any,
+    symbol: str,
+    *,
+    quote_timestamp: str,
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[dict[str, Any]]]:
+    if db is None:
+        return None, [], []
+    precedence_reader = getattr(db, "list_fund_quote_precedence_facts_sync", None)
+    if callable(precedence_reader):
+        context = precedence_reader(symbol, quote_timestamp=quote_timestamp) or {}
+        return (
+            context.get("latest_quote"),
+            list(context.get("published_nav_rows") or ()),
+            list(context.get("same_instant_rows") or ()),
+        )
+    latest_reader = getattr(db, "get_latest_quote_sync", None)
+    if not callable(latest_reader):
+        return None, [], []
+    latest = latest_reader(symbol, asset_type=InstrumentType.OPEN_END_FUND.value)
+    if latest is None:
+        latest = latest_reader(symbol, asset_type="fund")
+    if latest is None:
+        return None, [], []
+    published_rows = [latest] if _is_healthy_published_nav_fact(latest) else []
+    same_instant_rows = (
+        [latest]
+        if quote_instant_storage_key(
+            latest.get("timestamp") or latest.get("quote_timestamp")
+        )
+        == quote_instant_storage_key(quote_timestamp)
+        else []
+    )
+    return latest, published_rows, same_instant_rows
+
+
+def _has_conflicting_published_navs(rows: list[dict[str, Any]]) -> bool:
+    for idx, left in enumerate(rows):
+        left_instant = quote_instant_storage_key(
+            left.get("timestamp") or left.get("quote_timestamp")
+        )
+        left_date = _effective_fund_nav_date(left)
+        for right in rows[idx + 1 :]:
+            right_instant = quote_instant_storage_key(
+                right.get("timestamp") or right.get("quote_timestamp")
+            )
+            right_date = _effective_fund_nav_date(right)
+            if left_instant != right_instant and (
+                not left_date or left_date != right_date
+            ):
+                continue
+            if set(quote_authority_conflict_fields(left, right)) & {
+                "price",
+                "nav_date",
+            }:
+                return True
+    return False
+
+
+def _dedupe_snapshot_facts(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: dict[tuple[Any, str, str, Any], dict[str, Any]] = {}
+    for row in rows:
+        key = (
+            row.get("id"),
+            str(row.get("quote_source") or "").strip().lower(),
+            str(row.get("timestamp") or row.get("quote_timestamp") or ""),
+            row.get("price"),
+        )
+        deduped.setdefault(key, row)
+    return list(deduped.values())
+
+
+def _evaluate_fund_quote_precedence(
+    db: Any,
+    symbol: str,
+    quote: dict[str, Any],
+) -> tuple[str, Any]:
+    """Classify one incoming fund snapshot against persisted published NAV facts."""
+
+    incoming_source = str(quote.get("quote_source") or "").strip().lower()
+    if incoming_source in _UNRESOLVABLE_SOURCE_TOKENS:
+        return "block", "fund_quote_source_unresolvable"
+    source_is_confirmed = incoming_source in PUBLISHED_FUND_NAV_QUOTE_SOURCES
+    source_is_estimate = is_fund_estimate_quote_source(incoming_source)
+
+    latest_quote, published_nav_rows, same_instant_rows = _read_fund_precedence_facts(
+        db,
+        symbol,
+        quote_timestamp=str(quote["timestamp"]),
+    )
+    healthy_published = _dedupe_snapshot_facts(
+        [
+            row
+            for row in [
+                *published_nav_rows,
+                *same_instant_rows,
+                *([latest_quote] if latest_quote else []),
+            ]
+            if _is_healthy_published_nav_fact(row)
+        ]
+    )
+    if _has_conflicting_published_navs(healthy_published):
+        return "block", "conflicting_published_nav_facts"
+
+    if not source_is_confirmed and not source_is_estimate:
+        if healthy_published or same_instant_rows:
+            return "block", "fund_quote_source_unresolvable"
+        if latest_quote is not None and (
+            set(quote_authority_conflict_fields(latest_quote, quote))
+            & {"price", "nav_date", "quote_source"}
+        ):
+            return "block", "fund_quote_source_unresolvable"
+        return "stage", None
+
+    incoming_instant_key = quote_instant_storage_key(quote["timestamp"])
+    incoming_nav_date = _effective_fund_nav_date(quote)
+
+    if source_is_confirmed:
+        for prior in healthy_published:
+            prior_instant_key = quote_instant_storage_key(
+                prior.get("timestamp") or prior.get("quote_timestamp")
+            )
+            prior_nav_date = _effective_fund_nav_date(prior)
+            if prior_instant_key != incoming_instant_key and (
+                not incoming_nav_date or incoming_nav_date != prior_nav_date
+            ):
+                continue
+            if set(quote_authority_conflict_fields(prior, quote)) & {
+                "price",
+                "nav_date",
+            }:
+                return "block", "confirmed_fund_nav_conflict"
+        return "stage", None
+
+    # Incoming quote is a recognized lower-priority fund estimate.
+    incoming_instant = quote_timestamp_instant(quote["timestamp"])
+    covering_navs: list[dict[str, Any]] = []
+    for prior in healthy_published:
+        prior_ts = str(prior.get("timestamp") or prior.get("quote_timestamp") or "")
+        prior_instant = quote_timestamp_instant(prior_ts)
+        prior_nav_date = _effective_fund_nav_date(prior)
+        if incoming_instant <= prior_instant or (
+            prior_nav_date and incoming_obs_date_lte(quote, prior_nav_date)
+        ):
+            covering_navs.append(prior)
+    if not covering_navs:
+        return "stage", None
+
+    authoritative = max(
+        covering_navs,
+        key=lambda row: (
+            _effective_fund_nav_date(row),
+            quote_timestamp_instant(
+                str(row.get("timestamp") or row.get("quote_timestamp") or "")
+            ),
+            int(row.get("id") or 0),
+        ),
+    )
+    authoritative_ts = str(
+        authoritative.get("timestamp") or authoritative.get("quote_timestamp") or ""
+    )
+    return (
+        "superseded",
+        {
+            "disposition": "superseded_by_published_nav",
+            "reason": "superseded_by_published_nav",
+            "incoming_quote_source": quote["quote_source"],
+            "incoming_quote_timestamp": quote["timestamp"],
+            "incoming_nav_date": quote.get("nav_date"),
+            "incoming_price": quote["price"],
+            "authoritative_quote_source": authoritative.get("quote_source"),
+            "authoritative_quote_timestamp": authoritative_ts,
+            "authoritative_nav_date": authoritative.get("nav_date"),
+            "authoritative_price": authoritative.get("price"),
+            "latest_quote_untouched": True,
+        },
+    )
+
+
+def incoming_obs_date_lte(quote: dict[str, Any], prior_nav_date: str) -> bool:
+    obs_date = (
+        quote_timestamp_instant(str(quote["timestamp"]))
+        .astimezone(_SHANGHAI_TZ)
+        .date()
+        .isoformat()
+    )
+    return obs_date <= prior_nav_date
+
+
 def _persist_fund_quote(
     db: Any,
     quote: dict[str, Any],
@@ -607,7 +860,36 @@ def refresh_fund_nav_quotes(
     # changed. This keeps a slow or partially fetched batch from exposing a
     # long-lived, unpublished quote set to financial reads.
     staged_quotes: dict[str, dict[str, Any]] = {}
+    superseded_symbols: list[str] = []
     for symbol, quote in pending_quotes.items():
+        disposition_kind, disposition_payload = _evaluate_fund_quote_precedence(
+            db,
+            symbol,
+            quote,
+        )
+        if disposition_kind == "superseded":
+            result.skipped.append(symbol)
+            superseded_symbols.append(symbol)
+            result.skipped_details[symbol] = dict(disposition_payload)
+            logger.info(
+                "Skipped fund NAV estimate for %s: superseded_by_published_nav",
+                symbol,
+            )
+            continue
+        if disposition_kind == "block":
+            if not callable(getattr(db, "finish_quote_fetch_run", None)):
+                result.failed[symbol] = str(disposition_payload)
+                logger.warning(
+                    "Rejected fund NAV quote for %s: %s",
+                    symbol,
+                    disposition_payload,
+                )
+                continue
+            logger.warning(
+                "Routing conflicted/unresolved fund NAV quote for %s to publication failure lane: %s",
+                symbol,
+                disposition_payload,
+            )
         try:
             if db is not None:
                 _persist_fund_quote(
@@ -650,6 +932,8 @@ def refresh_fund_nav_quotes(
                     "requested_symbols": due_symbols,
                     "refreshed_symbols": result.refreshed,
                     "skipped_symbols": result.skipped,
+                    "superseded_symbols": superseded_symbols,
+                    "skipped_details": result.skipped_details,
                     "failed_symbols": sorted(
                         symbol
                         for symbol in result.failed

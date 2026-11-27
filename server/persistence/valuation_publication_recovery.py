@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from contextlib import closing
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -277,10 +277,14 @@ def _published_run_references(conn, run_ids):
 
 def _refresh_count_basis(run, metadata, scope, staged_count):
     requested = [item[1] for item in scope]
+    superseded_count = 0
+    if run["trigger"] == "fund_nav_sync":
+        superseded_count = len(verified_superseded_quote_scope(metadata, scope=scope))
     if (
         run["success_count"] >= 0
         and run["failure_count"] > 0
-        and run["success_count"] + run["failure_count"] == run["symbol_count"]
+        and run["success_count"] + run["failure_count"] + superseded_count
+        == run["symbol_count"]
         and staged_count == run["success_count"]
     ):
         return "terminal_counts", None
@@ -791,10 +795,23 @@ def unpublished_quote_recovery_plan(
                 (run_id,),
             ).fetchall()
             if publication_failure:
+                staged_scope = {
+                    (str(item["asset_type"]), str(item["symbol"])) for item in staged
+                }
+                superseded_scope = (
+                    verified_superseded_quote_scope(
+                        metadata,
+                        scope=scope,
+                        staged_scope=staged_scope,
+                    )
+                    if run["trigger"] == "fund_nav_sync"
+                    else set()
+                )
                 if not (
                     run["status"] == "failed"
                     and run["failure_count"] == 0
-                    and run["success_count"] == len(staged) == run["symbol_count"]
+                    and run["success_count"] == len(staged)
+                    and len(staged) + len(superseded_scope) == run["symbol_count"]
                     and metadata.get("valuation_snapshot_publication") == "failed"
                 ):
                     raise ValueError(
@@ -1239,6 +1256,247 @@ def preserve_publication_recovery(conn: sqlite3.Connection, *, updated_at: str) 
     if not failures:
         return
     _save(conn, failures, updated_at)
+
+
+def verified_superseded_quote_scope(
+    metadata: Mapping[str, Any] | Any,
+    *,
+    scope: Sequence[Sequence[str]] | Iterable[tuple[str, str]] | None,
+    staged_scope: set[tuple[str, str]] | None = None,
+) -> set[tuple[str, str]]:
+    """Verify open-end-fund estimate skips superseded by prior published NAVs."""
+
+    if not isinstance(metadata, Mapping):
+        return set()
+    raw_superseded = metadata.get("superseded_symbols")
+    if raw_superseded is None:
+        return set()
+    if (
+        not isinstance(raw_superseded, list)
+        or not scope
+        or any(
+            not isinstance(symbol, str) or not symbol.strip()
+            for symbol in raw_superseded
+        )
+    ):
+        raise ValueError("quote publication superseded scope invalid")
+    if not raw_superseded:
+        return set()
+    details = metadata.get("skipped_details")
+    if not isinstance(details, Mapping):
+        raise ValueError("quote publication superseded scope invalid")
+    expected_scope = _instrument_scope(scope)
+    superseded_scope: set[tuple[str, str]] = set()
+    for raw_symbol in raw_superseded:
+        symbol = raw_symbol.strip()
+        key = (InstrumentType.OPEN_END_FUND.value, symbol)
+        if key in superseded_scope or key not in expected_scope:
+            raise ValueError("quote publication superseded scope invalid")
+        if staged_scope is not None and key in staged_scope:
+            raise ValueError("quote publication superseded scope invalid")
+        disposition = details.get(symbol)
+        if not isinstance(disposition, Mapping):
+            raise ValueError("quote publication superseded scope invalid")
+        if disposition.get("disposition") != "superseded_by_published_nav":
+            raise ValueError("quote publication superseded scope invalid")
+        auth_source = (
+            str(disposition.get("authoritative_quote_source") or "").strip().lower()
+        )
+        incoming_source = disposition.get("incoming_quote_source")
+        if auth_source not in PUBLISHED_FUND_NAV_QUOTE_SOURCES or (
+            not is_fund_estimate_quote_source(incoming_source)
+        ):
+            raise ValueError("quote publication superseded scope invalid")
+        superseded_scope.add(key)
+    return superseded_scope
+
+
+def _resolve_instrument_pair(
+    conn: sqlite3.Connection,
+    *,
+    symbol: str,
+    raw_asset_type: object,
+) -> tuple[str, str] | None:
+    normalized_symbol = str(symbol or "").strip()
+    if not normalized_symbol:
+        return None
+    normalized_type = str(raw_asset_type or "").strip().lower().replace("-", "_")
+    if normalized_type in {"", "fund"}:
+        rows = conn.execute(
+            """
+            SELECT asset_type FROM instrument_metadata
+            WHERE symbol = ? AND asset_type IN ('open_end_fund', 'etf')
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (normalized_symbol,),
+        ).fetchall()
+        types = {str(row[0]) for row in rows}
+        if len(types) == 1:
+            normalized_type = next(iter(types))
+    try:
+        key = InstrumentKey.from_values(normalized_symbol, normalized_type)
+    except ValueError:
+        return None
+    return (key.instrument_type.value, key.symbol)
+
+
+def _known_portfolio_and_market_scope(
+    conn: sqlite3.Connection,
+    *,
+    extra_instruments: Iterable[tuple[str, str]] = (),
+    portfolio_valuation: Mapping[str, Any] | None = None,
+    include_known_watchlist: bool = False,
+    include_pending_actions: bool = False,
+) -> set[tuple[str, str]]:
+    scope: set[tuple[str, str]] = set()
+    for raw_type, raw_symbol in extra_instruments:
+        pair = _resolve_instrument_pair(
+            conn, symbol=str(raw_symbol or ""), raw_asset_type=raw_type
+        )
+        if pair is not None:
+            scope.add(pair)
+    if isinstance(portfolio_valuation, Mapping):
+        for quote in portfolio_valuation.get("quotes") or ():
+            if not isinstance(quote, Mapping):
+                continue
+            pair = _resolve_instrument_pair(
+                conn,
+                symbol=str(quote.get("symbol") or ""),
+                raw_asset_type=quote.get("instrument_type") or quote.get("asset_type"),
+            )
+            if pair is not None:
+                scope.add(pair)
+    control = _control(conn, "valuation_snapshot_publication")
+    snapshot_id = (
+        str(control.get("snapshot_id") or "").strip()
+        if isinstance(control, dict) and control.get("status") == "ready"
+        else ""
+    )
+    if snapshot_id:
+        row = conn.execute(
+            "SELECT quotes_json FROM main.valuation_snapshots WHERE snapshot_id = ? LIMIT 1",
+            (snapshot_id,),
+        ).fetchone()
+        if row is not None:
+            quotes = json.loads(row[0] or "[]")
+            if not isinstance(quotes, list):
+                raise ValueError(
+                    "valuation publication recovery snapshot quotes invalid"
+                )
+            for quote in quotes:
+                if not isinstance(quote, Mapping):
+                    continue
+                pair = _resolve_instrument_pair(
+                    conn,
+                    symbol=str(quote.get("symbol") or ""),
+                    raw_asset_type=quote.get("asset_type"),
+                )
+                if pair is not None:
+                    scope.add(pair)
+    for row in conn.execute(
+        """
+        SELECT symbol,
+               MAX(asset_class) AS asset_class,
+               SUM(
+                   CASE
+                       WHEN entry_type = 'trade_buy' THEN coalesce(quantity, 0)
+                       WHEN entry_type = 'trade_sell' THEN -coalesce(quantity, 0)
+                       ELSE 0
+                   END
+               ) AS net_quantity
+        FROM main.ledger_entries
+        WHERE entry_type IN ('trade_buy', 'trade_sell')
+          AND symbol IS NOT NULL
+          AND trim(symbol) <> ''
+        GROUP BY symbol
+        HAVING abs(net_quantity) > 1e-9
+        """
+    ).fetchall():
+        pair = _resolve_instrument_pair(
+            conn, symbol=str(row[0] or ""), raw_asset_type=row[1]
+        )
+        if pair is not None:
+            scope.add(pair)
+    if include_known_watchlist:
+        for row in conn.execute(
+            "SELECT symbol, asset_class FROM main.watchlist_assets"
+        ).fetchall():
+            pair = _resolve_instrument_pair(
+                conn, symbol=str(row[0] or ""), raw_asset_type=row[1]
+            )
+            if pair is not None:
+                scope.add(pair)
+    if include_pending_actions:
+        for row in conn.execute(
+            "SELECT symbol, asset_class FROM main.action_tasks WHERE status IN ('pending', 'approved')"
+        ).fetchall():
+            pair = _resolve_instrument_pair(
+                conn, symbol=str(row[0] or ""), raw_asset_type=row[1]
+            )
+            if pair is not None:
+                scope.add(pair)
+    return scope
+
+
+def inspect_scoped_valuation_publication_recovery(
+    db: Any,
+    *,
+    extra_instruments: Iterable[tuple[str, str]] = (),
+    portfolio_valuation: Mapping[str, Any] | None = None,
+    include_known_watchlist: bool = False,
+    include_pending_actions: bool = False,
+) -> dict[str, Any]:
+    """Read unresolved publication incidents intersecting the active scope."""
+
+    try:
+        path = require_database_path(
+            db, ValueError("valuation_publication_recovery_unavailable")
+        )
+        with closing(connect_sqlite(path, readonly=True)) as conn:
+            conn.execute("BEGIN")
+            scope = _known_portfolio_and_market_scope(
+                conn,
+                extra_instruments=extra_instruments,
+                portfolio_valuation=portfolio_valuation,
+                include_known_watchlist=include_known_watchlist,
+                include_pending_actions=include_pending_actions,
+            )
+            failures = affected_publications(conn, scope)
+    except (
+        OSError,
+        sqlite3.Error,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        json.JSONDecodeError,
+    ):
+        return {
+            "status": "unavailable",
+            "blockers": ["valuation_publication_recovery_unavailable"],
+            "incidents": [],
+            "scope": [],
+        }
+
+    incidents = [
+        {
+            "incident_ref": str(
+                item.get("incident_ref") or publication_incident_ref(item)
+            ),
+            "quote_fetch_run_id": item.get("quote_fetch_run_id"),
+            "status": item.get("status"),
+            "reason": item.get("reason"),
+            "failed_at": item.get("failed_at"),
+            "scope": item.get("scope"),
+        }
+        for item in failures
+    ]
+    return {
+        "status": "blocked" if incidents else "clear",
+        "blockers": (["valuation_publication_recovery_required"] if incidents else []),
+        "incidents": incidents,
+        "scope": [[kind, sym] for kind, sym in sorted(scope)],
+    }
 
 
 def _save(conn: sqlite3.Connection, failures: list[dict[str, Any]], at: str) -> None:

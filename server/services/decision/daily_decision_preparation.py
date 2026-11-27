@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from data.dataset.reader import daily_bar_dataset_read_scope
+from server.persistence.valuation_publication_recovery import (
+    inspect_scoped_valuation_publication_recovery,
+)
 from server.services.automation.automation_control import AutomationControlService
 from server.services.decision.daily_decision_evidence_contracts import (
     DAILY_CANDIDATE_PREPARATION_CHECK_SCHEMA_VERSION,
@@ -168,9 +171,33 @@ def build_daily_candidate_preparation_check(
     if execution_closure.get("status") not in {"pass", "not_required"}:
         closure_blockers.append("prior_execution_not_reconciled")
 
+    configured_watchlist = [
+        (
+            str(item.get("asset_class") or "stock"),
+            str(item.get("symbol") or ""),
+        )
+        for item in (getattr(getattr(state, "config", None), "watchlist", None) or [])
+        if isinstance(item, dict) and str(item.get("symbol") or "").strip()
+    ]
+    valuation_recovery = inspect_scoped_valuation_publication_recovery(
+        state.db,
+        extra_instruments=configured_watchlist,
+        include_known_watchlist=True,
+        include_pending_actions=True,
+    )
+    valuation_blockers = [
+        str(item) for item in valuation_recovery.get("blockers") or [] if str(item)
+    ]
+    valuation_recovery_incidents = [
+        dict(item)
+        for item in valuation_recovery.get("incidents") or []
+        if isinstance(item, dict)
+    ]
+
     gates = [
         build_preflight_gate("automation_policy", policy_blockers),
         build_preflight_gate("account_truth", account_truth_blockers),
+        build_preflight_gate("portfolio_valuation", valuation_blockers),
         build_preflight_gate("reviewed_fees", fee_blockers),
         build_preflight_gate("strategy", strategy_blockers),
         build_preflight_gate("execution_closure", closure_blockers),
@@ -186,6 +213,7 @@ def build_daily_candidate_preparation_check(
     actions = {
         "automation_policy": "restore_paper_shadow_only_automation_policy",
         "account_truth": "complete_current_account_truth_evidence_review",
+        "portfolio_valuation": "restore_complete_portfolio_valuation_snapshot",
         "reviewed_fees": "review_account_specific_fee_schedule",
         "strategy": "promote_evidence_bound_strategy_for_paper_shadow",
         "execution_closure": "complete_plan_paper_actual_reconciliation",
@@ -220,6 +248,7 @@ def build_daily_candidate_preparation_check(
             fee_review_fingerprint if is_sha256(fee_review_fingerprint) else None
         ),
         "execution_closure_fingerprint": execution_closure.get("evidence_fingerprint"),
+        "valuation_recovery_incidents": valuation_recovery_incidents,
         "deferred_window_time_gates": [
             "market_data",
             "decision_plan",
@@ -288,6 +317,7 @@ def verify_daily_candidate_preparation_check(
     if gate_names != [
         "automation_policy",
         "account_truth",
+        "portfolio_valuation",
         "reviewed_fees",
         "strategy",
         "execution_closure",

@@ -26,6 +26,9 @@ from server.persistence.financial_facts_valuation import (
 )
 from server.persistence.valuation_publication_recovery import (
     assert_quote_publication_not_started,
+    preserve_publication_recovery,
+    quote_run_scope,
+    verified_superseded_quote_scope,
 )
 
 _STAGED_ACQUISITION_CONTRACT = "staged_until_atomic_quote_publication.v1"
@@ -225,7 +228,24 @@ class QuoteFetchRunRepositoryMixin:
             )
             metadata_json = serialize_metadata_json(metadata)
             metadata_payload = metadata_payload_value(metadata)
-            if status in {
+            if (
+                status in PUBLISHED_QUOTE_RUN_STATUSES
+                and success_count == 0
+                and failure_count == 0
+                and _clean_superseded_fund_nav_noop_run(
+                    conn,
+                    run=current,
+                    metadata=metadata_payload,
+                )
+            ):
+                preserve_publication_recovery(conn, updated_at=finished_at)
+                if isinstance(metadata_payload, dict):
+                    metadata_payload = {
+                        **metadata_payload,
+                        "valuation_snapshot_publication": "not_required_superseded",
+                    }
+                    metadata_json = serialize_metadata_json(metadata_payload)
+            elif status in {
                 "failed",
                 "partial_success",
                 "partial",
@@ -535,6 +555,37 @@ def _unpublished_staged_acquisition(conn: sqlite3.Connection, run: sqlite3.Row) 
         return True
     except (ValueError, TypeError, KeyError, AttributeError, sqlite3.Error):
         return False
+
+
+def _clean_superseded_fund_nav_noop_run(
+    conn: sqlite3.Connection,
+    *,
+    run: sqlite3.Row,
+    metadata: Any,
+) -> bool:
+    """Verify every symbol in a zero-write fund NAV run was cleanly superseded."""
+
+    if str(run["trigger"] or "") != "fund_nav_sync":
+        return False
+    if not _unpublished_staged_acquisition(conn, run):
+        return False
+    staged_count = conn.execute(
+        "SELECT COUNT(*) FROM quote_ingestion_items WHERE run_id = ?",
+        (run["run_id"],),
+    ).fetchone()
+    if staged_count is None or int(staged_count[0] or 0) != 0:
+        return False
+    expected = quote_run_scope(conn, str(run["run_id"]), require_exact=True)
+    if not expected:
+        return False
+    superseded_scope = verified_superseded_quote_scope(
+        metadata,
+        scope=expected,
+        staged_scope=set(),
+    )
+    return bool(superseded_scope) and len(superseded_scope) == int(
+        run["symbol_count"] or 0
+    )
 
 
 def _block_valuation_publication(

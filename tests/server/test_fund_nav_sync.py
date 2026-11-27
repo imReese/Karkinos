@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from threading import Barrier, Event, Lock
 from types import SimpleNamespace
 
 import pytest
 
 from core.types import AssetClass, InstrumentType, Symbol
+from server.contracts.quote_ingestion import QuoteIngestionCommand
 from server.db import AppDatabase
+from server.services.market.fund_nav import refresh_fund_nav_quotes
 
 
 class FakeFundSource:
@@ -918,3 +921,475 @@ def test_confirmation_only_concurrent_create_race_admits_one_provider_effect(
     assert len({result.run_id for result in results}) == 1
     assert len(base_db.list_quote_fetch_runs(trigger="fund_nav_sync")) == 1
     assert len(base_db.get_recent_quote_snapshots_sync("019999", limit=10)) == 1
+
+
+def _seed_confirmed_fund_nav(
+    db: AppDatabase,
+    *,
+    items: list[tuple[str, float, str, str]],
+    run_id: str,
+) -> None:
+    db.create_quote_fetch_run(
+        run_id=run_id,
+        started_at="2026-11-25T15:05:00+08:00",
+        trigger="fund_nav_sync",
+        provider="akshare",
+        asset_type="open_end_fund",
+        symbol_count=len(items),
+        status="running",
+        metadata={
+            "requested_symbols": [sym for sym, *_ in items],
+            "instrument_types": ["open_end_fund"] * len(items),
+        },
+    )
+    for symbol, price, ts, nav_date in items:
+        db.persist_quote_ingestion_sync(
+            QuoteIngestionCommand(
+                symbol=symbol,
+                asset_type="open_end_fund",
+                price=price,
+                volume=0.0,
+                quote_timestamp=ts,
+                captured_at="2026-11-25T15:05:05+08:00",
+                quote_source="eastmoney_fund_page",
+                provider_name="akshare",
+                provider_status="live",
+                quote_status="confirmed",
+                captured_reason="fund_nav_sync",
+                nav_date=nav_date,
+                fetch_run_id=run_id,
+            )
+        )
+    finished = db.finish_quote_fetch_run(
+        run_id=run_id,
+        finished_at="2026-11-25T15:05:06+08:00",
+        status="success",
+        success_count=len(items),
+        failure_count=0,
+        metadata={
+            "requested_symbols": [sym for sym, *_ in items],
+            "instrument_types": ["open_end_fund"] * len(items),
+        },
+    )
+    assert finished is not None and finished["status"] == "success"
+
+
+def test_late_sina_estimate_superseded_by_published_nav_for_018125_is_auditable_and_repeatable(
+    monkeypatch, tmp_path
+) -> None:
+    db = AppDatabase(tmp_path / "fund_superseded_018125.db")
+    db.init_sync()
+    _seed_confirmed_fund_nav(
+        db,
+        items=[("018125", 1.8028, "2026-11-25T15:00:00+08:00", "2026-11-25")],
+        run_id="seed-confirmed-018125",
+    )
+
+    class _SinaEstimateSource:
+        def fetch_latest(self, symbol, asset_class):
+            assert str(symbol) == "018125"
+            return {
+                "price": 1.8123,
+                "volume": 0.0,
+                "timestamp": "2026-11-25T15:00:00+08:00",
+                "nav_date": "2026-11-25",
+                "quote_source": "sina_fund_estimate",
+                "provider_name": "sina",
+                "source": "sina",
+                "quote_status": "live",
+                "provider_status": "live",
+            }
+
+    monkeypatch.setattr(
+        "server.services.market.fund_nav.build_sources",
+        lambda **_kwargs: {"akshare": _SinaEstimateSource()},
+    )
+    config = SimpleNamespace(data_source="akshare", tushare_token="")
+    watchlist = [(Symbol("018125"), InstrumentType.OPEN_END_FUND)]
+    now = datetime(2026, 11, 26, 9, 30, 16, tzinfo=timezone(timedelta(hours=8)))
+
+    first = refresh_fund_nav_quotes(
+        config,
+        db,
+        watchlist,
+        {},
+        now=now,
+        ttl_seconds=0,
+    )
+    assert first.refreshed == []
+    assert first.skipped == ["018125"]
+    assert first.failed == {}
+    assert first.quotes == {}
+    assert (
+        first.skipped_details["018125"]["disposition"] == "superseded_by_published_nav"
+    )
+    assert (
+        first.skipped_details["018125"]["authoritative_quote_source"]
+        == "eastmoney_fund_page"
+    )
+    assert first.skipped_details["018125"]["authoritative_price"] == 1.8028
+    assert (
+        first.skipped_details["018125"]["incoming_quote_source"] == "sina_fund_estimate"
+    )
+    assert first.skipped_details["018125"]["incoming_price"] == 1.8123
+
+    latest = db.get_latest_quote_sync("018125", asset_type="open_end_fund")
+    assert latest is not None
+    assert latest["price"] == 1.8028
+    assert latest["quote_source"] == "eastmoney_fund_page"
+
+    run = db.get_quote_fetch_run(str(first.run_id))
+    assert run is not None and run["status"] == "success"
+    assert run["success_count"] == 0 and run["failure_count"] == 0
+    meta = json.loads(run["metadata_json"])
+    assert meta["superseded_symbols"] == ["018125"]
+    assert meta["valuation_snapshot_publication"] == "not_required_superseded"
+    assert (
+        meta["skipped_details"]["018125"]["disposition"]
+        == "superseded_by_published_nav"
+    )
+
+    from server.persistence.valuation_publication_recovery import (
+        unresolved_publications,
+    )
+
+    with sqlite3.connect(db.path) as conn:
+        assert unresolved_publications(conn) == []
+        snapshot_count = conn.execute(
+            "SELECT COUNT(*) FROM quote_snapshots WHERE symbol='018125'"
+        ).fetchone()[0]
+        completed = conn.execute(
+            "SELECT payload_json FROM event_log WHERE event_type='task_run.completed' AND source_ref=?",
+            (first.run_id,),
+        ).fetchone()
+        assert snapshot_count == 1
+        assert completed is not None
+        assert (
+            json.loads(completed[0])["metadata"]["skipped_details"]["018125"][
+                "disposition"
+            ]
+            == "superseded_by_published_nav"
+        )
+
+    # Repeatability: repeated execution without TTL still cleanly skips with zero new facts.
+    second = refresh_fund_nav_quotes(
+        config,
+        db,
+        watchlist,
+        {},
+        now=now + timedelta(minutes=1),
+        ttl_seconds=0,
+    )
+    assert second.refreshed == []
+    assert second.skipped == ["018125"]
+    assert second.failed == {}
+    assert (
+        second.skipped_details["018125"]["disposition"] == "superseded_by_published_nav"
+    )
+    with sqlite3.connect(db.path) as conn:
+        assert unresolved_publications(conn) == []
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM quote_snapshots WHERE symbol='018125'"
+            ).fetchone()[0]
+            == 1
+        )
+
+    # Idempotency with request_id replays identical skipped disposition without refetching.
+    req_first = refresh_fund_nav_quotes(
+        config,
+        db,
+        watchlist,
+        {},
+        now=now + timedelta(minutes=2),
+        ttl_seconds=0,
+        request_id="superseded-req-018125",
+    )
+    req_replay = refresh_fund_nav_quotes(
+        config,
+        db,
+        watchlist,
+        {},
+        now=now + timedelta(minutes=3),
+        ttl_seconds=0,
+        request_id="superseded-req-018125",
+    )
+    assert req_replay.idempotent_replay is True
+    assert req_replay.skipped == req_first.skipped == ["018125"]
+    assert req_replay.skipped_details == req_first.skipped_details
+    assert req_replay.failed == {}
+
+
+def test_three_fund_nov26_all_superseded_and_mixed_batch_dispositions(
+    monkeypatch, tmp_path
+) -> None:
+    db = AppDatabase(tmp_path / "fund_mixed_batch.db")
+    db.init_sync()
+    _seed_confirmed_fund_nav(
+        db,
+        items=[
+            ("018125", 1.8028, "2026-11-25T15:00:00+08:00", "2026-11-25"),
+            ("012710", 0.4090, "2026-11-25T15:00:00+08:00", "2026-11-25"),
+            ("026539", 0.8711, "2026-11-25T15:00:00+08:00", "2026-11-25"),
+        ],
+        run_id="seed-confirmed-batch",
+    )
+    watchlist = [
+        (Symbol("018125"), InstrumentType.OPEN_END_FUND),
+        (Symbol("012710"), InstrumentType.OPEN_END_FUND),
+        (Symbol("026539"), InstrumentType.OPEN_END_FUND),
+    ]
+    config = SimpleNamespace(data_source="akshare", tushare_token="")
+
+    # Part A: exact 2026-11-26 09:30 three-symbol stale estimate pattern (15:00, 14:59, 16:00 on Nov 25).
+    class _Nov26StaleSinaBatch:
+        _payloads = {
+            "018125": ("1.8123", "2026-11-25T15:00:00+08:00"),
+            "012710": ("0.4097", "2026-11-25T14:59:00+08:00"),
+            "026539": ("0.8784", "2026-11-25T16:00:00+08:00"),
+        }
+
+        def fetch_latest(self, symbol, asset_class):
+            price_str, ts = self._payloads[str(symbol)]
+            return {
+                "price": float(price_str),
+                "volume": 0.0,
+                "timestamp": ts,
+                "nav_date": "2026-11-25",
+                "quote_source": "sina_fund_estimate",
+                "provider_name": "sina",
+                "source": "sina",
+                "quote_status": "live",
+                "provider_status": "live",
+            }
+
+    monkeypatch.setattr(
+        "server.services.market.fund_nav.build_sources",
+        lambda **_kwargs: {"akshare": _Nov26StaleSinaBatch()},
+    )
+    stale_batch = refresh_fund_nav_quotes(
+        config,
+        db,
+        watchlist,
+        {},
+        now=datetime(2026, 11, 26, 9, 30, 16, tzinfo=timezone(timedelta(hours=8))),
+        ttl_seconds=0,
+    )
+    assert stale_batch.refreshed == []
+    assert stale_batch.skipped == ["018125", "012710", "026539"]
+    assert stale_batch.failed == {}
+    for sym in ("018125", "012710", "026539"):
+        assert (
+            stale_batch.skipped_details[sym]["disposition"]
+            == "superseded_by_published_nav"
+        )
+        assert (
+            db.get_latest_quote_sync(sym, asset_type="open_end_fund")["quote_source"]
+            == "eastmoney_fund_page"
+        )
+
+    # Part B: 3-symbol mixed batch:
+    # - 018125 receives superseded Nov 25 estimate
+    # - 012710 receives valid Nov 26 intraday estimate
+    # - 026539 receives new Nov 26 confirmed published NAV
+    class _MixedBatchSource:
+        def fetch_latest(self, symbol, asset_class):
+            code = str(symbol)
+            if code == "018125":
+                return {
+                    "price": 1.8123,
+                    "volume": 0.0,
+                    "timestamp": "2026-11-25T15:00:00+08:00",
+                    "nav_date": "2026-11-25",
+                    "quote_source": "sina_fund_estimate",
+                    "provider_name": "sina",
+                    "source": "sina",
+                }
+            if code == "012710":
+                return {
+                    "price": 0.4150,
+                    "volume": 0.0,
+                    "timestamp": "2026-11-26T10:30:00+08:00",
+                    "nav_date": "2026-11-25",
+                    "quote_source": "sina_fund_estimate",
+                    "provider_name": "sina",
+                    "source": "sina",
+                }
+            return {
+                "price": 0.8885,
+                "volume": 0.0,
+                "timestamp": "2026-11-26T15:00:00+08:00",
+                "nav_date": "2026-11-26",
+                "quote_source": "eastmoney_fund_page",
+                "provider_name": "eastmoney",
+                "source": "eastmoney",
+                "quote_status": "confirmed",
+            }
+
+    monkeypatch.setattr(
+        "server.services.market.fund_nav.build_sources",
+        lambda **_kwargs: {"akshare": _MixedBatchSource()},
+    )
+    mixed = refresh_fund_nav_quotes(
+        config,
+        db,
+        watchlist,
+        {},
+        now=datetime(2026, 11, 26, 15, 5, 0, tzinfo=timezone(timedelta(hours=8))),
+        ttl_seconds=0,
+    )
+    assert mixed.refreshed == ["012710", "026539"]
+    assert mixed.skipped == ["018125"]
+    assert mixed.failed == {}
+    assert (
+        mixed.skipped_details["018125"]["disposition"] == "superseded_by_published_nav"
+    )
+
+    q018125 = db.get_latest_quote_sync("018125", asset_type="open_end_fund")
+    q012710 = db.get_latest_quote_sync("012710", asset_type="open_end_fund")
+    q026539 = db.get_latest_quote_sync("026539", asset_type="open_end_fund")
+    assert (
+        q018125["price"] == 1.8028 and q018125["quote_source"] == "eastmoney_fund_page"
+    )
+    assert (
+        q012710["price"] == 0.4150 and q012710["quote_source"] == "sina_fund_estimate"
+    )
+    assert (
+        q026539["price"] == 0.8885 and q026539["quote_source"] == "eastmoney_fund_page"
+    )
+
+    mixed_run = db.get_quote_fetch_run(str(mixed.run_id))
+    assert mixed_run is not None and mixed_run["status"] == "success"
+    assert mixed_run["symbol_count"] == 3 and mixed_run["success_count"] == 2
+    from server.persistence.valuation_publication_recovery import (
+        unresolved_publications,
+    )
+
+    with sqlite3.connect(db.path) as conn:
+        assert unresolved_publications(conn) == []
+
+
+def test_confirmed_fund_nav_conflict_and_unresolvable_source_still_block(
+    monkeypatch, tmp_path
+) -> None:
+    from server.persistence.valuation_publication_recovery import (
+        unresolved_publications,
+    )
+
+    db = AppDatabase(tmp_path / "fund_conflicts.db")
+    db.init_sync()
+    _seed_confirmed_fund_nav(
+        db,
+        items=[("018125", 1.8028, "2026-11-25T15:00:00+08:00", "2026-11-25")],
+        run_id="seed-confirmed-conflict",
+    )
+    config = SimpleNamespace(data_source="akshare", tushare_token="")
+    watchlist = [(Symbol("018125"), InstrumentType.OPEN_END_FUND)]
+    now = datetime(2026, 11, 26, 9, 30, 16, tzinfo=timezone(timedelta(hours=8)))
+
+    # Case 1: Same-level confirmed NAV conflict (tushare_fund_nav differs on same nav_date).
+    class _ConflictingConfirmedSource:
+        def fetch_latest(self, symbol, asset_class):
+            return {
+                "price": 1.8500,
+                "volume": 0.0,
+                "timestamp": "2026-11-25T15:00:00+08:00",
+                "nav_date": "2026-11-25",
+                "quote_source": "tushare_fund_nav",
+                "provider_name": "tushare",
+                "source": "tushare",
+                "quote_status": "confirmed",
+            }
+
+    monkeypatch.setattr(
+        "server.services.market.fund_nav.build_sources",
+        lambda **_kwargs: {"tushare": _ConflictingConfirmedSource()},
+    )
+    confirmed_conflict = refresh_fund_nav_quotes(
+        config, db, watchlist, {}, now=now, ttl_seconds=0
+    )
+    assert confirmed_conflict.refreshed == []
+    assert confirmed_conflict.skipped == []
+    assert "__publication__" in confirmed_conflict.failed
+    assert (
+        db.get_latest_quote_sync("018125", asset_type="open_end_fund")["price"]
+        == 1.8028
+    )
+    with sqlite3.connect(db.path) as conn:
+        assert len(unresolved_publications(conn)) == 1
+
+    # Case 1b: Same nav_date confirmed conflict at a different wall-clock timestamp also blocks.
+    db_diff_ts = AppDatabase(tmp_path / "fund_conflict_same_date.db")
+    db_diff_ts.init_sync()
+    _seed_confirmed_fund_nav(
+        db_diff_ts,
+        items=[("018125", 1.8028, "2026-11-25T15:00:00+08:00", "2026-11-25")],
+        run_id="seed-confirmed-diff-ts",
+    )
+
+    class _DiffTimestampConfirmedConflict:
+        def fetch_latest(self, symbol, asset_class):
+            return {
+                "price": 1.8500,
+                "volume": 0.0,
+                "timestamp": "2026-11-25T15:05:00+08:00",
+                "nav_date": "2026-11-25",
+                "quote_source": "tushare_fund_nav",
+                "provider_name": "tushare",
+                "source": "tushare",
+                "quote_status": "confirmed",
+            }
+
+    monkeypatch.setattr(
+        "server.services.market.fund_nav.build_sources",
+        lambda **_kwargs: {"tushare": _DiffTimestampConfirmedConflict()},
+    )
+    diff_ts_conflict = refresh_fund_nav_quotes(
+        config, db_diff_ts, watchlist, {}, now=now, ttl_seconds=0
+    )
+    assert diff_ts_conflict.refreshed == []
+    assert "__publication__" in diff_ts_conflict.failed
+    assert (
+        db_diff_ts.get_latest_quote_sync("018125", asset_type="open_end_fund")["price"]
+        == 1.8028
+    )
+    with sqlite3.connect(db_diff_ts.path) as conn:
+        assert len(unresolved_publications(conn)) == 1
+
+    # Case 2: Unresolvable / ambiguous source cannot bypass blocking.
+    db2 = AppDatabase(tmp_path / "fund_unresolvable.db")
+    db2.init_sync()
+    _seed_confirmed_fund_nav(
+        db2,
+        items=[("018125", 1.8028, "2026-11-25T15:00:00+08:00", "2026-11-25")],
+        run_id="seed-confirmed-unresolvable",
+    )
+
+    class _UnresolvableSource:
+        def fetch_latest(self, symbol, asset_class):
+            return {
+                "price": 1.8123,
+                "volume": 0.0,
+                "timestamp": "2026-11-25T16:00:00+08:00",
+                "nav_date": "2026-11-25",
+                "quote_source": "unrecognized_fund_feed",
+                "provider_name": "custom",
+                "source": "custom",
+            }
+
+    monkeypatch.setattr(
+        "server.services.market.fund_nav.build_sources",
+        lambda **_kwargs: {"akshare": _UnresolvableSource()},
+    )
+    unresolved = refresh_fund_nav_quotes(
+        config, db2, watchlist, {}, now=now, ttl_seconds=0
+    )
+    assert unresolved.refreshed == []
+    assert unresolved.skipped == []
+    assert "__publication__" in unresolved.failed
+    assert (
+        db2.get_latest_quote_sync("018125", asset_type="open_end_fund")["price"]
+        == 1.8028
+    )
+    with sqlite3.connect(db2.path) as conn:
+        assert len(unresolved_publications(conn)) == 1

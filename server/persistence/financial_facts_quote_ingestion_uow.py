@@ -10,6 +10,10 @@ from pathlib import Path
 from typing import Any
 
 from core.types import InstrumentKey
+from data.market_data import (
+    PUBLISHED_FUND_NAV_QUOTE_SOURCES,
+    is_fund_estimate_quote_source,
+)
 from server.contracts.quote_ingestion import (
     PUBLISHED_QUOTE_RUN_STATUSES,
     DailyCloseEvidenceConflict,
@@ -35,12 +39,14 @@ from server.persistence.financial_facts_valuation import (
 from server.persistence.quote_current_materialization import (
     advance_quote_snapshot_checkpoint_on_connection,
     published_nav_changed_since_checkpoint,
+    published_nav_rows_on_connection,
 )
 from server.persistence.valuation_publication_recovery import (
     assert_quote_publication_not_started,
     begin_quote_publication,
     complete_quote_publication,
     quote_run_scope,
+    verified_superseded_quote_scope,
 )
 from server.persistence.valuation_transaction import ValuationTransactionWriter
 
@@ -112,10 +118,7 @@ class QuoteIngestionUnitOfWorkMixin:
             conn.execute("SAVEPOINT quote_candidate")
             try:
                 staged = _load_staged_quotes(conn, run_id)
-                if len(staged) != success_count or len(staged) != run["symbol_count"]:
-                    raise RuntimeError(
-                        "staged quote count does not match successful quote count"
-                    )
+                metadata_input = _metadata_dict(metadata)
                 expected = quote_run_scope(conn, run_id, require_exact=True)
                 actual = {
                     (key.instrument_type.value, key.symbol)
@@ -124,7 +127,25 @@ class QuoteIngestionUnitOfWorkMixin:
                         InstrumentKey.from_values(command.symbol, command.asset_type)
                     ]
                 }
-                if expected is None or actual != {tuple(key) for key in expected}:
+                superseded_scope = (
+                    verified_superseded_quote_scope(
+                        metadata_input,
+                        scope=expected,
+                        staged_scope=actual,
+                    )
+                    if str(run["trigger"] or "") == "fund_nav_sync"
+                    else set()
+                )
+                if (
+                    len(staged) != success_count
+                    or len(staged) + len(superseded_scope) != run["symbol_count"]
+                ):
+                    raise RuntimeError(
+                        "staged quote count does not match successful quote count"
+                    )
+                if expected is None or (actual | superseded_scope) != {
+                    tuple(key) for key in expected
+                }:
                     raise ValueError("quote publication requested scope mismatch")
                 close_binding = _daily_close_batch_binding(
                     conn, staged, run_id=run_id, scope=expected
@@ -138,7 +159,7 @@ class QuoteIngestionUnitOfWorkMixin:
                     conn,
                     quote_fetch_run_id=run_id,
                 )
-                metadata_value = _metadata_dict(metadata)
+                metadata_value = dict(metadata_input)
                 metadata_value.update(
                     {
                         "quote_publication_completion_fingerprint": quote_completion_fingerprint(
@@ -303,6 +324,39 @@ def _materialize_quote(
     *,
     materialized_at: str,
 ) -> dict[str, Any]:
+    if command.asset_type == "open_end_fund" and command.fetch_run_id is not None:
+        normalized_source = str(command.quote_source or "").strip().lower()
+        prior_published_navs = [
+            dict(row) for row in published_nav_rows_on_connection(conn, command.symbol)
+        ]
+        if normalized_source in {"", "unknown", "none", "null"} or (
+            normalized_source not in PUBLISHED_FUND_NAV_QUOTE_SOURCES
+            and not is_fund_estimate_quote_source(normalized_source)
+            and prior_published_navs
+        ):
+            raise ValueError("fund quote source authority unresolved")
+        for idx, left in enumerate(prior_published_navs):
+            left_date = str(left.get("nav_date") or "").strip()
+            for right in prior_published_navs[idx + 1 :]:
+                if left_date and left_date == str(right.get("nav_date") or "").strip():
+                    if set(quote_authority_conflict_fields(left, right)) & {
+                        "price",
+                        "nav_date",
+                    }:
+                        raise ValueError("existing published fund NAV facts conflict")
+        if normalized_source in PUBLISHED_FUND_NAV_QUOTE_SOURCES:
+            effective_nav_date = str(command.nav_date or "").strip()
+            candidate_dict = command.to_dict()
+            for prior in prior_published_navs:
+                prior_date = str(prior.get("nav_date") or "").strip()
+                if effective_nav_date and prior_date == effective_nav_date:
+                    if set(quote_authority_conflict_fields(prior, candidate_dict)) & {
+                        "price",
+                        "nav_date",
+                    }:
+                        raise ValueError(
+                            "confirmed fund NAV authority conflict for nav_date: price"
+                        )
     existing_snapshot = None
     inserted_snapshot_id: int | None = None
     if command.fetch_run_id:

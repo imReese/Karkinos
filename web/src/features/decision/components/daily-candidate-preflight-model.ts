@@ -2,6 +2,7 @@ export const gateLabels: Record<string, { zh: string; en: string }> = {
   automation_policy: { zh: '安全策略', en: 'Safe policy' },
   decision_plan: { zh: '决策与计划', en: 'Decision and plan' },
   account_truth: { zh: '账户事实', en: 'Account Truth' },
+  portfolio_valuation: { zh: '账户估值', en: 'Portfolio valuation' },
   market_data: { zh: '冻结行情', en: 'Frozen market' },
   strategy: { zh: '晋级策略', en: 'Promoted strategy' },
   reviewed_fees: { zh: '真实费用', en: 'Reviewed fees' },
@@ -18,6 +19,10 @@ export const actionLabels: Record<string, { zh: string; en: string }> = {
   complete_current_account_truth_evidence_review: {
     zh: '完成当前 Account Truth 证据与范围复核',
     en: 'Complete the current Account Truth evidence and scope review',
+  },
+  restore_complete_portfolio_valuation_snapshot: {
+    zh: '恢复完整账户估值快照与未决事故',
+    en: 'Restore complete portfolio valuation and resolve pending incident',
   },
   review_account_specific_fee_schedule: {
     zh: '复核账户专属费用版本',
@@ -102,6 +107,10 @@ export const evidenceLabels: Record<string, { zh: string; en: string }> = {
   current_ledger_cutoff_and_reconciliation_evidence: {
     zh: '当前账本截止点与 Account Truth 对账证据',
     en: 'Current ledger cutoff and Account Truth reconciliation evidence',
+  },
+  persisted_aggregate_portfolio_valuation_snapshot: {
+    zh: '无未决发布事故且持久化的完整组合估值快照',
+    en: 'Persisted complete portfolio valuation snapshot without unresolved publication incidents',
   },
   account_specific_commission_minimum_stamp_tax_transfer_fee_and_other_fee_terms:
     {
@@ -193,6 +202,14 @@ export const completionLabels: Record<string, { zh: string; en: string }> = {
   account_truth_covers_latest_ledger_cutoff: {
     zh: 'Account Truth 覆盖最新持久化账本截止点',
     en: 'Account Truth covers the latest persisted ledger cutoff',
+  },
+  aggregate_portfolio_valuation_status_is_complete: {
+    zh: '组合估值状态完整且无相关未解决估值发布事故',
+    en: 'Aggregate portfolio valuation is complete with zero relevant unresolved publication incidents',
+  },
+  every_held_position_has_authoritative_valuation_evidence: {
+    zh: '每项持仓及关注标的范围均具备可信权威估值证据',
+    en: 'Every held and scoped instrument has authoritative valuation evidence',
   },
   cash_position_fee_and_cost_basis_pass_with_zero_unresolved_mismatches: {
     zh: '现金、持仓、费用与成本基础全部通过，未解决差异为 0',
@@ -293,6 +310,7 @@ export const completionLabels: Record<string, { zh: string; en: string }> = {
 };
 export const gateReviewPaths: Record<string, string> = {
   account_truth: '/account-truth',
+  portfolio_valuation: '/operations',
   reviewed_fees: '/account-truth',
   strategy: '/ai-research',
   execution_closure: '/operations',

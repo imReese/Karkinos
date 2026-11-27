@@ -337,6 +337,14 @@ export type DailyCandidateFinancialPreflight = {
   financial_blockers: string[];
   operational_blockers: string[];
   no_action_reasons: string[];
+  valuation_recovery_incidents?: Array<{
+    incident_ref: string;
+    quote_fetch_run_id?: string | null;
+    status?: string | null;
+    reason?: string | null;
+    failed_at?: string | null;
+    scope?: Array<[string, string]> | null;
+  }>;
   next_safe_action: string;
   operator_checklist: Array<{
     step: number;

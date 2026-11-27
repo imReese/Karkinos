@@ -161,6 +161,18 @@ class FinancialFactDatabaseFacade(DatabaseRepositoryAccess):
         """List the bounded persisted frontier used by canonical valuation."""
         return self._financial_facts.list_quote_selection_candidates_sync()
 
+    def list_fund_quote_precedence_facts_sync(
+        self,
+        symbol: str,
+        *,
+        quote_timestamp: str | None = None,
+    ) -> dict[str, Any]:
+        """Read persisted published NAV and same-instant facts for one open-end fund."""
+        return self._financial_facts.list_fund_quote_precedence_facts_sync(
+            symbol,
+            quote_timestamp=quote_timestamp,
+        )
+
     def get_recent_quote_snapshots_sync(
         self,
         symbol: str,

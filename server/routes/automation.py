@@ -80,6 +80,9 @@ def create_router() -> APIRouter:
             build_latest_account_truth_promotion_evidence,
         )
         from server.dependencies import get_app_state
+        from server.persistence.valuation_publication_recovery import (
+            inspect_scoped_valuation_publication_recovery,
+        )
         from server.services.account.reviewed_fee_schedule import (
             build_reviewed_fee_schedule_review_status,
         )
@@ -147,6 +150,30 @@ def create_router() -> APIRouter:
                 state,
                 as_of_date=run_date or None,
             )
+            candidate_instruments = [
+                (
+                    str(item.get("asset_class") or "stock"),
+                    str(item.get("symbol") or ""),
+                )
+                for item in [
+                    *(decision_payload.get("candidates") or []),
+                    *(trading_plan.get("order_intents") or []),
+                    *(getattr(getattr(state, "config", None), "watchlist", None) or []),
+                ]
+                if isinstance(item, dict) and str(item.get("symbol") or "").strip()
+            ]
+            portfolio_valuation = decision_payload.get("summary", {}).get("portfolio")
+            valuation_recovery = inspect_scoped_valuation_publication_recovery(
+                state.db,
+                extra_instruments=candidate_instruments,
+                portfolio_valuation=(
+                    portfolio_valuation
+                    if isinstance(portfolio_valuation, dict)
+                    else None
+                ),
+                include_known_watchlist=True,
+                include_pending_actions=True,
+            )
             summary["daily_candidate_financial_preflight"] = (
                 project_daily_candidate_financial_preflight(
                     decision_payload=decision_payload,
@@ -155,6 +182,7 @@ def create_router() -> APIRouter:
                     execution_closure=build_daily_candidate_execution_closure(state.db),
                     automation_status=summary["automation_status"],
                     runtime_status=summary["daily_candidate_runtime"],
+                    valuation_recovery=valuation_recovery,
                 )
             )
         except Exception:  # noqa: BLE001 - every read-source failure is NO-ACTION

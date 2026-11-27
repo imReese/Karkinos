@@ -257,6 +257,7 @@ def project_daily_candidate_financial_preflight(
     execution_closure: dict[str, Any],
     automation_status: dict[str, Any],
     runtime_status: dict[str, Any],
+    valuation_recovery: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Project whether the current facts may enter risk plus paper/shadow.
 
@@ -299,15 +300,21 @@ def project_daily_candidate_financial_preflight(
     portfolio = object_dict(
         object_dict(decision_payload.get("summary")).get("portfolio")
     )
+    valuation_blockers: list[str] = []
+    if not is_asset_class_valuation_healthy(portfolio, "stock"):
+        valuation_blockers.append("valuation_snapshot_not_complete")
+    recovery_map = object_dict(valuation_recovery)
+    valuation_blockers.extend(
+        str(item) for item in recovery_map.get("blockers") or [] if str(item)
+    )
+    valuation_blockers = list(dict.fromkeys(valuation_blockers))
+    valuation_recovery_incidents = [
+        dict(item)
+        for item in recovery_map.get("incidents") or []
+        if isinstance(item, dict)
+    ]
     financial_gates.append(
-        build_preflight_gate(
-            "portfolio_valuation",
-            (
-                []
-                if is_asset_class_valuation_healthy(portfolio, "stock")
-                else ["valuation_snapshot_not_complete"]
-            ),
-        )
+        build_preflight_gate("portfolio_valuation", valuation_blockers)
     )
     financial_gates.append(
         build_preflight_gate(
@@ -409,6 +416,7 @@ def project_daily_candidate_financial_preflight(
             else None
         ),
         "execution_closure_fingerprint": execution_closure.get("evidence_fingerprint"),
+        "valuation_recovery_incidents": valuation_recovery_incidents,
         "financial_readiness_scope": "risk_and_paper_shadow_attempt_only",
         "risk_evaluation_performed": False,
         "paper_shadow_run_performed": False,
@@ -467,6 +475,7 @@ def unavailable_daily_candidate_financial_preflight(
         "strategy_binding_fingerprints": [],
         "reviewed_fee_schedule_fingerprint": None,
         "execution_closure_fingerprint": None,
+        "valuation_recovery_incidents": [],
         "financial_readiness_scope": "risk_and_paper_shadow_attempt_only",
         "risk_evaluation_performed": False,
         "paper_shadow_run_performed": False,

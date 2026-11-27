@@ -587,6 +587,63 @@ class QuoteFactsRepositoryMixin:
             conn.row_factory = sqlite3.Row
             return list_quote_selection_candidates_on_connection(conn)
 
+    def list_fund_quote_precedence_facts_sync(
+        self,
+        symbol: str,
+        *,
+        quote_timestamp: str | None = None,
+    ) -> dict[str, Any]:
+        """Read persisted published NAV and same-instant facts for one open-end fund."""
+
+        instant_key = (
+            quote_instant_storage_key(quote_timestamp) if quote_timestamp else None
+        )
+        with connect_sqlite(self._path, readonly=True) as conn:
+            conn.row_factory = sqlite3.Row
+            latest_row = conn.execute(
+                """
+                SELECT * FROM latest_quotes
+                WHERE symbol = ? AND asset_type IN ('open_end_fund', 'fund')
+                ORDER BY quote_timestamp DESC, updated_at DESC, id DESC
+                LIMIT 1
+                """,
+                (symbol,),
+            ).fetchone()
+            published_rows = [
+                _quote_snapshot_row(row)
+                for row in published_nav_rows_on_connection(conn, symbol)
+            ]
+            same_instant_rows = (
+                [
+                    _quote_snapshot_row(row)
+                    for row in conn.execute(
+                        """
+                        SELECT * FROM quote_snapshots
+                        WHERE symbol = ?
+                          AND instrument_type IN ('open_end_fund', 'fund')
+                          AND quote_instant_utc = ?
+                        ORDER BY id ASC
+                        """,
+                        (symbol, instant_key),
+                    ).fetchall()
+                ]
+                if instant_key is not None
+                else []
+            )
+            return {
+                "latest_quote": (
+                    {
+                        **dict(latest_row),
+                        "timestamp": latest_row["quote_timestamp"],
+                        "instrument_type": "open_end_fund",
+                    }
+                    if latest_row is not None
+                    else None
+                ),
+                "published_nav_rows": published_rows,
+                "same_instant_rows": same_instant_rows,
+            }
+
     def list_quote_snapshots_sync(
         self,
         limit: int = 500,

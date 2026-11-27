@@ -758,3 +758,224 @@ def test_automation_cockpit_route_returns_read_only_summary(
     assert current_reviews["broker_submission_enabled"] is False
     assert current_reviews["broker_cancel_enabled"] is False
     assert current_reviews["authorizes_execution"] is False
+
+
+def test_cockpit_financial_preflight_tracks_scoped_valuation_recovery_incidents(
+    tmp_path, monkeypatch
+) -> None:
+    from datetime import datetime, timezone
+
+    from server.contracts.quote_ingestion import QuoteIngestionCommand
+    from server.persistence.valuation_publication_recovery import (
+        UNPUBLISHED_RECOVERY_CONFIRMATION,
+        discard_proven_unpublished_quote_refreshes,
+        unresolved_publications,
+    )
+    from server.persistence.valuation_recovery_preview import (
+        preview_unpublished_quote_recovery,
+    )
+
+    db = AppDatabase(tmp_path / "cockpit_recovery.db")
+    db.init_sync()
+    clock = [datetime(2026, 7, 16, 7, 0, 5, tzinfo=timezone.utc)]
+    db._financial_facts._now = lambda tz=None: clock[0]
+    monkeypatch.setattr(
+        "server.persistence.event_log.datetime",
+        SimpleNamespace(now=lambda *_args, **_kwargs: clock[0]),
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="cash_deposit",
+        timestamp="2026-07-16T09:00:00+08:00",
+        amount=10000.0,
+        created_at="2026-07-16T09:00:01+08:00",
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        symbol="018125",
+        direction="buy",
+        quantity=1000.0,
+        price=1.80,
+        amount=1800.0,
+        gross_amount=1800.0,
+        net_cash_impact=-1800.0,
+        asset_class="open_end_fund",
+        timestamp="2026-07-16T10:00:00+08:00",
+        created_at="2026-07-16T10:00:01+08:00",
+    )
+    db.create_quote_fetch_run(
+        run_id="cockpit-seed-nav",
+        started_at="2026-07-16T15:00:00+08:00",
+        trigger="fund_nav_sync",
+        provider="akshare",
+        asset_type="open_end_fund",
+        symbol_count=1,
+        status="running",
+        metadata={
+            "requested_symbols": ["018125"],
+            "instrument_types": ["open_end_fund"],
+        },
+    )
+    db.persist_quote_ingestion_sync(
+        QuoteIngestionCommand(
+            symbol="018125",
+            asset_type="open_end_fund",
+            price=1.8028,
+            volume=0.0,
+            quote_timestamp="2026-07-16T15:00:00+08:00",
+            captured_at="2026-07-16T15:00:05+08:00",
+            quote_source="eastmoney_fund_page",
+            provider_name="akshare",
+            quote_status="confirmed",
+            nav_date="2026-07-16",
+            fetch_run_id="cockpit-seed-nav",
+        )
+    )
+    db.finish_quote_fetch_run(
+        run_id="cockpit-seed-nav",
+        finished_at="2026-07-16T15:00:06+08:00",
+        status="success",
+        success_count=1,
+        failure_count=0,
+        metadata={
+            "requested_symbols": ["018125"],
+            "instrument_types": ["open_end_fund"],
+        },
+    )
+
+    # Seed an unresolved relevant incident on 018125.
+    db.create_quote_fetch_run(
+        run_id="cockpit-incident-018125",
+        started_at="2026-07-17T09:30:00+08:00",
+        trigger="fund_nav_sync",
+        provider="akshare",
+        asset_type="open_end_fund",
+        symbol_count=1,
+        status="running",
+        metadata={
+            "requested_symbols": ["018125"],
+            "instrument_types": ["open_end_fund"],
+        },
+    )
+    db.persist_quote_ingestion_sync(
+        QuoteIngestionCommand(
+            symbol="018125",
+            asset_type="open_end_fund",
+            price=1.8123,
+            volume=0.0,
+            quote_timestamp="2026-07-16T15:00:00+08:00",
+            captured_at="2026-07-17T09:30:01+08:00",
+            quote_source="sina_fund_estimate",
+            provider_name="sina",
+            nav_date="2026-07-16",
+            fetch_run_id="cockpit-incident-018125",
+        )
+    )
+    failed = db.finish_quote_fetch_run(
+        run_id="cockpit-incident-018125",
+        finished_at="2026-07-17T09:30:02+08:00",
+        status="success",
+        success_count=1,
+        failure_count=0,
+        metadata={
+            "requested_symbols": ["018125"],
+            "instrument_types": ["open_end_fund"],
+        },
+    )
+    assert failed is not None and failed["status"] == "failed"
+    with sqlite3.connect(db.path) as conn:
+        incident_ref = unresolved_publications(conn)[0]["incident_ref"]
+
+    async def read_current_plan(_state):
+        return {
+            "decision_date": "2026-07-17",
+            "summary": {
+                "portfolio": {
+                    "valuation_status": "complete",
+                    "stock_valuation_status": "complete",
+                    "valuation_lanes": [
+                        {"asset_class": "stock", "status": "not_applicable"},
+                        {"asset_class": "open_end_fund", "status": "complete"},
+                    ],
+                    "quotes": [{"symbol": "018125", "asset_type": "open_end_fund"}],
+                }
+            },
+            "candidates": [],
+        }, {"plan_date": "2026-07-17"}
+
+    monkeypatch.setattr(
+        "server.services.decision.operations_projection.current_decision_and_trading_plan",
+        read_current_plan,
+    )
+    monkeypatch.setattr(
+        "server.services.account.reviewed_fee_schedule.build_reviewed_fee_schedule_review_status",
+        lambda *_args, **_kwargs: {"status": "missing"},
+    )
+    monkeypatch.setattr(
+        "server.services.strategy_scan.daily_candidate_execution_closure.build_daily_candidate_execution_closure",
+        lambda _db: {"status": "not_required"},
+    )
+    client = _client_for_db(monkeypatch, db)
+
+    # 1. Relevant unresolved incident surfaces in Cockpit portfolio_valuation gate + incident_ref.
+    res1 = client.get("/api/automation/cockpit")
+    assert res1.status_code == 200
+    pf1 = res1.json()["daily_candidate_financial_preflight"]
+    gates1 = {item["gate"]: item for item in pf1["gates"]}
+    assert gates1["portfolio_valuation"]["status"] == "blocked"
+    assert gates1["portfolio_valuation"]["blockers"] == [
+        "valuation_publication_recovery_required"
+    ]
+    assert "valuation_publication_recovery_required" in pf1["financial_blockers"]
+    assert pf1["valuation_recovery_incidents"][0]["incident_ref"] == incident_ref
+
+    # 2. Recovering clears the Cockpit portfolio_valuation recovery blocker.
+    preview = preview_unpublished_quote_recovery(db.path, incident_refs=[incident_ref])
+    assert preview["status"] == "ready"
+    discard_proven_unpublished_quote_refreshes(
+        db.path,
+        incident_refs=[incident_ref],
+        expected_proof_fingerprint=str(preview["proof_fingerprint"]),
+        actor="operator:cockpit_test",
+        confirmation=UNPUBLISHED_RECOVERY_CONFIRMATION,
+        now=datetime(2026, 7, 17, 1, 35, tzinfo=timezone.utc),
+    )
+    res2 = client.get("/api/automation/cockpit")
+    assert res2.status_code == 200
+    pf2 = res2.json()["daily_candidate_financial_preflight"]
+    gates2 = {item["gate"]: item for item in pf2["gates"]}
+    assert gates2["portfolio_valuation"]["status"] == "pass"
+    assert gates2["portfolio_valuation"]["blockers"] == []
+    assert pf2["valuation_recovery_incidents"] == []
+
+    # 3. Unrelated-symbol incident does not falsely block Cockpit portfolio_valuation.
+    db.create_quote_fetch_run(
+        run_id="cockpit-unrelated-600999",
+        started_at="2026-07-17T09:35:00+08:00",
+        trigger="manual",
+        provider="tencent",
+        asset_type="stock",
+        symbol_count=1,
+        status="running",
+        metadata={
+            "requested_symbols": ["600999"],
+            "instrument_types": ["stock"],
+        },
+    )
+    db.finish_quote_fetch_run(
+        run_id="cockpit-unrelated-600999",
+        finished_at="2026-07-17T09:35:01+08:00",
+        status="failed",
+        success_count=0,
+        failure_count=1,
+        error_message="timeout",
+        metadata={
+            "requested_symbols": ["600999"],
+            "instrument_types": ["stock"],
+        },
+    )
+    res3 = client.get("/api/automation/cockpit")
+    assert res3.status_code == 200
+    pf3 = res3.json()["daily_candidate_financial_preflight"]
+    gates3 = {item["gate"]: item for item in pf3["gates"]}
+    assert gates3["portfolio_valuation"]["status"] == "pass"
+    assert pf3["valuation_recovery_incidents"] == []

@@ -6312,3 +6312,93 @@ test('directs to account-truth workspace when account-truth gate is blocked', as
   expect(gateMatrix.textContent).toContain('账户事实');
   expect(gateMatrix.textContent).toContain('账户事实门禁未通过: 降级');
 });
+
+test('surfaces valuation recovery blocker and incident ref in cockpit preflight', async () => {
+  const incidentRef = `sha256:${'e'.repeat(64)}`;
+  renderDecisionCockpit({
+    automationCockpitResponse: {
+      schema_version: 'karkinos.automation_cockpit.v4',
+      broker_submission_enabled: false,
+      automation_status: {
+        schema_version: 'karkinos.automation_status.v1',
+        default_execution_mode: 'paper_shadow',
+        broker_submission_enabled: false,
+        manual_confirmation_required: true,
+        kill_switch_enabled: false,
+      },
+      gateways: [],
+      open_alert_count: 0,
+      open_alerts: [],
+      recent_runs: [],
+      promotion_states: [],
+      execution_reconciliation_open_items: [],
+      limitations: [],
+      daily_candidate_financial_preflight: {
+        schema_version: 'karkinos.daily_candidate_financial_preflight.v1',
+        status: 'no_action',
+        run_date: '2026-11-27',
+        financial_gate_status: 'blocked',
+        operational_gate_status: 'pass',
+        eligible_candidate_count: 0,
+        eligible_to_start_manual_attempt: false,
+        eligible_for_background_attempt: false,
+        eligible_to_create_manual_ticket: false,
+        gates: [
+          { gate: 'account_truth', status: 'pass', blockers: [] },
+          {
+            gate: 'portfolio_valuation',
+            status: 'blocked',
+            blockers: ['valuation_publication_recovery_required'],
+          },
+          { gate: 'market_data', status: 'pass', blockers: [] },
+          { gate: 'strategy', status: 'pass', blockers: [] },
+          { gate: 'reviewed_fees', status: 'pass', blockers: [] },
+          { gate: 'execution_closure', status: 'pass', blockers: [] },
+        ],
+        financial_blockers: ['valuation_publication_recovery_required'],
+        operational_blockers: [],
+        no_action_reasons: ['valuation_publication_recovery_required'],
+        next_safe_action: 'restore_complete_portfolio_valuation_snapshot',
+        operator_checklist: [],
+        preflight_fingerprint: '9'.repeat(64),
+        financial_readiness_scope: 'risk_and_paper_shadow_attempt_only',
+        risk_evaluation_performed: false,
+        paper_shadow_run_performed: false,
+        manual_ticket_created: false,
+        persisted_facts_only: true,
+        provider_contact_performed: false,
+        database_writes_performed: false,
+        manual_confirmation_required: true,
+        does_not_submit_broker_order: true,
+        does_not_mutate_oms: true,
+        does_not_mutate_production_ledger: true,
+        broker_submission_enabled: false,
+        authorizes_execution: false,
+        changes_capital_authority: false,
+        profitability_claim: 'not_established',
+        limitations: [],
+        valuation_recovery_incidents: [
+          {
+            incident_ref: incidentRef,
+            quote_fetch_run_id: 'fund_nav_sync:2026-11-26T09:30:16',
+            status: 'failed',
+            reason: 'quote_batch_publication_failed',
+            failed_at: '2026-11-26T09:30:17',
+            scope: [['open_end_fund', '018125']],
+          },
+        ],
+      },
+    },
+    locale: 'zh',
+  });
+
+  const preflight = await screen.findByTestId(
+    'daily-candidate-financial-preflight',
+  );
+  expect(preflight.textContent).toContain('账户估值');
+  expect(preflight.textContent).toContain('存在未处理的估值发布异常事故');
+  const incidentNode = await screen.findByTestId(
+    'daily-candidate-valuation-recovery-incidents',
+  );
+  expect(incidentNode.textContent).toContain(incidentRef);
+});

@@ -171,11 +171,20 @@ async def send_daily_candidate_preparation_notification(
         lines = "\n".join(f"- {item}" for item in blockers[:8])
         if len(blockers) > 8:
             lines += f"\n- 其余 {len(blockers) - 8} 项请在 Web 中复核"
+        incident_refs = [
+            str(item.get("incident_ref") or "")
+            for item in preparation.get("valuation_recovery_incidents") or []
+            if isinstance(item, dict) and str(item.get("incident_ref") or "")
+        ]
+        incident_line = (
+            f"事故引用: {', '.join(incident_refs[:4])}\n" if incident_refs else ""
+        )
         title = f"Karkinos 盘前准备阻断: {run_date}"
         message = (
             "盘前持久化证据检查仍有阻断项。\n"
             f"第一阻断门: {preparation.get('first_blocking_gate') or 'unknown'}\n"
             f"下一安全动作: {preparation.get('first_safe_action') or 'review'}\n"
+            f"{incident_line}"
             f"阻断项:\n{lines}\n"
             "本检查不会联系行情或券商、不会创建订单，也不会占用今日正式尝试。"
         )
@@ -244,6 +253,11 @@ def record_daily_candidate_preparation_alert(
         "blockers": blockers[:100],
         "blocker_count": len(blockers),
         "blockers_truncated": len(blockers) > 100,
+        "valuation_recovery_incidents": [
+            dict(item)
+            for item in value.get("valuation_recovery_incidents") or []
+            if isinstance(item, dict)
+        ],
         "error_type": error_type,
         "requires_manual_review": not ready,
         "changes_attempt_eligibility": False,

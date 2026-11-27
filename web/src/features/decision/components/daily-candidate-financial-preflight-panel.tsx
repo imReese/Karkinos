@@ -18,6 +18,9 @@ export function DailyCandidateFinancialPreflightPanel({
   const { locale } = usePreferences();
   const ready = preflight.eligible_to_start_manual_attempt;
   const reasons = preflight.no_action_reasons.slice(0, 8);
+  const valuationIncidents = (
+    preflight.valuation_recovery_incidents ?? []
+  ).slice(0, 4);
   const operatorChecklist = (preflight.operator_checklist ?? []).slice(0, 8);
 
   return (
@@ -89,6 +92,16 @@ export function DailyCandidateFinancialPreflightPanel({
               ? ` · 其余 ${preflight.no_action_reasons.length - reasons.length} 项`
               : ` · ${preflight.no_action_reasons.length - reasons.length} more`
             : ''}
+        </div>
+      ) : null}
+
+      {valuationIncidents.length ? (
+        <div
+          data-testid="daily-candidate-valuation-recovery-incidents"
+          className="mt-2 break-all text-xs leading-5 text-[var(--app-warning)]"
+        >
+          {locale === 'zh' ? '估值事故引用：' : 'Valuation incident ref(s): '}
+          {valuationIncidents.map((item) => item.incident_ref).join(' · ')}
         </div>
       ) : null}
 

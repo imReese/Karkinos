@@ -104,6 +104,7 @@ def _preparation_result(*, blocked: bool = True) -> dict[str, object]:
         for gate in (
             "automation_policy",
             "account_truth",
+            "portfolio_valuation",
             "reviewed_fees",
             "strategy",
             "execution_closure",
@@ -123,6 +124,7 @@ def _preparation_result(*, blocked: bool = True) -> dict[str, object]:
             if blocked
             else "persist_current_market_quotes_and_build_reviewed_window_plan"
         ),
+        "valuation_recovery_incidents": [],
         "deferred_window_time_gates": [
             "market_data",
             "decision_plan",
@@ -1242,3 +1244,353 @@ def test_background_unhandled_failure_finishes_attempt_and_opens_alert(
     assert payload["error_type"] == "RuntimeError"
     assert payload["broker_submission_enabled"] is False
     assert payload["authorizes_execution"] is False
+
+
+def test_preparation_blocks_relevant_valuation_incident_passes_after_recovery_and_ignores_unrelated(
+    tmp_path, monkeypatch
+) -> None:
+    import sqlite3
+
+    from server.contracts.quote_ingestion import QuoteIngestionCommand
+    from server.persistence.valuation_publication_recovery import (
+        UNPUBLISHED_RECOVERY_CONFIRMATION,
+        discard_proven_unpublished_quote_refreshes,
+        unresolved_publications,
+    )
+    from server.persistence.valuation_recovery_preview import (
+        preview_unpublished_quote_recovery,
+    )
+    from server.services.decision.daily_decision_evidence_orchestration import (
+        record_daily_candidate_preparation_alert,
+        send_daily_candidate_preparation_notification,
+    )
+
+    db = AppDatabase(tmp_path / "prep_recovery.db")
+    db.init_sync()
+    _seed_calendar(db)
+    clock = [datetime(2026, 6, 30, 7, 0, 5, tzinfo=timezone.utc)]
+    db._financial_facts._now = lambda tz=None: clock[0]
+    monkeypatch.setattr(
+        "server.persistence.event_log.datetime",
+        SimpleNamespace(now=lambda *_args, **_kwargs: clock[0]),
+    )
+    db.save_portfolio_snapshot_sync(
+        cash=10000.0,
+        total_equity=15000.0,
+        positions_json=json.dumps([]),
+        allocation_json=json.dumps({}),
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="cash_deposit",
+        timestamp="2026-06-30T09:00:00+08:00",
+        amount=10000.0,
+        created_at="2026-06-30T09:00:01+08:00",
+    )
+    db.insert_ledger_entry_sync(
+        entry_type="trade_buy",
+        symbol="018125",
+        direction="buy",
+        quantity=1000.0,
+        price=1.80,
+        amount=1800.0,
+        gross_amount=1800.0,
+        net_cash_impact=-1800.0,
+        asset_class="open_end_fund",
+        timestamp="2026-06-30T10:00:00+08:00",
+        created_at="2026-06-30T10:00:01+08:00",
+    )
+    db.create_quote_fetch_run(
+        run_id="seed-nav-018125",
+        started_at="2026-06-30T15:00:00+08:00",
+        trigger="fund_nav_sync",
+        provider="akshare",
+        asset_type="open_end_fund",
+        symbol_count=1,
+        status="running",
+        metadata={
+            "requested_symbols": ["018125"],
+            "instrument_types": ["open_end_fund"],
+        },
+    )
+    db.persist_quote_ingestion_sync(
+        QuoteIngestionCommand(
+            symbol="018125",
+            asset_type="open_end_fund",
+            price=1.8028,
+            volume=0.0,
+            quote_timestamp="2026-06-30T15:00:00+08:00",
+            captured_at="2026-06-30T15:00:05+08:00",
+            quote_source="eastmoney_fund_page",
+            provider_name="akshare",
+            quote_status="confirmed",
+            nav_date="2026-06-30",
+            fetch_run_id="seed-nav-018125",
+        )
+    )
+    db.finish_quote_fetch_run(
+        run_id="seed-nav-018125",
+        finished_at="2026-06-30T15:00:06+08:00",
+        status="success",
+        success_count=1,
+        failure_count=0,
+        metadata={
+            "requested_symbols": ["018125"],
+            "instrument_types": ["open_end_fund"],
+        },
+    )
+
+    fee_fp = "b" * 64
+    source_fp = "c" * 64
+    monkeypatch.setattr(
+        "server.account_truth_gate.build_latest_account_truth_promotion_evidence",
+        lambda _state: {
+            "schema_version": "karkinos.account_truth.promotion_evidence.v1",
+            "status": "clear",
+            "gate_status": "pass",
+            "data_freshness_status": "fresh",
+            "reconciliation_status": "pass",
+            "captured_at": "2026-07-01T08:30:00+08:00",
+            "source_fingerprint": source_fp,
+            "does_not_mutate_production_ledger": True,
+            "does_not_issue_execution_authority": True,
+            "broker_submission_enabled": False,
+        },
+    )
+    monkeypatch.setattr(
+        "server.services.account.reviewed_fee_schedule.build_reviewed_fee_schedule_review_status",
+        lambda *_args, **_kwargs: {
+            "status": "active",
+            "persisted_facts_only": True,
+            "provider_contacted": False,
+            "database_writes_performed": False,
+            "authorizes_execution": False,
+            "changes_capital_authority": False,
+            "review": {"review_fingerprint": fee_fp},
+            "blockers": [],
+        },
+    )
+    db.upsert_strategy_promotion_state_sync(
+        strategy_id="dual_ma",
+        stage="paper_shadow",
+        gate_status="paper_shadow_enabled",
+        live_like_enabled=False,
+        missing_requirements=[],
+        backtest_result_id=1,
+        payload={},
+    )
+    monkeypatch.setattr(
+        "server.services.research.strategy_promotion_pipeline.resolve_strategy_order_generation_gate",
+        lambda _db, strategy_id, as_of_date=None: (
+            {
+                "status": "pass",
+                "blockers": [],
+                "persisted_facts_only": True,
+                "provider_contact_performed": False,
+                "does_not_create_order": True,
+                "does_not_authorize_execution": True,
+                "does_not_change_capital_authority": True,
+                "broker_submission_enabled": False,
+            },
+            [],
+        ),
+    )
+
+    state = SimpleNamespace(db=db, config=SimpleNamespace(watchlist=[]))
+
+    # Create a real unpublished estimate incident affecting held fund 018125.
+    db.create_quote_fetch_run(
+        run_id="relevant-incident-018125",
+        started_at="2026-07-01T08:30:00+08:00",
+        trigger="fund_nav_sync",
+        provider="akshare",
+        asset_type="open_end_fund",
+        symbol_count=1,
+        status="running",
+        metadata={
+            "requested_symbols": ["018125"],
+            "instrument_types": ["open_end_fund"],
+        },
+    )
+    db.persist_quote_ingestion_sync(
+        QuoteIngestionCommand(
+            symbol="018125",
+            asset_type="open_end_fund",
+            price=1.8123,
+            volume=0.0,
+            quote_timestamp="2026-06-30T15:00:00+08:00",
+            captured_at="2026-07-01T08:30:01+08:00",
+            quote_source="sina_fund_estimate",
+            provider_name="sina",
+            nav_date="2026-06-30",
+            fetch_run_id="relevant-incident-018125",
+        )
+    )
+    failed = db.finish_quote_fetch_run(
+        run_id="relevant-incident-018125",
+        finished_at="2026-07-01T08:30:02+08:00",
+        status="success",
+        success_count=1,
+        failure_count=0,
+        metadata={
+            "requested_symbols": ["018125"],
+            "instrument_types": ["open_end_fund"],
+        },
+    )
+    assert failed is not None and failed["status"] == "failed"
+    with sqlite3.connect(db.path) as conn:
+        incident_ref = unresolved_publications(conn)[0]["incident_ref"]
+
+    # 1. Relevant unresolved incident blocks 08:46 preparation with incident_ref.
+    blocked_prep = automation_module.build_daily_candidate_preparation_check(
+        state, run_date=RUN_DATE
+    )
+    assert automation_module.verify_daily_candidate_preparation_check(
+        blocked_prep, run_date=RUN_DATE
+    )
+    assert blocked_prep["status"] == "blocked"
+    assert blocked_prep["first_blocking_gate"] == "portfolio_valuation"
+    assert (
+        blocked_prep["first_safe_action"]
+        == "restore_complete_portfolio_valuation_snapshot"
+    )
+    assert blocked_prep["blockers"] == ["valuation_publication_recovery_required"]
+    assert (
+        blocked_prep["valuation_recovery_incidents"][0]["incident_ref"] == incident_ref
+    )
+    assert blocked_prep["deferred_window_time_gates"] == [
+        "market_data",
+        "decision_plan",
+        "runtime_window",
+    ]
+    sent_messages: list[tuple[str, str]] = []
+    notifier = SimpleNamespace(
+        send=lambda *, title, message: sent_messages.append((title, message))
+    )
+    asyncio.run(
+        send_daily_candidate_preparation_notification(
+            notifier=notifier,
+            preparation=blocked_prep,
+            timeout_seconds=5,
+        )
+    )
+    assert sent_messages and incident_ref in sent_messages[0][1]
+    record_daily_candidate_preparation_alert(
+        db=db, run_date=RUN_DATE, preparation=blocked_prep, error_type=None
+    )
+    alert_payload = json.loads(
+        db.list_automation_alerts_sync(status="open")[0]["payload_json"]
+    )
+    assert (
+        alert_payload["valuation_recovery_incidents"][0]["incident_ref"] == incident_ref
+    )
+
+    # 2. Recovering the relevant incident clears preparation while retaining window-time gates.
+    preview = preview_unpublished_quote_recovery(db.path, incident_refs=[incident_ref])
+    assert preview["status"] == "ready"
+    discard_proven_unpublished_quote_refreshes(
+        db.path,
+        incident_refs=[incident_ref],
+        expected_proof_fingerprint=str(preview["proof_fingerprint"]),
+        actor="operator:prep_test",
+        confirmation=UNPUBLISHED_RECOVERY_CONFIRMATION,
+        now=datetime(2026, 7, 1, 0, 35, tzinfo=timezone.utc),
+    )
+    cleared_prep = automation_module.build_daily_candidate_preparation_check(
+        state, run_date=RUN_DATE
+    )
+    assert automation_module.verify_daily_candidate_preparation_check(
+        cleared_prep, run_date=RUN_DATE
+    )
+    assert cleared_prep["status"] == "ready_for_window_time_evidence"
+    assert cleared_prep["blockers"] == []
+    assert cleared_prep["valuation_recovery_incidents"] == []
+    assert cleared_prep["deferred_window_time_gates"] == [
+        "market_data",
+        "decision_plan",
+        "runtime_window",
+    ]
+
+    # 3. Unrelated symbol incident (600999 not in portfolio/watchlist/actions) follows formal risk scoping.
+    db.create_quote_fetch_run(
+        run_id="unrelated-incident-600999",
+        started_at="2026-07-01T08:40:00+08:00",
+        trigger="manual",
+        provider="tencent",
+        asset_type="stock",
+        symbol_count=1,
+        status="running",
+        metadata={
+            "requested_symbols": ["600999"],
+            "instrument_types": ["stock"],
+        },
+    )
+    db.finish_quote_fetch_run(
+        run_id="unrelated-incident-600999",
+        finished_at="2026-07-01T08:40:01+08:00",
+        status="failed",
+        success_count=0,
+        failure_count=1,
+        error_message="provider timeout",
+        metadata={
+            "requested_symbols": ["600999"],
+            "instrument_types": ["stock"],
+        },
+    )
+    unrelated_prep = automation_module.build_daily_candidate_preparation_check(
+        state, run_date=RUN_DATE
+    )
+    assert unrelated_prep["status"] == "ready_for_window_time_evidence"
+    assert unrelated_prep["blockers"] == []
+    assert unrelated_prep["valuation_recovery_incidents"] == []
+    assert unrelated_prep["deferred_window_time_gates"] == [
+        "market_data",
+        "decision_plan",
+        "runtime_window",
+    ]
+
+    # 4. A new relevant incident arising after preparation is caught at formal in-window check.
+    db.create_quote_fetch_run(
+        run_id="late-post-prep-018125",
+        started_at="2026-07-01T09:15:00+08:00",
+        trigger="fund_nav_sync",
+        provider="akshare",
+        asset_type="open_end_fund",
+        symbol_count=1,
+        status="running",
+        metadata={
+            "requested_symbols": ["018125"],
+            "instrument_types": ["open_end_fund"],
+        },
+    )
+    db.persist_quote_ingestion_sync(
+        QuoteIngestionCommand(
+            symbol="018125",
+            asset_type="open_end_fund",
+            price=1.8199,
+            volume=0.0,
+            quote_timestamp="2026-06-30T15:00:00+08:00",
+            captured_at="2026-07-01T09:15:01+08:00",
+            quote_source="sina_fund_estimate",
+            provider_name="sina",
+            nav_date="2026-06-30",
+            fetch_run_id="late-post-prep-018125",
+        )
+    )
+    late_failed = db.finish_quote_fetch_run(
+        run_id="late-post-prep-018125",
+        finished_at="2026-07-01T09:15:02+08:00",
+        status="success",
+        success_count=1,
+        failure_count=0,
+        metadata={
+            "requested_symbols": ["018125"],
+            "instrument_types": ["open_end_fund"],
+        },
+    )
+    assert late_failed is not None and late_failed["status"] == "failed"
+    late_prep = automation_module.build_daily_candidate_preparation_check(
+        state, run_date=RUN_DATE
+    )
+    assert late_prep["status"] == "blocked"
+    assert late_prep["first_blocking_gate"] == "portfolio_valuation"
+    assert late_prep["blockers"] == ["valuation_publication_recovery_required"]

@@ -315,6 +315,10 @@ export const CODE_LABELS: Record<Locale, LabelMap> = {
     valuation_missing: 'Valuation missing',
     valuation_snapshot_not_complete:
       'The current account valuation is incomplete',
+    valuation_publication_recovery_required:
+      'Unresolved valuation publication recovery incident blocks execution',
+    valuation_publication_recovery_unavailable:
+      'Valuation publication recovery evidence is unavailable',
     portfolio_total_equity_invalid:
       'Total account equity is unavailable from complete evidence',
     promoted_strategy_scan_missing:
@@ -647,6 +651,8 @@ export const CODE_LABELS: Record<Locale, LabelMap> = {
     daily_generation_unlinked_daily_evidence: '今日决策证据未绑定尝试',
     valuation_missing: '缺少估值',
     valuation_snapshot_not_complete: '当前账户估值证据不完整',
+    valuation_publication_recovery_required: '存在未处理的估值发布异常事故',
+    valuation_publication_recovery_unavailable: '估值发布异常恢复状态不可读取',
     portfolio_total_equity_invalid: '无法从完整证据得到账户总权益',
     promoted_strategy_scan_missing: '今天的已晋级策略扫描尚未完成',
     promoted_daily_candidate_strategy_missing:
