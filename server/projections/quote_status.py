@@ -31,6 +31,26 @@ _DEGRADED_VALUATION_STATUSES = {
     "confirmed_nav_missing",
     "confirmed_fund_nav_missing_estimate_only",
 }
+_NON_AUTHORITATIVE_FUND_CLOSE_SOURCES = frozenset(
+    {
+        "",
+        "unknown",
+        "unknown_provider",
+        "confirmed_nav",
+        "reported_previous_close",
+        "none",
+        "null",
+    }
+)
+
+
+def is_authoritative_historical_fund_close_source(source: object) -> bool:
+    """Reject estimate and unverified legacy close sources for historical fund NAVs."""
+    normalized = str(source or "").strip().lower()
+    return (
+        normalized not in _NON_AUTHORITATIVE_FUND_CLOSE_SOURCES
+        and not is_fund_estimate_quote_source(normalized)
+    )
 
 
 def _observation_status(row: dict) -> str:
@@ -368,6 +388,10 @@ def quote_pricing_semantics(
         elif (
             source in PUBLISHED_FUND_NAV_QUOTE_SOURCES
             and observed_status in PUBLISHED_FUND_NAV_STATUSES
+        ) or (
+            row.get("valuation_price_source") in {"market_bar_close", "daily_close"}
+            and observed_status in PUBLISHED_FUND_NAV_STATUSES
+            and is_authoritative_historical_fund_close_source(source)
         ):
             nav_date = row.get("nav_date")
             as_of = fund_nav_pricing_date(nav_date, timestamp) or None

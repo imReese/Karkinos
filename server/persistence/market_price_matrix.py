@@ -268,6 +268,7 @@ def _matrix_sql(
                      THEN 'fund' ELSE bars.instrument_type END AS asset_class,
                 NULL AS generation_id,
                 bars.identity_provenance,
+                'bar' AS kind,
                 0 AS source_priority
             FROM requested AS wanted
             CROSS JOIN bounds
@@ -306,6 +307,7 @@ def _matrix_sql(
                      THEN 'fund' ELSE closes.instrument_type END AS asset_class,
                 NULL AS generation_id,
                 closes.identity_provenance,
+                'close' AS kind,
                 1 AS source_priority
             FROM requested AS wanted
             CROSS JOIN bounds
@@ -364,6 +366,7 @@ def _matrix_sql(
                      THEN 'fund' ELSE {normalized_type} END AS asset_class,
                 NULL AS generation_id,
                 {provenance} AS identity_provenance,
+                'quote' AS kind,
                 2 AS source_priority
             FROM requested AS wanted
             CROSS JOIN bounds
@@ -390,7 +393,7 @@ def _matrix_sql(
     if not observations:
         return f"""
             WITH {requested_def}, bounds(start_date, end_date) AS (VALUES (?, ?))
-            SELECT NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+            SELECT NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
             WHERE 0
         """
     unioned = "\nUNION ALL\n".join(observations)
@@ -409,7 +412,7 @@ def _matrix_sql(
         )
         SELECT
             symbol, instrument_type, trade_date, timestamp, price, source,
-            asset_class, generation_id, identity_provenance
+            asset_class, generation_id, identity_provenance, kind
         FROM ranked
         WHERE evidence_rank = 1
         ORDER BY symbol, instrument_type, trade_date, timestamp
@@ -437,6 +440,7 @@ def _price_row(row: tuple[Any, ...]) -> dict[str, Any]:
         "asset_class": None if row[6] is None else str(row[6]),
         "generation_id": None if row[7] is None else str(row[7]),
         "identity_provenance": None if row[8] is None else str(row[8]),
+        "kind": None if len(row) <= 9 or row[9] is None else str(row[9]),
     }
 
 

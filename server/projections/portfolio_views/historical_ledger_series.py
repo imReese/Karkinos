@@ -21,6 +21,9 @@ from server.projections.portfolio_read_snapshot_persistence import (
     portfolio_read_snapshot_for_state,
 )
 from server.projections.quote_status import (
+    is_authoritative_historical_fund_close_source,
+)
+from server.projections.quote_status import (
     parse_quote_timestamp as _parse_quote_timestamp,
 )
 from server.projections.service import PortfolioReplayAccumulator
@@ -177,6 +180,7 @@ def historical_quote_for_equity_day(
                     "high": market_bar.get("high"),
                     "low": market_bar.get("low"),
                     "close": market_bar.get("close"),
+                    "kind": "bar",
                 },
                 asset_class=asset_class,
             )
@@ -195,6 +199,7 @@ def historical_quote_for_equity_day(
                     "price": daily_close["close_price"],
                     "timestamp": daily_close.get("trade_date"),
                     "source": daily_close.get("source"),
+                    "kind": "close",
                 },
                 asset_class=asset_class,
             )
@@ -245,11 +250,22 @@ def _historical_quote_with_status(
         is_fund_estimate_quote_source(source)
     ):
         quote_status = "confirmed_nav_missing"
-    return {
+    projected = {
         **quote,
         "asset_class": quote.get("asset_class") or asset_class,
         "quote_status": quote_status,
     }
+    kind = str(quote.get("kind") or "").strip().lower()
+    if kind == "bar" and not projected.get("valuation_price_source"):
+        projected["valuation_price_source"] = "market_bar_close"
+    elif (
+        kind == "close"
+        and quote_status == "confirmed"
+        and is_authoritative_historical_fund_close_source(source)
+        and not projected.get("valuation_price_source")
+    ):
+        projected["valuation_price_source"] = "daily_close"
+    return projected
 
 
 def _matrix_quote_for_equity_day(

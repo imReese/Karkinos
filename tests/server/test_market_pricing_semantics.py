@@ -407,3 +407,52 @@ def test_readiness_reassesses_authority_without_invalidating_legacy_identity(tmp
         "valuation_incomplete"
     ]
     assert db.get_valuation_snapshot_sync(legacy["snapshot_id"])["status"] == "complete"
+
+
+def test_historical_fund_close_rejects_unverified_legacy_and_keeps_verified_bars(
+    tmp_path,
+):
+    from types import SimpleNamespace
+
+    from server.db import AppDatabase
+    from server.projections.portfolio_views.historical_ledger_series import (
+        historical_quote_for_equity_day,
+    )
+
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    db.save_daily_close_snapshot_sync(
+        symbol="019998",
+        asset_class="fund",
+        trade_date="2026-09-10",
+        close_price=1.2,
+        source="eastmoney_fund_page",
+    )
+    db.save_daily_close_snapshot_sync(
+        symbol="019999",
+        asset_class="fund",
+        trade_date="2026-09-10",
+        close_price=1.3,
+        source="reported_previous_close",
+    )
+    state = SimpleNamespace(db=db)
+
+    verified = historical_quote_for_equity_day(
+        state,
+        symbol="019998",
+        asset_class="open_end_fund",
+        trade_date=datetime(2026, 9, 10, tzinfo=SHANGHAI).date(),
+        latest_quotes={},
+        is_current_day=False,
+    )
+    unverified = historical_quote_for_equity_day(
+        state,
+        symbol="019999",
+        asset_class="open_end_fund",
+        trade_date=datetime(2026, 9, 10, tzinfo=SHANGHAI).date(),
+        latest_quotes={},
+        is_current_day=False,
+    )
+
+    assert verified is not None and quote_valuation_status(verified) == "complete"
+    assert unverified is not None and quote_valuation_status(unverified) != "complete"
