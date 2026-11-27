@@ -199,12 +199,15 @@ def fund_nav_pricing_date(nav_date: object, timestamp: object) -> str:
     """Use the declared NAV date, or the Shanghai date of a legacy quote."""
     explicit = str(nav_date or "").strip()
     if explicit:
-        return datetime.fromisoformat(explicit).date().isoformat()
-    if not timestamp:
+        try:
+            return datetime.fromisoformat(explicit).date().isoformat()
+        except ValueError:
+            # An invalid declaration cannot borrow its observation date.
+            return ""
+    instant = quote_timestamp_instant(timestamp)
+    if instant == _MIN_QUOTE_INSTANT:
         return ""
-    return (
-        quote_timestamp_instant(timestamp).astimezone(_SHANGHAI_TZ).date().isoformat()
-    )
+    return instant.astimezone(_SHANGHAI_TZ).date().isoformat()
 
 
 def validate_quote_authority_time(

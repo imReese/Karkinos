@@ -15,6 +15,7 @@ from data.market_data import (
     PUBLISHED_FUND_NAV_QUOTE_SOURCES,
     is_fund_estimate_quote_source,
 )
+from server.contracts.quote_ingestion import fund_nav_pricing_date
 from server.services.market.calendar import project_market_session
 from server.services.market.hours import get_shanghai_now, is_cn_trading_session
 
@@ -349,14 +350,12 @@ def quote_pricing_semantics(
     elif is_fund:
         observed_status = str(row.get("observed_quote_status") or status).lower()
         if source in PUBLISHED_FUND_NAV_QUOTE_SOURCES or observed_status == "confirmed":
-            kind, authority = "published_nav", "authoritative"
-            as_of = (
-                str(
-                    row.get("nav_date")
-                    or (timestamp.date().isoformat() if timestamp else "")
-                )
-                or None
-            )
+            nav_date = row.get("nav_date")
+            as_of = fund_nav_pricing_date(nav_date, timestamp) or None
+            if nav_date and as_of is None:
+                kind, authority = "nav_pending", "missing"
+            else:
+                kind, authority = "published_nav", "authoritative"
         else:
             kind, authority = "nav_pending", "missing"
     elif normalized_type in {"stock", "etf"}:

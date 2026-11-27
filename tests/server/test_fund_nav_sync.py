@@ -1691,3 +1691,46 @@ def test_historical_nav_date_encodings_share_one_confirmed_price(
         ).fetchall()
     assert prices == [(3.0,), (3.0,)]
     assert db.get_latest_quote_sync(symbol, asset_type="open_end_fund")["price"] == 4.0
+
+
+def test_undated_fund_observation_preserves_published_nav_history(tmp_path):
+    from server.projections.quote_status import quote_pricing_semantics
+
+    db = AppDatabase(tmp_path / "undated_observation.db")
+    db.init_sync()
+    symbol = "019999"
+    _seed_fund_observations(db, ("2026-11-20", 3.0))
+    db.save_quote_snapshot_sync(
+        symbol=symbol,
+        asset_class="open_end_fund",
+        price=3.5,
+        volume=None,
+        timestamp="2026-11-23T15:00:00+08:00",
+        nav_date="not-a-nav-date",
+        quote_source="tushare_fund_nav",
+        quote_status="confirmed",
+    )
+    facts = db.list_fund_quote_precedence_facts_sync(symbol)
+    observed = facts["latest_quote"]
+    assert (observed["nav_date"], observed["price"]) == ("not-a-nav-date", 3.5)
+    semantics = quote_pricing_semantics(observed)
+    assert semantics["pricing_as_of"] is None
+    assert semantics["pricing_authority"] != "authoritative"
+    assert [(row["nav_date"], row["price"]) for row in facts["published_nav_rows"]] == [
+        ("2026-11-20", 3.0)
+    ]
+
+    _seed_fund_observations(db, ("2026-11-24", 4.0))
+    published = db.list_fund_quote_precedence_facts_sync(symbol)["published_nav_rows"]
+    assert [(row["nav_date"], row["price"]) for row in published] == [
+        ("2026-11-24", 4.0)
+    ]
+    with sqlite3.connect(db.path) as conn:
+        assert conn.execute(
+            "SELECT nav_date,price FROM quote_snapshots WHERE symbol=? ORDER BY id",
+            (symbol,),
+        ).fetchall() == [
+            ("2026-11-20", 3.0),
+            ("not-a-nav-date", 3.5),
+            ("2026-11-24", 4.0),
+        ]

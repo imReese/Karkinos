@@ -34,23 +34,30 @@ def published_nav_rows_on_connection(
     """Read one fund's newest published NAV, retaining peers for conflict checks."""
     cutoff = "AND id <= ?" if snapshot_cutoff_id is not None else ""
     params = (symbol,) if snapshot_cutoff_id is None else (symbol, snapshot_cutoff_id)
-    row = _fetchone_dict(
-        conn,
+    # Walk the date index only until the first row with a usable economic date.
+    # A malformed historical date can sort ahead of every valid ISO date.
+    cursor = conn.execute(
         f"""
         SELECT quote_instant_utc, {PUBLISHED_NAV_DATE_SQL} AS pricing_date
         FROM quote_snapshots
         WHERE symbol = ? AND instrument_type = 'open_end_fund'
           AND {PUBLISHED_NAV_SQL_PREDICATE} {cutoff}
-        ORDER BY {PUBLISHED_NAV_DATE_SQL} DESC, quote_instant_utc DESC, id DESC LIMIT 1
+        ORDER BY {PUBLISHED_NAV_DATE_SQL} DESC, quote_instant_utc DESC, id DESC
         """,
         params,
     )
-    if row is None:
-        return []
+    try:
+        for instant, pricing_date in cursor:
+            if fund_nav_pricing_date(pricing_date, None):
+                break
+        else:
+            return []
+    finally:
+        cursor.close()
     # Exact-instant peers retain malformed/conflicting facts. Published peers
     # from the same economic NAV date must agree even when captured later.
-    instant_params: tuple[object, ...] = (symbol, row["quote_instant_utc"])
-    date_params: tuple[object, ...] = (symbol, row["pricing_date"])
+    instant_params: tuple[object, ...] = (symbol, instant)
+    date_params: tuple[object, ...] = (symbol, pricing_date)
     if snapshot_cutoff_id is not None:
         instant_params = (*instant_params, snapshot_cutoff_id)
         date_params = (*date_params, snapshot_cutoff_id)
@@ -107,6 +114,8 @@ def require_fund_nav_write_authority(
         pricing_date = fund_nav_pricing_date(
             candidate.get("nav_date"), candidate.get("quote_timestamp")
         )
+        if not pricing_date:
+            return
         history = published_nav_rows_for_date(conn, symbol, pricing_date)
         # The legacy current-quote writer can publish without an audit snapshot.
         current = _fetchall_dicts(
