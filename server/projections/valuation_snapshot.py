@@ -204,8 +204,12 @@ def select_authoritative_valuation_marks(
         # information. Invalid or conflicting current facts still fail closed.
         identity = _quote_identity(observation)
         mark = observation
-        if quote_pricing_semantics(observation)["pricing_kind"] == "estimated_nav" or (
-            quote_pricing_semantics(observation)["pricing_kind"] == "published_nav"
+        semantics = quote_pricing_semantics(observation)
+        if (
+            semantics["pricing_kind"] in {"estimated_nav", "nav_pending"}
+            and semantics["pricing_authority"] == "non_authoritative"
+        ) or (
+            semantics["pricing_kind"] == "published_nav"
             and quote_valuation_status(observation) == "complete"
         ):
             mark = authoritative.get(identity, observation)
@@ -216,7 +220,7 @@ def select_authoritative_valuation_marks(
                 "quote_timestamp": _quote_timestamp(observation) or None,
                 "quote_source": observation.get("quote_source")
                 or observation.get("source"),
-                **quote_pricing_semantics(observation),
+                **semantics,
             }
         selected.append(projected)
     return selected

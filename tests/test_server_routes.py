@@ -46,7 +46,11 @@ def _persisted_quote(
         "previous_close": price if previous_close is None else previous_close,
         "previous_close_date": quote_timestamp.split("T", 1)[0],
         "timestamp": quote_timestamp,
-        "source": "persisted_route_test_quote",
+        "source": (
+            "eastmoney_fund_page"
+            if asset_class == "fund" and quote_status == "confirmed"
+            else "persisted_route_test_quote"
+        ),
         "quote_status": quote_status,
     }
 
@@ -4660,6 +4664,7 @@ def test_portfolio_live_holdings_prefers_reported_previous_close_from_latest_quo
                     "volume": None,
                     "timestamp": "2026-04-22",
                     "quote_status": "confirmed",
+                    "quote_source": "eastmoney_fund_page",
                     "nav_date": "2026-04-22",
                     "previous_close": 2.2606,
                     "previous_close_date": "2026-04-21",
@@ -4684,6 +4689,7 @@ def test_portfolio_live_holdings_prefers_reported_previous_close_from_latest_quo
                     "volume": None,
                     "timestamp": "2026-04-22",
                     "quote_status": "confirmed",
+                    "quote_source": "eastmoney_fund_page",
                     "nav_date": "2026-04-22",
                     "previous_close": 2.2606,
                     "previous_close_date": "2026-04-21",
@@ -6068,7 +6074,7 @@ def test_portfolio_rebuild_uses_persisted_quotes_for_fund_pnl(monkeypatch):
                     "timestamp": "2026-04-18T20:00:00+08:00",
                     "previous_close": 1.0,
                     "previous_close_date": "2026-04-17",
-                    "quote_source": "confirmed_nav",
+                    "quote_source": "eastmoney_fund_page",
                     "quote_status": "confirmed",
                     "nav_date": "2026-04-18",
                 }
@@ -11666,7 +11672,7 @@ def test_portfolio_equity_curve_series_groups_asset_buckets(monkeypatch):
                     timestamp="2026-04-30T15:00:00+08:00",
                 )
                 | {
-                    "quote_source": "confirmed_nav",
+                    "quote_source": "eastmoney_fund_page",
                     "quote_status": "confirmed",
                     "nav_date": "2026-04-30",
                 },

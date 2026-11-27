@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from data.market_data import (
     FUND_ESTIMATE_QUOTE_SOURCES,
     PUBLISHED_FUND_NAV_QUOTE_SOURCES,
+    PUBLISHED_FUND_NAV_STATUSES,
     fund_nav_quote_status,
     is_fund_estimate_quote_source,
 )
@@ -362,7 +363,12 @@ def quote_pricing_semantics(
         kind, authority = "nav_pending", "missing"
     elif is_fund:
         observed_status = str(row.get("observed_quote_status") or status).lower()
-        if source in PUBLISHED_FUND_NAV_QUOTE_SOURCES or observed_status == "confirmed":
+        if source in PUBLISHED_FUND_NAV_QUOTE_SOURCES and observed_status == "stale":
+            kind, authority = "nav_pending", "non_authoritative"
+        elif (
+            source in PUBLISHED_FUND_NAV_QUOTE_SOURCES
+            and observed_status in PUBLISHED_FUND_NAV_STATUSES
+        ):
             nav_date = row.get("nav_date")
             as_of = fund_nav_pricing_date(nav_date, timestamp) or None
             if nav_date and as_of is None:

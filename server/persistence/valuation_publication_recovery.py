@@ -18,6 +18,7 @@ from data.market_daily_store import (
 from data.market_data import (
     PUBLISHED_FUND_NAV_QUOTE_SOURCES,
     is_fund_estimate_quote_source,
+    is_supersedable_fund_nav,
 )
 from server.contracts.quote_ingestion import (
     QuoteIngestionCommand,
@@ -1303,8 +1304,11 @@ def verified_superseded_quote_scope(
             str(disposition.get("authoritative_quote_source") or "").strip().lower()
         )
         incoming_source = disposition.get("incoming_quote_source")
-        if auth_source not in PUBLISHED_FUND_NAV_QUOTE_SOURCES or (
-            not is_fund_estimate_quote_source(incoming_source)
+        if (
+            auth_source not in PUBLISHED_FUND_NAV_QUOTE_SOURCES
+            or not is_supersedable_fund_nav(
+                incoming_source, disposition.get("incoming_quote_status")
+            )
         ):
             raise ValueError("quote publication superseded scope invalid")
         superseded_scope.add(key)

@@ -978,8 +978,16 @@ def _seed_confirmed_fund_nav(
     assert finished is not None and finished["status"] == "success"
 
 
-def test_late_sina_estimate_superseded_by_published_nav_for_018125_is_auditable_and_repeatable(
-    monkeypatch, tmp_path
+@pytest.mark.parametrize(
+    ("source", "status"),
+    [
+        ("sina_fund_estimate", "live"),
+        ("eastmoney_fund_page", "estimated"),
+        ("eastmoney_fund_page", "stale"),
+    ],
+)
+def test_estimate_superseded_by_published_nav_for_018125_is_auditable_and_repeatable(
+    monkeypatch, tmp_path, source, status
 ) -> None:
     db = AppDatabase(tmp_path / "fund_superseded_018125.db")
     db.init_sync()
@@ -997,10 +1005,8 @@ def test_late_sina_estimate_superseded_by_published_nav_for_018125_is_auditable_
                 "volume": 0.0,
                 "timestamp": "2026-11-25T15:00:00+08:00",
                 "nav_date": "2026-11-25",
-                "quote_source": "sina_fund_estimate",
-                "provider_name": "sina",
-                "source": "sina",
-                "quote_status": "live",
+                "quote_source": source,
+                "quote_status": status,
                 "provider_status": "live",
             }
 
@@ -1032,9 +1038,7 @@ def test_late_sina_estimate_superseded_by_published_nav_for_018125_is_auditable_
         == "eastmoney_fund_page"
     )
     assert first.skipped_details["018125"]["authoritative_price"] == 1.8028
-    assert (
-        first.skipped_details["018125"]["incoming_quote_source"] == "sina_fund_estimate"
-    )
+    assert first.skipped_details["018125"]["incoming_quote_source"] == source
     assert first.skipped_details["018125"]["incoming_price"] == 1.8123
 
     latest = db.get_latest_quote_sync("018125", asset_type="open_end_fund")
@@ -1046,6 +1050,8 @@ def test_late_sina_estimate_superseded_by_published_nav_for_018125_is_auditable_
     assert run is not None and run["status"] == "success"
     assert run["success_count"] == 0 and run["failure_count"] == 0
     meta = json.loads(run["metadata_json"])
+    if source == "eastmoney_fund_page":
+        assert meta["skipped_details"]["018125"]["incoming_quote_status"] == status
     assert meta["superseded_symbols"] == ["018125"]
     assert meta["valuation_snapshot_publication"] == "not_required_superseded"
     assert (
@@ -1124,8 +1130,16 @@ def test_late_sina_estimate_superseded_by_published_nav_for_018125_is_auditable_
     assert req_replay.failed == {}
 
 
+@pytest.mark.parametrize(
+    ("skipped_source", "skipped_status"),
+    [
+        ("sina_fund_estimate", "live"),
+        ("eastmoney_fund_page", "estimated"),
+        ("eastmoney_fund_page", "stale"),
+    ],
+)
 def test_three_fund_nov26_all_superseded_and_mixed_batch_dispositions(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, skipped_source, skipped_status
 ) -> None:
     db = AppDatabase(tmp_path / "fund_mixed_batch.db")
     db.init_sync()
@@ -1205,9 +1219,8 @@ def test_three_fund_nov26_all_superseded_and_mixed_batch_dispositions(
                     "volume": 0.0,
                     "timestamp": "2026-11-25T15:00:00+08:00",
                     "nav_date": "2026-11-25",
-                    "quote_source": "sina_fund_estimate",
-                    "provider_name": "sina",
-                    "source": "sina",
+                    "quote_source": skipped_source,
+                    "quote_status": skipped_status,
                 }
             if code == "012710":
                 return {
@@ -1262,6 +1275,7 @@ def test_three_fund_nov26_all_superseded_and_mixed_batch_dispositions(
         q026539["price"] == 0.8885 and q026539["quote_source"] == "eastmoney_fund_page"
     )
 
+    assert mixed.skipped_details["018125"]["incoming_quote_source"] == skipped_source
     mixed_run = db.get_quote_fetch_run(str(mixed.run_id))
     assert mixed_run is not None and mixed_run["status"] == "success"
     assert mixed_run["symbol_count"] == 3 and mixed_run["success_count"] == 2
@@ -1734,3 +1748,78 @@ def test_undated_fund_observation_preserves_published_nav_history(tmp_path):
             ("not-a-nav-date", 3.5),
             ("2026-11-24", 4.0),
         ]
+
+
+@pytest.mark.parametrize("finish_result", ["raises", "missing"])
+def test_all_superseded_reports_publication_failure_if_finish_is_unconfirmed(
+    monkeypatch,
+    tmp_path,
+    finish_result,
+):
+    db = AppDatabase(tmp_path / "app.db")
+    db.init_sync()
+    _seed_confirmed_fund_nav(
+        db,
+        items=[("018125", 1.8, "2026-11-25T15:00:00+08:00", "2026-11-25")],
+        run_id="seed-nav",
+    )
+    source = FakeFundSource(
+        {
+            "price": 1.7,
+            "timestamp": "2026-11-25T15:00:00+08:00",
+            "quote_source": "eastmoney_fund_page",
+            "quote_status": "estimated",
+        }
+    )
+    monkeypatch.setattr(
+        "server.services.market.fund_nav.build_sources", lambda **_: {"akshare": source}
+    )
+
+    def unconfirmed_finish(**kwargs):
+        if finish_result == "raises":
+            raise sqlite3.OperationalError("failed to confirm publication")
+        return None
+
+    monkeypatch.setattr(db, "finish_quote_fetch_run", unconfirmed_finish)
+    result = refresh_fund_nav_quotes(
+        SimpleNamespace(data_source="akshare"),
+        db,
+        [(Symbol("018125"), InstrumentType.OPEN_END_FUND)],
+        {},
+        now=datetime(2026, 11, 26, 10, tzinfo=timezone(timedelta(hours=8))),
+        ttl_seconds=0,
+    )
+    assert result.failed == {"__publication__": "quote_batch_publication_failed"}
+    assert result.refreshed == []
+    assert db.get_quote_fetch_run(result.run_id)["status"] == "running"
+    assert (
+        db.get_latest_quote_sync("018125", asset_type="open_end_fund")["price"] == 1.8
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "status"),
+    [
+        ("eastmoney_fund_page", None),
+        ("tushare_fund_nav", "confirmed"),
+        ("unknown_feed", "estimated"),
+    ],
+)
+def test_superseded_scope_requires_recognized_lower_authority(source, status):
+    from server.persistence.valuation_publication_recovery import (
+        verified_superseded_quote_scope,
+    )
+
+    metadata = {
+        "superseded_symbols": ["018125"],
+        "skipped_details": {
+            "018125": {
+                "disposition": "superseded_by_published_nav",
+                "incoming_quote_source": source,
+                "incoming_quote_status": status,
+                "authoritative_quote_source": "eastmoney_fund_page",
+            }
+        },
+    }
+    with pytest.raises(ValueError, match="superseded scope invalid"):
+        verified_superseded_quote_scope(metadata, scope=[("open_end_fund", "018125")])

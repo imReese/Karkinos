@@ -16,10 +16,12 @@ from core.types import AssetClass, InstrumentType, Symbol
 from data.manager import build_sources
 from data.market_data import (
     PUBLISHED_FUND_NAV_QUOTE_SOURCES,
+    PUBLISHED_FUND_NAV_STATUSES,
     fund_nav_quote_status,
     has_unverified_fund_confirmation,
     is_fund_estimate_quote_source,
     is_healthy_published_fund_nav,
+    is_supersedable_fund_nav,
 )
 from data.source_policy import MarketDataUseCase, source_policy_for_config
 from data.source_routing import preferred_legacy_provider
@@ -41,18 +43,6 @@ logger = logging.getLogger(__name__)
 FUND_NAV_SYNC_TTL_SECONDS = 15 * 60
 _CONFIRMED_FUND_NAV_SOURCES = PUBLISHED_FUND_NAV_QUOTE_SOURCES
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
-_HEALTHY_PUBLISHED_NAV_STATUSES = frozenset(
-    {
-        "live",
-        "confirmed",
-        "fresh",
-        "healthy",
-        "cache",
-        "cached",
-        "cache_only",
-        "cache_only_after_market_data_permission_fallback",
-    }
-)
 _UNRESOLVABLE_SOURCE_TOKENS = frozenset({"", "unknown", "none", "null"})
 
 
@@ -439,7 +429,7 @@ def _is_healthy_published_nav_fact(row: dict[str, Any]) -> bool:
         row.get("provider_status"),
         row.get("stale_reason"),
     )
-    return status in _HEALTHY_PUBLISHED_NAV_STATUSES
+    return status in PUBLISHED_FUND_NAV_STATUSES
 
 
 def _read_fund_precedence_facts(
@@ -539,12 +529,9 @@ def _evaluate_fund_quote_precedence(
         quote.get("provider_status"),
         quote.get("stale_reason"),
     )
-    source_is_estimate = (
-        is_fund_estimate_quote_source(incoming_source)
-        or incoming_quote_status == "estimated"
-    )
+    supersedable = is_supersedable_fund_nav(incoming_source, incoming_quote_status)
     if incoming_source in PUBLISHED_FUND_NAV_QUOTE_SOURCES and not (
-        source_is_confirmed or source_is_estimate
+        source_is_confirmed or supersedable
     ):
         # An explicitly degraded observation has no authority to challenge a published price.
         return "stage", None
@@ -570,7 +557,7 @@ def _evaluate_fund_quote_precedence(
     if _has_conflicting_published_navs(healthy_published):
         return "block", "conflicting_published_nav_facts"
 
-    if not source_is_confirmed and not source_is_estimate:
+    if not source_is_confirmed and not supersedable:
         if healthy_published or same_instant_rows:
             return "block", "fund_quote_source_unresolvable"
         if latest_quote is not None and (
@@ -599,7 +586,7 @@ def _evaluate_fund_quote_precedence(
                 return "block", "confirmed_fund_nav_conflict"
         return "stage", None
 
-    # Incoming quote is a recognized lower-priority fund estimate.
+    # Earlier or same-session estimates and stale observations yield to a published NAV.
     incoming_instant = quote_timestamp_instant(quote["timestamp"])
     covering_navs: list[dict[str, Any]] = []
     for prior in healthy_published:
@@ -632,6 +619,9 @@ def _evaluate_fund_quote_precedence(
             "disposition": "superseded_by_published_nav",
             "reason": "superseded_by_published_nav",
             "incoming_quote_source": quote["quote_source"],
+            "incoming_quote_status": incoming_quote_status,
+            "incoming_provider_status": quote.get("provider_status"),
+            "incoming_stale_reason": quote.get("stale_reason"),
             "incoming_quote_timestamp": quote["timestamp"],
             "incoming_nav_date": quote.get("nav_date"),
             "incoming_price": quote["price"],
@@ -890,7 +880,7 @@ def refresh_fund_nav_quotes(
             superseded_symbols.append(symbol)
             result.skipped_details[symbol] = dict(disposition_payload)
             logger.info(
-                "Skipped fund NAV estimate for %s: superseded_by_published_nav",
+                "Skipped fund NAV observation for %s: superseded_by_published_nav",
                 symbol,
             )
             continue
@@ -924,7 +914,6 @@ def refresh_fund_nav_quotes(
             result.failed[symbol] = str(exc)
             logger.exception("Failed to persist fund NAV quote for %s", symbol)
 
-    publication_error: str | None = None
     finished: dict[str, Any] | None = None
     if callable(finish_run):
         success_count = len(result.refreshed)
@@ -969,14 +958,29 @@ def refresh_fund_nav_quotes(
             )
         except Exception:
             logger.exception("Failed to publish staged fund NAV quote batch")
-    published = bool(
-        isinstance(finished, dict)
-        and finished.get("status") in {"success", "partial", "partial_success"}
-        and "valuation_snapshot_id" in _run_metadata(finished)
-    )
-    if not published and staged_quotes:
-        publication_error = "quote_batch_publication_failed"
-        result.failed["__publication__"] = publication_error
+            result.failed["__publication__"] = "quote_batch_publication_failed"
+            result.refreshed.clear()
+            return result
+    metadata = _run_metadata(finished) if isinstance(finished, dict) else {}
+    terminal_success = isinstance(finished, dict) and finished.get("status") in {
+        "success",
+        "partial",
+        "partial_success",
+    }
+    if staged_quotes:
+        completion_verified = terminal_success and bool(
+            metadata.get("valuation_snapshot_id")
+        )
+    elif callable(finish_run) and superseded_symbols and not result.failed:
+        completion_verified = (
+            terminal_success
+            and metadata.get("valuation_snapshot_publication")
+            == "not_required_superseded"
+        )
+    else:
+        completion_verified = True
+    if not completion_verified:
+        result.failed["__publication__"] = "quote_batch_publication_failed"
         result.refreshed.clear()
         return result
     current_reader = getattr(db, "get_latest_quote_sync", None)

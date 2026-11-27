@@ -20,6 +20,20 @@ PUBLISHED_FUND_NAV_QUOTE_SOURCES = frozenset(
     {"eastmoney_fund_page", "tushare_fund_nav"}
 )
 
+PUBLISHED_FUND_NAV_STATUSES = frozenset(
+    {
+        "live",
+        "confirmed",
+        "fresh",
+        "healthy",
+        "ok",
+        "cache",
+        "cached",
+        "cache_only",
+        "cache_only_after_market_data_permission_fallback",
+    }
+)
+
 
 def has_unverified_fund_confirmation(source: Any, status: Any) -> bool:
     """Only a registered publisher may label a fund quote as confirmed."""
@@ -32,6 +46,15 @@ def has_unverified_fund_confirmation(source: Any, status: Any) -> bool:
 def is_fund_estimate_quote_source(value: Any) -> bool:
     """Return whether a quote source is a non-authoritative fund estimate."""
     return str(value or "").strip().lower() in FUND_ESTIMATE_QUOTE_SOURCES
+
+
+def is_supersedable_fund_nav(source: Any, status: Any) -> bool:
+    """Identify lower-authority observations eligible for a published NAV skip."""
+    publisher = str(source or "").strip().lower()
+    return is_fund_estimate_quote_source(publisher) or (
+        publisher in PUBLISHED_FUND_NAV_QUOTE_SOURCES
+        and str(status or "").strip().lower() in {"estimated", "stale"}
+    )
 
 
 def fund_nav_quote_status(

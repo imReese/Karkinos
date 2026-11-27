@@ -343,6 +343,16 @@ def test_regular_source_explicit_statuses_are_never_coerced_to_confirmed_or_live
     assert [(r["nav_date"], r["price"]) for r in facts["published_nav_rows"]] == [
         ("2026-11-24", 2.05)
     ]
+    if variant == "stale-with-reason":
+        current = db.get_latest_quote_sync(symbol, asset_type="open_end_fund")
+        assert current["quote_status"] == "stale"
+        assert quote_pricing_semantics(current)["pricing_authority"] != "authoritative"
+        (mark,) = select_authoritative_valuation_marks(
+            db.list_quote_selection_candidates_sync()
+        )
+        assert (mark["price"], mark["nav_date"]) == (2.05, "2026-11-24")
+        assert mark["latest_observation"]["price"] == 2.11
+        assert mark["latest_observation"]["pricing_authority"] != "authoritative"
     with sqlite3.connect(db.path) as conn:
         assert conn.execute(
             "SELECT trade_date, close_price, source FROM daily_close_snapshots_v2 WHERE symbol=?",

@@ -188,6 +188,19 @@ def test_confirmed_fund_nav_has_its_own_date_and_no_live_valuation_ttl():
     )
     assert quote_is_stale(quote, now=now, market_session=session)
     assert quote_is_stale(quote, now=SATURDAY, db=CalendarDb(), for_valuation=True)
+    aged = current_quote_valuation_evidence(
+        quote,
+        now=SATURDAY,
+        market_session=project_market_session(CalendarDb(), SATURDAY),
+    )
+    assert (
+        aged["quote_status"] == "stale" and aged["observed_quote_status"] == "confirmed"
+    )
+    assert quote_pricing_semantics(aged) == {
+        "pricing_kind": "published_nav",
+        "pricing_authority": "authoritative",
+        "pricing_as_of": "2026-09-10",
+    }
 
 
 def test_fund_estimate_and_missing_confirmed_nav_remain_non_authoritative():
@@ -326,6 +339,14 @@ def test_fund_without_confirmed_nav_identity_and_manual_mark_fail_closed():
     assert quote_valuation_status(fund) == "degraded"
     dated_fund = {**fund, "nav_date": "2026-09-11"}
     assert quote_pricing_semantics(dated_fund)["pricing_authority"] == "missing"
+    for legacy_source in ("", "unknown_provider", "confirmed_nav"):
+        declared = {
+            **dated_fund,
+            "quote_source": legacy_source,
+            "quote_status": "confirmed",
+        }
+        assert quote_pricing_semantics(declared)["pricing_authority"] == "missing"
+        assert quote_valuation_status(declared) != "complete"
     assert quote_valuation_status(dated_fund) == "degraded"
     manual = _quote(quote_source="manual_mark")
     assert quote_pricing_semantics(manual)["pricing_authority"] == "non_authoritative"
