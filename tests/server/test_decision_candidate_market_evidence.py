@@ -23,7 +23,9 @@ def _save_quote(
         asset_type=asset_type,
         price=price,
         quote_timestamp="2026-07-02T09:30:00+08:00",
-        quote_source="deterministic_fixture",
+        quote_source="eastmoney_fund_page"
+        if asset_type == "fund"
+        else "deterministic_fixture",
         quote_status="confirmed",
     )
 

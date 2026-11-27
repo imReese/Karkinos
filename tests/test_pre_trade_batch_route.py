@@ -176,7 +176,7 @@ def test_decision_identity_conflict_has_no_allocation_or_risk_writes(
         asset_type="fund",
         price=2.0,
         quote_timestamp="2026-07-02T09:30:00+08:00",
-        quote_source="deterministic_fixture",
+        quote_source="eastmoney_fund_page",
         quote_status="confirmed",
         nav_date="2026-07-01",
     )

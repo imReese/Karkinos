@@ -591,7 +591,9 @@ def test_cockpit_links_tasks_only_to_the_same_asset_class(
         price=1.1,
         volume=1_000,
         timestamp="2026-09-04T15:00:00+08:00",
-        quote_source="cockpit_identity_fixture",
+        quote_source="eastmoney_fund_page"
+        if holding_kind == "open_end_fund"
+        else "cockpit_identity_fixture",
         provider_name="fixture",
         quote_status="confirmed",
     )

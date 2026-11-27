@@ -76,7 +76,9 @@ def test_watchlist_joins_holdings_and_snapshots_by_exact_identity(
                 asset_type=kind,
                 price=12.5 if lane == "held" else 3500,
                 quote_timestamp=timestamps[kind],
-                quote_source="synthetic",
+                quote_source="eastmoney_fund_page"
+                if kind == "open_end_fund"
+                else "synthetic",
                 quote_status="confirmed",
             )
     ledger_before = db.get_ledger_entries_sync()

@@ -53,7 +53,9 @@ def test_research_board_prices_join_exact_persisted_identity(
                 asset_type=kind,
                 price=price,
                 quote_timestamp="2026-10-16T15:00:00+08:00",
-                quote_source="synthetic",
+                quote_source="eastmoney_fund_page"
+                if kind == "open_end_fund"
+                else "synthetic",
                 quote_status="confirmed",
             )
     state = SimpleNamespace(

@@ -130,7 +130,7 @@ def test_real_get_retains_nav_date_even_when_capture_is_outside_window(tmp_path)
         timestamp="2026-09-01T15:00:00+08:00",
         nav_date="2026-09-01",
         quote_status="confirmed",
-        quote_source="fixture",
+        quote_source="eastmoney_fund_page",
         provider_name="fixture",
     )
     db.publish_current_valuation_snapshot_sync(
@@ -144,7 +144,7 @@ def test_real_get_retains_nav_date_even_when_capture_is_outside_window(tmp_path)
         timestamp="2026-09-03T20:00:00+08:00",
         nav_date="2026-09-01 15:00",
         quote_status="confirmed",
-        quote_source="fixture",
+        quote_source="eastmoney_fund_page",
         provider_name="fixture",
     )
     state = AppState()

@@ -2440,16 +2440,18 @@ def test_mixed_stock_and_fund_scan_revalidates_cleanly_when_fund_nav_missing(
         asset_type="open_end_fund",
         price=1.02,
         quote_timestamp="2026-08-21T15:00:00+08:00",
-        quote_source="persisted_fixture",
+        quote_source="eastmoney_fund_page",
         quote_status="confirmed",
+        nav_date="2026-08-21",
     )
     db.upsert_latest_quote_sync(
         symbol="018127",
         asset_type="open_end_fund",
         price=1.03,
         quote_timestamp="2026-08-21T15:00:00+08:00",
-        quote_source="persisted_fixture",
+        quote_source="eastmoney_fund_page",
         quote_status="confirmed",
+        nav_date="2026-08-21",
     )
     val = db.publish_current_valuation_snapshot_sync(now=fixed_sh)
     assert val["status"] == "missing"
