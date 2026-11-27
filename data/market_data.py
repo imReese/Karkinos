@@ -21,6 +21,14 @@ PUBLISHED_FUND_NAV_QUOTE_SOURCES = frozenset(
 )
 
 
+def has_unverified_fund_confirmation(source: Any, status: Any) -> bool:
+    """Only a registered publisher may label a fund quote as confirmed."""
+    return (
+        str(status or "").strip().lower() == "confirmed"
+        and str(source or "").strip().lower() not in PUBLISHED_FUND_NAV_QUOTE_SOURCES
+    )
+
+
 def is_fund_estimate_quote_source(value: Any) -> bool:
     """Return whether a quote source is a non-authoritative fund estimate."""
     return str(value or "").strip().lower() in FUND_ESTIMATE_QUOTE_SOURCES

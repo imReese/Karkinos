@@ -195,6 +195,16 @@ def quote_timestamp_instant(value: Any) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def fund_nav_pricing_date(nav_date: object, timestamp: object) -> str:
+    """Use the declared NAV date, or the Shanghai date of a legacy quote."""
+    explicit = str(nav_date or "").strip()
+    if explicit or not timestamp:
+        return explicit
+    return (
+        quote_timestamp_instant(timestamp).astimezone(_SHANGHAI_TZ).date().isoformat()
+    )
+
+
 def validate_quote_authority_time(
     *,
     quote_timestamp: str,

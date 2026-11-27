@@ -355,7 +355,7 @@ def test_unpublished_estimate_is_disposed_against_original_published_nav(
 def test_prior_nav_resolution_never_guesses_between_authoritative_facts(
     db, monkeypatch, mutation
 ):
-    published, clock = fund_estimate_conflict(
+    fund_estimate_conflict(
         db,
         monkeypatch,
         candidate_source="tushare_fund_nav"
@@ -381,15 +381,27 @@ def test_prior_nav_resolution_never_guesses_between_authoritative_facts(
                 ),
             )
     elif mutation == "published_nav_conflict":
-        clock[0] = datetime(2026, 9, 4, 7, 2, 45, tzinfo=timezone.utc)
-        db.persist_quote_ingestion_sync(
-            replace(
-                published,
-                price=12,
-                quote_timestamp="2026-09-04T15:01:00+08:00",
-                captured_at="2026-09-04T15:01:01+08:00",
-            )
+        # This conflicting prior publication predates the NAV write guard.
+        from server.persistence.financial_fact_event_payloads import (
+            quote_instant_storage_key,
         )
+
+        timestamp = "2026-09-04T15:01:00+08:00"
+        with sqlite3.connect(db.path) as conn:
+            row = conn.execute(
+                """INSERT INTO quote_snapshots (
+                    symbol, asset_class, instrument_type, identity_provenance, price,
+                    timestamp, quote_instant_utc, created_at, quote_status, quote_source, nav_date
+                ) SELECT symbol, asset_class, instrument_type, identity_provenance, 12,
+                         ?, ?, ?, quote_status, quote_source, nav_date
+                  FROM quote_snapshots WHERE symbol='000001' AND quote_source='eastmoney_fund_page'""",
+                (
+                    timestamp,
+                    quote_instant_storage_key(timestamp),
+                    "2026-09-04T07:02:45+00:00",
+                ),
+            )
+            assert row.rowcount == 1
     plan = preview_unpublished_quote_recovery(db.path)
     assert plan["status"] == "blocked"
     assert plan["repairs"] == []

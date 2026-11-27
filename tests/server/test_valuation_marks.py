@@ -193,11 +193,37 @@ def test_nav_selection_uses_economic_date_before_observation_time(tmp_path):
     assert mark["latest_observation"]["price"] == 1.79
 
 
+def _restore_conflicting_nav(db, symbol):
+    """Restore an already-persisted legacy conflict in the fixture book."""
+    from server.persistence.financial_fact_event_payloads import (
+        quote_instant_storage_key,
+    )
+    from server.persistence.quote_current_materialization import (
+        reconcile_quote_current_materialization_on_connection,
+    )
+
+    timestamp = "2026-09-11T19:00:00+08:00"
+    with sqlite3.connect(db.path) as conn:
+        row = conn.execute(
+            """INSERT INTO quote_snapshots (
+                symbol, asset_class, instrument_type, identity_provenance, price,
+                timestamp, quote_instant_utc, created_at, quote_status, quote_source, nav_date
+            ) SELECT symbol, asset_class, instrument_type, identity_provenance, 1.9,
+                     ?, ?, ?, quote_status, quote_source, nav_date
+              FROM quote_snapshots WHERE symbol=? AND quote_source='eastmoney_fund_page'""",
+            (timestamp, quote_instant_storage_key(timestamp), timestamp, symbol),
+        )
+        assert row.rowcount == 1
+        reconcile_quote_current_materialization_on_connection(
+            conn, updated_at=timestamp
+        )
+
+
 def test_conflicting_published_nav_is_not_hidden_by_newer_estimate(tmp_path):
     db = _book(tmp_path)
     _save(db, _nav())
     _save(db, _estimate())
-    _save(db, _nav(price=1.9, quote_timestamp="2026-09-11T19:00:00+08:00"))
+    _restore_conflicting_nav(db, "019999")
     with pytest.raises(ValueError, match="published NAV facts conflict"):
         build_current_valuation_snapshot(db, now=MONDAY)
 
@@ -508,10 +534,7 @@ def test_unheld_published_nav_conflict_does_not_block_current_book(tmp_path):
     db = _book(tmp_path)
     _save(db, _nav())
     _save(db, _nav(symbol="018888"))
-    _save(
-        db,
-        _nav(symbol="018888", price=1.9, quote_timestamp="2026-09-11T19:00:00+08:00"),
-    )
+    _restore_conflicting_nav(db, "018888")
     snapshot = build_current_valuation_snapshot(db, now=MONDAY)
     assert snapshot["status"] == "complete"
     assert [row["symbol"] for row in snapshot["quotes"]] == ["019999"]

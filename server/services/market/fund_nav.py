@@ -16,11 +16,13 @@ from core.types import AssetClass, InstrumentType, Symbol
 from data.manager import build_sources
 from data.market_data import (
     PUBLISHED_FUND_NAV_QUOTE_SOURCES,
+    has_unverified_fund_confirmation,
     is_fund_estimate_quote_source,
 )
 from data.source_policy import MarketDataUseCase, source_policy_for_config
 from data.source_routing import preferred_legacy_provider
 from server.contracts.quote_ingestion import (
+    fund_nav_pricing_date,
     quote_authority_conflict_fields,
     quote_timestamp_instant,
 )
@@ -328,12 +330,7 @@ def normalize_fund_nav_snapshot(
     timestamp = str(snapshot.get("timestamp") or now.isoformat())
     nav_date = snapshot.get("nav_date")
     if not nav_date and quote_source.strip().lower() in _CONFIRMED_FUND_NAV_SOURCES:
-        parsed_timestamp = _parse_timestamp(timestamp)
-        nav_date = (
-            parsed_timestamp.date().isoformat()
-            if parsed_timestamp is not None
-            else None
-        )
+        nav_date = fund_nav_pricing_date(None, timestamp)
     is_confirmed = quote_source.strip().lower() in _CONFIRMED_FUND_NAV_SOURCES
     is_estimate = is_fund_estimate_quote_source(quote_source)
     quote_status = (
@@ -415,19 +412,8 @@ def normalize_fund_nav_snapshot(
 
 
 def _effective_fund_nav_date(quote: dict[str, Any]) -> str:
-    nav_date = str(quote.get("nav_date") or "").strip()
-    if nav_date:
-        return nav_date
-    raw_timestamp = str(
-        quote.get("timestamp") or quote.get("quote_timestamp") or ""
-    ).strip()
-    if not raw_timestamp:
-        return ""
-    return (
-        quote_timestamp_instant(raw_timestamp)
-        .astimezone(_SHANGHAI_TZ)
-        .date()
-        .isoformat()
+    return fund_nav_pricing_date(
+        quote.get("nav_date"), quote.get("timestamp") or quote.get("quote_timestamp")
     )
 
 
@@ -450,12 +436,18 @@ def _read_fund_precedence_facts(
     symbol: str,
     *,
     quote_timestamp: str,
+    nav_date: str,
 ) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[dict[str, Any]]]:
     if db is None:
         return None, [], []
     precedence_reader = getattr(db, "list_fund_quote_precedence_facts_sync", None)
     if callable(precedence_reader):
-        context = precedence_reader(symbol, quote_timestamp=quote_timestamp) or {}
+        context = (
+            precedence_reader(
+                symbol, quote_timestamp=quote_timestamp, nav_date=nav_date
+            )
+            or {}
+        )
         return (
             context.get("latest_quote"),
             list(context.get("published_nav_rows") or ()),
@@ -496,10 +488,9 @@ def _has_conflicting_published_navs(rows: list[dict[str, Any]]) -> bool:
                 not left_date or left_date != right_date
             ):
                 continue
-            if set(quote_authority_conflict_fields(left, right)) & {
-                "price",
-                "nav_date",
-            }:
+            if left_date != right_date or "price" in quote_authority_conflict_fields(
+                left, right
+            ):
                 return True
     return False
 
@@ -525,15 +516,20 @@ def _evaluate_fund_quote_precedence(
     """Classify one incoming fund snapshot against persisted published NAV facts."""
 
     incoming_source = str(quote.get("quote_source") or "").strip().lower()
-    if incoming_source in _UNRESOLVABLE_SOURCE_TOKENS:
+    if (
+        incoming_source in _UNRESOLVABLE_SOURCE_TOKENS
+        or has_unverified_fund_confirmation(incoming_source, quote.get("quote_status"))
+    ):
         return "block", "fund_quote_source_unresolvable"
     source_is_confirmed = incoming_source in PUBLISHED_FUND_NAV_QUOTE_SOURCES
     source_is_estimate = is_fund_estimate_quote_source(incoming_source)
 
+    incoming_nav_date = _effective_fund_nav_date(quote)
     latest_quote, published_nav_rows, same_instant_rows = _read_fund_precedence_facts(
         db,
         symbol,
         quote_timestamp=str(quote["timestamp"]),
+        nav_date=incoming_nav_date,
     )
     healthy_published = _dedupe_snapshot_facts(
         [
@@ -560,7 +556,6 @@ def _evaluate_fund_quote_precedence(
         return "stage", None
 
     incoming_instant_key = quote_instant_storage_key(quote["timestamp"])
-    incoming_nav_date = _effective_fund_nav_date(quote)
 
     if source_is_confirmed:
         for prior in healthy_published:
@@ -572,10 +567,10 @@ def _evaluate_fund_quote_precedence(
                 not incoming_nav_date or incoming_nav_date != prior_nav_date
             ):
                 continue
-            if set(quote_authority_conflict_fields(prior, quote)) & {
-                "price",
-                "nav_date",
-            }:
+            if (
+                prior_nav_date != incoming_nav_date
+                or "price" in quote_authority_conflict_fields(prior, quote)
+            ):
                 return "block", "confirmed_fund_nav_conflict"
         return "stage", None
 
@@ -877,7 +872,9 @@ def refresh_fund_nav_quotes(
             )
             continue
         if disposition_kind == "block":
-            if not callable(getattr(db, "finish_quote_fetch_run", None)):
+            if has_unverified_fund_confirmation(
+                quote["quote_source"], quote["quote_status"]
+            ) or not callable(getattr(db, "finish_quote_fetch_run", None)):
                 result.failed[symbol] = str(disposition_payload)
                 logger.warning(
                     "Rejected fund NAV quote for %s: %s",
@@ -959,7 +956,21 @@ def refresh_fund_nav_quotes(
         result.failed["__publication__"] = publication_error
         result.refreshed.clear()
         return result
+    current_reader = getattr(db, "get_latest_quote_sync", None)
     for symbol, quote in staged_quotes.items():
+        if callable(current_reader):
+            # A historical observation may have been accepted without advancing the current row.
+            persisted = current_reader(
+                symbol, asset_type=InstrumentType.OPEN_END_FUND.value
+            )
+            if persisted is None:
+                continue
+            quote = {
+                **persisted,
+                "timestamp": persisted["quote_timestamp"],
+                "asset_class": AssetClass.FUND.value,
+                "instrument_type": InstrumentType.OPEN_END_FUND.value,
+            }
         cached_quote = {
             "price": quote["price"],
             "volume": quote["volume"],

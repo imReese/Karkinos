@@ -40,6 +40,7 @@ from server.persistence.quote_current_materialization import (
     advance_quote_snapshot_checkpoint_on_connection,
     published_nav_changed_since_checkpoint,
     published_nav_rows_on_connection,
+    require_fund_nav_write_authority,
 )
 from server.persistence.valuation_publication_recovery import (
     assert_quote_publication_not_started,
@@ -324,6 +325,8 @@ def _materialize_quote(
     *,
     materialized_at: str,
 ) -> dict[str, Any]:
+    if command.asset_type == "open_end_fund":
+        require_fund_nav_write_authority(conn, command.symbol, command.to_dict())
     if command.asset_type == "open_end_fund" and command.fetch_run_id is not None:
         normalized_source = str(command.quote_source or "").strip().lower()
         prior_published_navs = [
@@ -344,19 +347,6 @@ def _materialize_quote(
                         "nav_date",
                     }:
                         raise ValueError("existing published fund NAV facts conflict")
-        if normalized_source in PUBLISHED_FUND_NAV_QUOTE_SOURCES:
-            effective_nav_date = str(command.nav_date or "").strip()
-            candidate_dict = command.to_dict()
-            for prior in prior_published_navs:
-                prior_date = str(prior.get("nav_date") or "").strip()
-                if effective_nav_date and prior_date == effective_nav_date:
-                    if set(quote_authority_conflict_fields(prior, candidate_dict)) & {
-                        "price",
-                        "nav_date",
-                    }:
-                        raise ValueError(
-                            "confirmed fund NAV authority conflict for nav_date: price"
-                        )
     existing_snapshot = None
     inserted_snapshot_id: int | None = None
     if command.fetch_run_id:

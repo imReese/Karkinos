@@ -357,6 +357,10 @@ def test_confirmation_only_falls_back_after_tushare_fund_nav_permission_error(
     assert result.failed == {}
     assert latest is not None
     assert latest["quote_source"] == "eastmoney_fund_page"
+    assert latest["quote_status"] == "confirmed"
+    assert (
+        db.get_recent_quote_snapshots_sync("019999")[0]["quote_status"] == "confirmed"
+    )
     assert latest["nav_date"] == "2026-06-12"
 
 
@@ -1393,3 +1397,256 @@ def test_confirmed_fund_nav_conflict_and_unresolvable_source_still_block(
     )
     with sqlite3.connect(db2.path) as conn:
         assert len(unresolved_publications(conn)) == 1
+
+
+def _seed_fund_observations(db, *observations):
+    for date, price in observations:
+        _seed_confirmed_fund_nav(
+            db, items=[("019999", price, f"{date}T15:00:00+08:00", date)], run_id=date
+        )
+
+
+def _refresh_fund_fixture(db, monkeypatch, *, cache, source, status, price):
+    fixture = FakeFundSource(
+        {
+            "quote_source": source,
+            "quote_status": status,
+            "price": price,
+            "timestamp": "2026-11-24T15:05:00+08:00",
+            "nav_date": "2026-11-24",
+        }
+    )
+    monkeypatch.setattr(
+        "server.services.market.fund_nav.build_sources",
+        lambda **_kwargs: {"akshare": fixture},
+    )
+    result = refresh_fund_nav_quotes(
+        SimpleNamespace(data_source="akshare", tushare_token=""),
+        db,
+        [(Symbol("019999"), InstrumentType.OPEN_END_FUND)],
+        cache,
+        now=datetime.fromisoformat("2026-11-26T09:30:16+08:00"),
+        ttl_seconds=0,
+    )
+    assert len(fixture.calls) == 1
+    return result
+
+
+def _submit_fund_nav_observation(db, monkeypatch, *, entry, source, status, price):
+    symbol = "019999"
+    timestamp = "2026-11-24T15:05:00+08:00"
+    captured_at = "2026-11-26T09:30:16+08:00"
+    nav_date = "2026-11-24"
+    if entry in {"direct", "staged"}:
+        run_id = "incoming-fund-observation" if entry == "staged" else None
+        scope = {"requested_symbols": [symbol], "instrument_types": ["open_end_fund"]}
+        if run_id is not None:
+            db.create_quote_fetch_run(
+                run_id=run_id,
+                started_at=captured_at,
+                trigger="fund_nav_sync",
+                provider="fixture",
+                asset_type="open_end_fund",
+                symbol_count=1,
+                status="running",
+                metadata=scope,
+            )
+        command = QuoteIngestionCommand(
+            fetch_run_id=run_id,
+            symbol=symbol,
+            asset_type="open_end_fund",
+            price=price,
+            quote_timestamp=timestamp,
+            captured_at=captured_at,
+            quote_source=source,
+            provider_name="fixture",
+            provider_status="live",
+            quote_status=status,
+            captured_reason="fund_nav_sync",
+            nav_date=nav_date,
+        )
+        try:
+            db.persist_quote_ingestion_sync(command)
+        except ValueError as exc:
+            return False, str(exc)
+        if run_id is None:
+            return True, None
+        finished = db.finish_quote_fetch_run(
+            run_id=run_id,
+            finished_at=captured_at,
+            status="success",
+            success_count=1,
+            failure_count=0,
+            metadata=scope,
+        )
+        return finished["status"] == "success", finished["error_message"]
+    result = _refresh_fund_fixture(
+        db, monkeypatch, cache={}, source=source, status=status, price=price
+    )
+    run = db.get_quote_fetch_run(result.run_id)
+    assert run is not None
+    assert (run["status"] == "success") == (result.refreshed == [symbol])
+    return run["status"] == "success", result.failed.get(
+        symbol, result.failed.get("__publication__")
+    )
+
+
+@pytest.mark.parametrize("entry", ["refresh", "staged", "direct"])
+@pytest.mark.parametrize(
+    ("with_newer", "candidate_price", "accepted"),
+    [(False, 3.25, False), (True, 3.25, False), (True, 3.0, True)],
+)
+def test_backfilled_confirmed_nav_checks_its_own_economic_date(
+    tmp_path, monkeypatch, entry, with_newer, candidate_price, accepted
+):
+    db = AppDatabase(tmp_path / "fund_backfill.db")
+    db.init_sync()
+    symbol = "019999"
+    _seed_fund_observations(db, ("2026-11-24", 3.0))
+    if with_newer:
+        _seed_fund_observations(db, ("2026-11-25", 4.0))
+    published, _ = _submit_fund_nav_observation(
+        db,
+        monkeypatch,
+        entry=entry,
+        source="tushare_fund_nav",
+        status="confirmed",
+        price=candidate_price,
+    )
+    with sqlite3.connect(db.path) as conn:
+        prices = conn.execute(
+            "SELECT DISTINCT price FROM quote_snapshots WHERE symbol=? AND nav_date=?",
+            (symbol, "2026-11-24"),
+        ).fetchall()
+    assert prices == [(3.0,)]
+    assert published is accepted
+    assert db.get_latest_quote_sync(symbol, asset_type="open_end_fund")["price"] == (
+        4.0 if with_newer else 3.0
+    )
+
+
+@pytest.mark.parametrize("entry", ["refresh", "staged", "direct"])
+@pytest.mark.parametrize(
+    ("source", "status"),
+    [
+        ("unrecognized_fund_feed", "confirmed"),
+        ("sina_fund_estimate", "confirmed"),
+        ("unrecognized_fund_feed", "live"),
+    ],
+)
+def test_initial_fund_nav_confirmation_requires_published_source(
+    tmp_path, monkeypatch, entry, source, status
+):
+    db = AppDatabase(tmp_path / "first_quote.db")
+    db.init_sync()
+    published, reason = _submit_fund_nav_observation(
+        db, monkeypatch, entry=entry, source=source, status=status, price=3.0
+    )
+    latest = db.get_latest_quote_sync("019999", asset_type="open_end_fund")
+    with sqlite3.connect(db.path) as conn:
+        stored = conn.execute(
+            "SELECT quote_status FROM quote_snapshots WHERE symbol=?", ("019999",)
+        ).fetchall()
+    if status == "live":
+        assert published and latest["quote_status"] == "live"
+        assert stored == [("live",)]
+    else:
+        assert not published
+        assert latest is None and stored == []
+        if entry == "refresh":
+            assert reason == "fund_quote_source_unresolvable"
+        elif entry == "staged":
+            assert reason == "valuation snapshot publication failed: ValueError"
+        else:
+            assert reason == "fund quote source authority unresolved"
+
+
+def test_missing_historical_nav_can_be_backfilled_without_replacing_latest(
+    tmp_path, monkeypatch
+):
+    db = AppDatabase(tmp_path / "missing_historical_nav.db")
+    db.init_sync()
+    _seed_fund_observations(db, ("2026-11-25", 4.0))
+    published, reason = _submit_fund_nav_observation(
+        db,
+        monkeypatch,
+        entry="refresh",
+        source="tushare_fund_nav",
+        status="confirmed",
+        price=3.0,
+    )
+    assert published and reason is None
+    with sqlite3.connect(db.path) as conn:
+        assert conn.execute(
+            "SELECT nav_date,price FROM quote_snapshots WHERE symbol=? ORDER BY nav_date",
+            ("019999",),
+        ).fetchall() == [("2026-11-24", 3.0), ("2026-11-25", 4.0)]
+    assert (
+        db.get_latest_quote_sync("019999", asset_type="open_end_fund")["price"] == 4.0
+    )
+
+
+def test_confirmed_backfill_keeps_scheduler_quote_on_latest_nav(tmp_path, monkeypatch):
+    db = AppDatabase(tmp_path / "fund_cache.db")
+    db.init_sync()
+    symbol = "019999"
+    _seed_fund_observations(db, ("2026-11-24", 3.0), ("2026-11-25", 4.0))
+    latest_quote = db.get_latest_quote_sync(symbol, asset_type="open_end_fund")
+    cache = {symbol: dict(latest_quote)}
+    result = _refresh_fund_fixture(
+        db,
+        monkeypatch,
+        cache=cache,
+        source="tushare_fund_nav",
+        status="confirmed",
+        price=3.0,
+    )
+    assert result.refreshed == [symbol] and result.failed == {}
+    assert cache[symbol]["nav_date"] == "2026-11-25" and cache[symbol]["price"] == 4.0
+    # The scheduler applies this incremental update to its own, independent cache.
+    scheduler = {symbol: latest_quote}
+    scheduler.update(result.quotes)
+    assert (
+        scheduler[symbol]["nav_date"] == "2026-11-25"
+        and scheduler[symbol]["price"] == 4.0
+    )
+
+
+@pytest.mark.parametrize("entry", ["save_snapshot", "upsert_latest"])
+@pytest.mark.parametrize("with_history", [False, True])
+def test_legacy_fund_quote_writers_validate_source_and_historical_nav(
+    tmp_path, entry, with_history
+):
+    db = AppDatabase(tmp_path / "fund_writers.db")
+    db.init_sync()
+    symbol = "019999"
+    source = "unrecognized_fund_feed"
+    error = "fund quote source authority unresolved"
+    if with_history:
+        _seed_fund_observations(db, ("2026-11-24", 3.0), ("2026-11-25", 4.0))
+        source = "tushare_fund_nav"
+        error = "confirmed fund NAV authority conflict"
+    kwargs = dict(
+        symbol=symbol,
+        price=3.25,
+        quote_source=source,
+        quote_status="confirmed",
+        nav_date="2026-11-24",
+    )
+    timestamp = "2026-11-24T15:05:00+08:00"
+    with pytest.raises(ValueError, match=error):
+        if entry == "save_snapshot":
+            db.save_quote_snapshot_sync(
+                asset_class="fund", volume=None, timestamp=timestamp, **kwargs
+            )
+        else:
+            db.upsert_latest_quote_sync(
+                asset_type="open_end_fund", quote_timestamp=timestamp, **kwargs
+            )
+    with sqlite3.connect(db.path) as conn:
+        assert conn.execute(
+            "SELECT price FROM quote_snapshots WHERE symbol=? ORDER BY nav_date",
+            (symbol,),
+        ).fetchall() == ([(3.0,), (4.0,)] if with_history else [])
+    latest = db.get_latest_quote_sync(symbol, asset_type="open_end_fund")
+    assert (latest["price"] if latest else None) == (4.0 if with_history else None)

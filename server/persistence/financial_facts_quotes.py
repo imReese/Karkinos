@@ -26,7 +26,9 @@ from server.persistence.quote_current_materialization import (
     assert_quote_current_materialization_on_connection,
     increment_quote_current_revision_on_connection,
     published_nav_changed_since_checkpoint,
+    published_nav_rows_for_date,
     published_nav_rows_on_connection,
+    require_fund_nav_write_authority,
 )
 
 
@@ -231,6 +233,12 @@ class QuoteFactsRepositoryMixin:
         metadata_json = serialize_metadata_json(metadata)
         with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
+            fund = (
+                InstrumentType.from_persisted(asset_type)
+                is InstrumentType.OPEN_END_FUND
+            )
+            if fund:
+                conn.execute("BEGIN IMMEDIATE")
             existing = conn.execute(
                 "SELECT * FROM latest_quotes WHERE symbol = ? AND asset_type = ?",
                 (symbol, asset_type),
@@ -252,6 +260,8 @@ class QuoteFactsRepositoryMixin:
                 "stale_reason": stale_reason,
                 "nav_date": nav_date,
             }
+            if fund:
+                require_fund_nav_write_authority(conn, symbol, candidate)
             candidate_instant = quote_observation_rank(candidate)[0]
             existing_instant = (
                 quote_observation_rank(dict(existing))[0]
@@ -435,6 +445,19 @@ class QuoteFactsRepositoryMixin:
         now = self._now().isoformat()
         with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
+            if instrument_type == "open_end_fund":
+                conn.execute("BEGIN IMMEDIATE")
+                require_fund_nav_write_authority(
+                    conn,
+                    symbol,
+                    {
+                        "quote_source": quote_source,
+                        "quote_status": quote_status,
+                        "nav_date": nav_date,
+                        "quote_timestamp": timestamp,
+                        "price": price,
+                    },
+                )
             cursor = conn.execute(
                 """INSERT INTO quote_snapshots
                    (
@@ -592,6 +615,7 @@ class QuoteFactsRepositoryMixin:
         symbol: str,
         *,
         quote_timestamp: str | None = None,
+        nav_date: str | None = None,
     ) -> dict[str, Any]:
         """Read persisted published NAV and same-instant facts for one open-end fund."""
 
@@ -613,6 +637,11 @@ class QuoteFactsRepositoryMixin:
                 _quote_snapshot_row(row)
                 for row in published_nav_rows_on_connection(conn, symbol)
             ]
+            if nav_date:
+                published_rows.extend(
+                    _quote_snapshot_row(row)
+                    for row in published_nav_rows_for_date(conn, symbol, nav_date)
+                )
             same_instant_rows = (
                 [
                     _quote_snapshot_row(row)

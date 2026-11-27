@@ -166,11 +166,13 @@ class FinancialFactDatabaseFacade(DatabaseRepositoryAccess):
         symbol: str,
         *,
         quote_timestamp: str | None = None,
+        nav_date: str | None = None,
     ) -> dict[str, Any]:
         """Read persisted published NAV and same-instant facts for one open-end fund."""
         return self._financial_facts.list_fund_quote_precedence_facts_sync(
             symbol,
             quote_timestamp=quote_timestamp,
+            nav_date=nav_date,
         )
 
     def get_recent_quote_snapshots_sync(

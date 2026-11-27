@@ -7,7 +7,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from data.market_data import (
+    PUBLISHED_FUND_NAV_QUOTE_SOURCES,
+    has_unverified_fund_confirmation,
+)
 from server.contracts.quote_ingestion import (
+    fund_nav_pricing_date,
     quote_authority_conflict_fields,
     quote_timestamp_instant,
 )
@@ -64,6 +69,64 @@ def published_nav_rows_on_connection(
         """,
         (*instant_params, *date_params),
     )
+
+
+def published_nav_rows_for_date(
+    conn: sqlite3.Connection, symbol: str, pricing_date: str
+) -> list[dict[str, Any]]:
+    """Return the registered publishers' NAV facts for this economic date."""
+    rows = _fetchall_dicts(
+        conn,
+        f"""
+        SELECT * FROM quote_snapshots
+        WHERE symbol = ? AND instrument_type = 'open_end_fund'
+          AND {PUBLISHED_NAV_SQL_PREDICATE}
+          AND {PUBLISHED_NAV_DATE_SQL} = ?
+        """,
+        (symbol, pricing_date),
+    )
+    return [
+        row
+        for row in rows
+        if str(row["quote_source"] or "").strip().lower()
+        in PUBLISHED_FUND_NAV_QUOTE_SOURCES
+    ]
+
+
+def require_fund_nav_write_authority(
+    conn: sqlite3.Connection, symbol: str, candidate: Mapping[str, Any]
+) -> None:
+    source = str(candidate.get("quote_source") or "").strip().lower()
+    if has_unverified_fund_confirmation(source, candidate.get("quote_status")):
+        raise ValueError("fund quote source authority unresolved")
+    if source in PUBLISHED_FUND_NAV_QUOTE_SOURCES:
+        pricing_date = fund_nav_pricing_date(
+            candidate.get("nav_date"), candidate.get("quote_timestamp")
+        )
+        history = published_nav_rows_for_date(conn, symbol, pricing_date)
+        # The legacy current-quote writer can publish without an audit snapshot.
+        current = _fetchall_dicts(
+            conn,
+            f"""
+            SELECT * FROM latest_quotes
+            WHERE symbol = ? AND asset_type IN ('fund', 'open_end_fund')
+              AND {PUBLISHED_NAV_SQL_PREDICATE}
+            """,
+            (symbol,),
+        )
+        for prior in current:
+            if (
+                str(prior["quote_source"] or "").strip().lower()
+                in PUBLISHED_FUND_NAV_QUOTE_SOURCES
+                and fund_nav_pricing_date(prior["nav_date"], prior["quote_timestamp"])
+                == pricing_date
+            ):
+                history.append(prior)
+        for prior in history:
+            if "price" in quote_authority_conflict_fields(prior, candidate):
+                raise ValueError(
+                    "confirmed fund NAV authority conflict for nav_date: price"
+                )
 
 
 def published_nav_changed_since_checkpoint(
