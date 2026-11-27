@@ -1650,3 +1650,44 @@ def test_legacy_fund_quote_writers_validate_source_and_historical_nav(
         ).fetchall() == ([(3.0,), (4.0,)] if with_history else [])
     latest = db.get_latest_quote_sync(symbol, asset_type="open_end_fund")
     assert (latest["price"] if latest else None) == (4.0 if with_history else None)
+
+
+@pytest.mark.parametrize(
+    ("stored_date", "incoming_date"),
+    [
+        ("2026-11-24", "2026-11-24 15:00"),
+        ("2026-11-24 15:00", "2026-11-24"),
+    ],
+)
+def test_historical_nav_date_encodings_share_one_confirmed_price(
+    tmp_path, stored_date, incoming_date
+):
+    db = AppDatabase(tmp_path / "fund_nav_dates.db")
+    db.init_sync()
+    symbol = "019999"
+    _seed_fund_observations(db, ("2026-11-24", 3.0), ("2026-11-25", 4.0))
+    with sqlite3.connect(db.path) as conn:
+        # Preserve the exact historical encoding even if the current writer normalizes it.
+        conn.execute(
+            "UPDATE quote_snapshots SET nav_date=? WHERE symbol=? AND price=3.0",
+            (stored_date, symbol),
+        )
+    attrs = dict(
+        symbol=symbol,
+        asset_class="open_end_fund",
+        volume=None,
+        timestamp="2026-11-24T15:05:00+08:00",
+        nav_date=incoming_date,
+        quote_source="tushare_fund_nav",
+        quote_status="confirmed",
+    )
+    with pytest.raises(ValueError, match="confirmed fund NAV authority conflict"):
+        db.save_quote_snapshot_sync(price=3.25, **attrs)
+    db.save_quote_snapshot_sync(price=3.0, **attrs)
+    with sqlite3.connect(db.path) as conn:
+        prices = conn.execute(
+            "SELECT price FROM quote_snapshots WHERE symbol=? AND timestamp LIKE ? ORDER BY id",
+            (symbol, "2026-11-24%"),
+        ).fetchall()
+    assert prices == [(3.0,), (3.0,)]
+    assert db.get_latest_quote_sync(symbol, asset_type="open_end_fund")["price"] == 4.0

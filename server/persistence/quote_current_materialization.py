@@ -81,15 +81,19 @@ def published_nav_rows_for_date(
         SELECT * FROM quote_snapshots
         WHERE symbol = ? AND instrument_type = 'open_end_fund'
           AND {PUBLISHED_NAV_SQL_PREDICATE}
-          AND {PUBLISHED_NAV_DATE_SQL} = ?
+          AND (
+              ({PUBLISHED_NAV_DATE_SQL} >= ? AND {PUBLISHED_NAV_DATE_SQL} < date(?, '+1 day'))
+              OR {PUBLISHED_NAV_DATE_SQL} NOT GLOB '????-??-??*'
+          )
         """,
-        (symbol, pricing_date),
+        (symbol, pricing_date, pricing_date),
     )
     return [
         row
         for row in rows
         if str(row["quote_source"] or "").strip().lower()
         in PUBLISHED_FUND_NAV_QUOTE_SOURCES
+        and fund_nav_pricing_date(row["nav_date"], row["timestamp"]) == pricing_date
     ]
 
 
