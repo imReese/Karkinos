@@ -3,10 +3,35 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timedelta
 from typing import Any
 
 from server.contracts.quote_ingestion import quote_timestamp_instant
 from server.persistence.database_serialization import metadata_payload_value
+
+
+def sql_utc_timestamp_ms_expr(column: str) -> str:
+    """Normalize aware and naive Shanghai SQLite timestamps to UTC millisecond text."""
+    trimmed = f"trim({column})"
+    return (
+        f"CASE WHEN substr({trimmed}, -1) IN ('Z', 'z') "
+        f"OR substr({trimmed}, 11) LIKE '%+%' "
+        f"OR substr({trimmed}, 11) LIKE '%-%' "
+        f"THEN strftime('%Y-%m-%d %H:%M:%f', {column}) "
+        f"ELSE strftime('%Y-%m-%d %H:%M:%f', {column}, '-8 hours') END"
+    )
+
+
+def sql_utc_ms_cutoff_bound(utc_cutoff: datetime) -> str:
+    """Return a millisecond ceiling matching SQLite strftime('%Y-%m-%d %H:%M:%f')."""
+    # SQLite strftime('%f') rounds microseconds to 3 digits; bump sub-ms cutoffs by
+    # 1 ms so observations at dt <= utc_cutoff stay visible for Python exact checks.
+    adjusted = (
+        utc_cutoff
+        if utc_cutoff.microsecond % 1000 == 0
+        else utc_cutoff + timedelta(milliseconds=1)
+    )
+    return f"{adjusted:%Y-%m-%d %H:%M:%S}.{adjusted.microsecond // 1000:03d}"
 
 
 def quote_instant_storage_key(value: Any) -> str:

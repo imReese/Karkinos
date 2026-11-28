@@ -10,6 +10,7 @@ from typing import Any
 from core.types import InstrumentType
 from server.contracts.quote_ingestion import (
     historical_observation_effective_date,
+    normalize_as_of_utc,
     quote_authority_conflict_fields,
     select_best_historical_observations,
 )
@@ -20,6 +21,8 @@ from server.persistence.financial_fact_event_payloads import (
     latest_quote_event_payload,
     quote_instant_storage_key,
     quote_observation_rank,
+    sql_utc_ms_cutoff_bound,
+    sql_utc_timestamp_ms_expr,
 )
 from server.persistence.market_bar_facts import (
     get_latest_market_bar_before_date,
@@ -885,6 +888,93 @@ class QuoteFactsRepositoryMixin:
             )
 
 
+def _quote_before_date_branch(
+    *,
+    resolved_type: str,
+    symbol: str,
+    instant_upper_bound: str,
+    nav_bound: str,
+    trade_date_ms_bound: str,
+    as_of_utc_key: str | None,
+    as_of_ms_bound: str | None,
+    published_fund_only: bool,
+    null_instant: bool,
+) -> tuple[str, list[object]]:
+    """Build one pre-date candidate query filtering visibility before ORDER/LIMIT."""
+    cols = (
+        "id, symbol, asset_class, instrument_type, identity_provenance, "
+        "price, volume, timestamp, quote_source, provider_name, quote_status, "
+        "stale_reason, provider_status, captured_reason, nav_date, created_at"
+    )
+    where_parts = ["symbol = ?", "instrument_type = ?"]
+    params: list[object] = [symbol, resolved_type]
+    if published_fund_only:
+        where_parts.append(
+            "quote_source IN ('eastmoney_fund_page', 'tushare_fund_nav')"
+        )
+
+    nav_date_before = (
+        "trim(coalesce(nav_date, '')) GLOB '????-??-??*' "
+        "AND substr(trim(nav_date), 1, 10) < ?"
+    )
+    if null_instant:
+        where_parts.append("quote_instant_utc IS NULL")
+        ts_expr = sql_utc_timestamp_ms_expr("timestamp")
+        if resolved_type == "open_end_fund":
+            where_parts.append(f"(({ts_expr} < ?) OR ({nav_date_before}))")
+            params.extend((trade_date_ms_bound, nav_bound))
+        else:
+            where_parts.append(f"{ts_expr} < ?")
+            params.append(trade_date_ms_bound)
+    else:
+        where_parts.append("quote_instant_utc IS NOT NULL")
+        if resolved_type == "open_end_fund":
+            where_parts.append(f"(quote_instant_utc < ? OR ({nav_date_before}))")
+            params.extend((instant_upper_bound, nav_bound))
+        else:
+            where_parts.append("quote_instant_utc < ?")
+            params.append(instant_upper_bound)
+
+    if as_of_utc_key is not None and as_of_ms_bound is not None:
+        where_parts.append(
+            f"created_at IS NOT NULL AND trim(created_at) != '' "
+            f"AND {sql_utc_timestamp_ms_expr('created_at')} <= ?"
+        )
+        params.append(as_of_ms_bound)
+        if null_instant:
+            where_parts.append(
+                f"(timestamp IS NULL OR trim(timestamp) = '' "
+                f"OR {sql_utc_timestamp_ms_expr('timestamp')} <= ?)"
+            )
+            params.append(as_of_ms_bound)
+        else:
+            where_parts.append("quote_instant_utc <= ?")
+            params.append(as_of_utc_key)
+
+    if published_fund_only:
+        date_order = (
+            "COALESCE(nullif(trim(nav_date), ''), substr(timestamp, 1, 10))"
+            if null_instant
+            else "COALESCE(nullif(trim(nav_date), ''), date(quote_instant_utc, '+8 hours'))"
+        )
+        order_by = (
+            f"{date_order} DESC, id DESC"
+            if null_instant
+            else f"{date_order} DESC, quote_instant_utc DESC, id DESC"
+        )
+    else:
+        order_by = "id DESC" if null_instant else "quote_instant_utc DESC, id DESC"
+
+    subquery = (
+        f"SELECT {cols}, created_at AS captured_at, 'quote' AS kind\n"
+        f"        FROM quote_snapshots\n"
+        f"        WHERE {' AND '.join(where_parts)}\n"
+        f"        ORDER BY {order_by}\n"
+        f"        LIMIT 32"
+    )
+    return f"SELECT * FROM (\n        {subquery}\n    )", params
+
+
 def read_latest_quote_before_date_on_connection(
     conn: sqlite3.Connection,
     symbol: str,
@@ -895,69 +985,41 @@ def read_latest_quote_before_date_on_connection(
 ) -> dict[str, Any] | None:
     """Select the canonical highest-authority pre-date quote on an open connection."""
     resolved_type, _ = _canonical_quote_identity(instrument_type)
-    instant_upper_bound = quote_instant_storage_key(f"{trade_date}T00:00:00+08:00")
     nav_bound = str(trade_date or "").strip()[:10]
-    sql = """
-        SELECT
-            id, symbol, asset_class, instrument_type, identity_provenance,
-            price, volume, timestamp,
-            quote_source, provider_name, quote_status, stale_reason,
-            provider_status, captured_reason, nav_date, created_at,
-            created_at AS captured_at, 'quote' AS kind
-        FROM (
-            SELECT id, symbol, asset_class, instrument_type, identity_provenance,
-                   price, volume, timestamp, quote_source, provider_name,
-                   quote_status, stale_reason, provider_status, captured_reason,
-                   nav_date, created_at
-            FROM quote_snapshots
-            WHERE symbol = ? AND instrument_type = ?
-              AND quote_source IN ('eastmoney_fund_page', 'tushare_fund_nav')
-              AND (
-                  quote_instant_utc < ?
-                  OR (trim(coalesce(nav_date, '')) GLOB '????-??-??*'
-                      AND substr(trim(nav_date), 1, 10) < ?)
-              )
-            ORDER BY COALESCE(nullif(trim(nav_date), ''), substr(timestamp, 1, 10)) DESC,
-                     quote_instant_utc DESC, id DESC
-            LIMIT 32
-        )
-        UNION
-        SELECT
-            id, symbol, asset_class, instrument_type, identity_provenance,
-            price, volume, timestamp,
-            quote_source, provider_name, quote_status, stale_reason,
-            provider_status, captured_reason, nav_date, created_at,
-            created_at AS captured_at, 'quote' AS kind
-        FROM (
-            SELECT id, symbol, asset_class, instrument_type, identity_provenance,
-                   price, volume, timestamp, quote_source, provider_name,
-                   quote_status, stale_reason, provider_status, captured_reason,
-                   nav_date, created_at
-            FROM quote_snapshots
-            WHERE symbol = ? AND instrument_type = ?
-              AND (
-                  quote_instant_utc < ?
-                  OR (instrument_type = 'open_end_fund'
-                      AND trim(coalesce(nav_date, '')) GLOB '????-??-??*'
-                      AND substr(trim(nav_date), 1, 10) < ?)
-              )
-            ORDER BY quote_instant_utc DESC, id DESC
-            LIMIT 32
-        )
-    """
-    rows = conn.execute(
-        sql,
-        (
-            symbol,
-            resolved_type,
-            instant_upper_bound,
-            nav_bound,
-            symbol,
-            resolved_type,
-            instant_upper_bound,
-            nav_bound,
-        ),
-    ).fetchall()
+    instant_upper_bound = quote_instant_storage_key(f"{nav_bound}T00:00:00+08:00")
+    trade_date_utc = datetime.fromisoformat(instant_upper_bound)
+    trade_date_ms_bound = (
+        f"{trade_date_utc:%Y-%m-%d %H:%M:%S}.{trade_date_utc.microsecond // 1000:03d}"
+    )
+    as_of_utc = normalize_as_of_utc(as_of)
+    as_of_utc_key = (
+        None if as_of_utc is None else as_of_utc.isoformat(timespec="microseconds")
+    )
+    as_of_ms_bound = None if as_of_utc is None else sql_utc_ms_cutoff_bound(as_of_utc)
+
+    branches = [False]
+    if resolved_type == "open_end_fund":
+        branches.insert(0, True)
+
+    sql_parts: list[str] = []
+    params: list[object] = []
+    for published_fund_only in branches:
+        for null_instant in (False, True):
+            part_sql, part_params = _quote_before_date_branch(
+                resolved_type=resolved_type,
+                symbol=symbol,
+                instant_upper_bound=instant_upper_bound,
+                nav_bound=nav_bound,
+                trade_date_ms_bound=trade_date_ms_bound,
+                as_of_utc_key=as_of_utc_key,
+                as_of_ms_bound=as_of_ms_bound,
+                published_fund_only=published_fund_only,
+                null_instant=null_instant,
+            )
+            sql_parts.append(part_sql)
+            params.extend(part_params)
+
+    rows = conn.execute("\n    UNION\n    ".join(sql_parts), params).fetchall()
     candidates = [
         dict(row)
         for row in rows

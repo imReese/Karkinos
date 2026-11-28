@@ -14,6 +14,10 @@ from server.contracts.quote_ingestion import (
     select_best_historical_observations,
 )
 from server.persistence.connection import connect_sqlite
+from server.persistence.financial_fact_event_payloads import (
+    sql_utc_ms_cutoff_bound,
+    sql_utc_timestamp_ms_expr,
+)
 
 _MAX_IDENTITIES_PER_QUERY = 400
 
@@ -100,7 +104,7 @@ def read_historical_price_matrix(
     if symbol_batch_size <= 0 or symbol_batch_size > _MAX_IDENTITIES_PER_QUERY:
         raise ValueError("historical price matrix identity batch size is invalid")
     as_of_utc = normalize_as_of_utc(as_of)
-    as_of_utc_iso = None if as_of_utc is None else as_of_utc.isoformat()
+    as_of_utc_ms = None if as_of_utc is None else sql_utc_ms_cutoff_bound(as_of_utc)
 
     matrix: dict[InstrumentKey, list[dict[str, Any]]] = {}
     meta_database_path = app_database_path.parent / "meta.db"
@@ -120,7 +124,7 @@ def read_historical_price_matrix(
                 instrument_keys=None,
                 start_date=start_date,
                 end_date=end_date,
-                as_of_utc_iso=as_of_utc_iso,
+                as_of_utc_ms=as_of_utc_ms,
             )
             grouped_rows: dict[InstrumentKey, list[dict[str, Any]]] = {}
             for row in rows:
@@ -153,7 +157,7 @@ def read_historical_price_matrix(
             instrument_keys=chunk,
             start_date=start_date,
             end_date=end_date,
-            as_of_utc_iso=as_of_utc_iso,
+            as_of_utc_ms=as_of_utc_ms,
         )
         grouped_rows = {}
         for row in rows:
@@ -228,7 +232,7 @@ def _read_chunk(
     instrument_keys: list[InstrumentKey] | None,
     start_date: str,
     end_date: str,
-    as_of_utc_iso: str | None = None,
+    as_of_utc_ms: str | None = None,
 ) -> list[tuple[Any, ...]]:
     if not app_database_path.is_file():
         return []
@@ -265,7 +269,7 @@ def _read_chunk(
             include_daily_closes=include_daily_closes,
             include_quotes=bool(quote_columns),
             quote_columns=quote_columns,
-            as_of_utc_iso=as_of_utc_iso,
+            as_of_utc_ms=as_of_utc_ms,
         )
         params: list[object] = []
         if symbols is not None:
@@ -306,7 +310,7 @@ def _matrix_sql(
     include_daily_closes: bool,
     include_quotes: bool,
     quote_columns: set[str],
-    as_of_utc_iso: str | None = None,
+    as_of_utc_ms: str | None = None,
 ) -> tuple[str, list[object]]:
     ctes: list[str] = []
     cte_params: list[object] = []
@@ -328,25 +332,25 @@ def _matrix_sql(
         bar_captured = "bars.updated_at" if has_updated_at else "NULL"
         bar_as_of_main = ""
         bar_as_of_prior = ""
-        if as_of_utc_iso is not None:
+        if as_of_utc_ms is not None:
             if has_updated_at:
                 bar_as_of_prior = (
-                    "\n              AND (prior.updated_at IS NULL OR trim(prior.updated_at) = '' "
-                    "OR datetime(prior.updated_at) <= datetime(?, '+1 second'))"
-                    "\n              AND datetime(prior.timestamp) <= datetime(?, '+1 second')"
+                    f"\n              AND (prior.updated_at IS NULL OR trim(prior.updated_at) = '' "
+                    f"OR {sql_utc_timestamp_ms_expr('prior.updated_at')} <= ?)"
+                    f"\n              AND {sql_utc_timestamp_ms_expr('prior.timestamp')} <= ?"
                 )
                 bar_as_of_main = (
-                    "\n              AND (bars.updated_at IS NULL OR trim(bars.updated_at) = '' "
-                    "OR datetime(bars.updated_at) <= datetime(?, '+1 second'))"
-                    "\n              AND datetime(bars.timestamp) <= datetime(?, '+1 second')"
+                    f"\n              AND (bars.updated_at IS NULL OR trim(bars.updated_at) = '' "
+                    f"OR {sql_utc_timestamp_ms_expr('bars.updated_at')} <= ?)"
+                    f"\n              AND {sql_utc_timestamp_ms_expr('bars.timestamp')} <= ?"
                 )
-                cte_params.extend([as_of_utc_iso, as_of_utc_iso])
-                arm_params.extend([as_of_utc_iso, as_of_utc_iso])
+                cte_params.extend([as_of_utc_ms, as_of_utc_ms])
+                arm_params.extend([as_of_utc_ms, as_of_utc_ms])
             else:
-                bar_as_of_prior = "\n              AND datetime(prior.timestamp) <= datetime(?, '+1 second')"
-                bar_as_of_main = "\n              AND datetime(bars.timestamp) <= datetime(?, '+1 second')"
-                cte_params.append(as_of_utc_iso)
-                arm_params.append(as_of_utc_iso)
+                bar_as_of_prior = f"\n              AND {sql_utc_timestamp_ms_expr('prior.timestamp')} <= ?"
+                bar_as_of_main = f"\n              AND {sql_utc_timestamp_ms_expr('bars.timestamp')} <= ?"
+                cte_params.append(as_of_utc_ms)
+                arm_params.append(as_of_utc_ms)
         ctes.append(f"""
             prior_bar_cutoffs AS (
                 SELECT
@@ -409,19 +413,19 @@ def _matrix_sql(
         )
         close_as_of_prior = ""
         close_as_of_main = ""
-        if as_of_utc_iso is not None:
+        if as_of_utc_ms is not None:
             close_as_of_prior = (
-                "\n              AND prior.captured_at IS NOT NULL "
-                "AND trim(prior.captured_at) != '' "
-                "AND datetime(prior.captured_at) <= datetime(?, '+1 second')"
+                f"\n              AND prior.captured_at IS NOT NULL "
+                f"AND trim(prior.captured_at) != '' "
+                f"AND {sql_utc_timestamp_ms_expr('prior.captured_at')} <= ?"
             )
             close_as_of_main = (
-                "\n              AND closes.captured_at IS NOT NULL "
-                "AND trim(closes.captured_at) != '' "
-                "AND datetime(closes.captured_at) <= datetime(?, '+1 second')"
+                f"\n              AND closes.captured_at IS NOT NULL "
+                f"AND trim(closes.captured_at) != '' "
+                f"AND {sql_utc_timestamp_ms_expr('closes.captured_at')} <= ?"
             )
-            cte_params.append(as_of_utc_iso)
-            arm_params.append(as_of_utc_iso)
+            cte_params.append(as_of_utc_ms)
+            arm_params.append(as_of_utc_ms)
         ctes.append(f"""
             prior_close_cutoffs AS (
                 SELECT
@@ -509,19 +513,19 @@ def _matrix_sql(
         created_col = "quotes.created_at" if "created_at" in quote_columns else "NULL"
         quote_as_of_prior = ""
         quote_as_of_main = ""
-        if as_of_utc_iso is not None and "created_at" in quote_columns:
+        if as_of_utc_ms is not None and "created_at" in quote_columns:
             quote_as_of_prior = (
-                "\n              AND prior.created_at IS NOT NULL "
-                "AND trim(prior.created_at) != '' "
-                "AND datetime(prior.created_at) <= datetime(?, '+1 second')"
+                f"\n              AND prior.created_at IS NOT NULL "
+                f"AND trim(prior.created_at) != '' "
+                f"AND {sql_utc_timestamp_ms_expr('prior.created_at')} <= ?"
             )
             quote_as_of_main = (
-                "\n              AND quotes.created_at IS NOT NULL "
-                "AND trim(quotes.created_at) != '' "
-                "AND datetime(quotes.created_at) <= datetime(?, '+1 second')"
+                f"\n              AND quotes.created_at IS NOT NULL "
+                f"AND trim(quotes.created_at) != '' "
+                f"AND {sql_utc_timestamp_ms_expr('quotes.created_at')} <= ?"
             )
-            cte_params.append(as_of_utc_iso)
-            arm_params.append(as_of_utc_iso)
+            cte_params.append(as_of_utc_ms)
+            arm_params.append(as_of_utc_ms)
         type_join = (
             ""
             if is_symbol_query
