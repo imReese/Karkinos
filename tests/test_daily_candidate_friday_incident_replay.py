@@ -73,9 +73,11 @@ _SH = ZoneInfo("Asia/Shanghai")
 _DECISION_DATE = "2026-11-27"
 _MARKET_DATE = "2026-11-26"
 _NEXT_DATE = "2026-11-30"
+_PRE_WINDOW_RECOVERY_SH = datetime(2026, 11, 27, 9, 25, 0, tzinfo=_SH)
 _IN_WINDOW_SH = datetime(2026, 11, 27, 9, 37, 0, tzinfo=_SH)
 _RECOVERY_SH = datetime(2026, 11, 27, 12, 1, 57, tzinfo=_SH)
 _POST_WINDOW_SH = datetime(2026, 11, 27, 19, 30, 0, tzinfo=_SH)
+_MONDAY_IN_WINDOW_SH = datetime(2026, 11, 30, 9, 37, 0, tzinfo=_SH)
 _INCIDENT_RUN_ID = (
     "fund_nav_sync:2026-11-26T09:30:16.870019:60fd45a0b9884a35aef2036c19d8a59a"
 )
@@ -191,6 +193,7 @@ def _seed_reconciled_statement(
     stock_px: float,
     fund_qty: float,
     fund_px: float,
+    snapshot_date: str = _DECISION_DATE,
 ) -> str:
     stock_gross = stock_qty * stock_px
     fund_gross = fund_qty * fund_px
@@ -201,15 +204,72 @@ def _seed_reconciled_statement(
         f"dep-1,transfer_in,2026-11-20T08:30:00+08:00,2026-11-20,,,,CNY,0,0,{deposit:.2f},0.00,0.00,{deposit:.2f},{deposit:.2f},,,deposit,0.00,",
         f"buy-stock,trade_buy,2026-11-20T10:00:00+08:00,2026-11-20,600001,样本股票600001,stock,CNY,{stock_qty:g},{stock_px:.2f},{stock_gross:.2f},0.00,0.00,-{stock_gross:.2f},{cash_after_stock:.2f},{stock_qty:g},{stock_px:.2f},buy,0.00,moving_average_buy_cost",
         f"buy-fund,trade_buy,2026-11-20T10:05:00+08:00,2026-11-20,018125,样本基金018125,fund,CNY,{fund_qty:g},{fund_px:.4f},{fund_gross:.2f},0.00,0.00,-{fund_gross:.2f},{cash_balance:.2f},{fund_qty:g},{fund_px:.4f},buy,0.00,moving_average_buy_cost",
-        f"cash-snap,cash_snapshot,{_DECISION_DATE}T08:45:00+08:00,{_DECISION_DATE},,,,CNY,0,0,0.00,0.00,0.00,0.00,{cash_balance:.2f},,,cash,0.00,",
-        f"pos-600001,position_snapshot,{_DECISION_DATE}T08:45:00+08:00,{_DECISION_DATE},600001,样本股票600001,stock,CNY,0,0,0.00,0.00,0.00,0.00,{cash_balance:.2f},{stock_qty:g},{stock_px:.2f},pos,0.00,moving_average_buy_cost",
-        f"pos-018125,position_snapshot,{_DECISION_DATE}T08:45:00+08:00,{_DECISION_DATE},018125,样本基金018125,fund,CNY,0,0,0.00,0.00,0.00,0.00,{cash_balance:.2f},{fund_qty:g},{fund_px:.4f},pos,0.00,moving_average_buy_cost",
+        f"cash-snap-{snapshot_date},cash_snapshot,{snapshot_date}T08:45:00+08:00,{snapshot_date},,,,CNY,0,0,0.00,0.00,0.00,0.00,{cash_balance:.2f},,,cash,0.00,",
+        f"pos-600001-{snapshot_date},position_snapshot,{snapshot_date}T08:45:00+08:00,{snapshot_date},600001,样本股票600001,stock,CNY,0,0,0.00,0.00,0.00,0.00,{cash_balance:.2f},{stock_qty:g},{stock_px:.2f},pos,0.00,moving_average_buy_cost",
+        f"pos-018125-{snapshot_date},position_snapshot,{snapshot_date}T08:45:00+08:00,{snapshot_date},018125,样本基金018125,fund,CNY,0,0,0.00,0.00,0.00,0.00,{cash_balance:.2f},{fund_qty:g},{fund_px:.4f},pos,0.00,moving_average_buy_cost",
     ]
     imported = BrokerEvidenceRepository(db._path).save_preview(
         parse_broker_statement_csv("\n".join(rows) + "\n"),
-        source_name="friday-replay-broker.csv",
+        source_name=f"friday-replay-broker-{snapshot_date}.csv",
     )
     return imported.import_run_id
+
+
+def _ingest_morning_stock_poll(
+    db: AppDatabase,
+    *,
+    symbols: list[str],
+    quote_timestamp: str,
+    captured_at: str,
+    run_id: str,
+    price_fn: Callable[[str], float] | None = None,
+) -> None:
+    db.create_quote_fetch_run(
+        run_id=run_id,
+        started_at=captured_at,
+        trigger="scheduler_poll",
+        provider="tencent",
+        asset_type="stock",
+        symbol_count=len(symbols),
+        status="running",
+        metadata={
+            "requested_symbols": symbols,
+            "instrument_types": ["stock"] * len(symbols),
+        },
+    )
+    for sym in symbols:
+        price = (
+            price_fn(sym)
+            if price_fn is not None
+            else (10.0 if sym == "600001" else 20.0)
+        )
+        db.persist_quote_ingestion_sync(
+            QuoteIngestionCommand(
+                symbol=sym,
+                asset_type="stock",
+                price=price,
+                volume=0.0,
+                quote_timestamp=quote_timestamp,
+                captured_at=captured_at,
+                quote_source="tencent_realtime_quote",
+                provider_name="tencent",
+                provider_status="live",
+                quote_status="live",
+                captured_reason="scheduler_poll",
+                fetch_run_id=run_id,
+            )
+        )
+    db.finish_quote_fetch_run(
+        run_id=run_id,
+        finished_at=captured_at,
+        status="success",
+        success_count=len(symbols),
+        failure_count=0,
+        metadata={
+            "requested_symbols": symbols,
+            "instrument_types": ["stock"] * len(symbols),
+        },
+    )
 
 
 def _build_strategy_gate(strategy_fp: str) -> dict[str, Any]:
@@ -298,7 +358,7 @@ def _patch_persistence_modules(
     import server.persistence.connection as conn_mod
     import server.persistence.event_log as ev_log_mod
 
-    fixed_dt = _fixed_datetime_type(target_sh)
+    fixed_dt = _fixed_datetime_type(lambda fixed=target_sh: fixed)
     for module in (db_mod, conn_mod, ev_log_mod):
         monkeypatch.setattr(module, "datetime", fixed_dt)
 
@@ -362,14 +422,13 @@ def _stage_unpublished_fund_estimate_incident(
     return str(failures[0]["incident_ref"])
 
 
-def _fixed_datetime_type(target_sh: datetime) -> type[datetime]:
-    target_utc = target_sh.astimezone(timezone.utc)
-
+def _fixed_datetime_type(clock: Callable[[], datetime]) -> type[datetime]:
     class FixedDT(datetime):
         @classmethod
         def now(cls, tz: Any = None) -> datetime:
+            target_sh = clock()
             if tz is timezone.utc:
-                return target_utc
+                return target_sh.astimezone(timezone.utc)
             if tz is None:
                 return target_sh.replace(tzinfo=None)
             return target_sh.astimezone(tz)
@@ -377,8 +436,15 @@ def _fixed_datetime_type(target_sh: datetime) -> type[datetime]:
     return FixedDT
 
 
-def _patch_clocks(monkeypatch: pytest.MonkeyPatch, target_sh: datetime) -> None:
+def _patch_clocks(
+    monkeypatch: pytest.MonkeyPatch, target_sh: datetime | Callable[[], datetime]
+) -> None:
+    clock: Callable[[], datetime] = (
+        target_sh if callable(target_sh) else (lambda fixed=target_sh: fixed)
+    )
+    import account_truth.broker_evidence as broker_ev_mod
     import server.account_truth_gate as account_truth_gate
+    import server.account_truth_gate_support as account_truth_gate_support
     import server.db as db_mod
     import server.persistence.automation_runs as aut_runs_mod
     import server.persistence.connection as conn_mod
@@ -400,18 +466,20 @@ def _patch_clocks(monkeypatch: pytest.MonkeyPatch, target_sh: datetime) -> None:
     import server.services.decision.recommendation_publication as rec_pub_mod
     import server.services.market.hours as hours_mod
     import server.services.strategy_scan.daily_candidate_quote_freeze as freeze_mod
+    import server.services.strategy_scan.outcomes as outcomes_mod
     import server.services.strategy_scan.promoted_strategy_universe_scan as scan_pub_mod
     import server.services.strategy_scan.universe.service as scan_svc_mod
     import server.services.strategy_scan.universe.validation as scan_val_mod
 
-    fixed_dt = _fixed_datetime_type(target_sh)
+    fixed_dt = _fixed_datetime_type(clock)
 
     class FixedDate(date):
         @classmethod
         def today(cls) -> date:
-            return target_sh.date()
+            return clock().date()
 
     for module in (
+        broker_ev_mod,
         db_mod,
         conn_mod,
         aut_runs_mod,
@@ -431,8 +499,10 @@ def _patch_clocks(monkeypatch: pytest.MonkeyPatch, target_sh: datetime) -> None:
         fpr_mod,
         ops_today_mod,
         rec_pub_mod,
+        outcomes_mod,
         scan_val_mod,
         account_truth_gate,
+        account_truth_gate_support,
     ):
         monkeypatch.setattr(module, "datetime", fixed_dt)
     monkeypatch.setattr(port_proj_mod, "date", FixedDate)
@@ -441,7 +511,7 @@ def _patch_clocks(monkeypatch: pytest.MonkeyPatch, target_sh: datetime) -> None:
 
     class ClockedFreezeService(orig_freeze):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
-            kwargs.setdefault("clock", lambda: target_sh)
+            kwargs.setdefault("clock", clock)
             super().__init__(*args, **kwargs)
 
     monkeypatch.setattr(
@@ -452,7 +522,7 @@ def _patch_clocks(monkeypatch: pytest.MonkeyPatch, target_sh: datetime) -> None:
 
     class ClockedScanService(orig_scan):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
-            kwargs.setdefault("clock", lambda: target_sh)
+            kwargs.setdefault("clock", clock)
             super().__init__(*args, **kwargs)
 
     monkeypatch.setattr(
@@ -471,7 +541,21 @@ def _setup_environment(
     target_now: datetime,
     quote_timestamp: str,
     with_unresolved_incident: bool,
+    formula_override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    clock_holder = [target_now]
+
+    def current_clock() -> datetime:
+        return clock_holder[0]
+
+    def set_clock(new_now: datetime) -> datetime:
+        if new_now < clock_holder[0]:
+            raise AssertionError(
+                f"chronological clock cannot move backwards: {new_now} < {clock_holder[0]}"
+            )
+        clock_holder[0] = new_now
+        return new_now
+
     ws = tmp_path.resolve() / "ws"
     data_dir = ws / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -589,7 +673,7 @@ def _setup_environment(
     else:
         incident_ref = None
 
-    _patch_clocks(monkeypatch, target_now)
+    _patch_clocks(monkeypatch, current_clock)
 
     # 2) Confirmed official NAV for 018125 on 2026-11-26 and live stock quotes
     official_nav_run = "fund_nav_sync:seed-official-2026-11-26"
@@ -690,7 +774,11 @@ def _setup_environment(
         payload={},
     )
     strategy = {
-        "formula_ast": _formula(produces_signals=produces_signals),
+        "formula_ast": (
+            copy.deepcopy(formula_override)
+            if formula_override is not None
+            else _formula(produces_signals=produces_signals)
+        ),
         "formula_fingerprint": "sha256:friday-replay",
         "selected_universe": symbols[:40],
     }
@@ -727,7 +815,7 @@ def _setup_environment(
         strategy_gate_resolver=gate_resolver,
         strategy_loader=strategy_loader,
         safety_gate_reader=automation_controls.get_status,
-        clock=lambda: target_now,
+        clock=current_clock,
     )
 
     state.config = cfg
@@ -742,6 +830,8 @@ def _setup_environment(
     state.data_store = store  # type: ignore[attr-defined]
     state.scanner = scanner  # type: ignore[attr-defined]
 
+    quote_price_overrides: dict[str, float] = {}
+
     async def offline_quote_refresher(
         state_arg: AppState,
         symbol: str,
@@ -749,7 +839,13 @@ def _setup_environment(
         *,
         fetch_run_id: str | None = None,
     ) -> dict[str, Any]:
-        price = 10.0 if symbol == "600001" else 20.0
+        now_dt = current_clock()
+        active_quote_ts = (
+            quote_timestamp
+            if now_dt == target_now
+            else f"{now_dt.date().isoformat()}T09:35:45+08:00"
+        )
+        price = quote_price_overrides.get(symbol, 10.0 if symbol == "600001" else 20.0)
         ac_val = (
             asset_class.value if hasattr(asset_class, "value") else str(asset_class)
         )
@@ -759,7 +855,7 @@ def _setup_environment(
             snapshot={
                 "price": price,
                 "previous_close": price,
-                "timestamp": quote_timestamp,
+                "timestamp": active_quote_ts,
                 "volume": 0.0,
             },
             quote_source="tencent_realtime_quote",
@@ -768,13 +864,13 @@ def _setup_environment(
             quote_status="live",
             captured_reason="daily_candidate_signal_quote_freeze",
             fetch_run_id=fetch_run_id,
-            captured_at=target_now.isoformat(),
+            captured_at=now_dt.isoformat(),
         )
         persist_quote_ingestion(state_arg.db, command=cmd)
         return {
             "symbol": symbol,
             "status": "refreshed",
-            "quote_timestamp": quote_timestamp,
+            "quote_timestamp": active_quote_ts,
             "fetch_run_id": fetch_run_id,
         }
 
@@ -789,10 +885,15 @@ def _setup_environment(
         "app": app,
         "state": state,
         "db": db,
+        "store": store,
+        "symbols": symbols,
         "service": service,
         "import_run_id": import_run_id,
         "incident_ref": incident_ref,
         "valuation": valuation,
+        "set_clock": set_clock,
+        "current_clock": current_clock,
+        "quote_price_overrides": quote_price_overrides,
     }
 
 
@@ -874,16 +975,17 @@ def test_friday_pre_recovery_blocks_candidate_publication_and_decision_surface(
 def test_friday_post_recovery_in_window_replays_to_manual_tickets_and_decision_page(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Case 2: Explicit recovery receipt unblocks in-window E2E path through manual tickets."""
+    """Case 2: Pre-window recovery receipt unblocks in-window E2E path chronologically."""
     env = _setup_environment(
         tmp_path,
         monkeypatch,
         produces_signals=True,
-        target_now=_IN_WINDOW_SH,
-        quote_timestamp=f"{_DECISION_DATE}T09:35:45+08:00",
+        target_now=_PRE_WINDOW_RECOVERY_SH,
+        quote_timestamp=f"{_MARKET_DATE}T15:00:00+08:00",
         with_unresolved_incident=True,
     )
     db: AppDatabase = env["db"]
+    set_clock = env["set_clock"]
     incident_ref = str(env["incident_ref"])
 
     preview = preview_unpublished_quote_recovery(db.path, incident_refs=[incident_ref])
@@ -894,12 +996,26 @@ def test_friday_post_recovery_in_window_replays_to_manual_tickets_and_decision_p
         expected_proof_fingerprint=str(preview["proof_fingerprint"]),
         actor="operator_cli_recovery",
         confirmation=UNPUBLISHED_RECOVERY_CONFIRMATION,
-        now=_RECOVERY_SH,
+        now=_PRE_WINDOW_RECOVERY_SH,
     )
     assert receipt["resolved_count"] == 1
     assert receipt["changes_financial_facts"] is False
     assert receipt["authorizes_execution"] is False
 
+    # Advance chronologically to 09:36 stock poll + 09:37 decision window
+    pre_open_sh = datetime(2026, 11, 27, 9, 36, 0, tzinfo=_SH)
+    set_clock(pre_open_sh)
+    _ingest_morning_stock_poll(
+        db,
+        symbols=env["symbols"][:40],
+        quote_timestamp=f"{_DECISION_DATE}T09:35:45+08:00",
+        captured_at=pre_open_sh.isoformat(),
+        run_id="scheduler_poll:fri-open-case2",
+    )
+    val_after = db.publish_current_valuation_snapshot_sync(now=pre_open_sh)
+    assert val_after["status"] == "complete"
+
+    set_clock(_IN_WINDOW_SH)
     schedule = project_daily_candidate_background_schedule(db=db, now=_IN_WINDOW_SH)
     assert schedule["status"] == "due" and schedule["due"] is True
 
@@ -908,7 +1024,7 @@ def test_friday_post_recovery_in_window_replays_to_manual_tickets_and_decision_p
             db=db,
             service=env["service"],
             schedule=schedule,
-            clock=lambda: _IN_WINDOW_SH,
+            clock=env["current_clock"],
         )
     )
 
@@ -916,6 +1032,9 @@ def test_friday_post_recovery_in_window_replays_to_manual_tickets_and_decision_p
         f"automation:daily-candidate-background-attempt:{_DECISION_DATE}"
     )
     assert attempt is not None
+    assert datetime.fromisoformat(
+        str(receipt["completed_at"])
+    ) < datetime.fromisoformat(str(attempt["started_at"]))
     att_payload = json.loads(attempt["payload_json"])
     scan_run_id = str(att_payload["promoted_strategy_scan_run_id"])
     ev_run_id = str(att_payload["result_run_id"])
@@ -1205,3 +1324,456 @@ def test_friday_replay_valid_zero_signal_session_publishes_clean_no_action(
         assert ops["broker_adapter_readiness"]["broker_submission_enabled"] is False
 
     asyncio.run(_run_http(env["app"], verify_zero_signal_routes))
+
+
+def _advance_to_monday_window(
+    env: dict[str, Any],
+    *,
+    friday_close_fn: Callable[[str], float],
+) -> None:
+    """Seed post-Friday-close and pre-Monday-open facts strictly chronologically."""
+    db: AppDatabase = env["db"]
+    store: DataStore = env["store"]
+    symbols: list[str] = env["symbols"]
+    set_clock = env["set_clock"]
+
+    fri_post_close = datetime(2026, 11, 27, 16, 0, 0, tzinfo=_SH)
+    set_clock(fri_post_close)
+    store.save_market_universe_snapshot(
+        trade_date=_DECISION_DATE,
+        provider_name="fixture",
+        members=normalize_a_share_members(symbols),
+        capture_started_at=datetime(2026, 11, 27, 15, 59, tzinfo=_SH),
+        capture_completed_at=fri_post_close,
+        source_metadata=[
+            {"symbol": sym, "display_name": f"样本股票{sym}"} for sym in symbols
+        ],
+    )
+    closes = [friday_close_fn(sym) for sym in symbols]
+    store.ingest_market_daily_batch(
+        trade_date=_DECISION_DATE,
+        provider_name="fixture",
+        bars=pd.DataFrame(
+            {
+                "symbol": symbols,
+                "timestamp": [pd.Timestamp(_DECISION_DATE)] * len(symbols),
+                "open": closes,
+                "high": [price + 0.2 for price in closes],
+                "low": [price - 0.2 for price in closes],
+                "close": closes,
+                "volume": [1_000_000 + idx for idx in range(len(symbols))],
+                "amount": [10_000_000 + idx * 1_000 for idx in range(len(symbols))],
+            }
+        ),
+    )
+
+    fri_nav_sh = datetime(2026, 11, 27, 21, 30, 0, tzinfo=_SH)
+    set_clock(fri_nav_sh)
+    fri_nav_run = "fund_nav_sync:seed-official-2026-11-27"
+    db.create_quote_fetch_run(
+        run_id=fri_nav_run,
+        started_at=fri_nav_sh.isoformat(),
+        trigger="fund_nav_sync",
+        provider="akshare",
+        asset_type="open_end_fund",
+        symbol_count=1,
+        status="running",
+        metadata={
+            "requested_symbols": ["018125"],
+            "instrument_types": ["open_end_fund"],
+        },
+    )
+    db.persist_quote_ingestion_sync(
+        QuoteIngestionCommand(
+            symbol="018125",
+            asset_type="open_end_fund",
+            price=1.9526,
+            volume=0.0,
+            quote_timestamp="2026-11-27T15:00:00+08:00",
+            captured_at=fri_nav_sh.isoformat(),
+            quote_source="eastmoney_fund_page",
+            provider_name="akshare",
+            provider_status="live",
+            quote_status="confirmed",
+            captured_reason="fund_nav_sync",
+            nav_date=_DECISION_DATE,
+            fetch_run_id=fri_nav_run,
+        )
+    )
+    db.finish_quote_fetch_run(
+        run_id=fri_nav_run,
+        finished_at="2026-11-27T21:30:01+08:00",
+        status="success",
+        success_count=1,
+        failure_count=0,
+        metadata={
+            "requested_symbols": ["018125"],
+            "instrument_types": ["open_end_fund"],
+        },
+    )
+
+    mon_pre_open = datetime(2026, 11, 30, 8, 50, 0, tzinfo=_SH)
+    set_clock(mon_pre_open)
+    _seed_reconciled_statement(
+        db,
+        cash_balance=190_000.0,
+        stock_qty=500.0,
+        stock_px=10.0,
+        fund_qty=1_000.0,
+        fund_px=1.7533,
+        snapshot_date=_NEXT_DATE,
+    )
+
+    mon_quote_sh = datetime(2026, 11, 30, 9, 36, 0, tzinfo=_SH)
+    set_clock(mon_quote_sh)
+    env["quote_price_overrides"].update(
+        {sym: friday_close_fn(sym) for sym in symbols[:40]}
+    )
+    _ingest_morning_stock_poll(
+        db,
+        symbols=symbols[:40],
+        quote_timestamp=f"{_NEXT_DATE}T09:35:45+08:00",
+        captured_at=mon_quote_sh.isoformat(),
+        run_id="scheduler_poll:seed-2026-11-30",
+        price_fn=friday_close_fn,
+    )
+    mon_val = db.publish_current_valuation_snapshot_sync(now=mon_quote_sh)
+    assert mon_val["status"] == "complete"
+
+    set_clock(_MONDAY_IN_WINDOW_SH)
+
+
+def _run_friday_blocked_and_midday_recovery(env: dict[str, Any]) -> dict[str, Any]:
+    """Run Friday 09:37 blocked cycle followed by Friday 12:01 recovery receipt."""
+    db: AppDatabase = env["db"]
+    set_clock = env["set_clock"]
+    incident_ref = str(env["incident_ref"])
+
+    fri_schedule = project_daily_candidate_background_schedule(db=db, now=_IN_WINDOW_SH)
+    assert fri_schedule["status"] == "due" and fri_schedule["due"] is True
+    asyncio.run(
+        run_claimed_background_attempt(
+            db=db,
+            service=env["service"],
+            schedule=fri_schedule,
+            clock=env["current_clock"],
+        )
+    )
+
+    fri_attempt = db.get_automation_run_sync(
+        f"automation:daily-candidate-background-attempt:{_DECISION_DATE}"
+    )
+    assert fri_attempt is not None and fri_attempt["status"] == "completed"
+    fri_att_payload = json.loads(fri_attempt["payload_json"])
+    assert fri_att_payload["decision_outcome"] == "no_action"
+    assert fri_att_payload["result_status"] == "blocked_by_data_quality"
+    assert fri_att_payload["broker_submission_enabled"] is False
+    fri_scan = db.get_automation_run_sync(
+        fri_att_payload["promoted_strategy_scan_run_id"]
+    )
+    assert fri_scan is not None
+    fri_scan_payload = json.loads(fri_scan["payload_json"])
+    assert fri_scan_payload["raw_signal_count"] > 0
+
+    async def verify_fri_blocked(client: httpx.AsyncClient) -> dict[str, Any]:
+        today = (await client.get("/api/decision/today")).json()
+        report = (
+            await client.get(f"/api/decision/daily-reports/{_DECISION_DATE}")
+        ).json()
+        assert today["candidates"] == []
+        assert report["status"] == "blocked"
+        assert (
+            report["attempts"][0]["scan_run_id"]
+            == fri_att_payload["promoted_strategy_scan_run_id"]
+        )
+        return report
+
+    fri_report = asyncio.run(_run_http(env["app"], verify_fri_blocked))
+
+    # Step 2: Friday 12:01:57 recovery receipt, no same-day backfill
+    set_clock(_RECOVERY_SH)
+    preview = preview_unpublished_quote_recovery(db.path, incident_refs=[incident_ref])
+    assert preview["status"] == "ready"
+    receipt = discard_proven_unpublished_quote_refreshes(
+        db.path,
+        incident_refs=[incident_ref],
+        expected_proof_fingerprint=str(preview["proof_fingerprint"]),
+        actor="operator_cli_recovery",
+        confirmation=UNPUBLISHED_RECOVERY_CONFIRMATION,
+        now=_RECOVERY_SH,
+    )
+    assert receipt["resolved_count"] == 1
+    with sqlite3.connect(db.path) as conn:
+        assert unresolved_publications(conn) == []
+
+    midday_schedule = project_daily_candidate_background_schedule(
+        db=db, now=_RECOVERY_SH
+    )
+    assert midday_schedule["status"] == "already_attempted"
+    assert midday_schedule["due"] is False
+    assert midday_schedule["next_reviewed_window"]["market_date"] == _NEXT_DATE
+    asyncio.run(
+        run_claimed_background_attempt(
+            db=db,
+            service=env["service"],
+            schedule=midday_schedule,
+            clock=env["current_clock"],
+        )
+    )
+    fri_attempts = db.list_automation_runs_sync(
+        run_type="daily_candidate_background_attempt",
+        run_date=_DECISION_DATE,
+        limit=10,
+    )
+    assert len(fri_attempts) == 1
+
+    async def verify_no_same_day_backfill(client: httpx.AsyncClient) -> None:
+        today = (await client.get("/api/decision/today")).json()
+        report = (
+            await client.get(f"/api/decision/daily-reports/{_DECISION_DATE}")
+        ).json()
+        assert today["candidates"] == []
+        assert report["status"] == "blocked"
+        assert report["daily_evidence_runs"] == fri_report["daily_evidence_runs"]
+
+    asyncio.run(_run_http(env["app"], verify_no_same_day_backfill))
+
+    return {
+        "fri_attempt": fri_attempt,
+        "fri_att_payload": fri_att_payload,
+        "fri_report": fri_report,
+        "receipt": receipt,
+    }
+
+
+def test_friday_incident_chronological_recovery_and_monday_candidate_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Case 5: Single-DB Asia/Shanghai chronological flow (Fri blocked -> 12:01 recovery -> Mon tickets)."""
+    env = _setup_environment(
+        tmp_path,
+        monkeypatch,
+        produces_signals=True,
+        target_now=_IN_WINDOW_SH,
+        quote_timestamp=f"{_DECISION_DATE}T09:35:45+08:00",
+        with_unresolved_incident=True,
+    )
+    db: AppDatabase = env["db"]
+
+    fri = _run_friday_blocked_and_midday_recovery(env)
+
+    _advance_to_monday_window(
+        env,
+        friday_close_fn=lambda sym: 10.0 if sym == "600001" else 20.0,
+    )
+
+    mon_schedule = project_daily_candidate_background_schedule(
+        db=db, now=_MONDAY_IN_WINDOW_SH
+    )
+    assert mon_schedule["status"] == "due" and mon_schedule["due"] is True
+    asyncio.run(
+        run_claimed_background_attempt(
+            db=db,
+            service=env["service"],
+            schedule=mon_schedule,
+            clock=env["current_clock"],
+        )
+    )
+
+    mon_attempt = db.get_automation_run_sync(
+        f"automation:daily-candidate-background-attempt:{_NEXT_DATE}"
+    )
+    assert mon_attempt is not None and mon_attempt["status"] == "completed"
+    mon_att_payload = json.loads(mon_attempt["payload_json"])
+    assert mon_att_payload["decision_outcome"] == "manual_order_ticket_candidate"
+    assert mon_att_payload["result_status"] == "paper_shadow_completed"
+    assert mon_att_payload["broker_submission_enabled"] is False
+
+    # Verify monotonic Asia/Shanghai chronological timestamps across all three stages.
+    fri_started = datetime.fromisoformat(str(fri["fri_attempt"]["started_at"]))
+    recovered_at = datetime.fromisoformat(str(fri["receipt"]["completed_at"]))
+    mon_started = datetime.fromisoformat(str(mon_attempt["started_at"]))
+    assert fri_started < recovered_at < mon_started
+
+    mon_ev_id = str(mon_att_payload["result_run_id"])
+    mon_ev_run = db.get_automation_run_sync(mon_ev_id)
+    assert mon_ev_run is not None
+    mon_ev_payload = json.loads(mon_ev_run["payload_json"])
+    ticket_candidates = mon_ev_payload["manual_order_ticket_candidates"]
+    assert ticket_candidates
+
+    async def verify_monday_end_to_end(client: httpx.AsyncClient) -> None:
+        today_resp = await client.get("/api/decision/today")
+        plan_resp = await client.get("/api/decision/trading-plan")
+        mon_report_resp = await client.get(f"/api/decision/daily-reports/{_NEXT_DATE}")
+        fri_report_resp = await client.get(
+            f"/api/decision/daily-reports/{_DECISION_DATE}"
+        )
+        for resp in (today_resp, plan_resp, mon_report_resp, fri_report_resp):
+            assert resp.status_code == 200, resp.text
+        today = today_resp.json()
+        plan = plan_resp.json()
+        mon_report = mon_report_resp.json()
+        fri_report = fri_report_resp.json()
+
+        assert today["decision_date"] == _NEXT_DATE
+        assert plan["plan_date"] == _NEXT_DATE
+        assert len(today["candidates"]) == len(ticket_candidates)
+        assert mon_report["status"] == "formal_candidate"
+        assert fri_report["status"] == "blocked"
+
+        by_action = {int(item["action_id"]): item for item in ticket_candidates}
+        confirmed_ids: list[int] = []
+        for cand in today["candidates"]:
+            aid = int(cand["action_id"])
+            spec = by_action[aid]
+            mo = await client.post(
+                f"/api/trading/actions/{aid}/manual-order",
+                json={
+                    "quantity": float(spec["quantity"]),
+                    "order_type": str(spec["order_type"]),
+                    "price": float(spec["limit_price"]),
+                    "note": "monday chronological acceptance",
+                },
+            )
+            assert mo.status_code == 200, mo.text
+            order_id = str(mo.json()["order_id"])
+            assert mo.json().get("broker_submission_enabled", False) is False
+
+            confirm = await client.post(
+                f"/api/trading/orders/{order_id}/confirm", json={}
+            )
+            assert confirm.status_code == 200, confirm.text
+            assert confirm.json()["status"] == "confirmed"
+            confirmed_ids.append(aid)
+
+        oms_orders = db.list_oms_orders_sync()
+        assert len(oms_orders) == len(confirmed_ids)
+        for order in oms_orders:
+            assert str(order.get("order_id") or "").startswith("SHADOW-2026-11-30-")
+            assert order.get("broker_submission_enabled") in (False, 0, None)
+
+        mon_report_after = (
+            await client.get(f"/api/decision/daily-reports/{_NEXT_DATE}")
+        ).json()
+        assert sorted(
+            mon_report_after["daily_evidence_runs"][0]["ticket_action_ids"]
+        ) == sorted(confirmed_ids)
+
+    asyncio.run(_run_http(env["app"], verify_monday_end_to_end))
+
+
+def test_friday_incident_chronological_recovery_and_monday_clean_no_signal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Case 6: Single-DB chronological flow distinguishes Fri data block from Mon clean no_action."""
+    # Entry holds only for closes < 25; Fri pre-open bars close at 10/20 (signals!),
+    # then Friday close moves all symbols to 30 so Monday cleanly yields 0 signals.
+    threshold_formula = {
+        "schema_version": "karkinos.ai.formula_ast.v1",
+        "entry": {
+            "op": "lt",
+            "left": {"op": "field", "name": "close"},
+            "right": {"op": "constant", "value": 25},
+        },
+        "exit": {
+            "op": "lt",
+            "left": {"op": "field", "name": "close"},
+            "right": {"op": "constant", "value": 5},
+        },
+        "position_size": {
+            "op": "max_weight",
+            "input": {"op": "equal_weight"},
+            "value": 0.1,
+        },
+    }
+    env = _setup_environment(
+        tmp_path,
+        monkeypatch,
+        produces_signals=True,
+        target_now=_IN_WINDOW_SH,
+        quote_timestamp=f"{_DECISION_DATE}T09:35:45+08:00",
+        with_unresolved_incident=True,
+        formula_override=threshold_formula,
+    )
+    db: AppDatabase = env["db"]
+
+    fri = _run_friday_blocked_and_midday_recovery(env)
+
+    _advance_to_monday_window(
+        env,
+        friday_close_fn=lambda _sym: 30.0,
+    )
+
+    mon_schedule = project_daily_candidate_background_schedule(
+        db=db, now=_MONDAY_IN_WINDOW_SH
+    )
+    assert mon_schedule["status"] == "due" and mon_schedule["due"] is True
+    asyncio.run(
+        run_claimed_background_attempt(
+            db=db,
+            service=env["service"],
+            schedule=mon_schedule,
+            clock=env["current_clock"],
+        )
+    )
+
+    mon_attempt = db.get_automation_run_sync(
+        f"automation:daily-candidate-background-attempt:{_NEXT_DATE}"
+    )
+    assert mon_attempt is not None and mon_attempt["status"] == "completed"
+    mon_att_payload = json.loads(mon_attempt["payload_json"])
+    assert mon_att_payload["decision_outcome"] == "no_action"
+
+    fri_started = datetime.fromisoformat(str(fri["fri_attempt"]["started_at"]))
+    recovered_at = datetime.fromisoformat(str(fri["receipt"]["completed_at"]))
+    mon_started = datetime.fromisoformat(str(mon_attempt["started_at"]))
+    assert fri_started < recovered_at < mon_started
+
+    mon_scan = db.get_automation_run_sync(
+        mon_att_payload["promoted_strategy_scan_run_id"]
+    )
+    assert mon_scan is not None and mon_scan["status"] == "completed_no_signal"
+    mon_scan_payload = json.loads(mon_scan["payload_json"])
+    assert mon_scan_payload["normal_no_signal"] is True
+    assert mon_scan_payload["raw_signal_count"] == 0
+
+    async def verify_distinction(client: httpx.AsyncClient) -> None:
+        today = (await client.get("/api/decision/today")).json()
+        fri_report = (
+            await client.get(f"/api/decision/daily-reports/{_DECISION_DATE}")
+        ).json()
+        mon_report = (
+            await client.get(f"/api/decision/daily-reports/{_NEXT_DATE}")
+        ).json()
+        reports_list = (
+            await client.get("/api/decision/daily-reports?limit=20&offset=0")
+        ).json()
+
+        assert today["candidates"] == []
+        strategy_task = next(
+            task
+            for task in today["summary"]["workflow_tasks"]
+            if task["id"] == "strategy_evidence"
+        )
+        assert strategy_task["status"] == "pass"
+
+        assert fri_report["status"] == "blocked"
+        assert any(
+            "blocked_by_data_quality" in str(reason)
+            for reason in fri_report.get("reason_codes") or []
+        )
+
+        assert mon_report["status"] == "completed_no_signal"
+        assert mon_report.get("reason_codes") == [
+            "full_market_scan_completed_without_strategy_signal"
+        ]
+        assert not any(
+            "blocked_by_data_quality" in str(reason)
+            for reason in mon_report.get("reason_codes") or []
+        )
+        by_date = {item["report_date"]: item for item in reports_list["reports"]}
+        assert by_date[_DECISION_DATE]["status"] == "blocked"
+        assert by_date[_NEXT_DATE]["status"] == "completed_no_signal"
+
+    asyncio.run(_run_http(env["app"], verify_distinction))
