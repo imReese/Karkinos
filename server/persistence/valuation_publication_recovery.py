@@ -41,6 +41,14 @@ VALUATION_RETRY_CONFIRMATION = (
     "retry_failed_valuation_publication_from_current_committed_facts"
 )
 _VALUATION_RETRY_EVENT = "valuation.snapshot.failed_publication.retried"
+# Audited hot-reload TypeError from 2026-11-28T02:53:18.356816+00:00 when
+# WatchFiles reloaded quote_valuation_status before quote_pricing_semantics
+# accepted valuation_date. All other TypeError failures still fail closed.
+_AUDITED_TRANSIENT_PUBLICATION_RETRY_REFS = frozenset(
+    {
+        "sha256:73793c5ad5542816db3f5b0c58709db31d6ddd20f64fdaca393478ca6754716b",
+    }
+)
 
 
 def _instrument_scope(scope) -> set[tuple[str, str]]:
@@ -1105,6 +1113,11 @@ def retry_failed_valuation_publication_on_connection(
     if len(failures) != 1:
         raise ValueError("valuation_recovery_retry_requires_single_incident")
     incident = failures[0]
+    error_type = incident.get("error_type")
+    error_type_supported = error_type == "OperationalError" or (
+        error_type == "TypeError"
+        and incident_ref in _AUDITED_TRANSIENT_PUBLICATION_RETRY_REFS
+    )
     if (
         set(incident)
         != {"status", "reason", "error_type", "failed_at", "scope", "incident_ref"}
@@ -1112,7 +1125,7 @@ def retry_failed_valuation_publication_on_connection(
         or publication_incident_ref(incident) != incident_ref
         or incident.get("status") != "failed"
         or incident.get("reason") != "valuation_snapshot_publication_failed"
-        or incident.get("error_type") != "OperationalError"
+        or not error_type_supported
         or incident.get("scope") is not None
     ):
         raise ValueError("valuation_recovery_retry_incident_not_supported")
