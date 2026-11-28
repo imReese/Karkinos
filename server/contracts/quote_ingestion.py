@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -11,6 +11,13 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from core.types import InstrumentType
+from data.market_data import (
+    PUBLISHED_FUND_NAV_QUOTE_SOURCES,
+    PUBLISHED_FUND_NAV_STATUSES,
+    fund_nav_quote_status,
+    is_authoritative_historical_fund_close_source,
+    is_fund_estimate_quote_source,
+)
 
 _SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 _MIN_QUOTE_INSTANT = datetime.min.replace(tzinfo=timezone.utc)
@@ -269,6 +276,210 @@ def _normalized_authority_value(value: Any, *, numeric: bool) -> Any:
         return str(value)
 
 
+def _normalized_historical_instrument_type(value: Any) -> str:
+    normalized = str(value or "stock").strip().lower().replace("-", "_")
+    if normalized in {"fund", "openend_fund", "open_end_fund"}:
+        return "open_end_fund"
+    return normalized or "stock"
+
+
+def normalize_as_of_utc(as_of: datetime | str | None) -> datetime | None:
+    """Normalize an optional replay cutoff timestamp to UTC."""
+    if as_of is None:
+        return None
+    if isinstance(as_of, datetime):
+        parsed = (
+            as_of if as_of.tzinfo is not None else as_of.replace(tzinfo=_SHANGHAI_TZ)
+        )
+        return parsed.astimezone(timezone.utc)
+    instant = quote_timestamp_instant(as_of)
+    if instant == _MIN_QUOTE_INSTANT:
+        raise ValueError("historical replay as_of timestamp is invalid")
+    return instant
+
+
+def historical_observation_effective_date(row: Mapping[str, Any]) -> str:
+    """Resolve the canonical valuation date for one bar, close, or quote."""
+    inst_type = _normalized_historical_instrument_type(
+        row.get("instrument_type") or row.get("asset_type") or row.get("asset_class")
+    )
+    raw_nav_date = row.get("nav_date")
+    if inst_type == "open_end_fund" and raw_nav_date not in {None, ""}:
+        return fund_nav_pricing_date(raw_nav_date, None)
+    raw_trade_date = row.get("trade_date")
+    if raw_trade_date not in {None, ""}:
+        parsed_trade_date = fund_nav_pricing_date(raw_trade_date, None)
+        if parsed_trade_date:
+            return parsed_trade_date
+    return fund_nav_pricing_date(
+        None, row.get("quote_timestamp") or row.get("timestamp")
+    )
+
+
+def historical_observation_within_as_of(
+    row: Mapping[str, Any], as_of: datetime | str | None
+) -> bool:
+    """Enforce point-in-time capture availability when an as_of cutoff is supplied."""
+    cutoff = normalize_as_of_utc(as_of)
+    if cutoff is None:
+        return True
+    captured_raw = (
+        row.get("captured_at") or row.get("created_at") or row.get("updated_at")
+    )
+    kind = str(row.get("kind") or "").strip().lower()
+    if captured_raw not in {None, ""}:
+        captured_dt = quote_timestamp_instant(captured_raw)
+        if captured_dt == _MIN_QUOTE_INSTANT or captured_dt > cutoff:
+            return False
+    elif kind in {"close", "quote"} or "captured_at" in row or "created_at" in row:
+        return False
+    ts_raw = row.get("quote_timestamp") or row.get("timestamp")
+    if ts_raw not in {None, ""}:
+        ts_dt = quote_timestamp_instant(ts_raw)
+        if ts_dt != _MIN_QUOTE_INSTANT and ts_dt > cutoff:
+            return False
+    return True
+
+
+def historical_observation_status(row: Mapping[str, Any]) -> str:
+    """Normalize persisted observation quality consistently across tables."""
+    kind = str(row.get("kind") or "").strip().lower()
+    if kind == "bar":
+        return "confirmed"
+    inst_type = _normalized_historical_instrument_type(
+        row.get("instrument_type") or row.get("asset_type") or row.get("asset_class")
+    )
+    source = str(row.get("quote_source") or row.get("source") or "").strip().lower()
+    default_status: str | None = (
+        None if inst_type == "open_end_fund" and kind != "close" else "confirmed"
+    )
+    explicit_status = row.get("quote_status")
+    return fund_nav_quote_status(
+        source,
+        explicit_status if explicit_status not in {None, ""} else default_status,
+        row.get("provider_status"),
+        row.get("stale_reason"),
+    )
+
+
+def historical_observation_rank(
+    row: Mapping[str, Any],
+) -> tuple[int, int, datetime, datetime, int]:
+    """Rank competing same-day observations from highest authority to lowest."""
+    inst_type = _normalized_historical_instrument_type(
+        row.get("instrument_type") or row.get("asset_type") or row.get("asset_class")
+    )
+    kind = str(row.get("kind") or "").strip().lower()
+    source = str(row.get("quote_source") or row.get("source") or "").strip().lower()
+    status = historical_observation_status(row)
+    effective_date = historical_observation_effective_date(row)
+    error_statuses = {
+        "error",
+        "failed",
+        "missing",
+        "unknown",
+        "unavailable",
+        "conflict",
+        "conflicting",
+    }
+    degraded_statuses = {
+        "stale",
+        "estimated",
+        "confirmed_nav_missing",
+        "confirmed_fund_nav_missing_estimate_only",
+    }
+    stale_reason = str(row.get("stale_reason") or "").strip()
+
+    if not effective_date or status in error_statuses:
+        tier = 0
+    elif kind == "bar":
+        tier = 6
+    elif (
+        is_fund_estimate_quote_source(source)
+        or source in {"manual", "manual_mark", "manual_valuation"}
+        or status in degraded_statuses
+        or bool(stale_reason)
+    ):
+        tier = 1
+    elif inst_type == "open_end_fund":
+        if (
+            source in PUBLISHED_FUND_NAV_QUOTE_SOURCES
+            and status in PUBLISHED_FUND_NAV_STATUSES
+        ):
+            tier = 5 if kind != "close" else 4
+        elif kind == "close" and is_authoritative_historical_fund_close_source(source):
+            tier = 4
+        else:
+            tier = 2
+    else:
+        if kind == "close" and is_authoritative_historical_fund_close_source(source):
+            tier = 4
+        elif kind == "close":
+            tier = 2
+        elif status in PUBLISHED_FUND_NAV_STATUSES:
+            tier = 3
+        else:
+            tier = 2
+
+    ts_raw = row.get("quote_timestamp") or row.get("timestamp")
+    ts_instant = quote_timestamp_instant(ts_raw)
+    ts_sh_date = (
+        ts_instant.astimezone(_SHANGHAI_TZ).date().isoformat()
+        if ts_instant != _MIN_QUOTE_INSTANT
+        else ""
+    )
+    same_quote_day = 1 if effective_date and ts_sh_date == effective_date else 0
+    captured_raw = (
+        row.get("captured_at") or row.get("created_at") or row.get("updated_at")
+    )
+    captured_instant = (
+        quote_timestamp_instant(captured_raw)
+        if captured_raw not in {None, ""}
+        else _MIN_QUOTE_INSTANT
+    )
+    row_id = int(row.get("id") or 0)
+    return (tier, same_quote_day, ts_instant, captured_instant, row_id)
+
+
+def select_best_historical_observations(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    as_of: datetime | str | None = None,
+) -> list[dict[str, Any]]:
+    """Select one canonical best observation per (symbol, instrument_type, trade_date)."""
+    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for raw in rows:
+        try:
+            price = float(raw.get("price", raw.get("close", raw.get("close_price"))))
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(price) or price <= 0:
+            continue
+        effective_date = historical_observation_effective_date(raw)
+        if not effective_date:
+            continue
+        if not historical_observation_within_as_of(raw, as_of):
+            continue
+        symbol = str(raw.get("symbol") or "").strip()
+        if not symbol:
+            continue
+        inst_type = _normalized_historical_instrument_type(
+            raw.get("instrument_type")
+            or raw.get("asset_type")
+            or raw.get("asset_class")
+        )
+        candidate = dict(raw)
+        candidate["trade_date"] = effective_date
+        grouped.setdefault((symbol, inst_type, effective_date), []).append(candidate)
+
+    selected: list[dict[str, Any]] = []
+    for key in sorted(grouped):
+        best = max(grouped[key], key=historical_observation_rank)
+        best.pop("id", None)
+        selected.append(best)
+    return selected
+
+
 def _require_positive_finite(name: str, value: float) -> None:
     _require_finite(name, value)
     if float(value) <= 0:
@@ -284,7 +495,13 @@ def _require_non_negative_finite(name: str, value: float) -> None:
 __all__ = [
     "PUBLISHED_QUOTE_RUN_STATUSES",
     "QuoteIngestionCommand",
+    "historical_observation_effective_date",
+    "historical_observation_rank",
+    "historical_observation_status",
+    "historical_observation_within_as_of",
+    "normalize_as_of_utc",
     "quote_authority_conflict_fields",
     "quote_timestamp_instant",
+    "select_best_historical_observations",
     "validate_quote_authority_time",
 ]

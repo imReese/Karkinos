@@ -131,7 +131,7 @@ def _build(
             if key.instrument_type.value == "open_end_fund"
             else None
         )
-        day = nav_day or quote_valuation_date(row)
+        day = nav_day or quote_valuation_date(row, prefer_nav_date=False)
         if day is None:
             raise PortfolioReadSnapshotRejected("coverage observation date unavailable")
         observations[(key, day.isoformat())].append(row)

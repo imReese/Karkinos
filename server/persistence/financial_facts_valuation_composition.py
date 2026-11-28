@@ -9,6 +9,7 @@ from typing import Any
 from server.persistence.financial_fact_event_payloads import quote_instant_storage_key
 from server.persistence.financial_facts_quotes import (
     list_quote_selection_candidates_on_connection,
+    read_latest_quote_before_date_on_connection,
 )
 
 
@@ -82,27 +83,15 @@ class _TransactionValuationFacts:
         trade_date: str,
         *,
         instrument_type: str,
+        as_of: datetime | str | None = None,
     ) -> dict[str, Any] | None:
-        normalized = str(instrument_type).strip().lower().replace("-", "_")
-        if normalized == "fund":
-            normalized = "open_end_fund"
-        instant_upper_bound = quote_instant_storage_key(f"{trade_date}T00:00:00+08:00")
-        row = self._conn.execute(
-            """
-            SELECT
-                symbol, asset_class, instrument_type, identity_provenance,
-                price, volume, timestamp,
-                quote_source, provider_name, quote_status, stale_reason,
-                provider_status, captured_reason, nav_date
-            FROM quote_snapshots
-            WHERE symbol = ? AND instrument_type = ?
-              AND quote_instant_utc < ?
-            ORDER BY quote_instant_utc DESC, id DESC
-            LIMIT 1
-            """,
-            (symbol, normalized, instant_upper_bound),
-        ).fetchone()
-        return dict(row) if row is not None else None
+        return read_latest_quote_before_date_on_connection(
+            self._conn,
+            symbol,
+            trade_date,
+            instrument_type=instrument_type,
+            as_of=as_of,
+        )
 
     def get_ledger_entries_sync(
         self,

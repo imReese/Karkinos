@@ -12,9 +12,11 @@ from zoneinfo import ZoneInfo
 
 from data.market_data import (
     FUND_ESTIMATE_QUOTE_SOURCES,
+    NON_AUTHORITATIVE_FUND_CLOSE_SOURCES,
     PUBLISHED_FUND_NAV_QUOTE_SOURCES,
     PUBLISHED_FUND_NAV_STATUSES,
     fund_nav_quote_status,
+    is_authoritative_historical_fund_close_source,
     is_fund_estimate_quote_source,
 )
 from server.contracts.quote_ingestion import fund_nav_pricing_date
@@ -31,26 +33,7 @@ _DEGRADED_VALUATION_STATUSES = {
     "confirmed_nav_missing",
     "confirmed_fund_nav_missing_estimate_only",
 }
-_NON_AUTHORITATIVE_FUND_CLOSE_SOURCES = frozenset(
-    {
-        "",
-        "unknown",
-        "unknown_provider",
-        "confirmed_nav",
-        "reported_previous_close",
-        "none",
-        "null",
-    }
-)
-
-
-def is_authoritative_historical_fund_close_source(source: object) -> bool:
-    """Reject estimate and unverified legacy close sources for historical fund NAVs."""
-    normalized = str(source or "").strip().lower()
-    return (
-        normalized not in _NON_AUTHORITATIVE_FUND_CLOSE_SOURCES
-        and not is_fund_estimate_quote_source(normalized)
-    )
+_NON_AUTHORITATIVE_FUND_CLOSE_SOURCES = NON_AUTHORITATIVE_FUND_CLOSE_SOURCES
 
 
 def _observation_status(row: dict) -> str:
@@ -65,7 +48,11 @@ def _observation_status(row: dict) -> str:
     return str(row.get("quote_status") or "live").strip().lower()
 
 
-def quote_valuation_status(quote: dict) -> str:
+def quote_valuation_status(
+    quote: dict,
+    *,
+    valuation_date: date | str | None = None,
+) -> str:
     """Classify whether one persisted quote can support account valuation."""
 
     quote_status_value = _observation_status(quote)
@@ -87,7 +74,9 @@ def quote_valuation_status(quote: dict) -> str:
         return "degraded"
     if is_fund_estimate_quote_source(quote_source_name(quote)):
         return "degraded"
-    if quote_pricing_semantics(quote)["pricing_authority"] in {
+    if quote_pricing_semantics(quote, valuation_date=valuation_date)[
+        "pricing_authority"
+    ] in {
         "missing",
         "non_authoritative",
         "conflicting",
@@ -345,6 +334,7 @@ def quote_pricing_semantics(
     instrument_type: str | None = None,
     asset_class: str | None = None,
     market_session: dict[str, Any] | None = None,
+    valuation_date: date | str | None = None,
 ) -> dict[str, str | None]:
     """Present the economic price kind independently of storage and freshness."""
     row = quote or {}
@@ -397,6 +387,17 @@ def quote_pricing_semantics(
             as_of = fund_nav_pricing_date(nav_date, timestamp) or None
             if nav_date and as_of is None:
                 kind, authority = "nav_pending", "missing"
+            elif valuation_date is not None:
+                expected_date = fund_nav_pricing_date(
+                    valuation_date.isoformat()
+                    if isinstance(valuation_date, (date, datetime))
+                    else valuation_date,
+                    None,
+                )
+                if not expected_date or as_of != expected_date:
+                    kind, authority = "nav_pending", "non_authoritative"
+                else:
+                    kind, authority = "published_nav", "authoritative"
             else:
                 kind, authority = "published_nav", "authoritative"
         else:

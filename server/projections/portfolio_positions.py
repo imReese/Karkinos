@@ -6,6 +6,10 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from core.types import InstrumentType
+from server.contracts.quote_ingestion import (
+    historical_observation_effective_date,
+    historical_observation_rank,
+)
 from server.models import AccountOverview, PortfolioSnapshot
 from server.projections.portfolio_assets import (
     normalize_asset_class,
@@ -22,7 +26,10 @@ from server.projections.portfolio_read_snapshot_persistence import (
 from server.projections.quote_status import (
     parse_quote_timestamp as _parse_quote_timestamp,
 )
-from server.projections.quote_status import quote_performance_session_date
+from server.projections.quote_status import (
+    quote_performance_session_date,
+    quote_valuation_status,
+)
 from server.services.account.daily_performance import (
     build_position_daily_context,
     mark_position_daily,
@@ -84,17 +91,24 @@ def resolve_live_holding_baseline(
             dict(row)
             for row in read_snapshot.price_matrix_rows
             if str(row.get("symbol") or "").strip() == symbol
-            and str(row.get("trade_date") or "") < trade_date
+            and (eff_date := historical_observation_effective_date(row))
+            and eff_date < trade_date
             and row.get("price") not in {None, ""}
+            and (
+                normalized_instrument_type != "open_end_fund"
+                or quote_valuation_status(dict(row), valuation_date=eff_date)
+                == "complete"
+            )
         ]
         if candidates:
             baseline = max(
                 candidates,
                 key=lambda row: (
-                    str(row.get("trade_date") or ""),
-                    str(row.get("timestamp") or ""),
+                    historical_observation_effective_date(row),
+                    historical_observation_rank(row),
                 ),
             )
+            eff_date = historical_observation_effective_date(baseline) or None
             source = str(baseline.get("source") or "snapshot_price_matrix")
             if source == "market_bars":
                 source = "market_bar_close"
@@ -104,7 +118,7 @@ def resolve_live_holding_baseline(
                 source = "fallback_close"
             return (
                 float(baseline["price"]),
-                str(baseline.get("trade_date") or "") or None,
+                eff_date or str(baseline.get("trade_date") or "") or None,
                 source,
             )
         return None, None, "snapshot_baseline_unavailable"

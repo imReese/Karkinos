@@ -197,6 +197,7 @@ class FinancialFactDatabaseFacade(DatabaseRepositoryAccess):
         start_date: str,
         end_date: str,
         symbol_batch_size: int = 400,
+        as_of: Any = None,
     ) -> dict[str, list[dict[str, Any]]]:
         """Read one bounded matrix of persisted historical price evidence."""
 
@@ -206,6 +207,7 @@ class FinancialFactDatabaseFacade(DatabaseRepositoryAccess):
             start_date=start_date,
             end_date=end_date,
             symbol_batch_size=symbol_batch_size,
+            as_of=as_of,
         )
 
     def save_daily_close_snapshot_sync(
@@ -277,12 +279,14 @@ class FinancialFactDatabaseFacade(DatabaseRepositoryAccess):
         trade_date: str,
         *,
         instrument_type: str,
+        as_of: Any = None,
     ) -> dict[str, Any] | None:
         """获取某日之前最近一个交易日的最后一条报价快照。"""
         return self._financial_facts.get_latest_quote_before_date_sync(
             symbol,
             trade_date,
             instrument_type=instrument_type,
+            as_of=as_of,
         )
 
     # ---------- Portfolio Snapshots ----------

@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from core.types import InstrumentType
-from server.contracts.quote_ingestion import quote_authority_conflict_fields
+from server.contracts.quote_ingestion import (
+    historical_observation_effective_date,
+    quote_authority_conflict_fields,
+    select_best_historical_observations,
+)
 from server.persistence.connection import DateTimeNow, connect_sqlite
 from server.persistence.database_serialization import serialize_metadata_json
 from server.persistence.event_log import insert_event_sync
@@ -735,6 +740,7 @@ class QuoteFactsRepositoryMixin:
         start_date: str,
         end_date: str,
         symbol_batch_size: int = 400,
+        as_of: datetime | str | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
         """Read a bounded multi-instrument matrix from persisted price facts."""
 
@@ -745,6 +751,7 @@ class QuoteFactsRepositoryMixin:
             start_date=start_date,
             end_date=end_date,
             symbol_batch_size=symbol_batch_size,
+            as_of=as_of,
         )
 
     def save_daily_close_snapshot_sync(
@@ -864,31 +871,109 @@ class QuoteFactsRepositoryMixin:
         trade_date: str,
         *,
         instrument_type: str,
+        as_of: datetime | str | None = None,
     ) -> dict[str, Any] | None:
-        """Read the latest pre-date quote for one exact instrument identity."""
-        resolved_type, _ = _canonical_quote_identity(instrument_type)
-        instant_upper_bound = quote_instant_storage_key(f"{trade_date}T00:00:00+08:00")
+        """Read the highest-authority pre-date quote for one exact instrument identity."""
         with connect_sqlite(self._path) as conn:
             conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                """
-                SELECT
-                    symbol, asset_class, instrument_type, identity_provenance,
-                    price, volume, timestamp,
-                    quote_source, provider_name, quote_status, stale_reason,
-                    provider_status, captured_reason, nav_date
-                FROM quote_snapshots
-                WHERE symbol = ? AND instrument_type = ?
-                  AND quote_instant_utc < ?
-                ORDER BY quote_instant_utc DESC, id DESC
-                LIMIT 1
-                """,
-                (symbol, resolved_type, instant_upper_bound),
-            ).fetchone()
-            return dict(row) if row else None
+            return read_latest_quote_before_date_on_connection(
+                conn,
+                symbol,
+                trade_date,
+                instrument_type=instrument_type,
+                as_of=as_of,
+            )
+
+
+def read_latest_quote_before_date_on_connection(
+    conn: sqlite3.Connection,
+    symbol: str,
+    trade_date: str,
+    *,
+    instrument_type: str,
+    as_of: datetime | str | None = None,
+) -> dict[str, Any] | None:
+    """Select the canonical highest-authority pre-date quote on an open connection."""
+    resolved_type, _ = _canonical_quote_identity(instrument_type)
+    instant_upper_bound = quote_instant_storage_key(f"{trade_date}T00:00:00+08:00")
+    nav_bound = str(trade_date or "").strip()[:10]
+    sql = """
+        SELECT
+            id, symbol, asset_class, instrument_type, identity_provenance,
+            price, volume, timestamp,
+            quote_source, provider_name, quote_status, stale_reason,
+            provider_status, captured_reason, nav_date, created_at,
+            created_at AS captured_at, 'quote' AS kind
+        FROM (
+            SELECT id, symbol, asset_class, instrument_type, identity_provenance,
+                   price, volume, timestamp, quote_source, provider_name,
+                   quote_status, stale_reason, provider_status, captured_reason,
+                   nav_date, created_at
+            FROM quote_snapshots
+            WHERE symbol = ? AND instrument_type = ?
+              AND quote_source IN ('eastmoney_fund_page', 'tushare_fund_nav')
+              AND (
+                  quote_instant_utc < ?
+                  OR (trim(coalesce(nav_date, '')) GLOB '????-??-??*'
+                      AND substr(trim(nav_date), 1, 10) < ?)
+              )
+            ORDER BY COALESCE(nullif(trim(nav_date), ''), substr(timestamp, 1, 10)) DESC,
+                     quote_instant_utc DESC, id DESC
+            LIMIT 32
+        )
+        UNION
+        SELECT
+            id, symbol, asset_class, instrument_type, identity_provenance,
+            price, volume, timestamp,
+            quote_source, provider_name, quote_status, stale_reason,
+            provider_status, captured_reason, nav_date, created_at,
+            created_at AS captured_at, 'quote' AS kind
+        FROM (
+            SELECT id, symbol, asset_class, instrument_type, identity_provenance,
+                   price, volume, timestamp, quote_source, provider_name,
+                   quote_status, stale_reason, provider_status, captured_reason,
+                   nav_date, created_at
+            FROM quote_snapshots
+            WHERE symbol = ? AND instrument_type = ?
+              AND (
+                  quote_instant_utc < ?
+                  OR (instrument_type = 'open_end_fund'
+                      AND trim(coalesce(nav_date, '')) GLOB '????-??-??*'
+                      AND substr(trim(nav_date), 1, 10) < ?)
+              )
+            ORDER BY quote_instant_utc DESC, id DESC
+            LIMIT 32
+        )
+    """
+    rows = conn.execute(
+        sql,
+        (
+            symbol,
+            resolved_type,
+            instant_upper_bound,
+            nav_bound,
+            symbol,
+            resolved_type,
+            instant_upper_bound,
+            nav_bound,
+        ),
+    ).fetchall()
+    candidates = [
+        dict(row)
+        for row in rows
+        if (eff := historical_observation_effective_date(dict(row))) and eff < nav_bound
+    ]
+    selected = select_best_historical_observations(candidates, as_of=as_of)
+    if not selected:
+        return None
+    best = max(selected, key=lambda row: str(row.get("trade_date") or ""))
+    if best.get("instrument_type") == "open_end_fund":
+        best["asset_class"] = "fund"
+    return best
 
 
 __all__ = [
     "QuoteFactsRepositoryMixin",
     "list_quote_selection_candidates_on_connection",
+    "read_latest_quote_before_date_on_connection",
 ]

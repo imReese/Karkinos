@@ -19,6 +19,27 @@ FUND_ESTIMATE_QUOTE_SOURCES = frozenset(
 PUBLISHED_FUND_NAV_QUOTE_SOURCES = frozenset(
     {"eastmoney_fund_page", "tushare_fund_nav"}
 )
+NON_AUTHORITATIVE_FUND_CLOSE_SOURCES = frozenset(
+    {
+        "",
+        "unknown",
+        "unknown_provider",
+        "confirmed_nav",
+        "reported_previous_close",
+        "none",
+        "null",
+    }
+)
+
+
+def is_authoritative_historical_fund_close_source(source: object) -> bool:
+    """Reject estimate and unverified legacy close sources for historical fund NAVs."""
+    normalized = str(source or "").strip().lower()
+    return (
+        normalized not in NON_AUTHORITATIVE_FUND_CLOSE_SOURCES
+        and not is_fund_estimate_quote_source(normalized)
+    )
+
 
 PUBLISHED_FUND_NAV_STATUSES = frozenset(
     {
